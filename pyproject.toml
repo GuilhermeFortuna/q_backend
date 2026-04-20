@@ -1,0 +1,13 @@
+[project]
+name = "q-backend"
+version = "0.1.0"
+description = "Backend project"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
