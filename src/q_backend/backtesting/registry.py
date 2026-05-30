@@ -87,3 +87,11 @@ class TradeRegistry:
             "winning_trades": len(winning_trades),
             "losing_trades": len(losing_trades),
         }
+
+    def merge(self, other: 'TradeRegistry') -> None:
+        """
+        Merges another TradeRegistry's orders and trades into this one.
+        Used for aggregating results from parallel chunk processing.
+        """
+        self.orders.update(other.orders)
+        self.trades.update(other.trades)
