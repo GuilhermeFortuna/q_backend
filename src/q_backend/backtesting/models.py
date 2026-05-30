@@ -58,6 +58,7 @@ class Trade(BaseModel):
     status: TradeStatus = Field(default=TradeStatus.OPEN, description="OPEN or CLOSED")
     pnl: Optional[float] = Field(None, description="Profit and loss for the trade")
     commission: float = Field(0.0, description="Transaction costs")
+    point_value: float = Field(1.0, description="Multiplier representing value per point/contract size")
 
 class SignalAction(str, Enum):
     BUY = "BUY"

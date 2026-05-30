@@ -35,12 +35,13 @@ class TradeRegistry:
         trade.status = TradeStatus.CLOSED
 
         # Calculate PnL
-        # PnL = (Exit - Entry) * Quantity for BUY
-        # PnL = (Entry - Exit) * Quantity for SELL
+        # PnL = (Exit - Entry) * Quantity * Point Value for BUY
+        # PnL = (Entry - Exit) * Quantity * Point Value for SELL
+        multiplier = getattr(trade, 'point_value', 1.0)
         if trade.action == OrderAction.BUY:
-            trade.pnl = (trade.exit_price - trade.entry_price) * trade.quantity
+            trade.pnl = (trade.exit_price - trade.entry_price) * trade.quantity * multiplier
         else:
-            trade.pnl = (trade.entry_price - trade.exit_price) * trade.quantity
+            trade.pnl = (trade.entry_price - trade.exit_price) * trade.quantity * multiplier
 
         # Subtract commissions
         trade.pnl -= trade.commission

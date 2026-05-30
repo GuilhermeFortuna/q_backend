@@ -17,8 +17,8 @@ def _run_day_trade_chunk(args) -> TradeRegistry:
     """
     Top-level helper for multiprocessing since instance methods can be tricky to pickle.
     """
-    strategy, sizer, initial_capital, chunk = args
-    engine = BacktestEngine(strategy, sizer, initial_capital)
+    strategy, sizer, initial_capital, point_values, chunk = args
+    engine = BacktestEngine(strategy, sizer, initial_capital, point_values=point_values)
     return engine._run_single_chunk(chunk, force_close_at_end=True)
 
 class BacktestEngine:
@@ -26,10 +26,11 @@ class BacktestEngine:
     Core execution engine for backtests. Iterates through historical data,
     evaluates strategy signals, manages position sizing, and tracks trades in the registry.
     """
-    def __init__(self, strategy: TradingStrategy, sizer: PositionSizer, initial_capital: float = 100000.0):
+    def __init__(self, strategy: TradingStrategy, sizer: PositionSizer, initial_capital: float = 100000.0, point_values: Optional[dict] = None):
         self.strategy = strategy
         self.sizer = sizer
         self.initial_capital = initial_capital
+        self.point_values = point_values or {}
 
     def run(self, data: pd.DataFrame, parallel_mode: ParallelMode = ParallelMode.SEQUENTIAL) -> TradeRegistry:
         """
@@ -59,7 +60,7 @@ class BacktestEngine:
             chunks = [group for _, group in data.groupby(data.index.date)]
             
             # Prepare args for multiprocessing
-            args_list = [(self.strategy, self.sizer, self.initial_capital, chunk) for chunk in chunks]
+            args_list = [(self.strategy, self.sizer, self.initial_capital, self.point_values, chunk) for chunk in chunks]
             
             # Execute in parallel
             with ProcessPoolExecutor() as executor:
@@ -108,6 +109,7 @@ class BacktestEngine:
                     
                     # C. Execute Order (Simplistic immediate market execution)
                     # Deduct from capital (naively) or just track PnL
+                    point_val = self.point_values.get(order.symbol, 1.0)
                     trade = Trade(
                         id=str(uuid.uuid4()),
                         order_id=order.id,
@@ -115,7 +117,8 @@ class BacktestEngine:
                         action=order.action,
                         quantity=order.quantity,
                         entry_time=timestamp,
-                        entry_price=current_price
+                        entry_price=current_price,
+                        point_value=point_val
                     )
                     registry.register_trade(trade)
 

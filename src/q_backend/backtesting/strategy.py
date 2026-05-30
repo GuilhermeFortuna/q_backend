@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import List
+from datetime import datetime
 import pandas as pd
-from q_backend.backtesting.models import Signal, Trade
+from q_backend.backtesting.models import Signal, Trade, SignalAction
 
 class TradingStrategy(ABC):
     """
@@ -57,3 +58,130 @@ class TradingStrategy(ABC):
             List[Signal]: A list of CLOSE Signals.
         """
         pass
+
+
+class MACrossoverStrategy(TradingStrategy):
+    """
+    Moving Average Crossover Strategy.
+    
+    This strategy computes a short-term Moving Average and a long-term Moving Average.
+    It calculates the difference (delta = short MA - long MA).
+    - A BUY signal is generated when the delta is above a certain positive value (threshold).
+    - A SELL signal is generated when the delta goes below the negative of that value (-threshold).
+    """
+
+    def __init__(self, short_period: int = 50, long_period: int = 200, threshold: float = 0.0, symbol: str = "BTCUSDT", **kwargs):
+        """
+        Initializes the Moving Average Crossover Strategy.
+        
+        Args:
+            short_period (int): Lookback window for the short moving average.
+            long_period (int): Lookback window for the long moving average.
+            threshold (float): The threshold value for the delta.
+            symbol (str): Default symbol for the strategy signals.
+        """
+        # Pass parameters to base constructor
+        super().__init__(
+            short_period=short_period,
+            long_period=long_period,
+            threshold=threshold,
+            symbol=symbol,
+            **kwargs
+        )
+        self.short_period = short_period
+        self.long_period = long_period
+        self.threshold = threshold
+        self.symbol = symbol
+
+    def compute_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Computes the short MA, long MA, delta, and signal columns.
+        
+        Args:
+            data (pd.DataFrame): Historical price data containing a 'close' column.
+            
+        Returns:
+            pd.DataFrame: The input DataFrame augmented with indicator columns.
+        """
+        # Ensure we don't modify the original DataFrame in a way that affects other processes
+        df = data.copy()
+        
+        if 'close' not in df.columns:
+            raise ValueError("Data must contain a 'close' column for the MA Crossover strategy.")
+
+        # Compute moving averages
+        df['ma_short'] = df['close'].rolling(window=self.short_period).mean()
+        df['ma_long'] = df['close'].rolling(window=self.long_period).mean()
+        
+        # Compute delta
+        df['delta'] = df['ma_short'] - df['ma_long']
+        
+        # Shift delta to check crossovers
+        df['prev_delta'] = df['delta'].shift(1)
+        
+        # Precompute buy/sell triggers to avoid iterative lookback inside row loop
+        # BUY when delta crosses above threshold
+        df['buy_signal'] = (df['delta'] > self.threshold) & (df['prev_delta'] <= self.threshold)
+        
+        # SELL when delta crosses below -threshold
+        df['sell_signal'] = (df['delta'] < -self.threshold) & (df['prev_delta'] >= -self.threshold)
+        
+        return df
+
+    def check_entry_conditions(self, current_data: pd.Series) -> List[Signal]:
+        """
+        Generates entry signals based on precomputed crossovers.
+        
+        Args:
+            current_data (pd.Series): Current candle data including indicators.
+            
+        Returns:
+            List[Signal]: List containing the generated Signal(s).
+        """
+        symbol = getattr(current_data, 'name', None)
+        # If name is a Timestamp, datetime, or a string that is probably a timestamp, use self.symbol
+        if not isinstance(symbol, str) or isinstance(symbol, (pd.Timestamp, datetime)) or (len(symbol) > 8 and any(char in symbol for char in ['-', ':', ' '])):
+            symbol = self.symbol
+
+        signals = []
+        if current_data.get('buy_signal', False):
+            signals.append(Signal(symbol=symbol, action=SignalAction.BUY))
+        elif current_data.get('sell_signal', False):
+            signals.append(Signal(symbol=symbol, action=SignalAction.SELL))
+            
+        return signals
+
+    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
+        """
+        Generates exit signals for open trades.
+        - Closes BUY (long) positions if delta crosses below -threshold.
+        - Closes SELL (short) positions if delta crosses above threshold.
+        
+        Args:
+            current_data (pd.Series): Current candle data including indicators.
+            open_trades (List[Trade]): Currently open trades.
+            
+        Returns:
+            List[Signal]: List of CLOSE Signals.
+        """
+        symbol = getattr(current_data, 'name', None)
+        # If name is a Timestamp, datetime, or a string that is probably a timestamp, use self.symbol
+        if not isinstance(symbol, str) or isinstance(symbol, (pd.Timestamp, datetime)) or (len(symbol) > 8 and any(char in symbol for char in ['-', ':', ' '])):
+            symbol = self.symbol
+
+        signals = []
+        if not open_trades:
+            return signals
+
+        is_sell_trigger = current_data.get('sell_signal', False)
+        is_buy_trigger = current_data.get('buy_signal', False)
+
+        for trade in open_trades:
+            if trade.symbol == symbol:
+                if trade.action == SignalAction.BUY and is_sell_trigger:
+                    signals.append(Signal(symbol=symbol, action=SignalAction.CLOSE))
+                elif trade.action == SignalAction.SELL and is_buy_trigger:
+                    signals.append(Signal(symbol=symbol, action=SignalAction.CLOSE))
+                    
+        return signals
+

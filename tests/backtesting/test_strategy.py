@@ -1,6 +1,7 @@
 import pytest
 import pandas as pd
 from typing import List
+from datetime import datetime
 from q_backend.backtesting.models import Signal, SignalAction, Trade
 from q_backend.backtesting.strategy import TradingStrategy
 
@@ -60,3 +61,87 @@ def test_valid_strategy_implementation():
     assert len(exit_signals) == 1
     assert exit_signals[0].action == SignalAction.CLOSE
     assert exit_signals[0].symbol == "AAPL"
+
+
+def test_macrossover_strategy():
+    """
+    Test that the MACrossoverStrategy computes moving averages, delta,
+    and generates entry and exit signals correctly based on a threshold.
+    """
+    from q_backend.backtesting import MACrossoverStrategy
+    
+    # Initialize strategy with short_period=2, long_period=4, threshold=1.0, symbol="BTCUSDT"
+    strategy = MACrossoverStrategy(short_period=2, long_period=4, threshold=1.0, symbol="BTCUSDT")
+    assert strategy.parameters['short_period'] == 2
+    assert strategy.parameters['long_period'] == 4
+    assert strategy.parameters['threshold'] == 1.0
+    
+    # Create price data to test indicators
+    # Prices:
+    # 1. 10.0 (ma_short=NaN, ma_long=NaN)
+    # 2. 10.0 (ma_short=10.0, ma_long=NaN)
+    # 3. 10.0 (ma_short=10.0, ma_long=NaN)
+    # 4. 10.0 (ma_short=10.0, ma_long=10.0, delta=0.0)
+    # 5. 13.0 (ma_short=(10+13)/2 = 11.5, ma_long=(10+10+10+13)/4 = 10.75, delta=0.75)
+    # 6. 16.0 (ma_short=(13+16)/2 = 14.5, ma_long=(10+10+13+16)/4 = 12.25, delta=2.25) -> crosses above threshold 1.0
+    # 7. 10.0 (ma_short=(16+10)/2 = 13.0, ma_long=(10+13+16+10)/4 = 12.25, delta=0.75)
+    # 8. 4.0  (ma_short=(10+4)/2  = 7.0,  ma_long=(13+16+10+4)/4  = 10.75, delta=-3.75) -> crosses below -1.0
+    prices = [10.0, 10.0, 10.0, 10.0, 13.0, 16.0, 10.0, 4.0]
+    df = pd.DataFrame({'close': prices})
+    
+    df_with_indicators = strategy.compute_indicators(df)
+    
+    # Check that columns exist
+    for col in ['ma_short', 'ma_long', 'delta', 'prev_delta', 'buy_signal', 'sell_signal']:
+        assert col in df_with_indicators.columns
+        
+    # Check values on candle index 5 (6th price: 16.0)
+    # delta should be 14.5 - 12.25 = 2.25. prev_delta (from index 4) should be 0.75.
+    # Since delta > 1.0 and prev_delta <= 1.0, buy_signal should be True.
+    row_5 = df_with_indicators.iloc[5]
+    assert row_5['delta'] == 2.25
+    assert row_5['prev_delta'] == 0.75
+    assert row_5['buy_signal'] == True
+    assert row_5['sell_signal'] == False
+    
+    # Check values on candle index 7 (8th price: 4.0)
+    # delta should be 7.0 - 10.75 = -3.75. prev_delta (from index 6) should be 0.75.
+    # Since delta < -1.0 and prev_delta >= -1.0, sell_signal should be True.
+    row_7 = df_with_indicators.iloc[7]
+    assert row_7['delta'] == -3.75
+    assert row_7['prev_delta'] == 0.75
+    assert row_7['buy_signal'] == False
+    assert row_7['sell_signal'] == True
+    
+    # Check entry conditions on row 5 (Buy trigger)
+    signals_buy = strategy.check_entry_conditions(row_5)
+    assert len(signals_buy) == 1
+    assert signals_buy[0].action == SignalAction.BUY
+    assert signals_buy[0].symbol == "BTCUSDT"
+    
+    # Check entry conditions on row 7 (Sell trigger)
+    signals_sell = strategy.check_entry_conditions(row_7)
+    assert len(signals_sell) == 1
+    assert signals_sell[0].action == SignalAction.SELL
+    assert signals_sell[0].symbol == "BTCUSDT"
+    
+    # Check exit conditions for a BUY trade when sell trigger occurs
+    open_buy_trade = Trade(
+        id="trade-1",
+        order_id="order-1",
+        symbol="BTCUSDT",
+        action=SignalAction.BUY,
+        quantity=1.0,
+        entry_time=datetime.now(),
+        entry_price=16.0
+    )
+    
+    # On row_7 (sell trigger), the BUY trade should be closed
+    exit_signals = strategy.check_exit_conditions(row_7, [open_buy_trade])
+    assert len(exit_signals) == 1
+    assert exit_signals[0].action == SignalAction.CLOSE
+    assert exit_signals[0].symbol == "BTCUSDT"
+    
+    # On row_5 (buy trigger), the BUY trade should NOT be closed
+    assert len(strategy.check_exit_conditions(row_5, [open_buy_trade])) == 0
+
