@@ -75,3 +75,78 @@ def test_performance_metrics():
     assert metrics["win_rate"] == 1.0
     assert metrics["winning_trades"] == 2
     assert metrics["losing_trades"] == 0
+
+
+def test_registry_advanced_metrics():
+    """
+    Tests that get_performance_metrics computes advanced statistics (drawdown, profit factor,
+    consecutive wins/losses, expectancy) correctly based on a sequence of closed trades.
+    """
+    registry = TradeRegistry()
+    
+    # Deterministic sequence:
+    # Initial Capital = $10,000
+    # Trade 1: +$2,000 (Win)
+    # Trade 2: -$1,500 (Loss)
+    # Trade 3: -$500 (Loss)
+    # Trade 4: +$3,000 (Win)
+    t1 = Trade(id="t1", order_id="o1", symbol="CCM$", action=OrderAction.BUY, quantity=1,
+               entry_time=datetime(2023, 1, 1, 10, 0, tzinfo=timezone.utc), entry_price=10.0)
+    t2 = Trade(id="t2", order_id="o2", symbol="CCM$", action=OrderAction.BUY, quantity=1,
+               entry_time=datetime(2023, 1, 2, 10, 0, tzinfo=timezone.utc), entry_price=10.0)
+    t3 = Trade(id="t3", order_id="o3", symbol="CCM$", action=OrderAction.BUY, quantity=1,
+               entry_time=datetime(2023, 1, 3, 10, 0, tzinfo=timezone.utc), entry_price=10.0)
+    t4 = Trade(id="t4", order_id="o4", symbol="CCM$", action=OrderAction.BUY, quantity=1,
+               entry_time=datetime(2023, 1, 4, 10, 0, tzinfo=timezone.utc), entry_price=10.0)
+               
+    registry.register_trade(t1)
+    registry.register_trade(t2)
+    registry.register_trade(t3)
+    registry.register_trade(t4)
+    
+    # Close trades with deterministic exit times and prices to get custom PnL
+    # (We bypass close_trade PnL formula and directly set PnL for simplicity and transparency)
+    registry.close_trade("t1", datetime(2023, 1, 1, 12, 0, tzinfo=timezone.utc), exit_price=12.0)
+    t1.pnl = 2000.0
+    
+    registry.close_trade("t2", datetime(2023, 1, 2, 12, 0, tzinfo=timezone.utc), exit_price=8.5)
+    t2.pnl = -1500.0
+    
+    registry.close_trade("t3", datetime(2023, 1, 3, 12, 0, tzinfo=timezone.utc), exit_price=9.5)
+    t3.pnl = -500.0
+    
+    registry.close_trade("t4", datetime(2023, 1, 4, 12, 0, tzinfo=timezone.utc), exit_price=13.0)
+    t4.pnl = 3000.0
+    
+    metrics = registry.get_performance_metrics(initial_capital=10000.0)
+    
+    # Verification
+    # Initial = 10,000
+    # T1 exits -> Equity = 12,000, Peak = 12,000, Drawdown = 0
+    # T2 exits -> Equity = 10,500, Peak = 12,000, Drawdown = 1,500 (12.5%)
+    # T3 exits -> Equity = 10,000, Peak = 12,000, Drawdown = 2,000 (16.67%)
+    # T4 exits -> Equity = 13,000, Peak = 13,000, Drawdown = 0
+    
+    assert metrics["total_trades"] == 4
+    assert metrics["winning_trades"] == 2
+    assert metrics["losing_trades"] == 2
+    assert metrics["win_rate"] == 0.5
+    assert metrics["total_pnl"] == 3000.0
+    
+    # Drawdowns
+    assert metrics["max_drawdown_value"] == 2000.0
+    assert metrics["max_drawdown_pct"] == pytest.approx(2000.0 / 12000.0)
+    
+    # Ratios
+    # Gross Profit = 5000.0, Gross Loss = -2000.0
+    assert metrics["profit_factor"] == pytest.approx(5000.0 / 2000.0)
+    # Recovery Factor = 3000.0 / 2000.0 = 1.5
+    assert metrics["recovery_factor"] == 1.5
+    # Expectancy = 3000.0 / 4 = 750.0
+    assert metrics["expectancy"] == 750.0
+    
+    # Streaks
+    # T1 (+), T2 (-), T3 (-), T4 (+) -> Consecutive Wins = 1, Consecutive Losses = 2
+    assert metrics["max_consecutive_wins"] == 1
+    assert metrics["max_consecutive_losses"] == 2
+
