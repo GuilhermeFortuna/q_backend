@@ -8,6 +8,11 @@ from pydantic import BaseModel
 
 from q_backend.market_data.service import MarketDataService
 from q_backend.market_data.models import OHLCV, Tick
+from typing import Dict, Any
+import pandas as pd
+from q_backend.backtesting.strategy import MACrossoverStrategy
+from q_backend.backtesting.position_sizing import FixedQuantitySizer
+from q_backend.backtesting.engine import BacktestEngine, ParallelMode
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -39,6 +44,20 @@ class OhlcvBarResponse(BaseModel):
     low: float
     close: float
     volume: int
+
+class BacktestRequest(BaseModel):
+    symbol: str
+    timeframe: str = "D1"
+    start: Optional[datetime] = None
+    end: Optional[datetime] = None
+    initial_capital: float = 100000.0
+    point_value: float = 1.0
+    strategy: str = "MACrossover" # Support for multiple strategies in the future
+    strategy_params: Dict[str, Any] = {}
+
+class BacktestResponse(BaseModel):
+    metrics: Dict[str, Any]
+    trades: List[Dict[str, Any]]
 
 # Instantiate global service
 market_data_service = MarketDataService()
@@ -198,7 +217,49 @@ def get_market_instruments():
     return active_symbols
 
 
+@app.get("/api/v1/market/symbols/search", response_model=List[InstrumentResponse])
+def search_symbols(q: str = Query(..., description="Query to search symbols in MetaTrader 5")):
+    """
+    Search for symbols available in the MT5 terminal matching a query.
+    """
+    if not q.strip():
+        return []
+
+    connected = market_data_service.mt5_client.connect()
+    if not connected:
+        raise HTTPException(status_code=503, detail="MetaTrader 5 terminal is offline.")
+
+    try:
+        raw_symbols = market_data_service.search_symbols(q.strip())
+        results = []
+        for s in raw_symbols[:50]:  # Limit to 50 results
+            # Parse exchange from path
+            path = s.get("path", "")
+            path_parts = path.split('\\')
+            exchange = path_parts[0] if path_parts else "BOVESPA"
+
+            # Determine asset class
+            asset_class = "equity"
+            symbol_name = s.get("name", "")
+            if "BMF" in path or "@" in symbol_name or "$" in symbol_name:
+                asset_class = "future"
+            elif "FX" in path or "Forex" in path:
+                asset_class = "fx"
+
+            results.append({
+                "symbol": symbol_name,
+                "name": s.get("description") or symbol_name,
+                "exchange": exchange,
+                "assetClass": asset_class
+            })
+        return results
+    except Exception as e:
+        logger.error(f"Error searching symbols for query '{q}': {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/v1/market/snapshot/{symbol}", response_model=MarketSnapshotResponse)
+
 def get_market_snapshot(symbol: str):
     """
     Retrieve real-time price snapshot for a B3 asset using MT5.
@@ -248,36 +309,186 @@ def get_market_snapshot(symbol: str):
     }
 
 
+def _normalize_market_timeframe(timeframe: str) -> str:
+    """Map UI-style timeframe labels to MT5 codes."""
+    mapping = {
+        "1M": "M1",
+        "M1": "M1",
+        "5M": "M5",
+        "M5": "M5",
+        "15M": "M15",
+        "M15": "M15",
+        "30M": "M30",
+        "M30": "M30",
+        "1H": "H1",
+        "H1": "H1",
+        "4H": "H4",
+        "H4": "H4",
+        "1D": "D1",
+        "D1": "D1",
+    }
+    return mapping.get(timeframe.upper(), "D1")
+
+
+def _ohlcv_to_bar_response(row) -> dict:
+    """Convert OHLCV model or MT5 rate row to frontend bar shape."""
+    if hasattr(row, "time"):
+        timestamp_dt = row.time
+        if not isinstance(timestamp_dt, datetime):
+            timestamp_dt = datetime.fromisoformat(str(timestamp_dt).replace("Z", "+00:00"))
+        volume = row.real_volume if row.real_volume > 0 else row.tick_volume
+        return {
+            "timestamp": timestamp_dt.isoformat().replace("+00:00", "Z"),
+            "open": float(row.open),
+            "high": float(row.high),
+            "low": float(row.low),
+            "close": float(row.close),
+            "volume": int(volume),
+        }
+
+    timestamp_dt = datetime.fromtimestamp(int(row["time"]))
+    return {
+        "timestamp": timestamp_dt.isoformat() + "Z",
+        "open": float(row["open"]),
+        "high": float(row["high"]),
+        "low": float(row["low"]),
+        "close": float(row["close"]),
+        "volume": int(row["real_volume"]) if row["real_volume"] > 0 else int(row["tick_volume"]),
+    }
+
+
 @app.get("/api/v1/market/ohlcv/{symbol}", response_model=List[OhlcvBarResponse])
-def get_market_ohlcv(symbol: str):
+def get_market_ohlcv(
+    symbol: str,
+    timeframe: str = Query("D1", description="Candle timeframe (e.g. M1, M5, M15, M30, H1, H4, D1)"),
+    count: int = Query(500, ge=1, le=5000, description="Number of most recent bars to return"),
+    start: Optional[datetime] = Query(None, description="Start datetime (ISO-8601). Requires end."),
+    end: Optional[datetime] = Query(None, description="End datetime (ISO-8601). Requires start."),
+):
     """
-    Retrieve historical OHLCV data (30 sessions) for B3 asset.
+    Retrieve historical OHLCV data for a B3 asset.
+    Returns the most recent `count` bars by default, or a date range when start/end are provided.
     """
     import MetaTrader5 as mt5
+
     symbol = symbol.upper()
-    
+    mt5_timeframe = _normalize_market_timeframe(timeframe)
+
     connected = market_data_service.mt5_client.connect()
     if not connected:
         raise HTTPException(status_code=503, detail="MetaTrader 5 terminal is offline.")
-        
+
     if not mt5.symbol_select(symbol, True):
         raise HTTPException(status_code=404, detail=f"Symbol '{symbol}' not found on MetaTrader 5.")
-        
-    rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_D1, 0, 30)
+
+    if (start is None) ^ (end is None):
+        raise HTTPException(status_code=400, detail="Both start and end must be provided for date-range queries.")
+    if start is not None and end is not None and start >= end:
+        raise HTTPException(status_code=400, detail="Start datetime must be before end datetime.")
+
+    if start is not None and end is not None:
+        try:
+            ohlcv_data = market_data_service.get_ohlcv(symbol, mt5_timeframe, start, end)
+        except ValueError as ve:
+            raise HTTPException(status_code=400, detail=str(ve))
+        except ConnectionError as ce:
+            raise HTTPException(status_code=503, detail=str(ce))
+        except Exception as e:
+            logger.error(f"Error fetching OHLCV range for {symbol}: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+        if not ohlcv_data:
+            raise HTTPException(status_code=404, detail=f"No OHLCV data found for symbol '{symbol}'.")
+
+        return [_ohlcv_to_bar_response(row) for row in ohlcv_data[-count:]]
+
+    timeframe_map = {
+        "M1": mt5.TIMEFRAME_M1,
+        "M5": mt5.TIMEFRAME_M5,
+        "M15": mt5.TIMEFRAME_M15,
+        "M30": mt5.TIMEFRAME_M30,
+        "H1": mt5.TIMEFRAME_H1,
+        "H4": mt5.TIMEFRAME_H4,
+        "D1": mt5.TIMEFRAME_D1,
+    }
+
+    mt5_tf = timeframe_map.get(mt5_timeframe, mt5.TIMEFRAME_D1)
+    rates = mt5.copy_rates_from_pos(symbol, mt5_tf, 0, count)
     if rates is None or len(rates) == 0:
         raise HTTPException(status_code=404, detail=f"No OHLCV data found for symbol '{symbol}'.")
-        
-    ohlcv_bars = []
-    for row in rates:
-        timestamp_dt = datetime.fromtimestamp(int(row['time']))
-        ohlcv_bars.append({
-            "timestamp": timestamp_dt.isoformat() + "Z",
-            "open": float(row['open']),
-            "high": float(row['high']),
-            "low": float(row['low']),
-            "close": float(row['close']),
-            "volume": int(row['real_volume']) if row['real_volume'] > 0 else int(row['tick_volume'])
-        })
-        
-    return ohlcv_bars
+
+    return [_ohlcv_to_bar_response(row) for row in rates]
+
+@app.post("/api/v1/backtest/run", response_model=BacktestResponse)
+def run_backtest(request: BacktestRequest):
+    """
+    Run a backtest for a specific symbol and strategy.
+    """
+    start = request.start or (datetime.now() - timedelta(days=365))
+    end = request.end or datetime.now()
+
+    if start >= end:
+        raise HTTPException(status_code=400, detail="Start datetime must be before end datetime.")
+
+    try:
+        # 1. Fetch data
+        ohlcv_data = market_data_service.get_ohlcv(request.symbol, request.timeframe, start, end)
+        if not ohlcv_data:
+            raise HTTPException(status_code=404, detail="No market data found for the given parameters.")
+            
+        # Convert to DataFrame
+        df = pd.DataFrame([b.model_dump() for b in ohlcv_data])
+        df.set_index('time', inplace=True)
+        # Ensure index is datetime
+        df.index = pd.to_datetime(df.index)
+
+        # 2. Setup Strategy
+        if request.strategy == "MACrossover":
+            short_period = int(request.strategy_params.get("short_period", 50))
+            long_period = int(request.strategy_params.get("long_period", 200))
+            threshold = float(request.strategy_params.get("threshold", 0.0))
+            strategy = MACrossoverStrategy(
+                short_period=short_period, 
+                long_period=long_period, 
+                threshold=threshold, 
+                symbol=request.symbol
+            )
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown strategy: {request.strategy}")
+
+        # 3. Setup Position Sizer
+        sizer = FixedQuantitySizer(quantity=1.0)
+
+        # 4. Run Engine
+        engine = BacktestEngine(
+            strategy, 
+            sizer, 
+            initial_capital=request.initial_capital,
+            point_values={request.symbol: request.point_value}
+        )
+        registry = engine.run(df, parallel_mode=ParallelMode.SEQUENTIAL)
+
+        # 5. Extract Results
+        metrics = registry.get_performance_metrics(request.initial_capital)
+        closed_trades = [t.model_dump() for t in registry.get_closed_trades()]
+
+        # Convert datetimes to strings to avoid pydantic issues if needed, though dict dump might handle it.
+        # But wait, pydantic handles it correctly with standard configuration if response_model is present.
+
+        return {
+            "metrics": metrics,
+            "trades": closed_trades
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error running backtest: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+def run_dev():
+    """Entry point for running the dev server via `uv run dev`"""
+    import uvicorn
+    uvicorn.run("q_backend.api.main:app", host="0.0.0.0", port=8000, reload=True)
+
 
