@@ -493,6 +493,10 @@ def get_market_ohlcv(
             status_code=400,
             detail="Both start and end must be provided for date-range queries.",
         )
+
+    if start is not None and end is not None:
+        start = _to_naive_local(start)
+        end = _to_naive_local(end)
     if start is not None and end is not None and start >= end:
         raise HTTPException(
             status_code=400, detail="Start datetime must be before end datetime."

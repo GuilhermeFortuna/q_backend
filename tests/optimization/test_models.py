@@ -62,6 +62,23 @@ def test_backtest_start_must_be_before_end():
         )
 
 
+def test_backtest_datetimes_normalized_to_naive_local():
+    config = OptimizationConfig.model_validate(
+        {
+            "study": {"name": "s", "storage": {"type": "memory"}},
+            "objective": {"mode": "maximize_net_profit"},
+            "backtest": {
+                "symbol": "X",
+                "start": "2024-01-01T03:00:00+00:00",
+                "end": "2024-06-01T02:59:59.999+00:00",
+            },
+            "search_space": {},
+        }
+    )
+    assert config.backtest.start.tzinfo is None
+    assert config.backtest.end.tzinfo is None
+
+
 def test_optuna_directions_single_objective():
     config = OptimizationConfig.model_validate(
         {

@@ -5,6 +5,7 @@ from typing import Annotated, Any, Literal, Optional, Union
 from pydantic import BaseModel, Field, model_validator
 
 from q_backend.backtesting.engine import ParallelMode
+from q_backend.market_data.clients.metatrader import _to_naive_local
 
 
 class ObjectiveMode(str, Enum):
@@ -91,7 +92,11 @@ class BacktestConfig(BaseModel):
     parallel_mode: ParallelMode = ParallelMode.SEQUENTIAL
 
     @model_validator(mode="after")
-    def start_before_end(self):
+    def normalize_and_validate_range(self):
+        # Frontend sends UTC-aware ISO datetimes; MT5 bars and trade timestamps are
+        # naive local. Match the /backtest/run endpoint and normalize on ingest.
+        self.start = _to_naive_local(self.start)
+        self.end = _to_naive_local(self.end)
         if self.start >= self.end:
             raise ValueError("backtest.start must be before backtest.end")
         return self
