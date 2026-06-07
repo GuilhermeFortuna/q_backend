@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any, Union
 import pandas as pd
 import MetaTrader5 as mt5
@@ -7,6 +8,25 @@ import MetaTrader5 as mt5
 from q_backend.market_data.models import OHLCV, Tick
 
 logger = logging.getLogger(__name__)
+
+@dataclass(frozen=True)
+class OhlcvAvailableRange:
+    symbol: str
+    timeframe: str
+    start: datetime
+    end: datetime
+    bar_count: int
+
+
+# Match the market OHLCV endpoint max; large single requests trigger MT5 "Invalid params".
+_HISTORY_CHUNK_SIZE = 5_000
+_MAX_HISTORY_CHUNKS = 1_000
+_HISTORY_ANCHOR = datetime(1990, 1, 1)
+_RANGE_PROBE_YEARS = 2
+
+
+def _bar_open_time(rates, index: int) -> datetime:
+    return datetime.fromtimestamp(int(rates[index]["time"]))
 
 TIMEFRAME_MAP = {
     "M1": mt5.TIMEFRAME_M1,
@@ -155,6 +175,110 @@ class MetaTraderClient:
             ))
 
         return ohlcv_list
+
+    def _probe_latest_bar(self, symbol: str, mt5_timeframe: int) -> Optional[datetime]:
+        rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, 1)
+        if rates is None or len(rates) == 0:
+            return None
+        return _bar_open_time(rates, 0)
+
+    def _probe_earliest_bar(self, symbol: str, mt5_timeframe: int) -> Optional[datetime]:
+        """
+        Find the oldest stored bar. copy_rates_from_pos only walks the terminal's
+        in-memory window; copy_rates_from/range queries can reach further history.
+        """
+        rates = mt5.copy_rates_from(symbol, mt5_timeframe, _HISTORY_ANCHOR, 1)
+        if rates is not None and len(rates) > 0:
+            return _bar_open_time(rates, 0)
+
+        earliest: Optional[datetime] = None
+        cursor = _HISTORY_ANCHOR
+        now = datetime.now()
+
+        while cursor < now:
+            chunk_end = min(
+                datetime(cursor.year + _RANGE_PROBE_YEARS, cursor.month, cursor.day),
+                now,
+            )
+            if chunk_end <= cursor:
+                chunk_end = now
+
+            rates = mt5.copy_rates_range(symbol, mt5_timeframe, cursor, chunk_end)
+            if rates is not None and len(rates) > 0:
+                chunk_earliest = _bar_open_time(rates, 0)
+                earliest = (
+                    chunk_earliest
+                    if earliest is None
+                    else min(earliest, chunk_earliest)
+                )
+
+            if chunk_end >= now:
+                break
+            cursor = chunk_end + timedelta(seconds=1)
+
+        return earliest
+
+    def _count_bars_between(
+        self,
+        symbol: str,
+        mt5_timeframe: int,
+        start: datetime,
+        end: datetime,
+    ) -> int:
+        total = 0
+        cursor = start
+
+        while cursor <= end:
+            chunk_end = min(cursor + timedelta(days=365), end)
+            rates = mt5.copy_rates_range(symbol, mt5_timeframe, cursor, chunk_end)
+            if rates is not None and len(rates) > 0:
+                total += len(rates)
+                cursor = _bar_open_time(rates, -1) + timedelta(seconds=1)
+            else:
+                cursor = chunk_end + timedelta(seconds=1)
+
+            if cursor > end:
+                break
+
+        return total
+
+    def get_available_ohlcv_range(self, symbol: str, timeframe: str) -> Optional[OhlcvAvailableRange]:
+        """
+        Returns the earliest and latest bar timestamps available in MT5 for a symbol/timeframe.
+        """
+        self._ensure_connected()
+
+        mt5_timeframe = TIMEFRAME_MAP.get(timeframe.upper())
+        if mt5_timeframe is None:
+            raise ValueError(f"Invalid timeframe '{timeframe}'. Choose from: {list(TIMEFRAME_MAP.keys())}")
+
+        if not mt5.symbol_select(symbol, True):
+            error_code, error_desc = mt5.last_error()
+            logger.warning(
+                f"Failed to select symbol {symbol} in MarketWatch: {error_desc} (Code: {error_code})"
+            )
+            return None
+
+        earliest = self._probe_earliest_bar(symbol, mt5_timeframe)
+        latest = self._probe_latest_bar(symbol, mt5_timeframe)
+
+        if earliest is None or latest is None:
+            error_code, error_desc = mt5.last_error()
+            logger.error(
+                f"Failed to probe OHLCV history for {symbol}: "
+                f"{error_desc} (Code: {error_code})"
+            )
+            return None
+
+        bar_count = self._count_bars_between(symbol, mt5_timeframe, earliest, latest)
+
+        return OhlcvAvailableRange(
+            symbol=symbol,
+            timeframe=timeframe.upper(),
+            start=earliest,
+            end=latest,
+            bar_count=bar_count,
+        )
 
     def get_ticks(
         self,

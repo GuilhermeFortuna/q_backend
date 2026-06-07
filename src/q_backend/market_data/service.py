@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import List, Optional
 from pathlib import Path
 
-from q_backend.market_data.clients.metatrader import MetaTraderClient
+from q_backend.market_data.clients.metatrader import MetaTraderClient, OhlcvAvailableRange
 from q_backend.market_data.models import OHLCV, Tick
 
 logger = logging.getLogger(__name__)
@@ -88,6 +88,12 @@ class MarketDataService:
         Fetches OHLCV market data for a given symbol and timeframe.
         """
         return self.mt5_client.get_ohlcv(symbol, timeframe, start, end)
+
+    def get_available_ohlcv_range(self, symbol: str, timeframe: str) -> Optional[OhlcvAvailableRange]:
+        """
+        Returns the earliest and latest OHLCV bar timestamps available in MT5.
+        """
+        return self.mt5_client.get_available_ohlcv_range(symbol, timeframe)
 
     def get_ticks(
         self,

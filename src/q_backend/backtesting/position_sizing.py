@@ -1,7 +1,35 @@
+import math
 import uuid
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Annotated, Literal, Optional, Union
+
+from pydantic import BaseModel, Field, model_validator
+
 from q_backend.backtesting.models import Signal, SignalAction, Order, OrderAction, OrderType
+
+
+class FixedQuantityPositionSizing(BaseModel):
+    type: Literal["fixed_quantity"] = "fixed_quantity"
+    quantity: float = Field(default=1.0, gt=0)
+
+
+class FixedSafetyMarginPositionSizing(BaseModel):
+    type: Literal["fixed_safety_margin"] = "fixed_safety_margin"
+    safety_margin_per_contract: float = Field(default=5000.0, gt=0)
+    min_contracts: int = Field(default=1, ge=0)
+    max_contracts: Optional[int] = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def max_gte_min(self):
+        if self.max_contracts is not None and self.max_contracts < self.min_contracts:
+            raise ValueError("max_contracts must be >= min_contracts")
+        return self
+
+
+PositionSizingConfig = Annotated[
+    Union[FixedQuantityPositionSizing, FixedSafetyMarginPositionSizing],
+    Field(discriminator="type"),
+]
 
 class PositionSizer(ABC):
     """
@@ -50,3 +78,73 @@ class FixedQuantitySizer(PositionSizer):
             order_type=OrderType.MARKET,
             quantity=self.quantity
         )
+
+
+class FixedSafetyMarginSizer(PositionSizer):
+    """
+    Futures position sizer that sizes contracts from allocated capital and a per-contract safety margin.
+    """
+
+    def __init__(
+        self,
+        safety_margin_per_contract: float,
+        max_contracts: int | None = None,
+        min_contracts: int = 1,
+    ):
+        if safety_margin_per_contract <= 0:
+            raise ValueError("safety_margin_per_contract must be greater than 0")
+        if min_contracts < 0:
+            raise ValueError("min_contracts must be greater than or equal to 0")
+        if max_contracts is not None and max_contracts < min_contracts:
+            raise ValueError("max_contracts must be greater than or equal to min_contracts")
+
+        self.safety_margin_per_contract = safety_margin_per_contract
+        self.max_contracts = max_contracts
+        self.min_contracts = min_contracts
+
+    def size_signal(self, signal: Signal, current_price: float, current_capital: float) -> Optional[Order]:
+        if signal.action == SignalAction.HOLD:
+            return None
+
+        if signal.action == SignalAction.CLOSE:
+            return None
+
+        quantity = math.floor(current_capital / self.safety_margin_per_contract)
+        if self.max_contracts is not None:
+            quantity = min(quantity, self.max_contracts)
+
+        if quantity < self.min_contracts:
+            if self.min_contracts > 0 and quantity == 0:
+                # Balance below one full margin; holding min contracts is still allowed
+                quantity = self.min_contracts
+            else:
+                return None
+
+        if quantity <= 0:
+            return None
+
+        action = OrderAction.BUY if signal.action == SignalAction.BUY else OrderAction.SELL
+
+        return Order(
+            id=str(uuid.uuid4()),
+            symbol=signal.symbol,
+            action=action,
+            order_type=OrderType.MARKET,
+            quantity=float(quantity),
+        )
+
+
+def build_position_sizer(
+    config: Optional[FixedQuantityPositionSizing | FixedSafetyMarginPositionSizing] = None,
+) -> PositionSizer:
+    if config is None:
+        return FixedQuantitySizer(quantity=1.0)
+
+    if config.type == "fixed_quantity":
+        return FixedQuantitySizer(quantity=config.quantity)
+
+    return FixedSafetyMarginSizer(
+        safety_margin_per_contract=config.safety_margin_per_contract,
+        min_contracts=config.min_contracts,
+        max_contracts=config.max_contracts,
+    )

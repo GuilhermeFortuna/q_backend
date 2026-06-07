@@ -11,7 +11,10 @@ from q_backend.market_data.models import OHLCV, Tick
 from typing import Dict, Any
 import pandas as pd
 from q_backend.backtesting.strategy import MACrossoverStrategy
-from q_backend.backtesting.position_sizing import FixedQuantitySizer
+from q_backend.backtesting.position_sizing import (
+    PositionSizingConfig,
+    build_position_sizer,
+)
 from q_backend.backtesting.engine import BacktestEngine, ParallelMode
 
 # Setup logging
@@ -45,6 +48,13 @@ class OhlcvBarResponse(BaseModel):
     close: float
     volume: int
 
+class OhlcvAvailableRangeResponse(BaseModel):
+    symbol: str
+    timeframe: str
+    start: datetime
+    end: datetime
+    bar_count: int
+
 class BacktestRequest(BaseModel):
     symbol: str
     timeframe: str = "D1"
@@ -54,6 +64,7 @@ class BacktestRequest(BaseModel):
     point_value: float = 1.0
     strategy: str = "MACrossover" # Support for multiple strategies in the future
     strategy_params: Dict[str, Any] = {}
+    position_sizing: Optional[PositionSizingConfig] = None
 
 class BacktestResponse(BaseModel):
     metrics: Dict[str, Any]
@@ -419,6 +430,47 @@ def get_market_ohlcv(
 
     return [_ohlcv_to_bar_response(row) for row in rates]
 
+
+@app.get("/api/v1/market/ohlcv/{symbol}/available-range", response_model=OhlcvAvailableRangeResponse)
+def get_market_ohlcv_available_range(
+    symbol: str,
+    timeframe: str = Query("D1", description="Candle timeframe (e.g. M1, M5, M15, H1, D1)"),
+):
+    """
+    Returns the earliest and latest OHLCV bar timestamps available in MT5 for a symbol.
+    """
+    symbol = symbol.upper()
+    mt5_timeframe = _normalize_market_timeframe(timeframe)
+
+    connected = market_data_service.mt5_client.connect()
+    if not connected:
+        raise HTTPException(status_code=503, detail="MetaTrader 5 terminal is offline.")
+
+    try:
+        available_range = market_data_service.get_available_ohlcv_range(symbol, mt5_timeframe)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except ConnectionError as ce:
+        raise HTTPException(status_code=503, detail=str(ce))
+    except Exception as e:
+        logger.error(f"Error probing OHLCV history for {symbol}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    if available_range is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No OHLCV history found for symbol '{symbol}' on timeframe '{mt5_timeframe}'.",
+        )
+
+    return {
+        "symbol": available_range.symbol,
+        "timeframe": available_range.timeframe,
+        "start": available_range.start,
+        "end": available_range.end,
+        "bar_count": available_range.bar_count,
+    }
+
+
 @app.post("/api/v1/backtest/run", response_model=BacktestResponse)
 def run_backtest(request: BacktestRequest):
     """
@@ -457,7 +509,7 @@ def run_backtest(request: BacktestRequest):
             raise HTTPException(status_code=400, detail=f"Unknown strategy: {request.strategy}")
 
         # 3. Setup Position Sizer
-        sizer = FixedQuantitySizer(quantity=1.0)
+        sizer = build_position_sizer(request.position_sizing)
 
         # 4. Run Engine
         engine = BacktestEngine(
