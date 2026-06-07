@@ -47,6 +47,35 @@ class DefaultBacktestRunner:
         self._data_provider = data_provider
         self._market_data_service = market_data_service
 
+    @classmethod
+    def from_market_data(
+        cls,
+        market_data_service: Any,
+        *,
+        symbol: str,
+        timeframe: str,
+        start: datetime,
+        end: datetime,
+    ) -> "DefaultBacktestRunner":
+        """Fetch OHLCV once and reuse it for every trial in a study.
+
+        MetaTrader5 must be used from the thread that initialized it. Optimization
+        studies run on a worker thread, so market data is loaded here on the caller
+        thread (typically the FastAPI request handler) and cached in memory.
+        """
+        ohlcv_data = market_data_service.get_ohlcv(symbol, timeframe, start, end)
+        if not ohlcv_data:
+            raise ValueError("No market data found for the given parameters.")
+
+        df = pd.DataFrame([bar.model_dump() for bar in ohlcv_data])
+        df.set_index("time", inplace=True)
+        df.index = pd.to_datetime(df.index)
+
+        def data_provider(_config: BacktestRunConfig) -> pd.DataFrame:
+            return df
+
+        return cls(data_provider=data_provider)
+
     def _fetch_data(self, config: BacktestRunConfig) -> pd.DataFrame:
         if self._data_provider is not None:
             return self._data_provider(config)
