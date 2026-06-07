@@ -1,13 +1,17 @@
 import logging
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import List, Optional, Dict, Any, Union
-import pandas as pd
+from typing import List, Optional, Dict, Any, Union, Callable, TypeVar
+
+import numpy as np
 import MetaTrader5 as mt5
 
 from q_backend.market_data.models import OHLCV, Tick
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 @dataclass(frozen=True)
 class OhlcvAvailableRange:
@@ -21,12 +25,38 @@ class OhlcvAvailableRange:
 # Match the market OHLCV endpoint max; large single requests trigger MT5 "Invalid params".
 _HISTORY_CHUNK_SIZE = 5_000
 _MAX_HISTORY_CHUNKS = 1_000
+_MAX_OHLCV_BARS = 50_000
 _HISTORY_ANCHOR = datetime(1990, 1, 1)
 _RANGE_PROBE_YEARS = 2
+_RANGE_FETCH_DAYS = 365
 
 
 def _bar_open_time(rates, index: int) -> datetime:
     return datetime.fromtimestamp(int(rates[index]["time"]))
+
+
+def _rates_to_ohlcv_list(rates) -> List[OHLCV]:
+    """Convert MT5 structured numpy array to OHLCV models without row iteration."""
+    if rates is None or len(rates) == 0:
+        return []
+
+    has_spread = "spread" in rates.dtype.names
+    has_real_volume = "real_volume" in rates.dtype.names
+
+    return [
+        OHLCV(
+            time=datetime.fromtimestamp(int(rates["time"][i])),
+            open=float(rates["open"][i]),
+            high=float(rates["high"][i]),
+            low=float(rates["low"][i]),
+            close=float(rates["close"][i]),
+            tick_volume=int(rates["tick_volume"][i]),
+            spread=int(rates["spread"][i]) if has_spread else None,
+            real_volume=int(rates["real_volume"][i]) if has_real_volume else None,
+        )
+        for i in range(len(rates))
+    ]
+
 
 TIMEFRAME_MAP = {
     "M1": mt5.TIMEFRAME_M1,
@@ -63,48 +93,57 @@ class MetaTraderClient:
         self.password = password
         self.server = server
         self._is_initialized = False
+        self._lock = threading.Lock()
+
+    def _run_locked(self, fn: Callable[[], T]) -> T:
+        with self._lock:
+            return fn()
 
     def connect(self) -> bool:
         """
         Establishes a connection to the MetaTrader 5 terminal.
         """
-        if self._is_initialized:
+        def _connect() -> bool:
+            if self._is_initialized:
+                return True
+
+            init_kwargs = {}
+            if self.path:
+                init_kwargs["path"] = self.path
+
+            if not mt5.initialize(**init_kwargs):
+                error_code, error_desc = mt5.last_error()
+                logger.error(f"Failed to initialize MetaTrader 5 terminal: {error_desc} (Code: {error_code})")
+                return False
+
+            if self.login is not None and self.server:
+                password_param = self.password if self.password else ""
+                logger.info(f"Logging into MT5 account {self.login} on server '{self.server}'...")
+                if not mt5.login(login=self.login, password=password_param, server=self.server):
+                    error_code, error_desc = mt5.last_error()
+                    logger.error(f"Failed to login into account {self.login}: {error_desc} (Code: {error_code})")
+                    mt5.shutdown()
+                    return False
+            elif self.login is not None:
+                logger.warning("MT5_USER was provided, but MT5_SERVER is missing. Skipping explicit login. Using currently active account in the terminal.")
+
+            self._is_initialized = True
+            logger.info("Successfully connected to MetaTrader 5 terminal.")
             return True
 
-        # 1. Initialize connection to MT5 terminal first
-        init_kwargs = {}
-        if self.path:
-            init_kwargs["path"] = self.path
-            
-        if not mt5.initialize(**init_kwargs):
-            error_code, error_desc = mt5.last_error()
-            logger.error(f"Failed to initialize MetaTrader 5 terminal: {error_desc} (Code: {error_code})")
-            return False
-
-        # 2. Login to specific account if login details and server are provided
-        if self.login is not None and self.server:
-            password_param = self.password if self.password else ""
-            logger.info(f"Logging into MT5 account {self.login} on server '{self.server}'...")
-            if not mt5.login(login=self.login, password=password_param, server=self.server):
-                error_code, error_desc = mt5.last_error()
-                logger.error(f"Failed to login into account {self.login}: {error_desc} (Code: {error_code})")
-                mt5.shutdown()
-                return False
-        elif self.login is not None:
-            logger.warning("MT5_USER was provided, but MT5_SERVER is missing. Skipping explicit login. Using currently active account in the terminal.")
-
-        self._is_initialized = True
-        logger.info("Successfully connected to MetaTrader 5 terminal.")
-        return True
+        return self._run_locked(_connect)
 
     def disconnect(self) -> None:
         """
         Closes the connection to the MetaTrader 5 terminal.
         """
-        if self._is_initialized:
-            mt5.shutdown()
-            self._is_initialized = False
-            logger.info("Disconnected from MetaTrader 5 terminal.")
+        def _disconnect() -> None:
+            if self._is_initialized:
+                mt5.shutdown()
+                self._is_initialized = False
+                logger.info("Disconnected from MetaTrader 5 terminal.")
+
+        self._run_locked(_disconnect)
 
     def _ensure_connected(self) -> None:
         if not self._is_initialized:
@@ -115,18 +154,65 @@ class MetaTraderClient:
         """
         Retrieves detailed information about a financial symbol.
         """
-        self._ensure_connected()
-        
-        # Ensure the symbol is selected in MarketWatch
-        if not mt5.symbol_select(symbol, True):
-            error_code, error_desc = mt5.last_error()
-            logger.error(f"Failed to select symbol {symbol}: {error_desc} (Code: {error_code})")
-            return None
+        def _fetch() -> Optional[Dict[str, Any]]:
+            self._ensure_connected()
 
-        info = mt5.symbol_info(symbol)
-        if info is None:
-            return None
-        return info._asdict()
+            if not mt5.symbol_select(symbol, True):
+                error_code, error_desc = mt5.last_error()
+                logger.error(f"Failed to select symbol {symbol}: {error_desc} (Code: {error_code})")
+                return None
+
+            info = mt5.symbol_info(symbol)
+            if info is None:
+                return None
+            return info._asdict()
+
+        return self._run_locked(_fetch)
+
+    def _fetch_ohlcv_range_chunked(
+        self,
+        symbol: str,
+        mt5_timeframe: int,
+        start: datetime,
+        end: datetime,
+    ) -> List[OHLCV]:
+        chunks: List[np.ndarray] = []
+        total_bars = 0
+        cursor = start
+
+        for _ in range(_MAX_HISTORY_CHUNKS):
+            if cursor > end:
+                break
+
+            chunk_end = min(cursor + timedelta(days=_RANGE_FETCH_DAYS), end)
+            rates = mt5.copy_rates_range(symbol, mt5_timeframe, cursor, chunk_end)
+
+            if rates is not None and len(rates) > 0:
+                chunk_len = len(rates)
+                if total_bars + chunk_len > _MAX_OHLCV_BARS:
+                    remaining = _MAX_OHLCV_BARS - total_bars
+                    if remaining <= 0:
+                        break
+                    rates = rates[:remaining]
+                    chunk_len = remaining
+
+                chunks.append(rates)
+                total_bars += chunk_len
+                next_cursor = _bar_open_time(rates, -1) + timedelta(seconds=1)
+                if next_cursor <= cursor:
+                    break
+                cursor = next_cursor
+            else:
+                cursor = chunk_end + timedelta(seconds=1)
+
+            if total_bars >= _MAX_OHLCV_BARS:
+                break
+
+        if not chunks:
+            return []
+
+        all_rates = np.concatenate(chunks) if len(chunks) > 1 else chunks[0]
+        return _rates_to_ohlcv_list(all_rates)
 
     def get_ohlcv(
         self,
@@ -138,43 +224,24 @@ class MetaTraderClient:
         """
         Fetches historical OHLCV data (bars) for a given symbol and timeframe within a range.
         """
-        self._ensure_connected()
+        def _fetch() -> List[OHLCV]:
+            self._ensure_connected()
 
-        mt5_timeframe = TIMEFRAME_MAP.get(timeframe.upper())
-        if mt5_timeframe is None:
-            raise ValueError(f"Invalid timeframe '{timeframe}'. Choose from: {list(TIMEFRAME_MAP.keys())}")
+            mt5_timeframe = TIMEFRAME_MAP.get(timeframe.upper())
+            if mt5_timeframe is None:
+                raise ValueError(f"Invalid timeframe '{timeframe}'. Choose from: {list(TIMEFRAME_MAP.keys())}")
 
-        # Ensure the symbol is active in MarketWatch
-        if not mt5.symbol_select(symbol, True):
-            error_code, error_desc = mt5.last_error()
-            logger.warning(f"Failed to select symbol {symbol} in MarketWatch: {error_desc} (Code: {error_code})")
+            if not mt5.symbol_select(symbol, True):
+                error_code, error_desc = mt5.last_error()
+                logger.warning(f"Failed to select symbol {symbol} in MarketWatch: {error_desc} (Code: {error_code})")
 
-        # copy_rates_range takes datetime objects
-        rates = mt5.copy_rates_range(symbol, mt5_timeframe, start, end)
-        if rates is None or len(rates) == 0:
-            error_code, error_desc = mt5.last_error()
-            logger.error(f"Failed to fetch OHLCV for {symbol}: {error_desc} (Code: {error_code})")
-            return []
+            result = self._fetch_ohlcv_range_chunked(symbol, mt5_timeframe, start, end)
+            if not result:
+                error_code, error_desc = mt5.last_error()
+                logger.error(f"Failed to fetch OHLCV for {symbol}: {error_desc} (Code: {error_code})")
+            return result
 
-        # Convert structured numpy array to pandas DataFrame
-        df = pd.DataFrame(rates)
-        df['time'] = pd.to_datetime(df['time'], unit='s')
-
-        # Convert rows into OHLCV Pydantic objects
-        ohlcv_list = []
-        for _, row in df.iterrows():
-            ohlcv_list.append(OHLCV(
-                time=row['time'],
-                open=float(row['open']),
-                high=float(row['high']),
-                low=float(row['low']),
-                close=float(row['close']),
-                tick_volume=int(row['tick_volume']),
-                spread=int(row['spread']) if 'spread' in row else None,
-                real_volume=int(row['real_volume']) if 'real_volume' in row else None
-            ))
-
-        return ohlcv_list
+        return self._run_locked(_fetch)
 
     def _probe_latest_bar(self, symbol: str, mt5_timeframe: int) -> Optional[datetime]:
         rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, 1)
@@ -229,7 +296,7 @@ class MetaTraderClient:
         cursor = start
 
         while cursor <= end:
-            chunk_end = min(cursor + timedelta(days=365), end)
+            chunk_end = min(cursor + timedelta(days=_RANGE_FETCH_DAYS), end)
             rates = mt5.copy_rates_range(symbol, mt5_timeframe, cursor, chunk_end)
             if rates is not None and len(rates) > 0:
                 total += len(rates)
@@ -246,39 +313,42 @@ class MetaTraderClient:
         """
         Returns the earliest and latest bar timestamps available in MT5 for a symbol/timeframe.
         """
-        self._ensure_connected()
+        def _fetch() -> Optional[OhlcvAvailableRange]:
+            self._ensure_connected()
 
-        mt5_timeframe = TIMEFRAME_MAP.get(timeframe.upper())
-        if mt5_timeframe is None:
-            raise ValueError(f"Invalid timeframe '{timeframe}'. Choose from: {list(TIMEFRAME_MAP.keys())}")
+            mt5_timeframe = TIMEFRAME_MAP.get(timeframe.upper())
+            if mt5_timeframe is None:
+                raise ValueError(f"Invalid timeframe '{timeframe}'. Choose from: {list(TIMEFRAME_MAP.keys())}")
 
-        if not mt5.symbol_select(symbol, True):
-            error_code, error_desc = mt5.last_error()
-            logger.warning(
-                f"Failed to select symbol {symbol} in MarketWatch: {error_desc} (Code: {error_code})"
+            if not mt5.symbol_select(symbol, True):
+                error_code, error_desc = mt5.last_error()
+                logger.warning(
+                    f"Failed to select symbol {symbol} in MarketWatch: {error_desc} (Code: {error_code})"
+                )
+                return None
+
+            earliest = self._probe_earliest_bar(symbol, mt5_timeframe)
+            latest = self._probe_latest_bar(symbol, mt5_timeframe)
+
+            if earliest is None or latest is None:
+                error_code, error_desc = mt5.last_error()
+                logger.error(
+                    f"Failed to probe OHLCV history for {symbol}: "
+                    f"{error_desc} (Code: {error_code})"
+                )
+                return None
+
+            bar_count = self._count_bars_between(symbol, mt5_timeframe, earliest, latest)
+
+            return OhlcvAvailableRange(
+                symbol=symbol,
+                timeframe=timeframe.upper(),
+                start=earliest,
+                end=latest,
+                bar_count=bar_count,
             )
-            return None
 
-        earliest = self._probe_earliest_bar(symbol, mt5_timeframe)
-        latest = self._probe_latest_bar(symbol, mt5_timeframe)
-
-        if earliest is None or latest is None:
-            error_code, error_desc = mt5.last_error()
-            logger.error(
-                f"Failed to probe OHLCV history for {symbol}: "
-                f"{error_desc} (Code: {error_code})"
-            )
-            return None
-
-        bar_count = self._count_bars_between(symbol, mt5_timeframe, earliest, latest)
-
-        return OhlcvAvailableRange(
-            symbol=symbol,
-            timeframe=timeframe.upper(),
-            start=earliest,
-            end=latest,
-            bar_count=bar_count,
-        )
+        return self._run_locked(_fetch)
 
     def get_ticks(
         self,
@@ -290,56 +360,58 @@ class MetaTraderClient:
         """
         Fetches historical ticks for a given symbol within a datetime range.
         """
-        self._ensure_connected()
+        def _fetch() -> List[Tick]:
+            self._ensure_connected()
 
-        # Ensure the symbol is active in MarketWatch
-        if not mt5.symbol_select(symbol, True):
-            error_code, error_desc = mt5.last_error()
-            logger.warning(f"Failed to select symbol {symbol} in MarketWatch: {error_desc} (Code: {error_code})")
+            if not mt5.symbol_select(symbol, True):
+                error_code, error_desc = mt5.last_error()
+                logger.warning(f"Failed to select symbol {symbol} in MarketWatch: {error_desc} (Code: {error_code})")
 
-        # copy_ticks_range takes datetime objects
-        ticks = mt5.copy_ticks_range(symbol, start, end, flags)
-        if ticks is None or len(ticks) == 0:
-            error_code, error_desc = mt5.last_error()
-            logger.error(f"Failed to fetch ticks for {symbol}: {error_desc} (Code: {error_code})")
-            return []
+            ticks = mt5.copy_ticks_range(symbol, start, end, flags)
+            if ticks is None or len(ticks) == 0:
+                error_code, error_desc = mt5.last_error()
+                logger.error(f"Failed to fetch ticks for {symbol}: {error_desc} (Code: {error_code})")
+                return []
 
-        # Convert structured numpy array to pandas DataFrame
-        df = pd.DataFrame(ticks)
-        df['time'] = pd.to_datetime(df['time'], unit='s')
+            has_last = "last" in ticks.dtype.names
+            has_volume = "volume" in ticks.dtype.names
+            has_flags = "flags" in ticks.dtype.names
+            has_time_msc = "time_msc" in ticks.dtype.names
 
-        # Convert rows into Tick Pydantic objects
-        tick_list = []
-        for _, row in df.iterrows():
-            tick_list.append(Tick(
-                time=row['time'],
-                bid=float(row['bid']),
-                ask=float(row['ask']),
-                last=float(row['last']) if 'last' in row else 0.0,
-                volume=float(row['volume']) if 'volume' in row else 0.0,
-                flags=int(row['flags']) if 'flags' in row else 0,
-                time_msc=int(row['time_msc']) if 'time_msc' in row else 0
-            ))
+            return [
+                Tick(
+                    time=datetime.fromtimestamp(int(ticks["time"][i])),
+                    bid=float(ticks["bid"][i]),
+                    ask=float(ticks["ask"][i]),
+                    last=float(ticks["last"][i]) if has_last else 0.0,
+                    volume=float(ticks["volume"][i]) if has_volume else 0.0,
+                    flags=int(ticks["flags"][i]) if has_flags else 0,
+                    time_msc=int(ticks["time_msc"][i]) if has_time_msc else 0,
+                )
+                for i in range(len(ticks))
+            ]
 
-        return tick_list
+        return self._run_locked(_fetch)
 
     def search_symbols(self, query: str) -> List[Dict[str, Any]]:
         """
         Search for symbols in MetaTrader 5 using a wildcard pattern.
         """
-        self._ensure_connected()
-        pattern = f"*{query.upper()}*"
-        symbols = mt5.symbols_get(pattern)
-        if symbols is None:
-            return []
+        def _fetch() -> List[Dict[str, Any]]:
+            self._ensure_connected()
+            pattern = f"*{query.upper()}*"
+            symbols = mt5.symbols_get(pattern)
+            if symbols is None:
+                return []
 
-        results = []
-        for s in symbols:
-            results.append({
-                "name": s.name,
-                "description": s.description,
-                "path": s.path,
-                "custom": s.custom
-            })
-        return results
+            return [
+                {
+                    "name": s.name,
+                    "description": s.description,
+                    "path": s.path,
+                    "custom": s.custom,
+                }
+                for s in symbols
+            ]
 
+        return self._run_locked(_fetch)

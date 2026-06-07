@@ -411,7 +411,7 @@ def get_market_ohlcv(
         if not ohlcv_data:
             raise HTTPException(status_code=404, detail=f"No OHLCV data found for symbol '{symbol}'.")
 
-        return [_ohlcv_to_bar_response(row) for row in ohlcv_data[-count:]]
+        return [_ohlcv_to_bar_response(row) for row in ohlcv_data]
 
     timeframe_map = {
         "M1": mt5.TIMEFRAME_M1,
