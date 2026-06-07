@@ -78,6 +78,28 @@ def test_get_ohlcv_respects_max_bar_cap(mock_mt5):
 
 
 @patch("q_backend.market_data.clients.metatrader.mt5")
+def test_get_ohlcv_accepts_timezone_aware_range(mock_mt5):
+    from datetime import timezone
+
+    mock_mt5.symbol_select.return_value = True
+    mock_mt5.TIMEFRAME_D1 = 16408
+    mock_mt5.copy_rates_range.return_value = np.array(
+        [_rate(1_600_000_000), _rate(1_610_000_000)],
+        dtype=_RATE_DTYPE,
+    )
+
+    client = MetaTraderClient()
+    client._is_initialized = True
+
+    start = datetime.fromtimestamp(1_600_000_000, tz=timezone.utc)
+    end = datetime.fromtimestamp(1_610_000_000, tz=timezone.utc)
+    result = client.get_ohlcv("PETR4", "D1", start, end)
+
+    assert len(result) == 2
+    assert mock_mt5.copy_rates_range.call_count == 1
+
+
+@patch("q_backend.market_data.clients.metatrader.mt5")
 def test_get_ohlcv_returns_empty_when_no_rates(mock_mt5):
     mock_mt5.symbol_select.return_value = True
     mock_mt5.TIMEFRAME_D1 = 16408

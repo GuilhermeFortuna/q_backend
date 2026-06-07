@@ -31,6 +31,13 @@ _RANGE_PROBE_YEARS = 2
 _RANGE_FETCH_DAYS = 365
 
 
+def _to_naive_local(dt: datetime) -> datetime:
+    """Convert aware datetimes to naive local time to match MT5 bar timestamps."""
+    if dt.tzinfo is not None:
+        return dt.astimezone().replace(tzinfo=None)
+    return dt
+
+
 def _bar_open_time(rates, index: int) -> datetime:
     return datetime.fromtimestamp(int(rates[index]["time"]))
 
@@ -176,6 +183,9 @@ class MetaTraderClient:
         start: datetime,
         end: datetime,
     ) -> List[OHLCV]:
+        start = _to_naive_local(start)
+        end = _to_naive_local(end)
+
         chunks: List[np.ndarray] = []
         total_bars = 0
         cursor = start
@@ -292,6 +302,9 @@ class MetaTraderClient:
         start: datetime,
         end: datetime,
     ) -> int:
+        start = _to_naive_local(start)
+        end = _to_naive_local(end)
+
         total = 0
         cursor = start
 
@@ -362,6 +375,9 @@ class MetaTraderClient:
         """
         def _fetch() -> List[Tick]:
             self._ensure_connected()
+
+            start = _to_naive_local(start)
+            end = _to_naive_local(end)
 
             if not mt5.symbol_select(symbol, True):
                 error_code, error_desc = mt5.last_error()
