@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -101,13 +102,18 @@ class OptimizationRunner:
             return tuple(objective_value)
         return objective_value
 
-    def run(self) -> OptimizationResult:
+    def run(
+        self,
+        callbacks: list[Callable[[optuna.Study, optuna.trial.FrozenTrial], None]]
+        | None = None,
+    ) -> OptimizationResult:
         self.failures: list[dict[str, Any]] = []
         study = load_or_create_study(self.config)
         study.optimize(
             self._objective,
             n_trials=self.config.study.n_trials,
             catch=(Exception,) if self.config.study.continue_on_trial_error else (),
+            callbacks=callbacks,
         )
 
         if self.config.is_multi_objective():

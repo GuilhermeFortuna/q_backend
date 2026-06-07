@@ -19,7 +19,7 @@ class ExportPaths:
     pareto_front: Path
 
 
-def _serialize_trial(trial: optuna.trial.FrozenTrial) -> dict[str, Any]:
+def serialize_trial(trial: optuna.trial.FrozenTrial) -> dict[str, Any]:
     return {
         "number": trial.number,
         "params": trial.params,
@@ -48,14 +48,14 @@ def export_results(
         json.dump(best_params, handle, indent=2)
 
     best_trial_payload = (
-        _serialize_trial(result.best_trial) if result.best_trial is not None else None
+        serialize_trial(result.best_trial) if result.best_trial is not None else None
     )
     with best_trial_path.open("w", encoding="utf-8") as handle:
         json.dump(best_trial_payload, handle, indent=2, default=str)
 
     study.trials_dataframe().to_csv(trials_csv_path, index=False)
 
-    pareto_trials = [_serialize_trial(trial) for trial in result.pareto_trials]
+    pareto_trials = [serialize_trial(trial) for trial in result.pareto_trials]
     with pareto_path.open("w", encoding="utf-8") as handle:
         json.dump(pareto_trials, handle, indent=2, default=str)
 
