@@ -14,6 +14,9 @@ dependencies = [
     "yfinance>=1.3.0",
 ]
 
+[project.scripts]
+dev = "q_backend.api.main:run_dev"
+
 [dependency-groups]
 dev = [
     "black",

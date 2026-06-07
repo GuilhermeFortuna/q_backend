@@ -1,0 +1,11 @@
+[env]
+# Load environment variables from the .env file
+_.file = ".env"
+
+[tasks.dev]
+description = "Run the backend development server with hot-reload"
+run = "uv run uvicorn q_backend.api.main:app --reload --port 8000"
+
+[tasks.test]
+description = "Run pytest"
+run = "uv run pytest"
