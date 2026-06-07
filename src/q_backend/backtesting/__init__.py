@@ -1,6 +1,7 @@
 from .models import Order, Trade, OrderAction, OrderType, OrderStatus, TradeStatus, Signal, SignalAction
 from .registry import TradeRegistry
-from .strategy import TradingStrategy, MACrossoverStrategy
+from .strategy import TradingStrategy, MACrossoverStrategy, ChartIndicatorSpec
+from .chart_data import serialize_chart_data
 from .position_sizing import (
     PositionSizer,
     FixedQuantitySizer,
@@ -24,6 +25,8 @@ __all__ = [
     "TradeRegistry",
     "TradingStrategy",
     "MACrossoverStrategy",
+    "ChartIndicatorSpec",
+    "serialize_chart_data",
     "PositionSizer",
     "FixedQuantitySizer",
     "FixedSafetyMarginSizer",

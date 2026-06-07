@@ -27,6 +27,9 @@ class DummyStrategy(TradingStrategy):
             return [Signal(symbol="DUMMY", action=SignalAction.CLOSE)]
         return []
 
+    def get_chart_indicators(self):
+        return []
+
 @pytest.fixture
 def dummy_data():
     """

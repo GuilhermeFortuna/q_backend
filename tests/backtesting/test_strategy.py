@@ -38,6 +38,9 @@ def test_valid_strategy_implementation():
                 return [Signal(symbol=current_data.name or "UNKNOWN", action=SignalAction.CLOSE)]
             return []
 
+        def get_chart_indicators(self):
+            return []
+
     # Instantiate
     strategy = MovingAverageCrossover(short_window=10, long_window=50)
     assert strategy.parameters['short_window'] == 10
@@ -144,4 +147,31 @@ def test_macrossover_strategy():
     
     # On row_5 (buy trigger), the BUY trade should NOT be closed
     assert len(strategy.check_exit_conditions(row_5, [open_buy_trade])) == 0
+
+
+def test_macrossover_strategy_with_ema_types():
+    from q_backend.backtesting import MACrossoverStrategy
+
+    strategy = MACrossoverStrategy(
+        short_period=2,
+        long_period=4,
+        threshold=1.0,
+        short_ma_type="ema",
+        long_ma_type="wma",
+        symbol="BTCUSDT",
+    )
+
+    assert strategy.short_ma_type == "ema"
+    assert strategy.long_ma_type == "wma"
+
+    prices = [10.0, 10.0, 10.0, 10.0, 13.0, 16.0, 10.0, 4.0]
+    df = pd.DataFrame({"close": prices})
+    df_with_indicators = strategy.compute_indicators(df)
+
+    assert df_with_indicators["ma_short"].notna().any()
+    assert df_with_indicators["ma_long"].notna().any()
+
+    specs = strategy.get_chart_indicators()
+    assert specs[0].label.startswith("EMA Short")
+    assert specs[1].label.startswith("WMA Long")
 

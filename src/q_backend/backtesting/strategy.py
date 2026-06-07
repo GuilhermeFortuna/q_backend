@@ -1,8 +1,17 @@
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Literal, Optional
 from datetime import datetime
 import pandas as pd
+from pydantic import BaseModel
 from q_backend.backtesting.models import Signal, Trade, SignalAction
+from q_backend.backtesting.moving_averages import MA_TYPE_LABELS, compute_ma, normalize_ma_type
+
+
+class ChartIndicatorSpec(BaseModel):
+    key: str
+    label: str
+    pane: Literal["price", "oscillator"] = "price"
+    color: Optional[str] = None
 
 class TradingStrategy(ABC):
     """
@@ -59,6 +68,13 @@ class TradingStrategy(ABC):
         """
         pass
 
+    @abstractmethod
+    def get_chart_indicators(self) -> List[ChartIndicatorSpec]:
+        """
+        Returns metadata for indicator columns to plot on the backtest chart.
+        """
+        pass
+
 
 class MACrossoverStrategy(TradingStrategy):
     """
@@ -70,7 +86,16 @@ class MACrossoverStrategy(TradingStrategy):
     - A SELL signal is generated when the delta goes below the negative of that value (-threshold).
     """
 
-    def __init__(self, short_period: int = 50, long_period: int = 200, threshold: float = 0.0, symbol: str = "BTCUSDT", **kwargs):
+    def __init__(
+        self,
+        short_period: int = 50,
+        long_period: int = 200,
+        threshold: float = 0.0,
+        short_ma_type: str = "sma",
+        long_ma_type: str = "sma",
+        symbol: str = "BTCUSDT",
+        **kwargs,
+    ):
         """
         Initializes the Moving Average Crossover Strategy.
         
@@ -78,13 +103,18 @@ class MACrossoverStrategy(TradingStrategy):
             short_period (int): Lookback window for the short moving average.
             long_period (int): Lookback window for the long moving average.
             threshold (float): The threshold value for the delta.
+            short_ma_type (str): MA type for the short average (sma, ema, wma, smma, hma).
+            long_ma_type (str): MA type for the long average (sma, ema, wma, smma, hma).
             symbol (str): Default symbol for the strategy signals.
         """
-        # Pass parameters to base constructor
+        self.short_ma_type = normalize_ma_type(short_ma_type)
+        self.long_ma_type = normalize_ma_type(long_ma_type)
         super().__init__(
             short_period=short_period,
             long_period=long_period,
             threshold=threshold,
+            short_ma_type=self.short_ma_type,
+            long_ma_type=self.long_ma_type,
             symbol=symbol,
             **kwargs
         )
@@ -110,8 +140,8 @@ class MACrossoverStrategy(TradingStrategy):
             raise ValueError("Data must contain a 'close' column for the MA Crossover strategy.")
 
         # Compute moving averages
-        df['ma_short'] = df['close'].rolling(window=self.short_period).mean()
-        df['ma_long'] = df['close'].rolling(window=self.long_period).mean()
+        df['ma_short'] = compute_ma(df['close'], self.short_period, self.short_ma_type)
+        df['ma_long'] = compute_ma(df['close'], self.long_period, self.long_ma_type)
         
         # Compute delta
         df['delta'] = df['ma_short'] - df['ma_long']
@@ -127,6 +157,32 @@ class MACrossoverStrategy(TradingStrategy):
         df['sell_signal'] = (df['delta'] < -self.threshold) & (df['prev_delta'] >= -self.threshold)
         
         return df
+
+    def _ma_label(self, side: str, period: int, ma_type: str) -> str:
+        label = MA_TYPE_LABELS.get(ma_type, ma_type.upper())
+        return f"{label} {side.title()} ({period})"
+
+    def get_chart_indicators(self) -> List[ChartIndicatorSpec]:
+        return [
+            ChartIndicatorSpec(
+                key="ma_short",
+                label=self._ma_label("short", self.short_period, self.short_ma_type),
+                pane="price",
+                color="#c9a227",
+            ),
+            ChartIndicatorSpec(
+                key="ma_long",
+                label=self._ma_label("long", self.long_period, self.long_ma_type),
+                pane="price",
+                color="#6eb5ff",
+            ),
+            ChartIndicatorSpec(
+                key="delta",
+                label="Delta",
+                pane="oscillator",
+                color="#c9a227",
+            ),
+        ]
 
     def check_entry_conditions(self, current_data: pd.Series) -> List[Signal]:
         """

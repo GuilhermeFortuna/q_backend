@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
-from typing import List, Optional
+from typing import List, Optional, Dict, Any, Literal
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -11,11 +11,14 @@ from q_backend.market_data.models import OHLCV, Tick
 from typing import Dict, Any
 import pandas as pd
 from q_backend.backtesting.strategy import MACrossoverStrategy
+from q_backend.backtesting.chart_data import serialize_chart_data
+from q_backend.backtesting.moving_averages import normalize_ma_type
 from q_backend.backtesting.position_sizing import (
     PositionSizingConfig,
     build_position_sizer,
 )
 from q_backend.backtesting.engine import BacktestEngine, ParallelMode
+from q_backend.market_data.clients.metatrader import _to_naive_local
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -66,9 +69,18 @@ class BacktestRequest(BaseModel):
     strategy_params: Dict[str, Any] = {}
     position_sizing: Optional[PositionSizingConfig] = None
 
+class ChartIndicatorSeries(BaseModel):
+    key: str
+    label: str
+    pane: Literal["price", "oscillator"]
+    color: Optional[str] = None
+    values: List[Optional[float]]
+
 class BacktestResponse(BaseModel):
     metrics: Dict[str, Any]
     trades: List[Dict[str, Any]]
+    bars: List[OhlcvBarResponse]
+    indicators: List[ChartIndicatorSeries]
 
 # Instantiate global service
 market_data_service = MarketDataService()
@@ -141,6 +153,9 @@ def get_ohlcv(
         start = datetime.now() - timedelta(days=1)
     if not end:
         end = datetime.now()
+
+    start = _to_naive_local(start)
+    end = _to_naive_local(end)
 
     if start >= end:
         raise HTTPException(status_code=400, detail="Start datetime must be before end datetime.")
@@ -479,6 +494,9 @@ def run_backtest(request: BacktestRequest):
     start = request.start or (datetime.now() - timedelta(days=365))
     end = request.end or datetime.now()
 
+    start = _to_naive_local(start)
+    end = _to_naive_local(end)
+
     if start >= end:
         raise HTTPException(status_code=400, detail="Start datetime must be before end datetime.")
 
@@ -499,14 +517,29 @@ def run_backtest(request: BacktestRequest):
             short_period = int(request.strategy_params.get("short_period", 50))
             long_period = int(request.strategy_params.get("long_period", 200))
             threshold = float(request.strategy_params.get("threshold", 0.0))
+            try:
+                short_ma_type = normalize_ma_type(
+                    request.strategy_params.get("short_ma_type", "sma")
+                )
+                long_ma_type = normalize_ma_type(
+                    request.strategy_params.get("long_ma_type", "sma")
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
             strategy = MACrossoverStrategy(
-                short_period=short_period, 
-                long_period=long_period, 
-                threshold=threshold, 
+                short_period=short_period,
+                long_period=long_period,
+                threshold=threshold,
+                short_ma_type=short_ma_type,
+                long_ma_type=long_ma_type,
                 symbol=request.symbol
             )
         else:
             raise HTTPException(status_code=400, detail=f"Unknown strategy: {request.strategy}")
+
+        # Compute indicators for chart payload (same logic used inside the engine)
+        df_with_indicators = strategy.compute_indicators(df.copy())
+        chart_data = serialize_chart_data(df_with_indicators, strategy)
 
         # 3. Setup Position Sizer
         sizer = build_position_sizer(request.position_sizing)
@@ -529,7 +562,9 @@ def run_backtest(request: BacktestRequest):
 
         return {
             "metrics": metrics,
-            "trades": closed_trades
+            "trades": closed_trades,
+            "bars": chart_data["bars"],
+            "indicators": chart_data["indicators"],
         }
 
     except HTTPException:
