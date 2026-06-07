@@ -99,3 +99,10 @@ class MarketDataService:
         Fetches tick market data for a given symbol.
         """
         return self.mt5_client.get_ticks(symbol, start, end)
+
+    def search_symbols(self, query: str) -> list:
+        """
+        Search for symbols in MetaTrader 5 using wildcard pattern.
+        """
+        return self.mt5_client.search_symbols(query)
+

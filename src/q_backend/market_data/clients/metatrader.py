@@ -198,3 +198,24 @@ class MetaTraderClient:
             ))
 
         return tick_list
+
+    def search_symbols(self, query: str) -> List[Dict[str, Any]]:
+        """
+        Search for symbols in MetaTrader 5 using a wildcard pattern.
+        """
+        self._ensure_connected()
+        pattern = f"*{query.upper()}*"
+        symbols = mt5.symbols_get(pattern)
+        if symbols is None:
+            return []
+
+        results = []
+        for s in symbols:
+            results.append({
+                "name": s.name,
+                "description": s.description,
+                "path": s.path,
+                "custom": s.custom
+            })
+        return results
+
