@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
+
 @dataclass(frozen=True)
 class OhlcvAvailableRange:
     symbol: str
@@ -89,12 +90,20 @@ TIMEFRAME_MAP = {
     "MN1": mt5.TIMEFRAME_MN1,
 }
 
+
 class MetaTraderClient:
     """
     Client for interacting with the MetaTrader 5 local terminal.
     Requires the MetaTrader 5 terminal to be running on Windows.
     """
-    def __init__(self, path: Optional[str] = None, login: Optional[int] = None, password: Optional[str] = None, server: Optional[str] = None):
+
+    def __init__(
+        self,
+        path: Optional[str] = None,
+        login: Optional[int] = None,
+        password: Optional[str] = None,
+        server: Optional[str] = None,
+    ):
         self.path = path
         self.login = login
         self.password = password
@@ -110,6 +119,7 @@ class MetaTraderClient:
         """
         Establishes a connection to the MetaTrader 5 terminal.
         """
+
         def _connect() -> bool:
             if self._is_initialized:
                 return True
@@ -120,19 +130,29 @@ class MetaTraderClient:
 
             if not mt5.initialize(**init_kwargs):
                 error_code, error_desc = mt5.last_error()
-                logger.error(f"Failed to initialize MetaTrader 5 terminal: {error_desc} (Code: {error_code})")
+                logger.error(
+                    f"Failed to initialize MetaTrader 5 terminal: {error_desc} (Code: {error_code})"
+                )
                 return False
 
             if self.login is not None and self.server:
                 password_param = self.password if self.password else ""
-                logger.info(f"Logging into MT5 account {self.login} on server '{self.server}'...")
-                if not mt5.login(login=self.login, password=password_param, server=self.server):
+                logger.info(
+                    f"Logging into MT5 account {self.login} on server '{self.server}'..."
+                )
+                if not mt5.login(
+                    login=self.login, password=password_param, server=self.server
+                ):
                     error_code, error_desc = mt5.last_error()
-                    logger.error(f"Failed to login into account {self.login}: {error_desc} (Code: {error_code})")
+                    logger.error(
+                        f"Failed to login into account {self.login}: {error_desc} (Code: {error_code})"
+                    )
                     mt5.shutdown()
                     return False
             elif self.login is not None:
-                logger.warning("MT5_USER was provided, but MT5_SERVER is missing. Skipping explicit login. Using currently active account in the terminal.")
+                logger.warning(
+                    "MT5_USER was provided, but MT5_SERVER is missing. Skipping explicit login. Using currently active account in the terminal."
+                )
 
             self._is_initialized = True
             logger.info("Successfully connected to MetaTrader 5 terminal.")
@@ -144,6 +164,7 @@ class MetaTraderClient:
         """
         Closes the connection to the MetaTrader 5 terminal.
         """
+
         def _disconnect() -> None:
             if self._is_initialized:
                 mt5.shutdown()
@@ -155,18 +176,23 @@ class MetaTraderClient:
     def _ensure_connected(self) -> None:
         if not self._is_initialized:
             if not self.connect():
-                raise ConnectionError("Not connected to MetaTrader 5 terminal, and automatic reconnection failed.")
+                raise ConnectionError(
+                    "Not connected to MetaTrader 5 terminal, and automatic reconnection failed."
+                )
 
     def get_symbol_info(self, symbol: str) -> Optional[Dict[str, Any]]:
         """
         Retrieves detailed information about a financial symbol.
         """
+
         def _fetch() -> Optional[Dict[str, Any]]:
             self._ensure_connected()
 
             if not mt5.symbol_select(symbol, True):
                 error_code, error_desc = mt5.last_error()
-                logger.error(f"Failed to select symbol {symbol}: {error_desc} (Code: {error_code})")
+                logger.error(
+                    f"Failed to select symbol {symbol}: {error_desc} (Code: {error_code})"
+                )
                 return None
 
             info = mt5.symbol_info(symbol)
@@ -225,30 +251,33 @@ class MetaTraderClient:
         return _rates_to_ohlcv_list(all_rates)
 
     def get_ohlcv(
-        self,
-        symbol: str,
-        timeframe: str,
-        start: datetime,
-        end: datetime
+        self, symbol: str, timeframe: str, start: datetime, end: datetime
     ) -> List[OHLCV]:
         """
         Fetches historical OHLCV data (bars) for a given symbol and timeframe within a range.
         """
+
         def _fetch() -> List[OHLCV]:
             self._ensure_connected()
 
             mt5_timeframe = TIMEFRAME_MAP.get(timeframe.upper())
             if mt5_timeframe is None:
-                raise ValueError(f"Invalid timeframe '{timeframe}'. Choose from: {list(TIMEFRAME_MAP.keys())}")
+                raise ValueError(
+                    f"Invalid timeframe '{timeframe}'. Choose from: {list(TIMEFRAME_MAP.keys())}"
+                )
 
             if not mt5.symbol_select(symbol, True):
                 error_code, error_desc = mt5.last_error()
-                logger.warning(f"Failed to select symbol {symbol} in MarketWatch: {error_desc} (Code: {error_code})")
+                logger.warning(
+                    f"Failed to select symbol {symbol} in MarketWatch: {error_desc} (Code: {error_code})"
+                )
 
             result = self._fetch_ohlcv_range_chunked(symbol, mt5_timeframe, start, end)
             if not result:
                 error_code, error_desc = mt5.last_error()
-                logger.error(f"Failed to fetch OHLCV for {symbol}: {error_desc} (Code: {error_code})")
+                logger.error(
+                    f"Failed to fetch OHLCV for {symbol}: {error_desc} (Code: {error_code})"
+                )
             return result
 
         return self._run_locked(_fetch)
@@ -259,7 +288,9 @@ class MetaTraderClient:
             return None
         return _bar_open_time(rates, 0)
 
-    def _probe_earliest_bar(self, symbol: str, mt5_timeframe: int) -> Optional[datetime]:
+    def _probe_earliest_bar(
+        self, symbol: str, mt5_timeframe: int
+    ) -> Optional[datetime]:
         """
         Find the oldest stored bar. copy_rates_from_pos only walks the terminal's
         in-memory window; copy_rates_from/range queries can reach further history.
@@ -322,16 +353,21 @@ class MetaTraderClient:
 
         return total
 
-    def get_available_ohlcv_range(self, symbol: str, timeframe: str) -> Optional[OhlcvAvailableRange]:
+    def get_available_ohlcv_range(
+        self, symbol: str, timeframe: str
+    ) -> Optional[OhlcvAvailableRange]:
         """
         Returns the earliest and latest bar timestamps available in MT5 for a symbol/timeframe.
         """
+
         def _fetch() -> Optional[OhlcvAvailableRange]:
             self._ensure_connected()
 
             mt5_timeframe = TIMEFRAME_MAP.get(timeframe.upper())
             if mt5_timeframe is None:
-                raise ValueError(f"Invalid timeframe '{timeframe}'. Choose from: {list(TIMEFRAME_MAP.keys())}")
+                raise ValueError(
+                    f"Invalid timeframe '{timeframe}'. Choose from: {list(TIMEFRAME_MAP.keys())}"
+                )
 
             if not mt5.symbol_select(symbol, True):
                 error_code, error_desc = mt5.last_error()
@@ -351,7 +387,9 @@ class MetaTraderClient:
                 )
                 return None
 
-            bar_count = self._count_bars_between(symbol, mt5_timeframe, earliest, latest)
+            bar_count = self._count_bars_between(
+                symbol, mt5_timeframe, earliest, latest
+            )
 
             return OhlcvAvailableRange(
                 symbol=symbol,
@@ -368,11 +406,12 @@ class MetaTraderClient:
         symbol: str,
         start: datetime,
         end: datetime,
-        flags: int = mt5.COPY_TICKS_ALL
+        flags: int = mt5.COPY_TICKS_ALL,
     ) -> List[Tick]:
         """
         Fetches historical ticks for a given symbol within a datetime range.
         """
+
         def _fetch() -> List[Tick]:
             self._ensure_connected()
 
@@ -381,12 +420,16 @@ class MetaTraderClient:
 
             if not mt5.symbol_select(symbol, True):
                 error_code, error_desc = mt5.last_error()
-                logger.warning(f"Failed to select symbol {symbol} in MarketWatch: {error_desc} (Code: {error_code})")
+                logger.warning(
+                    f"Failed to select symbol {symbol} in MarketWatch: {error_desc} (Code: {error_code})"
+                )
 
             ticks = mt5.copy_ticks_range(symbol, start, end, flags)
             if ticks is None or len(ticks) == 0:
                 error_code, error_desc = mt5.last_error()
-                logger.error(f"Failed to fetch ticks for {symbol}: {error_desc} (Code: {error_code})")
+                logger.error(
+                    f"Failed to fetch ticks for {symbol}: {error_desc} (Code: {error_code})"
+                )
                 return []
 
             has_last = "last" in ticks.dtype.names
@@ -413,6 +456,7 @@ class MetaTraderClient:
         """
         Search for symbols in MetaTrader 5 using a wildcard pattern.
         """
+
         def _fetch() -> List[Dict[str, Any]]:
             self._ensure_connected()
             pattern = f"*{query.upper()}*"

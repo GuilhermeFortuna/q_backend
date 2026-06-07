@@ -5,7 +5,13 @@ from typing import Annotated, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, model_validator
 
-from q_backend.backtesting.models import Signal, SignalAction, Order, OrderAction, OrderType
+from q_backend.backtesting.models import (
+    Signal,
+    SignalAction,
+    Order,
+    OrderAction,
+    OrderType,
+)
 
 
 class FixedQuantityPositionSizing(BaseModel):
@@ -31,52 +37,62 @@ PositionSizingConfig = Annotated[
     Field(discriminator="type"),
 ]
 
+
 class PositionSizer(ABC):
     """
     Abstract base class for position sizing logic.
     Responsible for converting a trading Signal into an executable Order.
     """
+
     @abstractmethod
-    def size_signal(self, signal: Signal, current_price: float, current_capital: float) -> Optional[Order]:
+    def size_signal(
+        self, signal: Signal, current_price: float, current_capital: float
+    ) -> Optional[Order]:
         """
         Calculates the quantity and creates an Order based on a Signal.
-        
+
         Args:
             signal: The trading signal.
             current_price: The current market price of the asset.
             current_capital: The current available capital in the backtest.
-            
+
         Returns:
             Order if the signal warrants trading, else None.
         """
         pass
 
+
 class FixedQuantitySizer(PositionSizer):
     """
     A basic position sizer that always trades a fixed quantity.
     """
+
     def __init__(self, quantity: float = 1.0):
         self.quantity = quantity
 
-    def size_signal(self, signal: Signal, current_price: float, current_capital: float) -> Optional[Order]:
+    def size_signal(
+        self, signal: Signal, current_price: float, current_capital: float
+    ) -> Optional[Order]:
         if signal.action == SignalAction.HOLD:
             return None
-            
+
         if signal.action == SignalAction.CLOSE:
-            # We don't generate an Order for CLOSE signals right now because 
+            # We don't generate an Order for CLOSE signals right now because
             # the engine handles CLOSE signals by closing existing open trades directly.
             # In a more advanced broker execution model, CLOSE could be an opposite market order.
             return None
 
-        action = OrderAction.BUY if signal.action == SignalAction.BUY else OrderAction.SELL
-        
+        action = (
+            OrderAction.BUY if signal.action == SignalAction.BUY else OrderAction.SELL
+        )
+
         # We assume Market orders for immediate execution for now
         return Order(
             id=str(uuid.uuid4()),
             symbol=signal.symbol,
             action=action,
             order_type=OrderType.MARKET,
-            quantity=self.quantity
+            quantity=self.quantity,
         )
 
 
@@ -96,13 +112,17 @@ class FixedSafetyMarginSizer(PositionSizer):
         if min_contracts < 0:
             raise ValueError("min_contracts must be greater than or equal to 0")
         if max_contracts is not None and max_contracts < min_contracts:
-            raise ValueError("max_contracts must be greater than or equal to min_contracts")
+            raise ValueError(
+                "max_contracts must be greater than or equal to min_contracts"
+            )
 
         self.safety_margin_per_contract = safety_margin_per_contract
         self.max_contracts = max_contracts
         self.min_contracts = min_contracts
 
-    def size_signal(self, signal: Signal, current_price: float, current_capital: float) -> Optional[Order]:
+    def size_signal(
+        self, signal: Signal, current_price: float, current_capital: float
+    ) -> Optional[Order]:
         if signal.action == SignalAction.HOLD:
             return None
 
@@ -123,7 +143,9 @@ class FixedSafetyMarginSizer(PositionSizer):
         if quantity <= 0:
             return None
 
-        action = OrderAction.BUY if signal.action == SignalAction.BUY else OrderAction.SELL
+        action = (
+            OrderAction.BUY if signal.action == SignalAction.BUY else OrderAction.SELL
+        )
 
         return Order(
             id=str(uuid.uuid4()),
@@ -135,7 +157,9 @@ class FixedSafetyMarginSizer(PositionSizer):
 
 
 def build_position_sizer(
-    config: Optional[FixedQuantityPositionSizing | FixedSafetyMarginPositionSizing] = None,
+    config: Optional[
+        FixedQuantityPositionSizing | FixedSafetyMarginPositionSizing
+    ] = None,
 ) -> PositionSizer:
     if config is None:
         return FixedQuantitySizer(quantity=1.0)

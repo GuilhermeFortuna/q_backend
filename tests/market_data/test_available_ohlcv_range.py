@@ -26,8 +26,12 @@ def _rate(time: int) -> tuple:
 def test_get_available_ohlcv_range_uses_copy_rates_from_for_earliest(mock_mt5):
     mock_mt5.symbol_select.return_value = True
     mock_mt5.TIMEFRAME_H1 = 16385
-    mock_mt5.copy_rates_from.return_value = np.array([_rate(1_577_836_800)], dtype=_RATE_DTYPE)
-    mock_mt5.copy_rates_from_pos.return_value = np.array([_rate(1_704_067_200)], dtype=_RATE_DTYPE)
+    mock_mt5.copy_rates_from.return_value = np.array(
+        [_rate(1_577_836_800)], dtype=_RATE_DTYPE
+    )
+    mock_mt5.copy_rates_from_pos.return_value = np.array(
+        [_rate(1_704_067_200)], dtype=_RATE_DTYPE
+    )
     mock_mt5.copy_rates_range.return_value = np.array(
         [_rate(1_577_836_800), _rate(1_704_067_200)],
         dtype=_RATE_DTYPE,
@@ -51,9 +55,13 @@ def test_get_available_ohlcv_range_scans_range_when_copy_rates_from_empty(mock_m
     mock_mt5.symbol_select.return_value = True
     mock_mt5.TIMEFRAME_D1 = 16408
     mock_mt5.copy_rates_from.return_value = None
-    mock_mt5.copy_rates_from_pos.return_value = np.array([_rate(1_704_067_200)], dtype=_RATE_DTYPE)
+    mock_mt5.copy_rates_from_pos.return_value = np.array(
+        [_rate(1_704_067_200)], dtype=_RATE_DTYPE
+    )
 
-    older_chunk = np.array([_rate(1_577_836_800), _rate(1_600_000_000)], dtype=_RATE_DTYPE)
+    older_chunk = np.array(
+        [_rate(1_577_836_800), _rate(1_600_000_000)], dtype=_RATE_DTYPE
+    )
 
     def range_side_effect(symbol, timeframe, date_from, date_to):
         if date_from.year < 2020:

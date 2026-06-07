@@ -27,8 +27,12 @@ def test_get_ohlcv_fetches_range_in_multiple_chunks(mock_mt5):
     mock_mt5.symbol_select.return_value = True
     mock_mt5.TIMEFRAME_D1 = 16408
 
-    chunk_one = np.array([_rate(1_600_000_000), _rate(1_610_000_000)], dtype=_RATE_DTYPE)
-    chunk_two = np.array([_rate(1_620_000_000), _rate(1_630_000_000)], dtype=_RATE_DTYPE)
+    chunk_one = np.array(
+        [_rate(1_600_000_000), _rate(1_610_000_000)], dtype=_RATE_DTYPE
+    )
+    chunk_two = np.array(
+        [_rate(1_620_000_000), _rate(1_630_000_000)], dtype=_RATE_DTYPE
+    )
     calls = {"count": 0}
 
     def range_side_effect(symbol, timeframe, date_from, date_to):
@@ -109,9 +113,12 @@ def test_get_ohlcv_returns_empty_when_no_rates(mock_mt5):
     client = MetaTraderClient()
     client._is_initialized = True
 
-    assert client.get_ohlcv(
-        "PETR4",
-        "D1",
-        datetime.fromtimestamp(1_600_000_000),
-        datetime.fromtimestamp(1_630_000_000),
-    ) == []
+    assert (
+        client.get_ohlcv(
+            "PETR4",
+            "D1",
+            datetime.fromtimestamp(1_600_000_000),
+            datetime.fromtimestamp(1_630_000_000),
+        )
+        == []
+    )

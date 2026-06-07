@@ -2,10 +2,12 @@ from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, Field
 
+
 class OHLCV(BaseModel):
     """
     Standardized OHLCV candle model.
     """
+
     time: datetime = Field(..., description="Start time of the candle")
     open: float = Field(..., description="Opening price")
     high: float = Field(..., description="Highest price")
@@ -23,6 +25,7 @@ class Tick(BaseModel):
     """
     Standardized Tick market data model.
     """
+
     time: datetime = Field(..., description="Timestamp of the tick")
     bid: float = Field(..., description="Current bid price")
     ask: float = Field(..., description="Current ask price")
