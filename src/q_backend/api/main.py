@@ -18,6 +18,8 @@ from q_backend.backtesting.position_sizing import (
 )
 from q_backend.backtesting.engine import BacktestEngine, ParallelMode
 from q_backend.market_data.clients.metatrader import _to_naive_local
+from q_backend.optimization import OptimizationConfig
+from q_backend.api import optimization_jobs
 
 # Setup logging
 logging.basicConfig(
@@ -90,6 +92,32 @@ class BacktestResponse(BaseModel):
     trades: List[Dict[str, Any]]
     bars: List[OhlcvBarResponse]
     indicators: List[ChartIndicatorSeries]
+
+
+class OptimizationStartResponse(BaseModel):
+    study_id: str
+    status: str
+
+
+class OptimizationStatusResponse(BaseModel):
+    study_id: str
+    status: str
+    completed_trials: int
+    n_trials: int
+    best_value: Optional[float] = None
+    best_params: Dict[str, Any] = {}
+    error: Optional[str] = None
+
+
+class OptimizationResultsResponse(BaseModel):
+    study_id: str
+    objective_mode: str
+    is_multi_objective: bool
+    best_params: Dict[str, Any]
+    best_trial: Optional[Dict[str, Any]] = None
+    trials: List[Dict[str, Any]]
+    pareto_trials: List[Dict[str, Any]]
+    failures: List[Dict[str, Any]]
 
 
 # Instantiate global service
@@ -493,7 +521,6 @@ def get_market_ohlcv(
             status_code=400,
             detail="Both start and end must be provided for date-range queries.",
         )
-
     if start is not None and end is not None:
         start = _to_naive_local(start)
         end = _to_naive_local(end)
@@ -664,6 +691,64 @@ def run_backtest(request: BacktestRequest):
     except Exception as e:
         logger.error(f"Error running backtest: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/optimize", response_model=OptimizationStartResponse)
+def start_optimization(config: OptimizationConfig):
+    """
+    Launch an asynchronous Optuna optimization study and return its id.
+
+    The run executes on a background worker; poll the status endpoint for
+    progress and fetch results once the study is done.
+    """
+    try:
+        job = optimization_jobs.start_job(
+            config, market_data_service=market_data_service
+        )
+    except Exception as e:
+        logger.error(f"Error starting optimization: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"study_id": job.study_id, "status": job.status}
+
+
+@app.get(
+    "/api/v1/optimize/{study_id}", response_model=OptimizationStatusResponse
+)
+def get_optimization_status(study_id: str):
+    """Return progress/status for an optimization study."""
+    job = optimization_jobs.get_job(study_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Study '{study_id}' not found.")
+    return optimization_jobs.status_payload(job)
+
+
+@app.get(
+    "/api/v1/optimize/{study_id}/results",
+    response_model=OptimizationResultsResponse,
+)
+def get_optimization_results(study_id: str):
+    """Return full study results once the optimization has finished."""
+    job = optimization_jobs.get_job(study_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Study '{study_id}' not found.")
+    payload = optimization_jobs.results_payload(job)
+    if payload is None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Study '{study_id}' has no results yet (status: {job.status}).",
+        )
+    return payload
+
+
+@app.post(
+    "/api/v1/optimize/{study_id}/cancel", response_model=OptimizationStatusResponse
+)
+def cancel_optimization(study_id: str):
+    """Request cancellation of a running optimization study."""
+    job = optimization_jobs.request_cancel(study_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Study '{study_id}' not found.")
+    return optimization_jobs.status_payload(job)
 
 
 def run_dev():
