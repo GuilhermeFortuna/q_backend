@@ -1,0 +1,46 @@
+study:
+  name: ma_crossover_return_dd
+  n_trials: 30
+  seed: 42
+  direction: maximize
+  sampler: tpe
+  pruner: median
+  storage:
+    type: sqlite
+    path: data/optimization/studies/ma_crossover_return_dd.db
+
+objective:
+  mode: maximize_return_drawdown
+
+backtest:
+  symbol: CCM$
+  timeframe: D1
+  start: "2024-01-01T00:00:00"
+  end: "2025-01-01T00:00:00"
+  initial_capital: 100000
+  point_value: 10.0
+  strategy: MACrossover
+  parallel_mode: SEQUENTIAL
+
+search_space:
+  strategy_params:
+    short_period:
+      type: int
+      low: 5
+      high: 30
+    long_period:
+      type: int
+      low: 31
+      high: 100
+    threshold:
+      type: float
+      low: 0.0
+      high: 2.0
+  risk_params:
+    type:
+      type: categorical
+      choices: [fixed_quantity]
+    quantity:
+      type: float
+      low: 1.0
+      high: 3.0

@@ -1,0 +1,67 @@
+study:
+  name: ma_crossover_sharpe
+  n_trials: 50
+  seed: 42
+  direction: maximize
+  continue_on_trial_error: false
+  sampler: tpe
+  pruner: none
+  storage:
+    type: sqlite
+    path: data/optimization/studies/ma_crossover_sharpe.db
+
+objective:
+  mode: maximize_sharpe
+
+backtest:
+  symbol: CCM$
+  timeframe: D1
+  start: "2024-01-01T00:00:00"
+  end: "2025-01-01T00:00:00"
+  initial_capital: 100000
+  point_value: 10.0
+  strategy: MACrossover
+  parallel_mode: SEQUENTIAL
+
+search_space:
+  strategy_params:
+    short_period:
+      type: int
+      low: 5
+      high: 50
+      step: 1
+    long_period:
+      type: int
+      low: 20
+      high: 200
+      step: 1
+    threshold:
+      type: float
+      low: 0.0
+      high: 5.0
+    short_ma_type:
+      type: categorical
+      choices: [sma, ema]
+    long_ma_type:
+      type: categorical
+      choices: [sma, ema]
+  risk_params:
+    type:
+      type: categorical
+      choices: [fixed_quantity, fixed_safety_margin]
+    quantity:
+      type: float
+      low: 1.0
+      high: 5.0
+    safety_margin_per_contract:
+      type: log-float
+      low: 1000.0
+      high: 10000.0
+    min_contracts:
+      type: int
+      low: 1
+      high: 3
+    max_contracts:
+      type: int
+      low: 3
+      high: 10

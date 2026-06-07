@@ -1,0 +1,52 @@
+study:
+  name: ma_crossover_multi_objective
+  n_trials: 40
+  seed: 42
+  continue_on_trial_error: false
+  pruner: median
+  storage:
+    type: memory
+
+objective:
+  mode: multi_objective_return_drawdown
+
+backtest:
+  symbol: CCM$
+  timeframe: D1
+  start: "2024-01-01T00:00:00"
+  end: "2025-01-01T00:00:00"
+  initial_capital: 100000
+  point_value: 10.0
+  strategy: MACrossover
+  parallel_mode: SEQUENTIAL
+
+search_space:
+  strategy_params:
+    short_period:
+      type: int
+      low: 5
+      high: 40
+    long_period:
+      type: int
+      low: 41
+      high: 120
+    threshold:
+      type: float
+      low: 0.0
+      high: 3.0
+  risk_params:
+    type:
+      type: categorical
+      choices: [fixed_safety_margin]
+    safety_margin_per_contract:
+      type: log-float
+      low: 2000.0
+      high: 8000.0
+    min_contracts:
+      type: int
+      low: 1
+      high: 2
+    max_contracts:
+      type: int
+      low: 3
+      high: 8

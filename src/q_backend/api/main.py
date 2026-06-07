@@ -10,9 +10,8 @@ from q_backend.market_data.service import MarketDataService
 from q_backend.market_data.models import OHLCV, Tick
 from typing import Dict, Any
 import pandas as pd
-from q_backend.backtesting.strategy import MACrossoverStrategy
+from q_backend.backtesting.factory import build_strategy
 from q_backend.backtesting.chart_data import serialize_chart_data
-from q_backend.backtesting.moving_averages import normalize_ma_type
 from q_backend.backtesting.position_sizing import (
     PositionSizingConfig,
     build_position_sizer,
@@ -21,8 +20,11 @@ from q_backend.backtesting.engine import BacktestEngine, ParallelMode
 from q_backend.market_data.clients.metatrader import _to_naive_local
 
 # Setup logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
+
 
 # Pydantic schemas for frontend compatibility
 class SystemHealthResponse(BaseModel):
@@ -31,17 +33,20 @@ class SystemHealthResponse(BaseModel):
     dataLakeStatus: str
     lastSyncAt: str
 
+
 class InstrumentResponse(BaseModel):
     symbol: str
     name: str
     exchange: str
     assetClass: str
 
+
 class MarketSnapshotResponse(BaseModel):
     symbol: str
     last: float
     changePct: float
     volume: int
+
 
 class OhlcvBarResponse(BaseModel):
     timestamp: str
@@ -51,12 +56,14 @@ class OhlcvBarResponse(BaseModel):
     close: float
     volume: int
 
+
 class OhlcvAvailableRangeResponse(BaseModel):
     symbol: str
     timeframe: str
     start: datetime
     end: datetime
     bar_count: int
+
 
 class BacktestRequest(BaseModel):
     symbol: str
@@ -65,9 +72,10 @@ class BacktestRequest(BaseModel):
     end: Optional[datetime] = None
     initial_capital: float = 100000.0
     point_value: float = 1.0
-    strategy: str = "MACrossover" # Support for multiple strategies in the future
+    strategy: str = "MACrossover"  # Support for multiple strategies in the future
     strategy_params: Dict[str, Any] = {}
     position_sizing: Optional[PositionSizingConfig] = None
+
 
 class ChartIndicatorSeries(BaseModel):
     key: str
@@ -76,14 +84,17 @@ class ChartIndicatorSeries(BaseModel):
     color: Optional[str] = None
     values: List[Optional[float]]
 
+
 class BacktestResponse(BaseModel):
     metrics: Dict[str, Any]
     trades: List[Dict[str, Any]]
     bars: List[OhlcvBarResponse]
     indicators: List[ChartIndicatorSeries]
 
+
 # Instantiate global service
 market_data_service = MarketDataService()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -99,11 +110,12 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down API, disconnecting from MetaTrader 5...")
     market_data_service.shutdown()
 
+
 app = FastAPI(
     title="QuantLauncher API Backend",
     description="Backend API for fetching market data and executing orders using MetaTrader 5",
     version="0.1.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # Enable CORS for frontend connection
@@ -115,13 +127,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.get("/")
 def read_root():
     return {
         "status": "online",
         "service": "QuantLauncher Backend API",
-        "mt5_connected": market_data_service.mt5_client._is_initialized
+        "mt5_connected": market_data_service.mt5_client._is_initialized,
     }
+
 
 @app.get("/api/v1/market-data/symbol/{symbol}")
 def get_symbol_info(symbol: str):
@@ -131,7 +145,10 @@ def get_symbol_info(symbol: str):
     try:
         info = market_data_service.mt5_client.get_symbol_info(symbol)
         if not info:
-            raise HTTPException(status_code=404, detail=f"Symbol '{symbol}' not found or could not be selected.")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Symbol '{symbol}' not found or could not be selected.",
+            )
         return info
     except ConnectionError as ce:
         raise HTTPException(status_code=503, detail=str(ce))
@@ -139,12 +156,19 @@ def get_symbol_info(symbol: str):
         logger.error(f"Error fetching info for {symbol}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/v1/market-data/ohlcv", response_model=List[OHLCV])
 def get_ohlcv(
     symbol: str = Query(..., description="Financial instrument (e.g. EURUSD, AUDUSD)"),
-    timeframe: str = Query("M1", description="Candle timeframe (e.g. M1, M5, M15, H1, D1)"),
-    start: Optional[datetime] = Query(None, description="Start datetime (ISO-8601). Defaults to 1 day ago."),
-    end: Optional[datetime] = Query(None, description="End datetime (ISO-8601). Defaults to current time.")
+    timeframe: str = Query(
+        "M1", description="Candle timeframe (e.g. M1, M5, M15, H1, D1)"
+    ),
+    start: Optional[datetime] = Query(
+        None, description="Start datetime (ISO-8601). Defaults to 1 day ago."
+    ),
+    end: Optional[datetime] = Query(
+        None, description="End datetime (ISO-8601). Defaults to current time."
+    ),
 ):
     """
     Get historical OHLCV data (bars) for a specified symbol.
@@ -158,7 +182,9 @@ def get_ohlcv(
     end = _to_naive_local(end)
 
     if start >= end:
-        raise HTTPException(status_code=400, detail="Start datetime must be before end datetime.")
+        raise HTTPException(
+            status_code=400, detail="Start datetime must be before end datetime."
+        )
 
     try:
         ohlcv_data = market_data_service.get_ohlcv(symbol, timeframe, start, end)
@@ -171,11 +197,16 @@ def get_ohlcv(
         logger.error(f"Error fetching OHLCV for {symbol}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/v1/market-data/ticks", response_model=List[Tick])
 def get_ticks(
     symbol: str = Query(..., description="Financial instrument (e.g. EURUSD, AUDUSD)"),
-    start: Optional[datetime] = Query(None, description="Start datetime (ISO-8601). Defaults to 1 hour ago."),
-    end: Optional[datetime] = Query(None, description="End datetime (ISO-8601). Defaults to current time.")
+    start: Optional[datetime] = Query(
+        None, description="Start datetime (ISO-8601). Defaults to 1 hour ago."
+    ),
+    end: Optional[datetime] = Query(
+        None, description="End datetime (ISO-8601). Defaults to current time."
+    ),
 ):
     """
     Get tick market data for a specified symbol.
@@ -186,7 +217,9 @@ def get_ticks(
         end = datetime.now()
 
     if start >= end:
-        raise HTTPException(status_code=400, detail="Start datetime must be before end datetime.")
+        raise HTTPException(
+            status_code=400, detail="Start datetime must be before end datetime."
+        )
 
     try:
         ticks_data = market_data_service.get_ticks(symbol, start, end)
@@ -208,7 +241,7 @@ def get_system_health():
         "status": "healthy" if is_connected else "degraded",
         "backendVersion": "0.1.0",
         "dataLakeStatus": "online" if is_connected else "offline",
-        "lastSyncAt": datetime.now().isoformat()
+        "lastSyncAt": datetime.now().isoformat(),
     }
 
 
@@ -218,19 +251,45 @@ def get_market_instruments():
     Retrieve available B3/Bovespa assets from local MT5 environment.
     """
     b3_symbols = [
-        {"symbol": "PETR4", "name": "PETROBRAS PN N2", "exchange": "BOVESPA", "assetClass": "equity"},
-        {"symbol": "VALE3", "name": "VALE ON NM", "exchange": "BOVESPA", "assetClass": "equity"},
-        {"symbol": "ITUB4", "name": "ITAU UNIBANCO PN N1", "exchange": "BOVESPA", "assetClass": "equity"},
-        {"symbol": "WIN$", "name": "IBOVESPA MINI", "exchange": "BMF", "assetClass": "future"},
-        {"symbol": "WDO$", "name": "DOLAR MINI", "exchange": "BMF", "assetClass": "future"},
+        {
+            "symbol": "PETR4",
+            "name": "PETROBRAS PN N2",
+            "exchange": "BOVESPA",
+            "assetClass": "equity",
+        },
+        {
+            "symbol": "VALE3",
+            "name": "VALE ON NM",
+            "exchange": "BOVESPA",
+            "assetClass": "equity",
+        },
+        {
+            "symbol": "ITUB4",
+            "name": "ITAU UNIBANCO PN N1",
+            "exchange": "BOVESPA",
+            "assetClass": "equity",
+        },
+        {
+            "symbol": "WIN$",
+            "name": "IBOVESPA MINI",
+            "exchange": "BMF",
+            "assetClass": "future",
+        },
+        {
+            "symbol": "WDO$",
+            "name": "DOLAR MINI",
+            "exchange": "BMF",
+            "assetClass": "future",
+        },
     ]
-    
+
     connected = market_data_service.mt5_client._is_initialized
     if not connected:
         logger.warning("MT5 not connected, returning cached asset definitions.")
         return b3_symbols
-        
+
     import MetaTrader5 as mt5
+
     active_symbols = []
     for item in b3_symbols:
         # Pre-select in MT5 window to ensure ticks are loaded
@@ -238,13 +297,15 @@ def get_market_instruments():
             active_symbols.append(item)
         else:
             logger.warning(f"Symbol '{item['symbol']}' could not be selected in MT5.")
-            active_symbols.append(item) # Fallback to return anyway
-            
+            active_symbols.append(item)  # Fallback to return anyway
+
     return active_symbols
 
 
 @app.get("/api/v1/market/symbols/search", response_model=List[InstrumentResponse])
-def search_symbols(q: str = Query(..., description="Query to search symbols in MetaTrader 5")):
+def search_symbols(
+    q: str = Query(..., description="Query to search symbols in MetaTrader 5")
+):
     """
     Search for symbols available in the MT5 terminal matching a query.
     """
@@ -261,7 +322,7 @@ def search_symbols(q: str = Query(..., description="Query to search symbols in M
         for s in raw_symbols[:50]:  # Limit to 50 results
             # Parse exchange from path
             path = s.get("path", "")
-            path_parts = path.split('\\')
+            path_parts = path.split("\\")
             exchange = path_parts[0] if path_parts else "BOVESPA"
 
             # Determine asset class
@@ -272,12 +333,14 @@ def search_symbols(q: str = Query(..., description="Query to search symbols in M
             elif "FX" in path or "Forex" in path:
                 asset_class = "fx"
 
-            results.append({
-                "symbol": symbol_name,
-                "name": s.get("description") or symbol_name,
-                "exchange": exchange,
-                "assetClass": asset_class
-            })
+            results.append(
+                {
+                    "symbol": symbol_name,
+                    "name": s.get("description") or symbol_name,
+                    "exchange": exchange,
+                    "assetClass": asset_class,
+                }
+            )
         return results
     except Exception as e:
         logger.error(f"Error searching symbols for query '{q}': {str(e)}")
@@ -285,53 +348,55 @@ def search_symbols(q: str = Query(..., description="Query to search symbols in M
 
 
 @app.get("/api/v1/market/snapshot/{symbol}", response_model=MarketSnapshotResponse)
-
 def get_market_snapshot(symbol: str):
     """
     Retrieve real-time price snapshot for a B3 asset using MT5.
     """
     import MetaTrader5 as mt5
+
     symbol = symbol.upper()
-    
+
     connected = market_data_service.mt5_client.connect()
     if not connected:
         raise HTTPException(status_code=503, detail="MetaTrader 5 terminal is offline.")
-        
+
     if not mt5.symbol_select(symbol, True):
-        raise HTTPException(status_code=404, detail=f"Symbol '{symbol}' not found on MetaTrader 5.")
-        
+        raise HTTPException(
+            status_code=404, detail=f"Symbol '{symbol}' not found on MetaTrader 5."
+        )
+
     tick = mt5.symbol_info_tick(symbol)
     if not tick:
         # Fallback to copy_rates if market is closed/inactive
         rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 0, 1)
         if rates is not None and len(rates) > 0:
-            last_price = float(rates[0]['close'])
-            volume = int(rates[0]['tick_volume'])
+            last_price = float(rates[0]["close"])
+            volume = int(rates[0]["tick_volume"])
         else:
             last_price = 0.0
             volume = 0
     else:
         last_price = float(tick.last) if tick.last > 0 else float(tick.bid)
         volume = int(tick.volume)
-        
+
     # Calculate change percentage from daily close
     rates_d1 = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_D1, 0, 2)
     change_pct = 0.0
     if rates_d1 is not None and len(rates_d1) >= 2:
-        prev_close = float(rates_d1[0]['close'])
-        current_close = float(rates_d1[-1]['close'])
+        prev_close = float(rates_d1[0]["close"])
+        current_close = float(rates_d1[-1]["close"])
         if prev_close > 0:
             change_pct = ((current_close - prev_close) / prev_close) * 100
     elif rates_d1 is not None and len(rates_d1) == 1:
-        open_price = float(rates_d1[0]['open'])
+        open_price = float(rates_d1[0]["open"])
         if open_price > 0 and last_price > 0:
             change_pct = ((last_price - open_price) / open_price) * 100
-            
+
     return {
         "symbol": symbol,
         "last": last_price,
         "changePct": change_pct,
-        "volume": volume
+        "volume": volume,
     }
 
 
@@ -361,7 +426,9 @@ def _ohlcv_to_bar_response(row) -> dict:
     if hasattr(row, "time"):
         timestamp_dt = row.time
         if not isinstance(timestamp_dt, datetime):
-            timestamp_dt = datetime.fromisoformat(str(timestamp_dt).replace("Z", "+00:00"))
+            timestamp_dt = datetime.fromisoformat(
+                str(timestamp_dt).replace("Z", "+00:00")
+            )
         volume = row.real_volume if row.real_volume > 0 else row.tick_volume
         return {
             "timestamp": timestamp_dt.isoformat().replace("+00:00", "Z"),
@@ -379,17 +446,29 @@ def _ohlcv_to_bar_response(row) -> dict:
         "high": float(row["high"]),
         "low": float(row["low"]),
         "close": float(row["close"]),
-        "volume": int(row["real_volume"]) if row["real_volume"] > 0 else int(row["tick_volume"]),
+        "volume": (
+            int(row["real_volume"])
+            if row["real_volume"] > 0
+            else int(row["tick_volume"])
+        ),
     }
 
 
 @app.get("/api/v1/market/ohlcv/{symbol}", response_model=List[OhlcvBarResponse])
 def get_market_ohlcv(
     symbol: str,
-    timeframe: str = Query("D1", description="Candle timeframe (e.g. M1, M5, M15, M30, H1, H4, D1)"),
-    count: int = Query(500, ge=1, le=5000, description="Number of most recent bars to return"),
-    start: Optional[datetime] = Query(None, description="Start datetime (ISO-8601). Requires end."),
-    end: Optional[datetime] = Query(None, description="End datetime (ISO-8601). Requires start."),
+    timeframe: str = Query(
+        "D1", description="Candle timeframe (e.g. M1, M5, M15, M30, H1, H4, D1)"
+    ),
+    count: int = Query(
+        500, ge=1, le=5000, description="Number of most recent bars to return"
+    ),
+    start: Optional[datetime] = Query(
+        None, description="Start datetime (ISO-8601). Requires end."
+    ),
+    end: Optional[datetime] = Query(
+        None, description="End datetime (ISO-8601). Requires start."
+    ),
 ):
     """
     Retrieve historical OHLCV data for a B3 asset.
@@ -405,16 +484,25 @@ def get_market_ohlcv(
         raise HTTPException(status_code=503, detail="MetaTrader 5 terminal is offline.")
 
     if not mt5.symbol_select(symbol, True):
-        raise HTTPException(status_code=404, detail=f"Symbol '{symbol}' not found on MetaTrader 5.")
+        raise HTTPException(
+            status_code=404, detail=f"Symbol '{symbol}' not found on MetaTrader 5."
+        )
 
     if (start is None) ^ (end is None):
-        raise HTTPException(status_code=400, detail="Both start and end must be provided for date-range queries.")
+        raise HTTPException(
+            status_code=400,
+            detail="Both start and end must be provided for date-range queries.",
+        )
     if start is not None and end is not None and start >= end:
-        raise HTTPException(status_code=400, detail="Start datetime must be before end datetime.")
+        raise HTTPException(
+            status_code=400, detail="Start datetime must be before end datetime."
+        )
 
     if start is not None and end is not None:
         try:
-            ohlcv_data = market_data_service.get_ohlcv(symbol, mt5_timeframe, start, end)
+            ohlcv_data = market_data_service.get_ohlcv(
+                symbol, mt5_timeframe, start, end
+            )
         except ValueError as ve:
             raise HTTPException(status_code=400, detail=str(ve))
         except ConnectionError as ce:
@@ -424,7 +512,9 @@ def get_market_ohlcv(
             raise HTTPException(status_code=500, detail=str(e))
 
         if not ohlcv_data:
-            raise HTTPException(status_code=404, detail=f"No OHLCV data found for symbol '{symbol}'.")
+            raise HTTPException(
+                status_code=404, detail=f"No OHLCV data found for symbol '{symbol}'."
+            )
 
         return [_ohlcv_to_bar_response(row) for row in ohlcv_data]
 
@@ -441,15 +531,22 @@ def get_market_ohlcv(
     mt5_tf = timeframe_map.get(mt5_timeframe, mt5.TIMEFRAME_D1)
     rates = mt5.copy_rates_from_pos(symbol, mt5_tf, 0, count)
     if rates is None or len(rates) == 0:
-        raise HTTPException(status_code=404, detail=f"No OHLCV data found for symbol '{symbol}'.")
+        raise HTTPException(
+            status_code=404, detail=f"No OHLCV data found for symbol '{symbol}'."
+        )
 
     return [_ohlcv_to_bar_response(row) for row in rates]
 
 
-@app.get("/api/v1/market/ohlcv/{symbol}/available-range", response_model=OhlcvAvailableRangeResponse)
+@app.get(
+    "/api/v1/market/ohlcv/{symbol}/available-range",
+    response_model=OhlcvAvailableRangeResponse,
+)
 def get_market_ohlcv_available_range(
     symbol: str,
-    timeframe: str = Query("D1", description="Candle timeframe (e.g. M1, M5, M15, H1, D1)"),
+    timeframe: str = Query(
+        "D1", description="Candle timeframe (e.g. M1, M5, M15, H1, D1)"
+    ),
 ):
     """
     Returns the earliest and latest OHLCV bar timestamps available in MT5 for a symbol.
@@ -462,7 +559,9 @@ def get_market_ohlcv_available_range(
         raise HTTPException(status_code=503, detail="MetaTrader 5 terminal is offline.")
 
     try:
-        available_range = market_data_service.get_available_ohlcv_range(symbol, mt5_timeframe)
+        available_range = market_data_service.get_available_ohlcv_range(
+            symbol, mt5_timeframe
+        )
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except ConnectionError as ce:
@@ -498,44 +597,33 @@ def run_backtest(request: BacktestRequest):
     end = _to_naive_local(end)
 
     if start >= end:
-        raise HTTPException(status_code=400, detail="Start datetime must be before end datetime.")
+        raise HTTPException(
+            status_code=400, detail="Start datetime must be before end datetime."
+        )
 
     try:
         # 1. Fetch data
-        ohlcv_data = market_data_service.get_ohlcv(request.symbol, request.timeframe, start, end)
+        ohlcv_data = market_data_service.get_ohlcv(
+            request.symbol, request.timeframe, start, end
+        )
         if not ohlcv_data:
-            raise HTTPException(status_code=404, detail="No market data found for the given parameters.")
-            
+            raise HTTPException(
+                status_code=404, detail="No market data found for the given parameters."
+            )
+
         # Convert to DataFrame
         df = pd.DataFrame([b.model_dump() for b in ohlcv_data])
-        df.set_index('time', inplace=True)
+        df.set_index("time", inplace=True)
         # Ensure index is datetime
         df.index = pd.to_datetime(df.index)
 
         # 2. Setup Strategy
-        if request.strategy == "MACrossover":
-            short_period = int(request.strategy_params.get("short_period", 50))
-            long_period = int(request.strategy_params.get("long_period", 200))
-            threshold = float(request.strategy_params.get("threshold", 0.0))
-            try:
-                short_ma_type = normalize_ma_type(
-                    request.strategy_params.get("short_ma_type", "sma")
-                )
-                long_ma_type = normalize_ma_type(
-                    request.strategy_params.get("long_ma_type", "sma")
-                )
-            except ValueError as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
-            strategy = MACrossoverStrategy(
-                short_period=short_period,
-                long_period=long_period,
-                threshold=threshold,
-                short_ma_type=short_ma_type,
-                long_ma_type=long_ma_type,
-                symbol=request.symbol
+        try:
+            strategy = build_strategy(
+                request.strategy, request.strategy_params, request.symbol
             )
-        else:
-            raise HTTPException(status_code=400, detail=f"Unknown strategy: {request.strategy}")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         # Compute indicators for chart payload (same logic used inside the engine)
         df_with_indicators = strategy.compute_indicators(df.copy())
@@ -546,10 +634,10 @@ def run_backtest(request: BacktestRequest):
 
         # 4. Run Engine
         engine = BacktestEngine(
-            strategy, 
-            sizer, 
+            strategy,
+            sizer,
             initial_capital=request.initial_capital,
-            point_values={request.symbol: request.point_value}
+            point_values={request.symbol: request.point_value},
         )
         registry = engine.run(df, parallel_mode=ParallelMode.SEQUENTIAL)
 
@@ -573,9 +661,9 @@ def run_backtest(request: BacktestRequest):
         logger.error(f"Error running backtest: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 def run_dev():
     """Entry point for running the dev server via `uv run dev`"""
     import uvicorn
+
     uvicorn.run("q_backend.api.main:app", host="0.0.0.0", port=8000, reload=True)
-
-

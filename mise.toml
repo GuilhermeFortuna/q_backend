@@ -9,3 +9,7 @@ run = "uv run uvicorn q_backend.api.main:app --reload --port 8000"
 [tasks.test]
 description = "Run pytest"
 run = "uv run pytest"
+
+[tasks.q-optimize]
+description = "Run strategy parameter optimization from YAML config"
+run = "uv run q-optimize"

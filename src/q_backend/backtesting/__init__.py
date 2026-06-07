@@ -1,4 +1,13 @@
-from .models import Order, Trade, OrderAction, OrderType, OrderStatus, TradeStatus, Signal, SignalAction
+from .models import (
+    Order,
+    Trade,
+    OrderAction,
+    OrderType,
+    OrderStatus,
+    TradeStatus,
+    Signal,
+    SignalAction,
+)
 from .registry import TradeRegistry
 from .strategy import TradingStrategy, MACrossoverStrategy, ChartIndicatorSpec
 from .chart_data import serialize_chart_data
@@ -12,6 +21,7 @@ from .position_sizing import (
     build_position_sizer,
 )
 from .engine import BacktestEngine, ParallelMode
+from .factory import build_strategy
 
 __all__ = [
     "Order",
@@ -36,4 +46,5 @@ __all__ = [
     "build_position_sizer",
     "BacktestEngine",
     "ParallelMode",
+    "build_strategy",
 ]
