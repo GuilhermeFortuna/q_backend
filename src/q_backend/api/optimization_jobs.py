@@ -1,11 +1,7 @@
-"""In-memory job manager for asynchronous Optuna optimization runs.
+"""Job manager for asynchronous Optuna optimization runs.
 
-The optimization runner (`q_backend.optimization`) blocks for the full duration
-of a study (default 50 trials, each a full backtest). To expose it over HTTP we
-run each study on a background worker thread and report progress via polling.
-
-State is in-memory only: this is a single-user, local-desktop deployment, so a
-process-lifetime registry is sufficient (no DB/sqlite needed for v1).
+Studies run on background worker threads. Progress snapshots are mirrored to
+Redis when available; execution state and full results remain in-memory.
 """
 
 import logging
@@ -26,10 +22,24 @@ from q_backend.optimization import (
     OptimizationRunner,
     serialize_trial,
 )
+from q_backend.storage.redis.client import get_redis
+from q_backend.storage.redis.progress import get_job_progress, set_job_progress
 
 logger = logging.getLogger(__name__)
 
 JobStatus = Literal["pending", "running", "done", "error", "cancelled"]
+
+STATUS_PAYLOAD_KEYS = frozenset(
+    {
+        "study_id",
+        "status",
+        "completed_trials",
+        "n_trials",
+        "best_value",
+        "best_params",
+        "error",
+    }
+)
 
 
 def _now() -> datetime:
@@ -54,13 +64,30 @@ class OptimizationJob:
 
 _jobs: dict[str, OptimizationJob] = {}
 _lock = threading.Lock()
-# Dedicated pool so long-running studies never starve the request threadpool.
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="optimize")
 
 
 def get_job(study_id: str) -> Optional[OptimizationJob]:
     with _lock:
         return _jobs.get(study_id)
+
+
+def _persist_progress(job: OptimizationJob) -> None:
+    try:
+        set_job_progress(get_redis(), job.study_id, status_payload(job))
+    except Exception:
+        logger.debug("Redis progress unavailable for study %s", job.study_id)
+
+
+def get_status_payload(study_id: str) -> dict[str, Any] | None:
+    try:
+        cached = get_job_progress(get_redis(), study_id)
+        if cached is not None:
+            return cached
+    except Exception:
+        logger.debug("Redis progress read unavailable for study %s", study_id)
+    job = get_job(study_id)
+    return status_payload(job) if job else None
 
 
 def start_job(
@@ -92,6 +119,7 @@ def start_job(
 
     with _lock:
         _jobs[study_id] = job
+    _persist_progress(job)
     _executor.submit(_run_job, job, runner)
     return job
 
@@ -103,6 +131,7 @@ def request_cancel(study_id: str) -> Optional[OptimizationJob]:
     if job.status in ("pending", "running"):
         job.cancel_requested = True
         job.updated_at = _now()
+        _persist_progress(job)
     return job
 
 
@@ -120,9 +149,9 @@ def _make_progress_cb(
                 job.best_value = study.best_value
                 job.best_params = dict(study.best_params)
             except ValueError:
-                # No completed trial yet.
                 pass
         job.updated_at = _now()
+        _persist_progress(job)
         if job.cancel_requested:
             study.stop()
 
@@ -142,6 +171,7 @@ def _run_job(
 ) -> None:
     job.status = "running"
     job.updated_at = _now()
+    _persist_progress(job)
     try:
         runner = OptimizationRunner(
             job.config,
@@ -158,6 +188,7 @@ def _run_job(
         job.error = str(exc)
     finally:
         job.updated_at = _now()
+        _persist_progress(job)
 
 
 def status_payload(job: OptimizationJob) -> dict[str, Any]:

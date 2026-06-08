@@ -20,6 +20,7 @@ from q_backend.backtesting.engine import BacktestEngine, ParallelMode
 from q_backend.market_data.clients.metatrader import _to_naive_local
 from q_backend.optimization import OptimizationConfig
 from q_backend.api import optimization_jobs
+from q_backend.storage.health import storage_status
 
 # Setup logging
 logging.basicConfig(
@@ -29,11 +30,22 @@ logger = logging.getLogger(__name__)
 
 
 # Pydantic schemas for frontend compatibility
+class StorageServiceStatus(BaseModel):
+    status: Literal["ok", "error"]
+    error: Optional[str] = None
+
+
+class StorageStatusResponse(BaseModel):
+    postgres: StorageServiceStatus
+    redis: StorageServiceStatus
+
+
 class SystemHealthResponse(BaseModel):
     status: str
     backendVersion: str
     dataLakeStatus: str
     lastSyncAt: str
+    storageStatus: StorageStatusResponse
 
 
 class InstrumentResponse(BaseModel):
@@ -270,6 +282,7 @@ def get_system_health():
         "backendVersion": "0.1.0",
         "dataLakeStatus": "online" if is_connected else "offline",
         "lastSyncAt": datetime.now().isoformat(),
+        "storageStatus": storage_status(),
     }
 
 
@@ -716,10 +729,10 @@ def start_optimization(config: OptimizationConfig):
 )
 def get_optimization_status(study_id: str):
     """Return progress/status for an optimization study."""
-    job = optimization_jobs.get_job(study_id)
-    if job is None:
+    payload = optimization_jobs.get_status_payload(study_id)
+    if payload is None:
         raise HTTPException(status_code=404, detail=f"Study '{study_id}' not found.")
-    return optimization_jobs.status_payload(job)
+    return payload
 
 
 @app.get(
@@ -748,7 +761,10 @@ def cancel_optimization(study_id: str):
     job = optimization_jobs.request_cancel(study_id)
     if job is None:
         raise HTTPException(status_code=404, detail=f"Study '{study_id}' not found.")
-    return optimization_jobs.status_payload(job)
+    payload = optimization_jobs.get_status_payload(study_id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail=f"Study '{study_id}' not found.")
+    return payload
 
 
 def run_dev():

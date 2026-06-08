@@ -1,7 +1,12 @@
 import time
 from dataclasses import dataclass, field
+from unittest.mock import patch
+
+import fakeredis
+import pytest
 
 from q_backend.api import optimization_jobs
+from q_backend.storage.redis.progress import get_job_progress
 from q_backend.optimization.backtest_runner import (
     BacktestRunConfig,
     BacktestRunResult,
@@ -30,6 +35,13 @@ class StubBacktestRunner:
                 "return_drawdown_ratio": (total_pnl / config.initial_capital) / max_dd,
             }
         )
+
+
+@pytest.fixture(autouse=True)
+def clear_jobs():
+    optimization_jobs._jobs.clear()
+    yield
+    optimization_jobs._jobs.clear()
 
 
 def _config(n_trials: int = 5) -> OptimizationConfig:
@@ -105,7 +117,54 @@ def test_results_payload_none_before_completion():
 
 
 def test_start_job_requires_market_data_service_without_runner():
-    import pytest
-
     with pytest.raises(ValueError, match="market_data_service is required"):
         optimization_jobs.start_job(_config(n_trials=1))
+
+
+def test_redis_progress_keyed_by_study_id(monkeypatch):
+    redis_client = fakeredis.FakeRedis(decode_responses=True)
+    monkeypatch.setattr(optimization_jobs, "get_redis", lambda: redis_client)
+
+    stub = StubBacktestRunner()
+    job = optimization_jobs.start_job(_config(n_trials=3), backtest_runner=stub)
+    _wait_for(job.study_id, {"done"})
+
+    cached = get_job_progress(redis_client, job.study_id)
+    assert cached is not None
+    assert cached["study_id"] == job.study_id
+    assert cached["status"] == "done"
+    assert cached["completed_trials"] == 3
+    assert "trials" not in cached
+
+
+def test_get_status_payload_backward_compatible_shape(monkeypatch):
+    redis_client = fakeredis.FakeRedis(decode_responses=True)
+    monkeypatch.setattr(optimization_jobs, "get_redis", lambda: redis_client)
+
+    stub = StubBacktestRunner()
+    job = optimization_jobs.start_job(_config(n_trials=2), backtest_runner=stub)
+    _wait_for(job.study_id, {"done"})
+
+    payload = optimization_jobs.get_status_payload(job.study_id)
+    assert set(payload.keys()) == optimization_jobs.STATUS_PAYLOAD_KEYS
+
+
+def test_redis_failure_falls_back_to_memory(monkeypatch):
+    def raise_redis(*_args, **_kwargs):
+        raise ConnectionError("redis unavailable")
+
+    monkeypatch.setattr(optimization_jobs, "set_job_progress", raise_redis)
+    monkeypatch.setattr(optimization_jobs, "get_job_progress", raise_redis)
+
+    stub = StubBacktestRunner()
+    job = optimization_jobs.start_job(_config(n_trials=3), backtest_runner=stub)
+    done = _wait_for(job.study_id, {"done"})
+
+    payload = optimization_jobs.get_status_payload(job.study_id)
+    assert payload["study_id"] == done.study_id
+    assert payload["status"] == "done"
+    assert payload["completed_trials"] == 3
+
+    results = optimization_jobs.results_payload(done)
+    assert results is not None
+    assert len(results["trials"]) == 3
