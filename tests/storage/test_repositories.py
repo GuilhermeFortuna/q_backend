@@ -1,0 +1,105 @@
+from datetime import datetime, timezone
+
+from q_backend.storage.db.models import DatasetType, RunStatus, TrialStatus
+from q_backend.storage.db.repositories import (
+    create_backtest_config,
+    create_backtest_run,
+    create_data_ingestion_run,
+    create_optimization_study,
+    create_optimization_trial,
+    create_strategy,
+    create_strategy_version,
+    update_backtest_run,
+    update_data_ingestion_run,
+    update_optimization_study,
+    update_optimization_trial,
+)
+
+
+def test_strategy_and_version_flow(db_session):
+    strategy = create_strategy(db_session, name="MACrossover", description="MA crossover")
+    version = create_strategy_version(
+        db_session,
+        strategy_id=strategy.id,
+        version=1,
+        config={"fast": 9, "slow": 21},
+        status=RunStatus.COMPLETED.value,
+    )
+    assert version.strategy_id == strategy.id
+    assert version.version == 1
+
+
+def test_backtest_config_and_run_flow(db_session):
+    config = create_backtest_config(
+        db_session,
+        name="petr4-d1",
+        config={"symbol": "PETR4", "timeframe": "D1"},
+    )
+    run = create_backtest_run(
+        db_session,
+        backtest_config_id=config.id,
+        config={"initial_capital": 100_000},
+        status=RunStatus.RUNNING.value,
+        started_at=datetime.now(timezone.utc),
+    )
+    updated = update_backtest_run(
+        db_session,
+        run.id,
+        status=RunStatus.COMPLETED.value,
+        result_summary={"net_profit": 1234.5},
+        lake_paths={"equity": "data/lake/backtest/equity.parquet"},
+        finished_at=datetime.now(timezone.utc),
+    )
+    assert updated.status == RunStatus.COMPLETED.value
+    assert updated.result_summary["net_profit"] == 1234.5
+
+
+def test_optimization_study_and_trial_flow(db_session):
+    study = create_optimization_study(
+        db_session,
+        name="ma_sharpe",
+        config={"n_trials": 50},
+        status=RunStatus.RUNNING.value,
+    )
+    trial = create_optimization_trial(
+        db_session,
+        study_id=study.id,
+        trial_number=0,
+        params={"fast": 9, "slow": 21},
+        status=TrialStatus.RUNNING.value,
+    )
+    updated_study = update_optimization_study(
+        db_session,
+        study.id,
+        status=RunStatus.COMPLETED.value,
+    )
+    updated_trial = update_optimization_trial(
+        db_session,
+        trial.id,
+        status=TrialStatus.COMPLETED.value,
+        metrics={"sharpe": 1.2},
+    )
+    assert updated_study.status == RunStatus.COMPLETED.value
+    assert updated_trial.metrics["sharpe"] == 1.2
+
+
+def test_data_ingestion_run_flow(db_session):
+    run = create_data_ingestion_run(
+        db_session,
+        source="mt5",
+        symbol="PETR4",
+        dataset_type=DatasetType.OHLCV.value,
+        timeframe="D1",
+        status=RunStatus.RUNNING.value,
+        started_at=datetime.now(timezone.utc),
+    )
+    updated = update_data_ingestion_run(
+        db_session,
+        run.id,
+        status=RunStatus.COMPLETED.value,
+        lake_path="data/lake/ohlcv/PETR4/D1/part-0001.parquet",
+        stats={"rows": 1000},
+        finished_at=datetime.now(timezone.utc),
+    )
+    assert updated.lake_path.endswith(".parquet")
+    assert updated.stats["rows"] == 1000

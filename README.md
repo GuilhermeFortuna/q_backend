@@ -59,6 +59,18 @@
   * Precise Maximum Drawdown (Value & Percentage).
   * Recovery Factor & Win/Loss streaks.
 
+### 3. Storage Infrastructure (`storage`)
+
+Three-tier storage keeps analytical payloads separate from operational metadata:
+
+| Tier | Technology | Purpose |
+|------|------------|---------|
+| **Analytical (future)** | Parquet lake at `Q_DATA_LAKE_ROOT` | OHLCV, ticks, features, backtest series, optimization arrays |
+| **Metadata** | PostgreSQL | Strategies, versions, backtest configs/runs, optimization studies/trials, ingestion run records |
+| **Runtime** | Redis | Job progress (JSON, 24h TTL), cache, locks |
+
+Postgres stores **metadata and lake pointers** (`lake_path`, `lake_paths`, `result_summary`) only. Market data is not stored in Postgres tables.
+
 ---
 
 ## 🛠 Tech Stack
@@ -68,6 +80,8 @@
 * **Numerical Stack:** Pandas, NumPy (Vectorized market-data calculations)
 * **Broker & Data Clients:** MetaTrader 5 (MT5 Python package), Yahoo Finance (`yfinance`)
 * **Serialization & Validation:** Pydantic `v2` (Declarative typesafe schemas)
+* **Metadata Storage:** PostgreSQL, SQLAlchemy 2.x, Alembic
+* **Runtime State:** Redis (job progress, cache, locks)
 * **Dependency & Package Manager:** `uv` (Rust-powered modern Python package toolchain)
 * **Unit Testing:** `pytest`
 
@@ -77,7 +91,11 @@
 
 ```txt
 q_backend/
-├── .env                  # Local secrets and connection paths (loaded automatically)
+├── .env                  # Local secrets (copy from .env.example)
+├── .env.example          # Template for MT5 and storage env vars
+├── alembic/              # Database migrations
+├── alembic.ini
+├── docker-compose.yml    # Local Postgres + Redis
 ├── pyproject.toml        # Hatchling build configuration & dependency definitions
 ├── uv.lock               # Deterministic dependency lockfile
 ├── scripts/              # Standalone utility & validation scripts
@@ -86,22 +104,18 @@ q_backend/
 ├── src/
 │   └── q_backend/        # Core packages
 │       ├── api/          # FastAPI App initialization & route definitions
-│       │   └── main.py   # System Health, Realtime Snaps, and Market Data endpoints
 │       ├── backtesting/  # Engine, Position Sizers, Performance Registry & Strategies
-│       │   ├── engine.py
-│       │   ├── models.py
-│       │   ├── position_sizing.py
-│       │   ├── registry.py
-│       │   └── strategy.py
-│       └── market_data/  # MT5 service wrappers & data pipelines
-│           ├── clients/
-│           │   ├── metatrader.py
-│           │   └── yfinance.py
-│           ├── models.py
-│           ├── repository.py
-│           └── service.py
-└── tests/                # Comprehensive test suites
-    └── backtesting/      # Strategy, Registry, and Engine unit tests
+│       ├── market_data/  # MT5 service wrappers & data pipelines
+│       ├── optimization/ # Optuna runner, study storage, exporters
+│       └── storage/      # Settings, Postgres models, Redis helpers
+│           ├── settings.py
+│           ├── db/       # SQLAlchemy models, engine, repositories
+│           └── redis/    # Job progress helpers
+└── tests/
+    ├── backtesting/
+    ├── optimization/
+    ├── market_data/
+    └── storage/          # Storage unit + integration tests
 ```
 
 ---
@@ -117,31 +131,46 @@ q_backend/
    ```
 
 ### 1. Configure the Environment
-Clone or navigate to the repository and duplicate the template configuration:
+Copy the example environment file and fill in your values:
 ```bash
-cp .env.template .env
+cp .env.example .env
 ```
-Open `.env` and fill in your MetaTrader 5 connection configuration details:
+Open `.env` and configure MetaTrader 5 credentials plus storage URLs (defaults match `docker-compose.yml`):
 ```ini
-MT5_USER=12345678            # Your MetaTrader 5 Login account ID
-MT5_PASSWORD="YourPassword"  # Your broker password
-MT5_SERVER="Broker-Server"   # The MT5 Server (e.g. XP-Demo, Clear-PRD)
-MT5_PATH="C:/Program Files/MetaTrader 5/terminal64.exe" # Path to terminal executable
+MT5_USER=12345678
+MT5_PASSWORD="YourPassword"
+MT5_SERVER="Broker-Server"
+MT5_PATH="C:/Program Files/MetaTrader 5/terminal64.exe"
+
+Q_DATABASE_URL=postgresql+psycopg://q:q@localhost:5432/q
+Q_REDIS_URL=redis://localhost:6380/0
+Q_DATA_LAKE_ROOT=data/lake
 ```
 
 ### 2. Install Dependencies
-Initialize a virtual environment and sync packages using `uv`:
 ```bash
-uv sync
+uv sync --group dev
 ```
 
-### 3. Running Unit Tests
-Verify the complete backtesting pipeline and indicator calculations:
+### 3. Start Storage Services (local dev)
+Start Postgres and Redis:
+```bash
+docker compose up -d
+```
+Apply database migrations:
+```bash
+uv run alembic upgrade head
+```
+
+`q_backend` Redis is mapped to host port **6380** (container port 6379) so it does not conflict with other local Redis instances on 6379. If port `5432` or `6380` is already in use, adjust `docker-compose.yml` port mappings and update `Q_DATABASE_URL` / `Q_REDIS_URL` accordingly.
+
+### 4. Running Unit Tests
 ```bash
 uv run pytest
 ```
+Unit tests use in-memory SQLite and `fakeredis` and do not require Docker. Integration tests (`@pytest.mark.integration`) skip automatically when Postgres or Redis are unavailable or misconfigured.
 
-### 4. Running the Dev Server
+### 5. Running the Dev Server
 Spin up the FastAPI server with auto-reload enabled:
 ```bash
 uv run uvicorn q_backend.api.main:app --reload --port 8000
