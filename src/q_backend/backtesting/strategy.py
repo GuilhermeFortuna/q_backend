@@ -33,6 +33,21 @@ class TradingStrategy(ABC):
     """
     Abstract base class for all trading strategies in the backtesting engine.
     Strategies are responsible for analyzing data and emitting Signals.
+
+    Execution contract (read before writing a new strategy):
+
+    * A strategy only ever sees *closed* bars. ``check_entry_conditions`` and
+      ``check_exit_conditions`` receive a fully-formed bar; a signal returned
+      for bar ``i`` means "as of bar ``i``'s close, my criteria are met".
+    * Strategies must NOT decide their own fill price. The engine executes
+      every emitted signal at the *next* bar's open, which is the earliest
+      price actually tradable once bar ``i`` has closed. Do not assume you can
+      transact at the close of the bar you are evaluating.
+    * ``compute_indicators`` must be strictly causal: a value at bar ``i`` may
+      only depend on bars ``<= i``. Never use centered windows, ``shift(-n)``,
+      or whole-series statistics (max/min/mean over the full frame). Doing so
+      leaks future information into the past. ``test_strategy_causality.py``
+      enforces this automatically for every registered strategy.
     """
 
     def __init__(self, **kwargs):

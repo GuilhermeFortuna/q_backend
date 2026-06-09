@@ -61,6 +61,22 @@ class PositionSizer(ABC):
         """
         pass
 
+    @abstractmethod
+    def max_position_size(
+        self, current_price: float, current_capital: float
+    ) -> Optional[float]:
+        """
+        Maximum absolute position size (in units/contracts) this risk model
+        permits to be open per symbol at any one time.
+
+        The engine enforces this cap: it never lets open exposure for a symbol
+        exceed this value, so repeated same-direction signals cannot pyramid
+        past the configured limit. Each risk model decides how the cap is
+        derived (e.g. Fixed Quantity returns its quantity; a margin-based model
+        derives it from capital). Return ``None`` for an unbounded model.
+        """
+        pass
+
 
 class FixedQuantitySizer(PositionSizer):
     """
@@ -95,6 +111,13 @@ class FixedQuantitySizer(PositionSizer):
             quantity=self.quantity,
         )
 
+    def max_position_size(
+        self, current_price: float, current_capital: float
+    ) -> Optional[float]:
+        # The configured quantity is the maximum position size, not a per-order
+        # amount: the engine caps total open exposure at this value.
+        return self.quantity
+
 
 class FixedSafetyMarginSizer(PositionSizer):
     """
@@ -120,15 +143,8 @@ class FixedSafetyMarginSizer(PositionSizer):
         self.max_contracts = max_contracts
         self.min_contracts = min_contracts
 
-    def size_signal(
-        self, signal: Signal, current_price: float, current_capital: float
-    ) -> Optional[Order]:
-        if signal.action == SignalAction.HOLD:
-            return None
-
-        if signal.action == SignalAction.CLOSE:
-            return None
-
+    def _target_contracts(self, current_capital: float) -> int:
+        """Contracts this model would hold given available capital (0 if none)."""
         quantity = math.floor(current_capital / self.safety_margin_per_contract)
         if self.max_contracts is not None:
             quantity = min(quantity, self.max_contracts)
@@ -138,8 +154,20 @@ class FixedSafetyMarginSizer(PositionSizer):
                 # Balance below one full margin; holding min contracts is still allowed
                 quantity = self.min_contracts
             else:
-                return None
+                return 0
 
+        return quantity if quantity > 0 else 0
+
+    def size_signal(
+        self, signal: Signal, current_price: float, current_capital: float
+    ) -> Optional[Order]:
+        if signal.action == SignalAction.HOLD:
+            return None
+
+        if signal.action == SignalAction.CLOSE:
+            return None
+
+        quantity = self._target_contracts(current_capital)
         if quantity <= 0:
             return None
 
@@ -154,6 +182,13 @@ class FixedSafetyMarginSizer(PositionSizer):
             order_type=OrderType.MARKET,
             quantity=float(quantity),
         )
+
+    def max_position_size(
+        self, current_price: float, current_capital: float
+    ) -> Optional[float]:
+        # The full contract count this model would size to is also the cap on
+        # simultaneous open exposure for the symbol.
+        return float(self._target_contracts(current_capital))
 
 
 def build_position_sizer(

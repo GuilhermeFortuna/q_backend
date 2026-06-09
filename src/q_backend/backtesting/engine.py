@@ -4,7 +4,7 @@ from typing import List, Optional
 import pandas as pd
 from enum import Enum
 
-from q_backend.backtesting.models import Trade, OrderAction, SignalAction
+from q_backend.backtesting.models import Signal, Trade, OrderAction, SignalAction
 from q_backend.backtesting.registry import TradeRegistry
 from q_backend.backtesting.strategy import TradingStrategy
 from q_backend.backtesting.position_sizing import PositionSizer
@@ -107,39 +107,69 @@ class BacktestEngine:
         # 1. Compute indicators (vectorized, no lookahead bias)
         chunk = self.strategy.compute_indicators(chunk)
 
-        # 2. Iterative evaluation
+        # 2. Iterative evaluation.
+        #
+        # Execution model: signals are derived from a *fully closed* bar and
+        # executed at the NEXT bar's open. A strategy can only know that bar i
+        # met its criteria once bar i has closed, so the earliest tradable
+        # price is bar i+1's open. Filling at bar i's own close would let a
+        # trade react to information that only exists at the same instant the
+        # bar finishes -- a subtle look-ahead bias. Keeping fill timing here
+        # (and out of the strategies) means no individual strategy can
+        # reintroduce it. See test_strategy_causality.py for the guardrail.
+        pending_exits: List[Signal] = []
+        pending_entries: List[Signal] = []
+
         for i in range(len(chunk)):
             current_data = chunk.iloc[i]
             timestamp = current_data.name
-            current_price = current_data.get("close", 0.0)  # Assume 'close' exists
+            # Orders queued on the previous bar fill at this bar's open. Fall
+            # back to close for close-only series that carry no 'open' column.
+            fill_price = current_data.get("open", current_data.get("close", 0.0))
 
-            # A. Check for Exits first (give priority to closing positions)
-            exit_signals = self.strategy.check_exit_conditions(
-                current_data, registry.get_open_trades()
-            )
-            for sig in exit_signals:
-                if sig.action == SignalAction.CLOSE:
-                    # In this simple model, we close all open trades for the symbol
-                    # A more advanced model would let the sizer emit CLOSE orders.
-                    open_trades = [
-                        t for t in registry.get_open_trades() if t.symbol == sig.symbol
-                    ]
-                    for t in open_trades:
-                        closed_trade = registry.close_trade(
-                            t.id, timestamp, current_price
-                        )
-                        if closed_trade and closed_trade.pnl is not None:
-                            current_capital += closed_trade.pnl
+            # A. Execute exits queued on the previous bar (priority over entries).
+            for sig in pending_exits:
+                if sig.action != SignalAction.CLOSE:
+                    continue
+                # In this simple model, we close all open trades for the symbol.
+                # A more advanced model would let the sizer emit CLOSE orders.
+                open_trades = [
+                    t for t in registry.get_open_trades() if t.symbol == sig.symbol
+                ]
+                for t in open_trades:
+                    closed_trade = registry.close_trade(t.id, timestamp, fill_price)
+                    if closed_trade and closed_trade.pnl is not None:
+                        current_capital += closed_trade.pnl
 
-            # B. Check for Entries
-            entry_signals = self.strategy.check_entry_conditions(current_data)
-            for sig in entry_signals:
-                order = self.sizer.size_signal(sig, current_price, current_capital)
+            # B. Execute entries queued on the previous bar.
+            for sig in pending_entries:
+                order = self.sizer.size_signal(sig, fill_price, current_capital)
                 if order:
-                    registry.register_order(order)
+                    # Enforce the risk model's maximum position size. The sizer
+                    # owns the cap (Fixed Quantity -> its quantity; a margin model
+                    # derives it from capital); the engine guarantees open
+                    # exposure for the symbol never exceeds it. This stops repeated
+                    # same-direction signals from pyramiding past the configured
+                    # size (e.g. two shorts under Fixed Quantity = 1). Reversals
+                    # are unaffected: a strategy reverses by emitting a CLOSE, which
+                    # runs in step A above (exits before entries on the same bar),
+                    # leaving no open position when the entry fills.
+                    max_size = self.sizer.max_position_size(
+                        fill_price, current_capital
+                    )
+                    if max_size is not None:
+                        open_qty = sum(
+                            t.quantity
+                            for t in registry.get_open_trades()
+                            if t.symbol == order.symbol
+                        )
+                        remaining = max_size - open_qty
+                        if remaining <= 0:
+                            continue
+                        if order.quantity > remaining:
+                            order.quantity = remaining
 
-                    # C. Execute Order (Simplistic immediate market execution)
-                    # Deduct from capital (naively) or just track PnL
+                    registry.register_order(order)
                     point_val = self.point_values.get(order.symbol, 1.0)
                     trade = Trade(
                         id=str(uuid.uuid4()),
@@ -148,10 +178,16 @@ class BacktestEngine:
                         action=order.action,
                         quantity=order.quantity,
                         entry_time=timestamp,
-                        entry_price=current_price,
+                        entry_price=fill_price,
                         point_value=point_val,
                     )
                     registry.register_trade(trade)
+
+            # C. Evaluate this (now-closed) bar and queue signals for the next bar.
+            pending_exits = self.strategy.check_exit_conditions(
+                current_data, registry.get_open_trades()
+            )
+            pending_entries = self.strategy.check_entry_conditions(current_data)
 
         # 3. End of chunk force close
         if force_close_at_end and len(chunk) > 0:

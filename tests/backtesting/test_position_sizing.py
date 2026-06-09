@@ -1,7 +1,10 @@
 import pytest
 
 from q_backend.backtesting.models import Signal, SignalAction, OrderAction, OrderType
-from q_backend.backtesting.position_sizing import FixedSafetyMarginSizer
+from q_backend.backtesting.position_sizing import (
+    FixedQuantitySizer,
+    FixedSafetyMarginSizer,
+)
 
 SYMBOL = "ES"
 PRICE = 100.0
@@ -94,3 +97,26 @@ def test_sell_signal_creates_sell_market_order():
 def test_invalid_safety_margin_raises_value_error(invalid_margin):
     with pytest.raises(ValueError):
         FixedSafetyMarginSizer(safety_margin_per_contract=invalid_margin)
+
+
+@pytest.mark.parametrize("quantity", [1.0, 2.0, 5.0])
+def test_fixed_quantity_max_position_size_is_the_quantity(quantity):
+    sizer = FixedQuantitySizer(quantity=quantity)
+    # Capital/price are irrelevant for a fixed-quantity cap.
+    assert sizer.max_position_size(PRICE, 999_999) == quantity
+
+
+def test_safety_margin_max_position_size_matches_sized_quantity():
+    sizer = FixedSafetyMarginSizer(safety_margin_per_contract=5_000)
+    signal = Signal(symbol=SYMBOL, action=SignalAction.BUY)
+
+    order = sizer.size_signal(signal, PRICE, 15_000)
+    assert order is not None
+    # The cap equals the quantity the model would size to for the same capital.
+    assert sizer.max_position_size(PRICE, 15_000) == order.quantity
+
+
+def test_safety_margin_max_position_size_respects_max_contracts():
+    sizer = FixedSafetyMarginSizer(safety_margin_per_contract=5_000, max_contracts=2)
+    # floor(15000/5000)=3, capped at 2.
+    assert sizer.max_position_size(PRICE, 15_000) == 2.0
