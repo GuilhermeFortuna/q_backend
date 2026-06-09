@@ -28,6 +28,7 @@ from q_backend.storage.db.models import BacktestRun, RunStatus
 from q_backend.storage.db.repositories import (
     create_backtest_config,
     create_backtest_run,
+    delete_backtest_run,
     get_backtest_run,
     get_or_create_strategy,
     list_backtest_runs,
@@ -901,6 +902,18 @@ def get_backtest(run_id: str, session: Session = Depends(get_session)):
     if run is None:
         raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.")
     return _backtest_run_detail(run)
+
+
+@app.delete("/api/v1/backtests/{run_id}", status_code=204)
+def delete_backtest(run_id: str, session: Session = Depends(get_session)):
+    """Delete a persisted backtest run from history."""
+    try:
+        run_uuid = uuid.UUID(run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.") from exc
+
+    if not delete_backtest_run(session, run_uuid):
+        raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.")
 
 
 @app.post("/api/v1/optimize", response_model=OptimizationStartResponse)

@@ -7,7 +7,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from q_backend.api.main import BacktestRequest, get_backtest, list_backtests, run_backtest
+from q_backend.api.main import (
+    BacktestRequest,
+    delete_backtest,
+    get_backtest,
+    list_backtests,
+    run_backtest,
+)
 from q_backend.market_data.models import OHLCV
 from q_backend.storage.db.base import Base
 
@@ -157,3 +163,36 @@ def test_run_backtest_graceful_degradation_when_persistence_unavailable(
     assert payload["run_id"] is None
     assert "metrics" in payload
     assert "trades" in payload
+
+
+def test_delete_backtest_removes_run_from_history(
+    api_db_session, api_session_scope, sample_ohlcv
+):
+    request_body = {
+        "symbol": "WIN$",
+        "timeframe": "M5",
+        "start": "2024-01-01T00:00:00Z",
+        "end": "2024-02-01T00:00:00Z",
+        "initial_capital": 100000.0,
+        "point_value": 0.2,
+        "strategy": "MACrossover",
+        "strategy_params": {"short_period": 5, "long_period": 10},
+    }
+
+    with (
+        patch(
+            "q_backend.api.main.market_data_service.get_ohlcv",
+            return_value=sample_ohlcv,
+        ),
+        patch("q_backend.api.main.session_scope", api_session_scope),
+    ):
+        run_payload = run_backtest(BacktestRequest.model_validate(request_body))
+
+    run_id = run_payload["run_id"]
+    assert run_id is not None
+
+    delete_backtest(run_id, session=api_db_session)
+
+    list_payload = list_backtests(session=api_db_session, limit=50, offset=0)
+    assert list_payload["total"] == 0
+    assert list_payload["items"] == []

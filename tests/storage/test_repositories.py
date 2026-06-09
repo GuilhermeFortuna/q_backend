@@ -9,6 +9,7 @@ from q_backend.storage.db.repositories import (
     create_optimization_trial,
     create_strategy,
     create_strategy_version,
+    delete_backtest_run,
     get_backtest_run,
     get_optimization_study,
     get_or_create_strategy,
@@ -136,6 +137,24 @@ def test_get_backtest_run(db_session):
     fetched = get_backtest_run(db_session, run.id)
     assert fetched is not None
     assert fetched.id == run.id
+
+
+def test_delete_backtest_run(db_session):
+    config = create_backtest_config(
+        db_session,
+        name="win-m5",
+        config={"symbol": "WIN$", "timeframe": "M5", "strategy": "MACrossover"},
+    )
+    run = create_backtest_run(
+        db_session,
+        backtest_config_id=config.id,
+        config={"symbol": "WIN$", "timeframe": "M5", "strategy": "MACrossover"},
+        status=RunStatus.COMPLETED.value,
+    )
+
+    assert delete_backtest_run(db_session, run.id) is True
+    assert get_backtest_run(db_session, run.id) is None
+    assert delete_backtest_run(db_session, run.id) is False
 
 
 def test_list_backtest_runs_newest_first_and_symbol_filter(db_session):

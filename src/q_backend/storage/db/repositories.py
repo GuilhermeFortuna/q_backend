@@ -43,6 +43,15 @@ def get_backtest_run(session: Session, run_id: uuid.UUID) -> Optional[BacktestRu
     return session.get(BacktestRun, run_id)
 
 
+def delete_backtest_run(session: Session, run_id: uuid.UUID) -> bool:
+    backtest_run = session.get(BacktestRun, run_id)
+    if backtest_run is None:
+        return False
+    session.delete(backtest_run)
+    session.flush()
+    return True
+
+
 def list_backtest_runs(
     session: Session,
     *,
