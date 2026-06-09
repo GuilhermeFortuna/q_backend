@@ -1,0 +1,64 @@
+from q_backend.api.main import list_strategies
+
+
+def test_list_strategies_returns_all_registered():
+    response = list_strategies()
+    names = [item.name for item in response["strategies"]]
+    assert names == sorted([
+        "BollingerReversion",
+        "DonchianBreakout",
+        "MACD",
+        "MACrossover",
+        "RSIMeanReversion",
+    ])
+
+
+def test_list_strategies_macrossover_schema():
+    response = list_strategies()
+    ma = next(item for item in response["strategies"] if item.name == "MACrossover")
+
+    assert ma.label == "MA Crossover"
+    assert ma.description == "Short/long moving-average crossover."
+
+    param_names = [spec.name for spec in ma.params]
+    assert param_names == [
+        "short_period",
+        "long_period",
+        "short_ma_type",
+        "long_ma_type",
+        "threshold",
+    ]
+
+    short_period = next(spec for spec in ma.params if spec.name == "short_period")
+    assert short_period.type == "int"
+    assert short_period.default == 50
+    assert short_period.min == 2
+    assert short_period.max == 400
+
+    short_ma_type = next(spec for spec in ma.params if spec.name == "short_ma_type")
+    assert short_ma_type.type == "categorical"
+    assert short_ma_type.default == "sma"
+    assert short_ma_type.choices == sorted(["sma", "ema", "wma", "smma", "hma"])
+
+    threshold = next(spec for spec in ma.params if spec.name == "threshold")
+    assert threshold.type == "float"
+    assert threshold.default == 0.0
+
+
+def test_list_strategies_each_has_valid_param_schema():
+    response = list_strategies()
+    for strategy in response["strategies"]:
+        assert strategy.name
+        assert strategy.label
+        assert strategy.description
+        assert len(strategy.params) >= 1
+        for spec in strategy.params:
+            assert spec.name
+            assert spec.label
+            assert spec.type in {"int", "float", "categorical"}
+            assert spec.default is not None
+            if spec.type == "categorical":
+                assert spec.choices
+            if spec.type in {"int", "float"}:
+                assert spec.min is not None
+                assert spec.max is not None

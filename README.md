@@ -53,6 +53,7 @@
   * `DAY_TRADE`: Concurrent chunked backtesting (utilizes standard Python `ProcessPoolExecutor` to process daily sessions across multi-core CPUs in parallel).
 * **Signal & Order Pipeline:** Modular pipeline translating strategy `Signal` structures into executable `Order` definitions using pluggable `PositionSizer` logic.
 * **Vectorized Computations:** Employs precomputed Technical Indicators via vectorized pandas operations, preventing lookahead bias while maintaining massive throughput.
+* **Pluggable Strategy Registry:** Built-in strategies (`MACrossover`, `RSIMeanReversion`, `BollingerReversion`, `MACD`, `DonchianBreakout`) register parameter schemas consumed by the optimization engine and frontend forms via `GET /api/v1/strategies`.
 * **Advanced Analytics Suite (`TradeRegistry`):** Aggregates execution history and computes comprehensive mathematical metrics:
   * Win Rate, Expectancy, and Profit Factor.
   * Cumulative PnL & Peak Equity Tracking.
@@ -225,6 +226,10 @@ To run it:
     * `end` (ISO-8601 Datetime)
 
 ### Algorithmic Backtesting
+* **`GET /api/v1/strategies`**
+  * *Description:* Returns registered strategy metadata and typed parameter schemas for dynamic UI forms and optimization bounds.
+  * *Response:* `{"strategies": [{"name": "MACrossover", "label": "MA Crossover", "description": "...", "params": [{"name": "short_period", "type": "int", "default": 50, ...}]}]}`
+  * *Built-in strategies:* `MACrossover`, `RSIMeanReversion`, `BollingerReversion`, `MACD`, `DonchianBreakout`.
 * **`POST /api/v1/backtest/run`**
   * *Description:* Runs a strategy backtest locally on the historical OHLCV data.
   * *Request Body (JSON):* `{"symbol": "WIN$", "timeframe": "M5", "start": "2026-01-01T00:00:00Z", "end": "2026-06-01T00:00:00Z", "initial_capital": 100000.0, "point_value": 0.2, "strategy": "MACrossover", "strategy_params": {"fast_period": 9, "slow_period": 21}}`

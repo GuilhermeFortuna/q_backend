@@ -11,6 +11,17 @@ from q_backend.backtesting.moving_averages import (
 )
 
 
+def resolve_symbol(current_data: pd.Series, default_symbol: str) -> str:
+    symbol = getattr(current_data, "name", None)
+    if (
+        not isinstance(symbol, str)
+        or isinstance(symbol, (pd.Timestamp, datetime))
+        or (len(symbol) > 8 and any(char in symbol for char in ["-", ":", " "]))
+    ):
+        return default_symbol
+    return symbol
+
+
 class ChartIndicatorSpec(BaseModel):
     key: str
     label: str
@@ -207,14 +218,7 @@ class MACrossoverStrategy(TradingStrategy):
         Returns:
             List[Signal]: List containing the generated Signal(s).
         """
-        symbol = getattr(current_data, "name", None)
-        # If name is a Timestamp, datetime, or a string that is probably a timestamp, use self.symbol
-        if (
-            not isinstance(symbol, str)
-            or isinstance(symbol, (pd.Timestamp, datetime))
-            or (len(symbol) > 8 and any(char in symbol for char in ["-", ":", " "]))
-        ):
-            symbol = self.symbol
+        symbol = resolve_symbol(current_data, self.symbol)
 
         signals = []
         if current_data.get("buy_signal", False):
@@ -239,14 +243,7 @@ class MACrossoverStrategy(TradingStrategy):
         Returns:
             List[Signal]: List of CLOSE Signals.
         """
-        symbol = getattr(current_data, "name", None)
-        # If name is a Timestamp, datetime, or a string that is probably a timestamp, use self.symbol
-        if (
-            not isinstance(symbol, str)
-            or isinstance(symbol, (pd.Timestamp, datetime))
-            or (len(symbol) > 8 and any(char in symbol for char in ["-", ":", " "]))
-        ):
-            symbol = self.symbol
+        symbol = resolve_symbol(current_data, self.symbol)
 
         signals = []
         if not open_trades:

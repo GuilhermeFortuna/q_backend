@@ -15,6 +15,10 @@ from q_backend.market_data.models import OHLCV, Tick
 import pandas as pd
 from q_backend.backtesting.factory import build_strategy
 from q_backend.backtesting.chart_data import serialize_chart_data
+from q_backend.backtesting.strategy_registry import (
+    StrategiesResponse,
+    list_registered_strategies,
+)
 from q_backend.backtesting.position_sizing import (
     PositionSizingConfig,
     build_position_sizer,
@@ -779,6 +783,12 @@ def get_market_ohlcv_available_range(
         "end": available_range.end,
         "bar_count": available_range.bar_count,
     }
+
+
+@app.get("/api/v1/strategies", response_model=StrategiesResponse)
+def list_strategies():
+    """Return registered strategy metadata and parameter schemas."""
+    return {"strategies": list_registered_strategies()}
 
 
 @app.post("/api/v1/backtest/run", response_model=BacktestResponse)
