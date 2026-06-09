@@ -10,6 +10,7 @@ from q_backend.storage.db.repositories import (
     create_strategy,
     create_strategy_version,
     delete_backtest_run,
+    delete_optimization_study,
     get_backtest_run,
     get_optimization_study,
     get_or_create_strategy,
@@ -212,6 +213,26 @@ def test_get_optimization_study(db_session):
     assert fetched is not None
     assert fetched.id == study.id
     assert len(fetched.trials) == 1
+
+
+def test_delete_optimization_study(db_session):
+    study = create_optimization_study(
+        db_session,
+        name="ma_sharpe",
+        config={"study": {"n_trials": 10}},
+        status=RunStatus.COMPLETED.value,
+    )
+    create_optimization_trial(
+        db_session,
+        study_id=study.id,
+        trial_number=0,
+        params={"fast": 9},
+        status=TrialStatus.COMPLETED.value,
+    )
+
+    assert delete_optimization_study(db_session, study.id) is True
+    assert get_optimization_study(db_session, study.id) is None
+    assert delete_optimization_study(db_session, study.id) is False
 
 
 def test_list_optimization_studies_newest_first(db_session):

@@ -238,6 +238,15 @@ def get_optimization_study(
     ).scalar_one_or_none()
 
 
+def delete_optimization_study(session: Session, study_id: uuid.UUID) -> bool:
+    study = get_optimization_study(session, study_id)
+    if study is None:
+        return False
+    session.delete(study)
+    session.flush()
+    return True
+
+
 def list_optimization_studies(
     session: Session,
     *,

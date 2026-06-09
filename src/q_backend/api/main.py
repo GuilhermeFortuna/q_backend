@@ -29,6 +29,7 @@ from q_backend.storage.db.repositories import (
     create_backtest_config,
     create_backtest_run,
     delete_backtest_run,
+    delete_optimization_study,
     get_backtest_run,
     get_or_create_strategy,
     list_backtest_runs,
@@ -997,6 +998,20 @@ def list_optimizations(
         "limit": limit,
         "offset": offset,
     }
+
+
+@app.delete("/api/v1/optimizations/{study_id}", status_code=204)
+def delete_optimization(study_id: str, session: Session = Depends(get_session)):
+    """Delete a persisted optimization study from history."""
+    try:
+        study_uuid = uuid.UUID(study_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=f"Study '{study_id}' not found.") from exc
+
+    if not delete_optimization_study(session, study_uuid):
+        raise HTTPException(status_code=404, detail=f"Study '{study_id}' not found.")
+
+    optimization_jobs.evict_study(study_id)
 
 
 @app.post(

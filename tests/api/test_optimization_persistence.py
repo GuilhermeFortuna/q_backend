@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 
 from q_backend.api import optimization_jobs
 from q_backend.api.main import (
+    delete_optimization,
     get_optimization_results,
     get_optimization_status,
     list_optimizations,
@@ -218,6 +219,20 @@ def test_optimization_status_rebuild_after_restart(api_session_scope):
     assert status["optimization_config"] is not None
     assert status["optimization_config"]["backtest"]["symbol"] == "WIN$"
     assert status["backtest_config"]["symbol"] == "WIN$"
+
+
+def test_delete_optimization_removes_study_from_history(
+    api_db_session, api_session_scope
+):
+    job, _done, _stub = _start_persisted_job(api_session_scope, n_trials=2)
+    api_db_session.expire_all()
+
+    delete_optimization(job.study_id, session=api_db_session)
+
+    list_payload = list_optimizations(session=api_db_session, limit=50, offset=0)
+    assert list_payload["total"] == 0
+    assert list_payload["items"] == []
+    assert optimization_jobs.get_job(job.study_id) is None
 
 
 def test_optimization_graceful_degradation_when_persistence_unavailable():

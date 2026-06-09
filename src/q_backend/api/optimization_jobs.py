@@ -33,7 +33,11 @@ from q_backend.storage.db.repositories import (
     update_optimization_trial,
 )
 from q_backend.storage.redis.client import get_redis
-from q_backend.storage.redis.progress import get_job_progress, set_job_progress
+from q_backend.storage.redis.progress import (
+    delete_job_progress,
+    get_job_progress,
+    set_job_progress,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +115,16 @@ _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="optimize")
 def get_job(study_id: str) -> Optional[OptimizationJob]:
     with _lock:
         return _jobs.get(study_id)
+
+
+def evict_study(study_id: str) -> None:
+    """Remove an in-memory job and cached Redis progress for a study."""
+    with _lock:
+        _jobs.pop(study_id, None)
+    try:
+        delete_job_progress(get_redis(), study_id)
+    except Exception:
+        logger.debug("Redis progress delete unavailable for study %s", study_id)
 
 
 def _persist_progress(job: OptimizationJob) -> None:
