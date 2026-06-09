@@ -9,9 +9,15 @@ from sqlalchemy.pool import StaticPool
 
 from q_backend.api.main import (
     BacktestRequest,
+    BacktestRunPatchRequest,
+    BulkDeleteBacktestsRequest,
+    BulkDeleteOptimizationsRequest,
+    bulk_delete_backtests,
+    bulk_delete_optimizations,
     delete_backtest,
     get_backtest,
     list_backtests,
+    patch_backtest,
     run_backtest,
 )
 from q_backend.market_data.models import OHLCV
@@ -196,3 +202,153 @@ def test_delete_backtest_removes_run_from_history(
     list_payload = list_backtests(session=api_db_session, limit=50, offset=0)
     assert list_payload["total"] == 0
     assert list_payload["items"] == []
+
+
+def test_list_backtests_filters_sort_and_patch_save(
+    api_db_session, api_session_scope, sample_ohlcv
+):
+    request_body = {
+        "symbol": "WIN$",
+        "timeframe": "M5",
+        "start": "2024-01-01T00:00:00Z",
+        "end": "2024-02-01T00:00:00Z",
+        "initial_capital": 100000.0,
+        "point_value": 0.2,
+        "strategy": "MACrossover",
+        "strategy_params": {"short_period": 5, "long_period": 10},
+    }
+
+    with (
+        patch(
+            "q_backend.api.main.market_data_service.get_ohlcv",
+            return_value=sample_ohlcv,
+        ),
+        patch("q_backend.api.main.session_scope", api_session_scope),
+    ):
+        run_payload = run_backtest(BacktestRequest.model_validate(request_body))
+
+    run_id = run_payload["run_id"]
+    assert run_id is not None
+
+    filtered = list_backtests(
+        session=api_db_session,
+        limit=50,
+        offset=0,
+        strategy="MACrossover",
+        sort="pnl_desc",
+    )
+    assert filtered["total"] == 1
+    assert filtered["items"][0].is_saved is False
+
+    saved = patch_backtest(
+        run_id,
+        BacktestRunPatchRequest(is_saved=True),
+        session=api_db_session,
+    )
+    assert saved.is_saved is True
+
+    saved_only = list_backtests(session=api_db_session, limit=50, offset=0, saved_only=True)
+    assert saved_only["total"] == 1
+    assert saved_only["items"][0].run_id == run_id
+
+
+def test_bulk_delete_backtests(api_db_session, api_session_scope, sample_ohlcv):
+    request_body = {
+        "symbol": "WIN$",
+        "timeframe": "M5",
+        "start": "2024-01-01T00:00:00Z",
+        "end": "2024-02-01T00:00:00Z",
+        "initial_capital": 100000.0,
+        "point_value": 0.2,
+        "strategy": "MACrossover",
+        "strategy_params": {"short_period": 5, "long_period": 10},
+    }
+
+    with (
+        patch(
+            "q_backend.api.main.market_data_service.get_ohlcv",
+            return_value=sample_ohlcv,
+        ),
+        patch("q_backend.api.main.session_scope", api_session_scope),
+    ):
+        run_payload = run_backtest(BacktestRequest.model_validate(request_body))
+
+    run_id = run_payload["run_id"]
+    assert run_id is not None
+
+    result = bulk_delete_backtests(
+        BulkDeleteBacktestsRequest(run_ids=[run_id, "not-a-uuid"]),
+        session=api_db_session,
+    )
+    assert result["deleted"] == 1
+    assert result["not_found"] == ["not-a-uuid"]
+
+    list_payload = list_backtests(session=api_db_session, limit=50, offset=0)
+    assert list_payload["total"] == 0
+
+
+def test_run_backtest_reuses_existing_history_entry_for_identical_config(
+    api_db_session, api_session_scope, sample_ohlcv
+):
+    request_body = {
+        "symbol": "WIN$",
+        "timeframe": "M5",
+        "start": "2024-01-01T00:00:00Z",
+        "end": "2024-02-01T00:00:00Z",
+        "initial_capital": 100000.0,
+        "point_value": 0.2,
+        "strategy": "MACrossover",
+        "strategy_params": {"short_period": 5, "long_period": 10},
+    }
+    request = BacktestRequest.model_validate(request_body)
+
+    with (
+        patch(
+            "q_backend.api.main.market_data_service.get_ohlcv",
+            return_value=sample_ohlcv,
+        ),
+        patch("q_backend.api.main.session_scope", api_session_scope),
+    ):
+        first_payload = run_backtest(request)
+        second_payload = run_backtest(request)
+
+    assert first_payload["run_id"] is not None
+    assert second_payload["run_id"] == first_payload["run_id"]
+
+    list_payload = list_backtests(session=api_db_session, limit=50, offset=0)
+    assert list_payload["total"] == 1
+    assert list_payload["items"][0].run_id == first_payload["run_id"]
+
+
+def test_run_backtest_creates_separate_history_for_different_config(
+    api_db_session, api_session_scope, sample_ohlcv
+):
+    base_request = {
+        "symbol": "WIN$",
+        "timeframe": "M5",
+        "start": "2024-01-01T00:00:00Z",
+        "end": "2024-02-01T00:00:00Z",
+        "initial_capital": 100000.0,
+        "point_value": 0.2,
+        "strategy": "MACrossover",
+        "strategy_params": {"short_period": 5, "long_period": 10},
+    }
+
+    with (
+        patch(
+            "q_backend.api.main.market_data_service.get_ohlcv",
+            return_value=sample_ohlcv,
+        ),
+        patch("q_backend.api.main.session_scope", api_session_scope),
+    ):
+        first_payload = run_backtest(BacktestRequest.model_validate(base_request))
+        second_payload = run_backtest(
+            BacktestRequest.model_validate(
+                {**base_request, "strategy_params": {"short_period": 7, "long_period": 14}}
+            )
+        )
+
+    assert first_payload["run_id"] != second_payload["run_id"]
+
+    list_payload = list_backtests(session=api_db_session, limit=50, offset=0)
+    assert list_payload["total"] == 2

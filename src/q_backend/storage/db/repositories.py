@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import Float, cast, desc, func, nulls_last, select
 from sqlalchemy.orm import Session, selectinload
 
 from q_backend.storage.db.models import (
@@ -43,6 +43,18 @@ def get_backtest_run(session: Session, run_id: uuid.UUID) -> Optional[BacktestRu
     return session.get(BacktestRun, run_id)
 
 
+def find_backtest_run_by_config(
+    session: Session, config: dict[str, Any]
+) -> Optional[BacktestRun]:
+    """Return the newest persisted run whose stored config matches exactly."""
+    return session.execute(
+        select(BacktestRun)
+        .where(BacktestRun.config == config)
+        .order_by(desc(BacktestRun.created_at))
+        .limit(1)
+    ).scalar_one_or_none()
+
+
 def delete_backtest_run(session: Session, run_id: uuid.UUID) -> bool:
     backtest_run = session.get(BacktestRun, run_id)
     if backtest_run is None:
@@ -52,23 +64,75 @@ def delete_backtest_run(session: Session, run_id: uuid.UUID) -> bool:
     return True
 
 
+def delete_backtest_runs(
+    session: Session, run_ids: list[uuid.UUID]
+) -> tuple[int, list[uuid.UUID]]:
+    deleted = 0
+    not_found: list[uuid.UUID] = []
+    for run_id in run_ids:
+        backtest_run = session.get(BacktestRun, run_id)
+        if backtest_run is None:
+            not_found.append(run_id)
+            continue
+        session.delete(backtest_run)
+        deleted += 1
+    if deleted:
+        session.flush()
+    return deleted, not_found
+
+
+def delete_optimization_studies(
+    session: Session, study_ids: list[uuid.UUID]
+) -> tuple[int, list[uuid.UUID]]:
+    deleted = 0
+    not_found: list[uuid.UUID] = []
+    for study_id in study_ids:
+        study = get_optimization_study(session, study_id)
+        if study is None:
+            not_found.append(study_id)
+            continue
+        session.delete(study)
+        deleted += 1
+    if deleted:
+        session.flush()
+    return deleted, not_found
+
+
+def _backtest_run_order(sort: str):
+    if sort == "pnl_desc":
+        pnl = cast(BacktestRun.result_summary["total_pnl"].as_string(), Float)
+        return nulls_last(desc(pnl)), desc(BacktestRun.created_at)
+    if sort == "pnl_asc":
+        pnl = cast(BacktestRun.result_summary["total_pnl"].as_string(), Float)
+        return nulls_last(pnl.asc()), desc(BacktestRun.created_at)
+    return (desc(BacktestRun.created_at),)
+
+
 def list_backtest_runs(
     session: Session,
     *,
     limit: int = 50,
     offset: int = 0,
     symbol: Optional[str] = None,
+    strategy: Optional[str] = None,
+    saved_only: Optional[bool] = None,
+    sort: str = "created_at_desc",
 ) -> tuple[list[BacktestRun], int]:
     base = select(BacktestRun)
     if symbol is not None:
         base = base.where(BacktestRun.config["symbol"].as_string() == symbol)
+    if strategy is not None:
+        base = base.where(BacktestRun.config["strategy"].as_string() == strategy)
+    if saved_only:
+        base = base.where(BacktestRun.is_saved.is_(True))
 
     total = session.execute(
         select(func.count()).select_from(base.subquery())
     ).scalar_one()
 
+    order_clauses = _backtest_run_order(sort)
     runs = session.execute(
-        base.order_by(desc(BacktestRun.created_at)).limit(limit).offset(offset)
+        base.order_by(*order_clauses).limit(limit).offset(offset)
     ).scalars().all()
     return list(runs), total
 
@@ -137,6 +201,9 @@ def update_backtest_run(
     lake_paths: Optional[dict[str, Any]] = None,
     error_message: Optional[str] = None,
     finished_at: Optional[datetime] = None,
+    started_at: Optional[datetime] = None,
+    is_saved: Optional[bool] = None,
+    clear_error_message: bool = False,
 ) -> BacktestRun:
     backtest_run = session.get(BacktestRun, run_id)
     if backtest_run is None:
@@ -147,10 +214,16 @@ def update_backtest_run(
         backtest_run.result_summary = result_summary
     if lake_paths is not None:
         backtest_run.lake_paths = lake_paths
-    if error_message is not None:
+    if clear_error_message:
+        backtest_run.error_message = None
+    elif error_message is not None:
         backtest_run.error_message = error_message
     if finished_at is not None:
         backtest_run.finished_at = finished_at
+    if started_at is not None:
+        backtest_run.started_at = started_at
+    if is_saved is not None:
+        backtest_run.is_saved = is_saved
     session.flush()
     return backtest_run
 

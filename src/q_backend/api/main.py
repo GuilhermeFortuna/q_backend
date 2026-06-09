@@ -33,7 +33,10 @@ from q_backend.storage.db.repositories import (
     create_backtest_config,
     create_backtest_run,
     delete_backtest_run,
+    delete_backtest_runs,
     delete_optimization_study,
+    delete_optimization_studies,
+    find_backtest_run_by_config,
     get_backtest_run,
     get_or_create_strategy,
     list_backtest_runs,
@@ -134,6 +137,7 @@ class BacktestRunListItem(BaseModel):
     timeframe: str
     status: str
     created_at: datetime
+    is_saved: bool = False
     summary: Optional[Dict[str, Any]] = None
 
 
@@ -156,6 +160,24 @@ class BacktestRunDetailResponse(BaseModel):
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
     created_at: datetime
+    is_saved: bool = False
+
+
+class BacktestRunPatchRequest(BaseModel):
+    is_saved: bool
+
+
+class BulkDeleteBacktestsRequest(BaseModel):
+    run_ids: List[str]
+
+
+class BulkDeleteOptimizationsRequest(BaseModel):
+    study_ids: List[str]
+
+
+class BulkDeleteResponse(BaseModel):
+    deleted: int
+    not_found: List[str]
 
 
 class OptimizationStartResponse(BaseModel):
@@ -224,6 +246,7 @@ def _backtest_run_list_item(run: BacktestRun) -> BacktestRunListItem:
         timeframe=timeframe,
         status=run.status,
         created_at=run.created_at,
+        is_saved=run.is_saved,
         summary=run.result_summary,
     )
 
@@ -243,14 +266,27 @@ def _backtest_run_detail(run: BacktestRun) -> BacktestRunDetailResponse:
         started_at=run.started_at,
         finished_at=run.finished_at,
         created_at=run.created_at,
+        is_saved=run.is_saved,
     )
 
 
 def _start_backtest_run(request: BacktestRequest) -> Optional[str]:
     try:
         config_dict = request.model_dump(mode="json")
+        now = datetime.now(timezone.utc)
         with session_scope() as session:
             get_or_create_strategy(session, name=request.strategy)
+            existing = find_backtest_run_by_config(session, config_dict)
+            if existing is not None:
+                update_backtest_run(
+                    session,
+                    existing.id,
+                    status=RunStatus.RUNNING.value,
+                    started_at=now,
+                    clear_error_message=True,
+                )
+                return str(existing.id)
+
             bt_config = create_backtest_config(
                 session,
                 name=f"{request.symbol}-{request.timeframe}",
@@ -261,7 +297,7 @@ def _start_backtest_run(request: BacktestRequest) -> Optional[str]:
                 backtest_config_id=bt_config.id,
                 config=config_dict,
                 status=RunStatus.RUNNING.value,
-                started_at=datetime.now(timezone.utc),
+                started_at=now,
             )
             return str(run.id)
     except Exception as exc:
@@ -890,10 +926,19 @@ def list_backtests(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     symbol: Optional[str] = None,
+    strategy: Optional[str] = None,
+    saved_only: Optional[bool] = None,
+    sort: Literal["created_at_desc", "pnl_desc", "pnl_asc"] = "created_at_desc",
 ):
-    """Return a paginated list of backtest runs, newest first."""
+    """Return a paginated list of backtest runs."""
     runs, total = list_backtest_runs(
-        session, limit=limit, offset=offset, symbol=symbol
+        session,
+        limit=limit,
+        offset=offset,
+        symbol=symbol,
+        strategy=strategy,
+        saved_only=saved_only,
+        sort=sort,
     )
     return {
         "items": [_backtest_run_list_item(run) for run in runs],
@@ -901,6 +946,25 @@ def list_backtests(
         "limit": limit,
         "offset": offset,
     }
+
+
+@app.post("/api/v1/backtests/bulk-delete", response_model=BulkDeleteResponse)
+def bulk_delete_backtests(
+    body: BulkDeleteBacktestsRequest,
+    session: Session = Depends(get_session),
+):
+    """Delete multiple backtest runs in one request."""
+    parsed_ids: list[uuid.UUID] = []
+    not_found: list[str] = []
+    for run_id in body.run_ids:
+        try:
+            parsed_ids.append(uuid.UUID(run_id))
+        except ValueError:
+            not_found.append(run_id)
+
+    deleted_count, missing_ids = delete_backtest_runs(session, parsed_ids)
+    not_found.extend(str(run_id) for run_id in missing_ids)
+    return {"deleted": deleted_count, "not_found": not_found}
 
 
 @app.get("/api/v1/backtests/{run_id}", response_model=BacktestRunDetailResponse)
@@ -914,6 +978,26 @@ def get_backtest(run_id: str, session: Session = Depends(get_session)):
     run = get_backtest_run(session, run_uuid)
     if run is None:
         raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.")
+    return _backtest_run_detail(run)
+
+
+@app.patch("/api/v1/backtests/{run_id}", response_model=BacktestRunDetailResponse)
+def patch_backtest(
+    run_id: str,
+    body: BacktestRunPatchRequest,
+    session: Session = Depends(get_session),
+):
+    """Update bookmark state for a backtest run."""
+    try:
+        run_uuid = uuid.UUID(run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.") from exc
+
+    try:
+        run = update_backtest_run(session, run_uuid, is_saved=body.is_saved)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.") from exc
+
     return _backtest_run_detail(run)
 
 
@@ -1008,6 +1092,29 @@ def list_optimizations(
         "limit": limit,
         "offset": offset,
     }
+
+
+@app.post("/api/v1/optimizations/bulk-delete", response_model=BulkDeleteResponse)
+def bulk_delete_optimizations(
+    body: BulkDeleteOptimizationsRequest,
+    session: Session = Depends(get_session),
+):
+    """Delete multiple optimization studies in one request."""
+    parsed_ids: list[uuid.UUID] = []
+    not_found: list[str] = []
+    for study_id in body.study_ids:
+        try:
+            parsed_ids.append(uuid.UUID(study_id))
+        except ValueError:
+            not_found.append(study_id)
+
+    deleted_count, missing_ids = delete_optimization_studies(session, parsed_ids)
+    not_found.extend(str(study_id) for study_id in missing_ids)
+    missing_set = set(missing_ids)
+    for parsed_id in parsed_ids:
+        if parsed_id not in missing_set:
+            optimization_jobs.evict_study(str(parsed_id))
+    return {"deleted": deleted_count, "not_found": not_found}
 
 
 @app.delete("/api/v1/optimizations/{study_id}", status_code=204)

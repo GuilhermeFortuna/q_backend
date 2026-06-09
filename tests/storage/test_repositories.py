@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timezone
 
 from q_backend.storage.db.models import DatasetType, RunStatus, TrialStatus
@@ -10,7 +11,10 @@ from q_backend.storage.db.repositories import (
     create_strategy,
     create_strategy_version,
     delete_backtest_run,
+    delete_backtest_runs,
     delete_optimization_study,
+    delete_optimization_studies,
+    find_backtest_run_by_config,
     get_backtest_run,
     get_optimization_study,
     get_or_create_strategy,
@@ -195,7 +199,138 @@ def test_list_backtest_runs_newest_first_and_symbol_filter(db_session):
     assert win_runs[0].id == newer.id
 
 
-def test_get_optimization_study(db_session):
+def test_find_backtest_run_by_config_returns_newest_match(db_session):
+    config = {
+        "symbol": "WIN$",
+        "timeframe": "M5",
+        "strategy": "MACrossover",
+        "strategy_params": {"short_period": 5, "long_period": 10},
+    }
+    config_row = create_backtest_config(db_session, name="win-m5", config=config)
+    older = create_backtest_run(
+        db_session,
+        backtest_config_id=config_row.id,
+        config=config,
+        status=RunStatus.COMPLETED.value,
+    )
+    newer_config = create_backtest_config(db_session, name="win-m5-copy", config=config)
+    newer = create_backtest_run(
+        db_session,
+        backtest_config_id=newer_config.id,
+        config=config,
+        status=RunStatus.COMPLETED.value,
+    )
+    older.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    newer.created_at = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    db_session.flush()
+
+    match = find_backtest_run_by_config(db_session, config)
+    assert match is not None
+    assert match.id == newer.id
+
+
+def test_find_backtest_run_by_config_returns_none_when_no_match(db_session):
+    config = create_backtest_config(
+        db_session,
+        name="win-m5",
+        config={"symbol": "WIN$", "timeframe": "M5", "strategy": "MACrossover"},
+    )
+    create_backtest_run(
+        db_session,
+        backtest_config_id=config.id,
+        config={"symbol": "WIN$", "timeframe": "M5", "strategy": "MACrossover"},
+        status=RunStatus.COMPLETED.value,
+    )
+
+    assert find_backtest_run_by_config(
+        db_session,
+        {"symbol": "WIN$", "timeframe": "M5", "strategy": "RSI"},
+    ) is None
+
+
+def _create_completed_run(db_session, *, symbol, strategy, pnl=None, is_saved=False):
+    config = create_backtest_config(
+        db_session,
+        name=f"{symbol}-{strategy}",
+        config={"symbol": symbol, "timeframe": "M5", "strategy": strategy},
+    )
+    run = create_backtest_run(
+        db_session,
+        backtest_config_id=config.id,
+        config={"symbol": symbol, "timeframe": "M5", "strategy": strategy},
+        status=RunStatus.COMPLETED.value,
+    )
+    summary = {"total_pnl": pnl} if pnl is not None else None
+    update_backtest_run(
+        db_session,
+        run.id,
+        result_summary=summary,
+        is_saved=is_saved,
+    )
+    return run
+
+
+def test_list_backtest_runs_strategy_and_saved_filters(db_session):
+    _create_completed_run(db_session, symbol="WIN$", strategy="MACrossover", is_saved=True)
+    _create_completed_run(db_session, symbol="WIN$", strategy="RSI", is_saved=False)
+    _create_completed_run(db_session, symbol="WDO$", strategy="MACrossover", is_saved=True)
+
+    rsi_runs, rsi_total = list_backtest_runs(db_session, strategy="RSI")
+    assert rsi_total == 1
+    assert rsi_runs[0].config["strategy"] == "RSI"
+
+    saved_runs, saved_total = list_backtest_runs(db_session, saved_only=True)
+    assert saved_total == 2
+    assert all(run.is_saved for run in saved_runs)
+
+
+def test_list_backtest_runs_pnl_sort(db_session):
+    low = _create_completed_run(db_session, symbol="WIN$", strategy="A", pnl=100.0)
+    high = _create_completed_run(db_session, symbol="WIN$", strategy="B", pnl=5000.0)
+    none_pnl = _create_completed_run(db_session, symbol="WIN$", strategy="C", pnl=None)
+
+    desc_runs, _ = list_backtest_runs(db_session, sort="pnl_desc")
+    assert desc_runs[0].id == high.id
+    assert desc_runs[1].id == low.id
+    assert desc_runs[-1].id == none_pnl.id
+
+    asc_runs, _ = list_backtest_runs(db_session, sort="pnl_asc")
+    assert asc_runs[0].id == low.id
+    assert asc_runs[1].id == high.id
+    assert asc_runs[-1].id == none_pnl.id
+
+
+def test_delete_backtest_runs_bulk(db_session):
+    run_a = _create_completed_run(db_session, symbol="WIN$", strategy="A")
+    run_b = _create_completed_run(db_session, symbol="WIN$", strategy="B")
+    missing_id = uuid.uuid4()
+
+    deleted, not_found = delete_backtest_runs(db_session, [run_a.id, run_b.id, missing_id])
+    assert deleted == 2
+    assert not_found == [missing_id]
+    assert get_backtest_run(db_session, run_a.id) is None
+
+
+def test_delete_optimization_studies_bulk(db_session):
+    study_a = create_optimization_study(
+        db_session,
+        name="a",
+        config={"study": {"n_trials": 1}},
+        status=RunStatus.COMPLETED.value,
+    )
+    study_b = create_optimization_study(
+        db_session,
+        name="b",
+        config={"study": {"n_trials": 1}},
+        status=RunStatus.COMPLETED.value,
+    )
+    missing_id = uuid.uuid4()
+
+    deleted, not_found = delete_optimization_studies(
+        db_session, [study_a.id, study_b.id, missing_id]
+    )
+    assert deleted == 2
+    assert not_found == [missing_id]
     study = create_optimization_study(
         db_session,
         name="ma_sharpe",

@@ -3,7 +3,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from q_backend.storage.db.base import (
@@ -114,12 +114,19 @@ class BacktestRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_saved: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
 
     backtest_config: Mapped["BacktestConfig"] = relationship(back_populates="runs")
 
     __table_args__ = (
         Index("ix_backtest_runs_status", "status"),
         Index("ix_backtest_runs_config_created", "backtest_config_id", "created_at"),
+        Index("ix_backtest_runs_is_saved", "is_saved"),
     )
 
 

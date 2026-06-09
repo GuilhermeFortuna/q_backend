@@ -12,11 +12,13 @@ from sqlalchemy.pool import StaticPool
 
 from q_backend.api import optimization_jobs
 from q_backend.api.main import (
+    bulk_delete_optimizations,
     delete_optimization,
     get_optimization_results,
     get_optimization_status,
     list_optimizations,
 )
+from q_backend.api.main import BulkDeleteOptimizationsRequest
 from q_backend.optimization.backtest_runner import (
     BacktestRunConfig,
     BacktestRunResult,
@@ -233,6 +235,21 @@ def test_delete_optimization_removes_study_from_history(
     assert list_payload["total"] == 0
     assert list_payload["items"] == []
     assert optimization_jobs.get_job(job.study_id) is None
+
+
+def test_bulk_delete_optimizations(api_db_session, api_session_scope):
+    job, _done, _stub = _start_persisted_job(api_session_scope, n_trials=2)
+    api_db_session.expire_all()
+
+    result = bulk_delete_optimizations(
+        BulkDeleteOptimizationsRequest(study_ids=[job.study_id, "bad-id"]),
+        session=api_db_session,
+    )
+    assert result["deleted"] == 1
+    assert result["not_found"] == ["bad-id"]
+
+    list_payload = list_optimizations(session=api_db_session, limit=50, offset=0)
+    assert list_payload["total"] == 0
 
 
 def test_optimization_graceful_degradation_when_persistence_unavailable():
