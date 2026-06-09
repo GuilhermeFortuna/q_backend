@@ -1,14 +1,17 @@
 import logging
-from datetime import datetime, timedelta
+import uuid
+from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from typing import List, Optional, Dict, Any, Literal
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from q_backend.api.deps import get_session
 
 from q_backend.market_data.service import MarketDataService
 from q_backend.market_data.models import OHLCV, Tick
-from typing import Dict, Any
 import pandas as pd
 from q_backend.backtesting.factory import build_strategy
 from q_backend.backtesting.chart_data import serialize_chart_data
@@ -20,6 +23,17 @@ from q_backend.backtesting.engine import BacktestEngine, ParallelMode
 from q_backend.market_data.clients.metatrader import _to_naive_local
 from q_backend.optimization import OptimizationConfig
 from q_backend.api import optimization_jobs
+from q_backend.storage.db.engine import session_scope
+from q_backend.storage.db.models import BacktestRun, RunStatus
+from q_backend.storage.db.repositories import (
+    create_backtest_config,
+    create_backtest_run,
+    get_backtest_run,
+    get_or_create_strategy,
+    list_backtest_runs,
+    list_optimization_studies,
+    update_backtest_run,
+)
 from q_backend.storage.health import storage_status
 
 # Setup logging
@@ -104,6 +118,38 @@ class BacktestResponse(BaseModel):
     trades: List[Dict[str, Any]]
     bars: List[OhlcvBarResponse]
     indicators: List[ChartIndicatorSeries]
+    run_id: Optional[str] = None
+
+
+class BacktestRunListItem(BaseModel):
+    run_id: str
+    symbol: str
+    strategy: str
+    timeframe: str
+    status: str
+    created_at: datetime
+    summary: Optional[Dict[str, Any]] = None
+
+
+class BacktestRunListResponse(BaseModel):
+    items: List[BacktestRunListItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class BacktestRunDetailResponse(BaseModel):
+    run_id: str
+    symbol: str
+    strategy: str
+    timeframe: str
+    status: str
+    config: Dict[str, Any]
+    result_summary: Optional[Dict[str, Any]] = None
+    error_message: Optional[str] = None
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    created_at: datetime
 
 
 class OptimizationStartResponse(BaseModel):
@@ -132,8 +178,110 @@ class OptimizationResultsResponse(BaseModel):
     failures: List[Dict[str, Any]]
 
 
+class OptimizationStudyListItem(BaseModel):
+    study_id: str
+    name: str
+    status: str
+    best_value: Optional[float] = None
+    n_trials: int
+    completed_trials: int
+    created_at: datetime
+
+
+class OptimizationStudyListResponse(BaseModel):
+    items: List[OptimizationStudyListItem]
+    total: int
+    limit: int
+    offset: int
+
+
 # Instantiate global service
 market_data_service = MarketDataService()
+
+
+def _backtest_run_fields(config: Dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        config.get("symbol", ""),
+        config.get("strategy", ""),
+        config.get("timeframe", "D1"),
+    )
+
+
+def _backtest_run_list_item(run: BacktestRun) -> BacktestRunListItem:
+    symbol, strategy, timeframe = _backtest_run_fields(run.config or {})
+    return BacktestRunListItem(
+        run_id=str(run.id),
+        symbol=symbol,
+        strategy=strategy,
+        timeframe=timeframe,
+        status=run.status,
+        created_at=run.created_at,
+        summary=run.result_summary,
+    )
+
+
+def _backtest_run_detail(run: BacktestRun) -> BacktestRunDetailResponse:
+    config = run.config or {}
+    symbol, strategy, timeframe = _backtest_run_fields(config)
+    return BacktestRunDetailResponse(
+        run_id=str(run.id),
+        symbol=symbol,
+        strategy=strategy,
+        timeframe=timeframe,
+        status=run.status,
+        config=config,
+        result_summary=run.result_summary,
+        error_message=run.error_message,
+        started_at=run.started_at,
+        finished_at=run.finished_at,
+        created_at=run.created_at,
+    )
+
+
+def _start_backtest_run(request: BacktestRequest) -> Optional[str]:
+    try:
+        config_dict = request.model_dump(mode="json")
+        with session_scope() as session:
+            get_or_create_strategy(session, name=request.strategy)
+            bt_config = create_backtest_config(
+                session,
+                name=f"{request.symbol}-{request.timeframe}",
+                config=config_dict,
+            )
+            run = create_backtest_run(
+                session,
+                backtest_config_id=bt_config.id,
+                config=config_dict,
+                status=RunStatus.RUNNING.value,
+                started_at=datetime.now(timezone.utc),
+            )
+            return str(run.id)
+    except Exception as exc:
+        logger.warning("Failed to persist backtest run start: %s", exc)
+        return None
+
+
+def _finish_backtest_run(
+    run_id: Optional[str],
+    *,
+    status: str,
+    result_summary: Optional[Dict[str, Any]] = None,
+    error_message: Optional[str] = None,
+) -> None:
+    if run_id is None:
+        return
+    try:
+        with session_scope() as session:
+            update_backtest_run(
+                session,
+                uuid.UUID(run_id),
+                status=status,
+                result_summary=result_summary,
+                error_message=error_message,
+                finished_at=datetime.now(timezone.utc),
+            )
+    except Exception as exc:
+        logger.warning("Failed to persist backtest run finish: %s", exc)
 
 
 @asynccontextmanager
@@ -645,6 +793,8 @@ def run_backtest(request: BacktestRequest):
             status_code=400, detail="Start datetime must be before end datetime."
         )
 
+    run_id = _start_backtest_run(request)
+
     try:
         # 1. Fetch data
         ohlcv_data = market_data_service.get_ohlcv(
@@ -689,21 +839,68 @@ def run_backtest(request: BacktestRequest):
         metrics = registry.get_performance_metrics(request.initial_capital)
         closed_trades = [t.model_dump() for t in registry.get_closed_trades()]
 
-        # Convert datetimes to strings to avoid pydantic issues if needed, though dict dump might handle it.
-        # But wait, pydantic handles it correctly with standard configuration if response_model is present.
+        _finish_backtest_run(
+            run_id,
+            status=RunStatus.COMPLETED.value,
+            result_summary=metrics,
+        )
 
         return {
             "metrics": metrics,
             "trades": closed_trades,
             "bars": chart_data["bars"],
             "indicators": chart_data["indicators"],
+            "run_id": run_id,
         }
 
-    except HTTPException:
+    except HTTPException as exc:
+        _finish_backtest_run(
+            run_id,
+            status=RunStatus.FAILED.value,
+            error_message=str(exc.detail),
+        )
         raise
     except Exception as e:
+        _finish_backtest_run(
+            run_id,
+            status=RunStatus.FAILED.value,
+            error_message=str(e),
+        )
         logger.error(f"Error running backtest: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/backtests", response_model=BacktestRunListResponse)
+def list_backtests(
+    session: Session = Depends(get_session),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    symbol: Optional[str] = None,
+):
+    """Return a paginated list of backtest runs, newest first."""
+    runs, total = list_backtest_runs(
+        session, limit=limit, offset=offset, symbol=symbol
+    )
+    return {
+        "items": [_backtest_run_list_item(run) for run in runs],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@app.get("/api/v1/backtests/{run_id}", response_model=BacktestRunDetailResponse)
+def get_backtest(run_id: str, session: Session = Depends(get_session)):
+    """Return a single backtest run by id."""
+    try:
+        run_uuid = uuid.UUID(run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.") from exc
+
+    run = get_backtest_run(session, run_uuid)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.")
+    return _backtest_run_detail(run)
 
 
 @app.post("/api/v1/optimize", response_model=OptimizationStartResponse)
@@ -742,15 +939,49 @@ def get_optimization_status(study_id: str):
 def get_optimization_results(study_id: str):
     """Return full study results once the optimization has finished."""
     job = optimization_jobs.get_job(study_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail=f"Study '{study_id}' not found.")
-    payload = optimization_jobs.results_payload(job)
+    if job is not None:
+        payload = optimization_jobs.results_payload(job)
+        if payload is None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Study '{study_id}' has no results yet (status: {job.status}).",
+            )
+        return payload
+
+    payload = optimization_jobs.results_payload_from_db(study_id)
     if payload is None:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Study '{study_id}' has no results yet (status: {job.status}).",
-        )
+        persisted_status = optimization_jobs.get_persisted_study_status(study_id)
+        if persisted_status is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Study '{study_id}' has no results yet "
+                    f"(status: {persisted_status})."
+                ),
+            )
+        raise HTTPException(status_code=404, detail=f"Study '{study_id}' not found.")
     return payload
+
+
+@app.get("/api/v1/optimizations", response_model=OptimizationStudyListResponse)
+def list_optimizations(
+    session: Session = Depends(get_session),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    """Return a paginated list of optimization studies, newest first."""
+    studies, total = list_optimization_studies(
+        session, limit=limit, offset=offset
+    )
+    return {
+        "items": [
+            OptimizationStudyListItem(**optimization_jobs.study_list_item_from_db(study))
+            for study in studies
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @app.post(

@@ -198,8 +198,8 @@ To run it:
 * **`GET /`**
   * *Description:* Verify backend online status and check current MT5 connectivity.
 * **`GET /api/v1/system/health`**
-  * *Description:* Advanced system diagnostic dashboard info.
-  * *Response:* `{"status": "healthy", "backendVersion": "0.1.0", "dataLakeStatus": "online", "lastSyncAt": "2026-05-30..."}`
+  * *Description:* Advanced system diagnostic dashboard info. Includes database (PostgreSQL) and cache/jobs (Redis) storage statuses.
+  * *Response:* `{"status": "healthy", "backendVersion": "0.1.0", "dataLakeStatus": "online", "lastSyncAt": "2026-06-09...", "storageStatus": {"postgres": {"status": "ok"}, "redis": {"status": "ok"}}}`
 
 ### B3 Asset Directory & Realtime
 * **`GET /api/v1/market/instruments`**
@@ -223,6 +223,35 @@ To run it:
     * `symbol` (required)
     * `start` (ISO-8601 Datetime)
     * `end` (ISO-8601 Datetime)
+
+### Algorithmic Backtesting
+* **`POST /api/v1/backtest/run`**
+  * *Description:* Runs a strategy backtest locally on the historical OHLCV data.
+  * *Request Body (JSON):* `{"symbol": "WIN$", "timeframe": "M5", "start": "2026-01-01T00:00:00Z", "end": "2026-06-01T00:00:00Z", "initial_capital": 100000.0, "point_value": 0.2, "strategy": "MACrossover", "strategy_params": {"fast_period": 9, "slow_period": 21}}`
+  * *Response:* Returns performance `metrics` (win rate, profit factor, max drawdown), `trades` list, computed candlestick `bars`, technical `indicators` series, and optional `run_id` when persistence succeeds.
+* **`GET /api/v1/backtests`**
+  * *Description:* Paginated list of persisted backtest runs, newest first.
+  * *Parameters:* `limit` (default 50), `offset` (default 0), optional `symbol`.
+  * *Response:* `{"items": [{"run_id": "...", "symbol": "WIN$", "strategy": "MACrossover", "timeframe": "M5", "status": "completed", "created_at": "2026-06-09T12:00:00Z", "summary": {...}}], "total": 42, "limit": 50, "offset": 0}`
+* **`GET /api/v1/backtests/{run_id}`**
+  * *Description:* Full metadata for a single persisted backtest run (config + metrics summary). Does not include trades/bars/indicators.
+  * *Response:* `{"run_id": "...", "symbol": "WIN$", "strategy": "MACrossover", "timeframe": "M5", "status": "completed", "config": {...}, "result_summary": {...}, "error_message": null, "started_at": "...", "finished_at": "...", "created_at": "..."}`
+
+### Optuna Parameter Optimization
+* **`POST /api/v1/optimize`**
+  * *Description:* Launch an asynchronous Optuna parameter optimization study.
+  * *Request Body (JSON):* Specify study configurations, parameters, bounds, and strategy parameters. Runs in a background thread worker.
+  * *Response:* `{"study_id": "3f9a1c8e7b0d4f6a9c2e1d8b5f4a3c2e", "status": "pending"}` (`study_id` is a 32-char hex string)
+* **`GET /api/v1/optimize/{study_id}`**
+  * *Description:* Retrieve the active status and current progress (completed trials, best values, error messages) of the optimization study.
+* **`POST /api/v1/optimize/{study_id}/cancel`**
+  * *Description:* Request cancellation of an active optimization study.
+* **`GET /api/v1/optimize/{study_id}/results`**
+  * *Description:* Fetch the completed Optuna trials list, Pareto front (for multi-objective studies), and the overall best parameters. When the in-memory job is gone (e.g. after server restart), results are rebuilt from the persisted study and trials in Postgres.
+* **`GET /api/v1/optimizations`**
+  * *Description:* Paginated list of persisted optimization studies, newest first.
+  * *Parameters:* `limit` (default 50), `offset` (default 0).
+  * *Response:* `{"items": [{"study_id": "3f9a...", "name": "WIN$ MA sweep", "status": "done", "best_value": 1.83, "n_trials": 100, "completed_trials": 100, "created_at": "2026-06-09T12:00:00Z"}], "total": 7, "limit": 50, "offset": 0}`
 
 ---
 

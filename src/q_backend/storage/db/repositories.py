@@ -2,7 +2,8 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy import desc, func, select
+from sqlalchemy.orm import Session, selectinload
 
 from q_backend.storage.db.models import (
     BacktestConfig,
@@ -27,6 +28,40 @@ def create_strategy(
     session.add(strategy)
     session.flush()
     return strategy
+
+
+def get_or_create_strategy(session: Session, *, name: str) -> Strategy:
+    strategy = session.execute(
+        select(Strategy).where(Strategy.name == name)
+    ).scalar_one_or_none()
+    if strategy is None:
+        strategy = create_strategy(session, name=name)
+    return strategy
+
+
+def get_backtest_run(session: Session, run_id: uuid.UUID) -> Optional[BacktestRun]:
+    return session.get(BacktestRun, run_id)
+
+
+def list_backtest_runs(
+    session: Session,
+    *,
+    limit: int = 50,
+    offset: int = 0,
+    symbol: Optional[str] = None,
+) -> tuple[list[BacktestRun], int]:
+    base = select(BacktestRun)
+    if symbol is not None:
+        base = base.where(BacktestRun.config["symbol"].as_string() == symbol)
+
+    total = session.execute(
+        select(func.count()).select_from(base.subquery())
+    ).scalar_one()
+
+    runs = session.execute(
+        base.order_by(desc(BacktestRun.created_at)).limit(limit).offset(offset)
+    ).scalars().all()
+    return list(runs), total
 
 
 def create_strategy_version(
@@ -182,6 +217,49 @@ def update_optimization_trial(
         trial.metrics = metrics
     session.flush()
     return trial
+
+
+def get_optimization_study(
+    session: Session, study_id: uuid.UUID
+) -> Optional[OptimizationStudy]:
+    return session.execute(
+        select(OptimizationStudy)
+        .where(OptimizationStudy.id == study_id)
+        .options(selectinload(OptimizationStudy.trials))
+    ).scalar_one_or_none()
+
+
+def list_optimization_studies(
+    session: Session,
+    *,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[OptimizationStudy], int]:
+    base = select(OptimizationStudy)
+    total = session.execute(
+        select(func.count()).select_from(base.subquery())
+    ).scalar_one()
+    studies = session.execute(
+        base.order_by(desc(OptimizationStudy.created_at))
+        .limit(limit)
+        .offset(offset)
+        .options(selectinload(OptimizationStudy.trials))
+    ).scalars().all()
+    return list(studies), total
+
+
+def get_optimization_trial_by_number(
+    session: Session,
+    *,
+    study_id: uuid.UUID,
+    trial_number: int,
+) -> Optional[OptimizationTrial]:
+    return session.execute(
+        select(OptimizationTrial).where(
+            OptimizationTrial.study_id == study_id,
+            OptimizationTrial.trial_number == trial_number,
+        )
+    ).scalar_one_or_none()
 
 
 def create_data_ingestion_run(

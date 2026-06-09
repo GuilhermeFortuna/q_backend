@@ -9,6 +9,11 @@ from q_backend.storage.db.repositories import (
     create_optimization_trial,
     create_strategy,
     create_strategy_version,
+    get_backtest_run,
+    get_optimization_study,
+    get_or_create_strategy,
+    list_backtest_runs,
+    list_optimization_studies,
     update_backtest_run,
     update_data_ingestion_run,
     update_optimization_study,
@@ -103,3 +108,111 @@ def test_data_ingestion_run_flow(db_session):
     )
     assert updated.lake_path.endswith(".parquet")
     assert updated.stats["rows"] == 1000
+
+
+def test_get_or_create_strategy_returns_existing(db_session):
+    first = create_strategy(db_session, name="MACrossover")
+    second = get_or_create_strategy(db_session, name="MACrossover")
+    assert second.id == first.id
+
+
+def test_get_or_create_strategy_creates_when_missing(db_session):
+    strategy = get_or_create_strategy(db_session, name="NewStrategy")
+    assert strategy.name == "NewStrategy"
+
+
+def test_get_backtest_run(db_session):
+    config = create_backtest_config(
+        db_session,
+        name="win-m5",
+        config={"symbol": "WIN$", "timeframe": "M5", "strategy": "MACrossover"},
+    )
+    run = create_backtest_run(
+        db_session,
+        backtest_config_id=config.id,
+        config={"symbol": "WIN$", "timeframe": "M5", "strategy": "MACrossover"},
+        status=RunStatus.COMPLETED.value,
+    )
+    fetched = get_backtest_run(db_session, run.id)
+    assert fetched is not None
+    assert fetched.id == run.id
+
+
+def test_list_backtest_runs_newest_first_and_symbol_filter(db_session):
+    config_a = create_backtest_config(
+        db_session,
+        name="petr4-d1",
+        config={"symbol": "PETR4", "timeframe": "D1", "strategy": "MACrossover"},
+    )
+    config_b = create_backtest_config(
+        db_session,
+        name="win-m5",
+        config={"symbol": "WIN$", "timeframe": "M5", "strategy": "MACrossover"},
+    )
+    older = create_backtest_run(
+        db_session,
+        backtest_config_id=config_a.id,
+        config={"symbol": "PETR4", "timeframe": "D1", "strategy": "MACrossover"},
+        status=RunStatus.COMPLETED.value,
+    )
+    newer = create_backtest_run(
+        db_session,
+        backtest_config_id=config_b.id,
+        config={"symbol": "WIN$", "timeframe": "M5", "strategy": "MACrossover"},
+        status=RunStatus.COMPLETED.value,
+    )
+    older.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    newer.created_at = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    db_session.flush()
+
+    all_runs, total = list_backtest_runs(db_session)
+    assert total == 2
+    assert all_runs[0].id == newer.id
+    assert all_runs[1].id == older.id
+
+    win_runs, win_total = list_backtest_runs(db_session, symbol="WIN$")
+    assert win_total == 1
+    assert win_runs[0].id == newer.id
+
+
+def test_get_optimization_study(db_session):
+    study = create_optimization_study(
+        db_session,
+        name="ma_sharpe",
+        config={"study": {"n_trials": 10}},
+        status=RunStatus.RUNNING.value,
+    )
+    create_optimization_trial(
+        db_session,
+        study_id=study.id,
+        trial_number=0,
+        params={"fast": 9},
+        status=TrialStatus.COMPLETED.value,
+    )
+    fetched = get_optimization_study(db_session, study.id)
+    assert fetched is not None
+    assert fetched.id == study.id
+    assert len(fetched.trials) == 1
+
+
+def test_list_optimization_studies_newest_first(db_session):
+    older = create_optimization_study(
+        db_session,
+        name="older",
+        config={"study": {"n_trials": 5}},
+        status=RunStatus.COMPLETED.value,
+    )
+    newer = create_optimization_study(
+        db_session,
+        name="newer",
+        config={"study": {"n_trials": 10}},
+        status=RunStatus.COMPLETED.value,
+    )
+    older.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    newer.created_at = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    db_session.flush()
+
+    studies, total = list_optimization_studies(db_session)
+    assert total == 2
+    assert studies[0].id == newer.id
+    assert studies[1].id == older.id
