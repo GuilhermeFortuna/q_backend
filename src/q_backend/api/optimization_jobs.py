@@ -270,15 +270,91 @@ def _count_completed_trials(trials: list) -> int:
     return sum(1 for trial in trials if trial.status in _FINISHED_TRIAL_STATUSES)
 
 
+def _optimization_config_from_study_config(config: dict[str, Any]) -> dict[str, Any] | None:
+    config_for_validation = {
+        key: value for key, value in config.items() if key != "persisted_snapshot"
+    }
+    try:
+        return OptimizationConfig.model_validate(config_for_validation).model_dump(
+            mode="json"
+        )
+    except Exception:
+        logger.debug("Invalid optimization config stored for study")
+        return None
+
+
+def status_payload_from_db(study_id: str) -> dict[str, Any] | None:
+    try:
+        study_uuid = _parse_study_uuid(study_id)
+    except ValueError:
+        return None
+
+    try:
+        with session_scope() as session:
+            study = get_optimization_study(session, study_uuid)
+    except Exception as exc:
+        logger.warning("Failed to load optimization study %s from DB: %s", study_id, exc)
+        return None
+
+    if study is None:
+        return None
+
+    config = study.config or {}
+    snapshot = config.get("persisted_snapshot", {})
+    n_trials = config.get("study", {}).get("n_trials", 0)
+    optimization_config = _optimization_config_from_study_config(config)
+    backtest_config = (
+        optimization_config.get("backtest") if optimization_config is not None else None
+    )
+
+    return {
+        "study_id": study_id,
+        "status": study.status,
+        "completed_trials": _count_completed_trials(study.trials),
+        "n_trials": n_trials,
+        "best_value": snapshot.get("best_value"),
+        "best_params": snapshot.get("best_params", {}),
+        "error": snapshot.get("error"),
+        "backtest_config": backtest_config,
+        "optimization_config": optimization_config,
+    }
+
+
+def _enrich_status_with_config(
+    payload: dict[str, Any], study_id: str
+) -> dict[str, Any]:
+    if payload.get("optimization_config") is not None:
+        return payload
+    db_payload = status_payload_from_db(study_id)
+    if db_payload is None:
+        return payload
+    enriched = dict(payload)
+    if db_payload.get("optimization_config") is not None:
+        enriched["optimization_config"] = db_payload["optimization_config"]
+    if db_payload.get("backtest_config") is not None:
+        enriched["backtest_config"] = db_payload["backtest_config"]
+    return enriched
+
+
 def get_status_payload(study_id: str) -> dict[str, Any] | None:
+    job = get_job(study_id)
+    if job is not None:
+        payload = status_payload(job)
+        optimization_config = job.config.model_dump(mode="json")
+        payload["backtest_config"] = optimization_config.get("backtest")
+        payload["optimization_config"] = optimization_config
+        return payload
+
+    db_payload = status_payload_from_db(study_id)
+
     try:
         cached = get_job_progress(get_redis(), study_id)
-        if cached is not None:
-            return cached
+        if cached is not None and db_payload is None:
+            return _enrich_status_with_config(cached, study_id)
     except Exception:
         logger.debug("Redis progress read unavailable for study %s", study_id)
-    job = get_job(study_id)
-    return status_payload(job) if job else None
+
+    return db_payload
 
 
 def start_job(

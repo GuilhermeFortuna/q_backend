@@ -129,7 +129,14 @@ def test_redis_progress_keyed_by_study_id(monkeypatch):
     job = optimization_jobs.start_job(_config(n_trials=3), backtest_runner=stub)
     _wait_for(job.study_id, {"done"})
 
-    cached = get_job_progress(redis_client, job.study_id)
+    deadline = time.time() + 2.0
+    cached = None
+    while time.time() < deadline:
+        cached = get_job_progress(redis_client, job.study_id)
+        if cached is not None and cached["status"] == "done":
+            break
+        time.sleep(0.02)
+
     assert cached is not None
     assert cached["study_id"] == job.study_id
     assert cached["status"] == "done"
@@ -146,7 +153,7 @@ def test_get_status_payload_backward_compatible_shape(monkeypatch):
     _wait_for(job.study_id, {"done"})
 
     payload = optimization_jobs.get_status_payload(job.study_id)
-    assert set(payload.keys()) == optimization_jobs.STATUS_PAYLOAD_KEYS
+    assert optimization_jobs.STATUS_PAYLOAD_KEYS.issubset(payload.keys())
 
 
 def test_redis_failure_falls_back_to_memory(monkeypatch):

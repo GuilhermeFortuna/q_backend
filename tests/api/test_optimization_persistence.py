@@ -11,7 +11,11 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from q_backend.api import optimization_jobs
-from q_backend.api.main import get_optimization_results, list_optimizations
+from q_backend.api.main import (
+    get_optimization_results,
+    get_optimization_status,
+    list_optimizations,
+)
 from q_backend.optimization.backtest_runner import (
     BacktestRunConfig,
     BacktestRunResult,
@@ -199,6 +203,21 @@ def test_list_optimizations_returns_persisted_studies(api_db_session, api_sessio
     assert item.n_trials == 2
     assert item.completed_trials == 2
     assert item.best_value is not None
+
+
+def test_optimization_status_rebuild_after_restart(api_session_scope):
+    job, done, _stub = _start_persisted_job(api_session_scope, n_trials=2)
+    optimization_jobs._jobs.clear()
+
+    with patch("q_backend.api.optimization_jobs.session_scope", api_session_scope):
+        status = get_optimization_status(job.study_id)
+
+    assert status["study_id"] == job.study_id
+    assert status["status"] == "done"
+    assert status["completed_trials"] == 2
+    assert status["optimization_config"] is not None
+    assert status["optimization_config"]["backtest"]["symbol"] == "WIN$"
+    assert status["backtest_config"]["symbol"] == "WIN$"
 
 
 def test_optimization_graceful_degradation_when_persistence_unavailable():
