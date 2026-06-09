@@ -1,0 +1,13 @@
+# Normalize line endings on commit; avoid CRLF/LF-only phantom diffs on Windows.
+* text=auto
+
+# Binary assets — never alter line endings.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
