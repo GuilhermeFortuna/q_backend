@@ -866,7 +866,7 @@ def _format_tape_ticks(raw_ticks: List[Tick]) -> List[dict]:
         timestamp = (
             _utc_iso_milliseconds(time_msc)
             if time_msc > 0
-            else _utc_iso_seconds(tick.time)
+            else mt5_datetime_to_utc_iso(tick.time)
         )
         formatted.append(
             {
@@ -1039,7 +1039,7 @@ def _ohlcv_to_bar_response(row) -> dict:
             )
         volume = row.real_volume if row.real_volume > 0 else row.tick_volume
         return {
-            "timestamp": timestamp_dt.isoformat().replace("+00:00", "Z"),
+            "timestamp": mt5_datetime_to_utc_iso(timestamp_dt),
             "open": float(row.open),
             "high": float(row.high),
             "low": float(row.low),
@@ -1047,9 +1047,8 @@ def _ohlcv_to_bar_response(row) -> dict:
             "volume": int(volume),
         }
 
-    timestamp_dt = datetime.fromtimestamp(int(row["time"]))
     return {
-        "timestamp": timestamp_dt.isoformat() + "Z",
+        "timestamp": unix_seconds_to_utc_iso(int(row["time"])),
         "open": float(row["open"]),
         "high": float(row["high"]),
         "low": float(row["low"]),
@@ -1190,8 +1189,8 @@ def get_market_ohlcv_available_range(
     return {
         "symbol": available_range.symbol,
         "timeframe": available_range.timeframe,
-        "start": available_range.start,
-        "end": available_range.end,
+        "start": mt5_datetime_to_utc_iso(available_range.start),
+        "end": mt5_datetime_to_utc_iso(available_range.end),
         "bar_count": available_range.bar_count,
     }
 
