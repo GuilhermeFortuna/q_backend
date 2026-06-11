@@ -20,11 +20,17 @@ from q_backend.backtesting.strategy_registry import (
     list_registered_strategies,
 )
 from q_backend.backtesting.position_sizing import (
+    FixedQuantityPositionSizing,
     PositionSizingConfig,
     build_position_sizer,
 )
 from q_backend.backtesting.engine import BacktestEngine, ParallelMode
+from q_backend.backtesting.tick.chart_data import serialize_tick_chart_data
+from q_backend.backtesting.tick.engine import TickBacktestEngine
+from q_backend.backtesting.tick.factory import build_tick_strategy
+from q_backend.backtesting.tick.strategy import TickArrays
 from q_backend.market_data.clients.metatrader import _to_naive_local
+import MetaTrader5 as mt5
 from q_backend.optimization import OptimizationConfig
 from q_backend.api import optimization_jobs
 from q_backend.storage.db.engine import session_scope
@@ -156,6 +162,9 @@ class BacktestRequest(BaseModel):
     strategy: str = "MACrossover"  # Support for multiple strategies in the future
     strategy_params: Dict[str, Any] = {}
     position_sizing: Optional[PositionSizingConfig] = None
+    engine: Literal["candle", "tick"] = "candle"
+    display_timeframe: str = "M1"
+    tick_flags: Optional[str] = None
 
 
 class ChartIndicatorSeries(BaseModel):
@@ -314,9 +323,106 @@ def _backtest_run_detail(run: BacktestRun) -> BacktestRunDetailResponse:
     )
 
 
+def _backtest_request_config(request: BacktestRequest) -> Dict[str, Any]:
+    config_dict = request.model_dump(mode="json")
+    if request.engine == "tick":
+        config_dict["timeframe"] = "TICK"
+    return config_dict
+
+
+def _resolve_tick_flags(tick_flags: Optional[str]) -> int:
+    if tick_flags is None or tick_flags.lower() == "all":
+        return mt5.COPY_TICKS_ALL
+    if tick_flags.lower() == "trade":
+        return mt5.COPY_TICKS_TRADE
+    raise ValueError(
+        f"Invalid tick_flags '{tick_flags}'. Expected 'all' or 'trade'."
+    )
+
+
+def _columnar_to_tick_arrays(columnar: Dict[str, Any]) -> TickArrays:
+    return TickArrays(
+        time_msc=columnar["time_msc"],
+        bid=columnar["bid"],
+        ask=columnar["ask"],
+        last=columnar["last"],
+        volume=columnar["volume"],
+    )
+
+
+def _run_tick_backtest(
+    request: BacktestRequest,
+    start: datetime,
+    end: datetime,
+    run_id: Optional[str],
+) -> Dict[str, Any]:
+    try:
+        tick_flags = _resolve_tick_flags(request.tick_flags)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        arrays = market_data_service.get_ticks_columnar(
+            request.symbol, start, end, flags=tick_flags
+        )
+    except ConnectionError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    if len(arrays["time_msc"]) == 0:
+        raise HTTPException(
+            status_code=404,
+            detail="No tick data found for the given parameters.",
+        )
+
+    ticks = _columnar_to_tick_arrays(arrays)
+
+    try:
+        strategy = build_tick_strategy(
+            request.strategy, request.strategy_params, request.symbol
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        chart_data = serialize_tick_chart_data(
+            ticks, strategy, display_timeframe=request.display_timeframe
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    sizing_config = request.position_sizing or FixedQuantityPositionSizing()
+
+    engine = TickBacktestEngine(
+        strategy=strategy,
+        sizing_config=sizing_config,
+        initial_capital=request.initial_capital,
+        point_value=request.point_value,
+        symbol=request.symbol,
+    )
+    registry = engine.run(ticks, parallel_mode=ParallelMode.DAY_TRADE)
+
+    metrics = registry.get_performance_metrics(request.initial_capital)
+    closed_trades = [t.model_dump() for t in registry.get_closed_trades()]
+
+    _finish_backtest_run(
+        run_id,
+        status=RunStatus.COMPLETED.value,
+        result_summary=metrics,
+    )
+
+    return {
+        "metrics": metrics,
+        "trades": closed_trades,
+        "bars": chart_data["bars"],
+        "indicators": chart_data["indicators"],
+        "run_id": run_id,
+    }
+
+
 def _start_backtest_run(request: BacktestRequest) -> Optional[str]:
     try:
-        config_dict = request.model_dump(mode="json")
+        config_dict = _backtest_request_config(request)
+        persisted_timeframe = config_dict.get("timeframe", request.timeframe)
         now = datetime.now(timezone.utc)
         with session_scope() as session:
             get_or_create_strategy(session, name=request.strategy)
@@ -333,7 +439,7 @@ def _start_backtest_run(request: BacktestRequest) -> Optional[str]:
 
             bt_config = create_backtest_config(
                 session,
-                name=f"{request.symbol}-{request.timeframe}",
+                name=f"{request.symbol}-{persisted_timeframe}",
                 config=config_dict,
             )
             run = create_backtest_run(
@@ -1110,6 +1216,9 @@ def run_backtest(request: BacktestRequest):
     run_id = _start_backtest_run(request)
 
     try:
+        if request.engine == "tick":
+            return _run_tick_backtest(request, start, end, run_id)
+
         # 1. Fetch data
         ohlcv_data = market_data_service.get_ohlcv(
             request.symbol, request.timeframe, start, end

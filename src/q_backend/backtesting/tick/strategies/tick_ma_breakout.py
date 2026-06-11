@@ -79,6 +79,16 @@ class TickMaBreakoutStrategy(TickStrategy):
 
         return TickSignals(direction=direction, sl_points=sl, tp_points=tp)
 
+    def compute_indicator_series(self, ticks: TickArrays) -> dict[str, np.ndarray]:
+        price = ticks.last
+        short_ma = _rolling_sma(price, self.short_period)
+        long_ma = _rolling_sma(price, self.long_period)
+        return {
+            "ma_short": short_ma,
+            "ma_long": long_ma,
+            "delta": short_ma - long_ma,
+        }
+
     def get_chart_indicators(self) -> list[ChartIndicatorSpec]:
         return [
             ChartIndicatorSpec(

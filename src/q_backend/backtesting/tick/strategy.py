@@ -51,3 +51,10 @@ class TickStrategy(ABC):
     @abstractmethod
     def get_chart_indicators(self) -> list[ChartIndicatorSpec]:
         pass
+
+    def compute_indicator_series(self, ticks: TickArrays) -> dict[str, np.ndarray]:
+        """
+        Optional tick-native indicator arrays aligned 1:1 with ``ticks``.
+        Used by the tick chart resampler to sample values at display bar closes.
+        """
+        return {}
