@@ -90,6 +90,10 @@ class BacktestConfig(BaseModel):
     point_value: float = Field(default=1.0, gt=0)
     strategy: str = "MACrossover"
     parallel_mode: ParallelMode = ParallelMode.SEQUENTIAL
+    day_trade: bool = False
+    day_trade_start_time: str = "09:00"
+    day_trade_end_time: str = "16:00"
+    day_trade_close_time: str = "17:00"
 
     @model_validator(mode="after")
     def normalize_and_validate_range(self):

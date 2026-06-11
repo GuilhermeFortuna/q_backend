@@ -54,6 +54,10 @@ class OptimizationRunner:
             strategy_params=trial_params.strategy_params,
             position_sizing=position_sizing,
             parallel_mode=backtest.parallel_mode,
+            day_trade=backtest.day_trade,
+            day_trade_start_time=backtest.day_trade_start_time,
+            day_trade_end_time=backtest.day_trade_end_time,
+            day_trade_close_time=backtest.day_trade_close_time,
         )
 
     def _objective(self, trial: optuna.Trial) -> float | tuple[float, ...]:

@@ -165,6 +165,10 @@ class BacktestRequest(BaseModel):
     engine: Literal["candle", "tick"] = "candle"
     display_timeframe: str = "M1"
     tick_flags: Optional[str] = None
+    day_trade: bool = False
+    day_trade_start_time: str = "09:00"
+    day_trade_end_time: str = "16:00"
+    day_trade_close_time: str = "17:00"
 
 
 class ChartIndicatorSeries(BaseModel):
@@ -1255,6 +1259,10 @@ def run_backtest(request: BacktestRequest):
             sizer,
             initial_capital=request.initial_capital,
             point_values={request.symbol: request.point_value},
+            day_trade=request.day_trade,
+            day_trade_start_time=request.day_trade_start_time,
+            day_trade_end_time=request.day_trade_end_time,
+            day_trade_close_time=request.day_trade_close_time,
         )
         registry = engine.run(df, parallel_mode=ParallelMode.SEQUENTIAL)
 

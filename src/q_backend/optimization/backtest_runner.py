@@ -26,6 +26,10 @@ class BacktestRunConfig:
     strategy_params: dict[str, Any]
     position_sizing: PositionSizingConfig | None
     parallel_mode: ParallelMode = ParallelMode.SEQUENTIAL
+    day_trade: bool = False
+    day_trade_start_time: str = "09:00"
+    day_trade_end_time: str = "16:00"
+    day_trade_close_time: str = "17:00"
 
 
 @dataclass
@@ -110,6 +114,10 @@ class DefaultBacktestRunner:
             sizer,
             initial_capital=config.initial_capital,
             point_values={config.symbol: config.point_value},
+            day_trade=config.day_trade,
+            day_trade_start_time=config.day_trade_start_time,
+            day_trade_end_time=config.day_trade_end_time,
+            day_trade_close_time=config.day_trade_close_time,
         )
         registry = engine.run(df, parallel_mode=config.parallel_mode)
 

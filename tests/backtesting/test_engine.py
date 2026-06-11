@@ -287,3 +287,79 @@ def test_engine_with_point_value():
     # PnL = (Exit - Entry) * Quantity * Point Value
     # PnL = (5.0 - 11.0) * 2.0 * 450.0 = -6.0 * 900.0 = -5400.0
     assert trade.pnl == pytest.approx(-5400.0)
+
+
+def test_engine_sequential_day_trade(dummy_data):
+    """
+    A SEQUENTIAL run with day_trade=True forces the trade closed at the end of each day
+    and clears pending signals so they do not carry over to the next day's opening bar.
+    """
+    strategy = DummyStrategy()
+    sizer = FixedQuantitySizer(quantity=1.0)
+    engine = BacktestEngine(strategy, sizer, initial_capital=1000, day_trade=True)
+
+    registry = engine.run(dummy_data, parallel_mode=ParallelMode.SEQUENTIAL)
+
+    assert len(registry.get_open_trades()) == 0
+
+    # One trade from Day 1: entered at bar 1's open (101.0), force-closed at
+    # Day 1's last close (105.0) because day_trade=True.
+    closed_trades = registry.get_closed_trades()
+    assert len(closed_trades) == 1
+
+    trade = closed_trades[0]
+    assert trade.entry_price == 101.0
+    assert trade.exit_price == 105.0
+    assert trade.pnl == pytest.approx(4.0)
+
+
+def test_engine_day_trade_hours():
+    """
+    Verifies that in day trade mode, entries are only scanned during the entry window,
+    and open positions are force-closed exactly when the close time is reached.
+    """
+    # DummyStrategy buys when close is 100.
+    strategy = DummyStrategy()
+    sizer = FixedQuantitySizer(quantity=1.0)
+    
+    # Configure: entries between 09:30 and 15:00, force close at 15:30.
+    engine = BacktestEngine(
+        strategy, 
+        sizer, 
+        initial_capital=1000, 
+        day_trade=True,
+        day_trade_start_time="09:30",
+        day_trade_end_time="15:00",
+        day_trade_close_time="15:30"
+    )
+
+    base = datetime(2023, 1, 1, 0, 0, tzinfo=timezone.utc)
+    
+    times = [
+        base + timedelta(hours=9),       # 09:00:00 (outside entry window)
+        base + timedelta(hours=10),      # 10:00:00 (inside entry window)
+        base + timedelta(hours=11),      # 11:00:00 (inside entry window)
+        base + timedelta(hours=15, minutes=30),  # 15:30:00 (force-close time)
+        base + timedelta(hours=16),      # 16:00:00 (after force-close)
+    ]
+    
+    # Bar 0 (09:00): close=100. Triggers BUY, but since 09:00 < 09:30, it is ignored!
+    # Bar 1 (10:00): close=100. Triggers BUY (inside entry window 09:30 - 15:00).
+    # Bar 2 (11:00): open=101. Fills BUY. Close=102.
+    # Bar 3 (15:30): open=104. Since 15:30 >= 15:30 (force-close time), it is force-closed at open (104.0).
+    closes = [100.0, 100.0, 102.0, 105.0, 105.0]
+    opens = [99.0, 99.0, 101.0, 104.0, 105.0]
+    
+    df = pd.DataFrame({"open": opens, "close": closes}, index=times)
+    
+    registry = engine.run(df)
+    
+    closed_trades = registry.get_closed_trades()
+    assert len(closed_trades) == 1
+    
+    trade = closed_trades[0]
+    assert trade.entry_time == times[2]  # Filled at Bar 2's open
+    assert trade.entry_price == 101.0
+    assert trade.exit_time == times[3]   # Force closed at Bar 3's open
+    assert trade.exit_price == 104.0     # Fills at force-close time open (104.0)
+    assert trade.pnl == pytest.approx(3.0)
