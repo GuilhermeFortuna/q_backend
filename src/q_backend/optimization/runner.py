@@ -58,6 +58,9 @@ class OptimizationRunner:
             day_trade_start_time=backtest.day_trade_start_time,
             day_trade_end_time=backtest.day_trade_end_time,
             day_trade_close_time=backtest.day_trade_close_time,
+            engine=backtest.engine,
+            display_timeframe=backtest.display_timeframe,
+            tick_flags=backtest.tick_flags,
         )
 
     def _objective(self, trial: optuna.Trial) -> float | tuple[float, ...]:

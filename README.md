@@ -273,6 +273,7 @@ To run it:
 * **`POST /api/v1/optimize`**
   * *Description:* Launch an asynchronous Optuna parameter optimization study.
   * *Request Body (JSON):* Specify study configurations, parameters, bounds, and strategy parameters. Runs in a background thread worker.
+  * *Tick engine:* set `backtest.engine` to `"tick"` to optimize tick-native strategies. Ticks for the study symbol and date range are loaded **once** via `MarketDataService.get_ticks_columnar` (cache-backed) when the job starts and reused in memory for every trial — the same load-once pattern as OHLCV for candle studies.
   * *Response:* `{"study_id": "3f9a1c8e7b0d4f6a9c2e1d8b5f4a3c2e", "status": "pending"}` (`study_id` is a 32-char hex string)
 * **`GET /api/v1/optimize/{study_id}`**
   * *Description:* Retrieve the active status and current progress (completed trials, best values, error messages) of the optimization study.

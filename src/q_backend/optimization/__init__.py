@@ -4,6 +4,7 @@ from q_backend.optimization.backtest_runner import (
     BacktestRunner,
     DefaultBacktestRunner,
 )
+from q_backend.optimization.tick_backtest_runner import TickBacktestRunner
 from q_backend.optimization.config_loader import load_optimization_config
 from q_backend.optimization.exporter import (
     ExportPaths,
@@ -23,6 +24,7 @@ __all__ = [
     "OptimizationConfig",
     "OptimizationResult",
     "OptimizationRunner",
+    "TickBacktestRunner",
     "export_results",
     "load_optimization_config",
     "serialize_trial",

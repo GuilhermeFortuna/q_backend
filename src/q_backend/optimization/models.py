@@ -94,6 +94,9 @@ class BacktestConfig(BaseModel):
     day_trade_start_time: str = "09:00"
     day_trade_end_time: str = "16:00"
     day_trade_close_time: str = "17:00"
+    engine: Literal["candle", "tick"] = "candle"
+    display_timeframe: str = "M1"
+    tick_flags: Optional[str] = None
 
     @model_validator(mode="after")
     def normalize_and_validate_range(self):

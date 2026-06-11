@@ -20,8 +20,10 @@ from q_backend.optimization import (
     OptimizationConfig,
     OptimizationResult,
     OptimizationRunner,
+    TickBacktestRunner,
     serialize_trial,
 )
+from q_backend.optimization.tick_backtest_runner import resolve_tick_flags
 from q_backend.storage.db.engine import session_scope
 from q_backend.storage.db.models import RunStatus, TrialStatus
 from q_backend.storage.db.repositories import (
@@ -391,13 +393,22 @@ def start_job(
                 "market_data_service is required when backtest_runner is not provided"
             )
         backtest = config.backtest
-        runner = DefaultBacktestRunner.from_market_data(
-            market_data_service,
-            symbol=backtest.symbol,
-            timeframe=backtest.timeframe,
-            start=backtest.start,
-            end=backtest.end,
-        )
+        if backtest.engine == "tick":
+            runner = TickBacktestRunner.from_market_data(
+                market_data_service,
+                symbol=backtest.symbol,
+                start=backtest.start,
+                end=backtest.end,
+                flags=resolve_tick_flags(backtest.tick_flags),
+            )
+        else:
+            runner = DefaultBacktestRunner.from_market_data(
+                market_data_service,
+                symbol=backtest.symbol,
+                timeframe=backtest.timeframe,
+                start=backtest.start,
+                end=backtest.end,
+            )
 
     with _lock:
         _jobs[study_id] = job

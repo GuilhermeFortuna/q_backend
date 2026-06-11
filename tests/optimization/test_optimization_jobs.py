@@ -1,7 +1,8 @@
 import time
 from dataclasses import dataclass, field
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import numpy as np
 import fakeredis
 import pytest
 
@@ -12,6 +13,7 @@ from q_backend.optimization.backtest_runner import (
     BacktestRunResult,
 )
 from q_backend.optimization.models import OptimizationConfig
+from q_backend.optimization.tick_backtest_runner import TickBacktestRunner
 
 
 @dataclass
@@ -119,6 +121,54 @@ def test_results_payload_none_before_completion():
 def test_start_job_requires_market_data_service_without_runner():
     with pytest.raises(ValueError, match="market_data_service is required"):
         optimization_jobs.start_job(_config(n_trials=1))
+
+
+def test_start_job_constructs_tick_runner_for_tick_engine(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def _submit(fn, job, runner):
+        captured["runner"] = runner
+
+    monkeypatch.setattr(optimization_jobs._executor, "submit", _submit)
+
+    service = MagicMock()
+    service.get_ticks_columnar.return_value = {
+        "time_msc": np.array([1_700_000_000_000], dtype=np.int64),
+        "bid": np.array([10.0]),
+        "ask": np.array([10.02]),
+        "last": np.array([10.01]),
+        "volume": np.array([1.0]),
+    }
+
+    config = OptimizationConfig.model_validate(
+        {
+            "study": {
+                "name": "tick_job_test",
+                "n_trials": 1,
+                "seed": 1,
+                "storage": {"type": "memory"},
+            },
+            "objective": {"mode": "maximize_net_profit"},
+            "backtest": {
+                "symbol": "TEST",
+                "start": "2024-01-01T00:00:00",
+                "end": "2024-02-01T00:00:00",
+                "strategy": "TickMaBreakout",
+                "engine": "tick",
+            },
+            "search_space": {
+                "strategy_params": {
+                    "short_period": {"type": "int", "low": 2, "high": 3},
+                    "long_period": {"type": "int", "low": 4, "high": 5},
+                }
+            },
+        }
+    )
+
+    optimization_jobs.start_job(config, market_data_service=service)
+
+    assert isinstance(captured["runner"], TickBacktestRunner)
+    service.get_ticks_columnar.assert_called_once()
 
 
 def test_redis_progress_keyed_by_study_id(monkeypatch):
