@@ -31,6 +31,7 @@ from q_backend.backtesting.tick.factory import build_tick_strategy
 from q_backend.backtesting.tick.strategy import TickArrays
 from q_backend.market_data.clients.metatrader import _to_naive_local
 import MetaTrader5 as mt5
+from q_backend.market_data.timezone import mt5_datetime_to_utc_iso, unix_seconds_to_utc_iso
 from q_backend.optimization import OptimizationConfig
 from q_backend.api import optimization_jobs
 from q_backend.storage.db.engine import session_scope
@@ -147,8 +148,8 @@ class OhlcvBarResponse(BaseModel):
 class OhlcvAvailableRangeResponse(BaseModel):
     symbol: str
     timeframe: str
-    start: datetime
-    end: datetime
+    start: str
+    end: str
     bar_count: int
 
 
@@ -745,8 +746,8 @@ def _utc_iso_seconds(dt: datetime) -> str:
 def _utc_iso_milliseconds(time_msc: int) -> str:
     seconds = time_msc // 1000
     millis = time_msc % 1000
-    dt = datetime.fromtimestamp(seconds, tz=timezone.utc)
-    return f"{dt.strftime('%Y-%m-%dT%H:%M:%S')}.{millis:03d}Z"
+    base = unix_seconds_to_utc_iso(seconds)
+    return f"{base[:-1]}.{millis:03d}Z"
 
 
 def _build_market_snapshot(symbol: str) -> Optional[dict]:
@@ -778,7 +779,7 @@ def _build_market_snapshot(symbol: str) -> Optional[dict]:
         last_price = float(tick.last) if tick.last > 0 else float(tick.bid)
         volume = int(tick.volume)
         if tick.time:
-            tick_time = _utc_iso_seconds(datetime.fromtimestamp(tick.time, tz=timezone.utc))
+            tick_time = unix_seconds_to_utc_iso(int(tick.time))
     else:
         rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 0, 1)
         if rates is not None and len(rates) > 0:

@@ -62,7 +62,7 @@ def test_backtest_start_must_be_before_end():
         )
 
 
-def test_backtest_datetimes_normalized_to_naive_local():
+def test_backtest_datetimes_normalized_to_naive_brasilia():
     config = OptimizationConfig.model_validate(
         {
             "study": {"name": "s", "storage": {"type": "memory"}},
@@ -77,6 +77,8 @@ def test_backtest_datetimes_normalized_to_naive_local():
     )
     assert config.backtest.start.tzinfo is None
     assert config.backtest.end.tzinfo is None
+    assert config.backtest.start.hour == 0
+    assert config.backtest.end.hour == 23
 
 
 def test_optuna_directions_single_objective():

@@ -52,6 +52,7 @@ def test_serialize_chart_data_shape_and_alignment():
 
     for bar in bars:
         assert "timestamp" in bar
+        assert bar["timestamp"].endswith("Z")
         assert {"open", "high", "low", "close", "volume"} <= set(bar.keys())
 
     indicator_keys = {ind["key"] for ind in indicators}

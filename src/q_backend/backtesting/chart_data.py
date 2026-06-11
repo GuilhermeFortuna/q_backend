@@ -3,12 +3,15 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy
+from q_backend.market_data.timezone import mt5_datetime_to_utc_iso
 
 
 def _to_iso_timestamp(ts: Any) -> str:
     if isinstance(ts, pd.Timestamp):
-        return ts.isoformat()
-    return pd.Timestamp(ts).isoformat()
+        dt = ts.to_pydatetime()
+    else:
+        dt = pd.Timestamp(ts).to_pydatetime()
+    return mt5_datetime_to_utc_iso(dt)
 
 
 def _series_values(column: pd.Series) -> List[Optional[float]]:

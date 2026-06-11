@@ -12,7 +12,6 @@ from q_backend.api.main import (
     _symbol_info_to_instrument_response,
     _tick_side,
     _utc_iso_milliseconds,
-    _utc_iso_seconds,
     get_market_instrument_info,
     get_market_snapshot,
     get_market_snapshots,
@@ -20,6 +19,7 @@ from q_backend.api.main import (
     market_data_service,
 )
 from q_backend.market_data.models import Tick
+from q_backend.market_data.timezone import unix_seconds_to_utc_iso
 
 _RATE_DTYPE = [
     ("time", "i8"),
@@ -105,9 +105,7 @@ def test_build_market_snapshot_enriched_fields(mock_mt5):
     assert snapshot["dayLow"] == 40.9
     assert snapshot["prevClose"] == 41.22
     assert snapshot["digits"] == 2
-    assert snapshot["tickTime"] == _utc_iso_seconds(
-        datetime.fromtimestamp(_TICK_TIME, tz=timezone.utc)
-    )
+    assert snapshot["tickTime"] == unix_seconds_to_utc_iso(_TICK_TIME)
 
 
 def test_build_market_snapshot_market_closed_fallback(mock_mt5):
