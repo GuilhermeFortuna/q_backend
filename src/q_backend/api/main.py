@@ -83,6 +83,50 @@ class MarketSnapshotResponse(BaseModel):
     last: float
     changePct: float
     volume: int
+    bid: float = 0.0
+    ask: float = 0.0
+    spread: float = 0.0
+    changeAbs: float = 0.0
+    dayOpen: float = 0.0
+    dayHigh: float = 0.0
+    dayLow: float = 0.0
+    prevClose: float = 0.0
+    digits: int = 0
+    tickTime: Optional[str] = None
+
+
+class MarketSnapshotsResponse(BaseModel):
+    snapshots: List[MarketSnapshotResponse]
+
+
+class MarketTapeTickResponse(BaseModel):
+    timestamp: str
+    bid: float
+    ask: float
+    last: float
+    volume: float
+    side: Optional[Literal["buy", "sell"]] = None
+
+
+class MarketTicksResponse(BaseModel):
+    ticks: List[MarketTapeTickResponse]
+
+
+class InstrumentInfoResponse(BaseModel):
+    symbol: str
+    description: str
+    exchange: str
+    currencyBase: str
+    currencyProfit: str
+    digits: int
+    point: float
+    tickSize: float
+    tickValue: float
+    contractSize: float
+    volumeMin: float
+    volumeMax: float
+    volumeStep: float
+    spreadFloating: bool
 
 
 class OhlcvBarResponse(BaseModel):
@@ -580,57 +624,277 @@ def search_symbols(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/v1/market/snapshot/{symbol}", response_model=MarketSnapshotResponse)
-def get_market_snapshot(symbol: str):
+def _utc_iso_seconds(dt: datetime) -> str:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _utc_iso_milliseconds(time_msc: int) -> str:
+    seconds = time_msc // 1000
+    millis = time_msc % 1000
+    dt = datetime.fromtimestamp(seconds, tz=timezone.utc)
+    return f"{dt.strftime('%Y-%m-%dT%H:%M:%S')}.{millis:03d}Z"
+
+
+def _build_market_snapshot(symbol: str) -> Optional[dict]:
     """
-    Retrieve real-time price snapshot for a B3 asset using MT5.
+    Build a market snapshot dict for a resolvable symbol, or None when the symbol
+    cannot be selected in MT5.
     """
     import MetaTrader5 as mt5
 
     symbol = symbol.upper()
-
-    connected = market_data_service.mt5_client.connect()
-    if not connected:
-        raise HTTPException(status_code=503, detail="MetaTrader 5 terminal is offline.")
-
     if not mt5.symbol_select(symbol, True):
-        raise HTTPException(
-            status_code=404, detail=f"Symbol '{symbol}' not found on MetaTrader 5."
-        )
+        return None
+
+    sym_info = mt5.symbol_info(symbol)
+    digits = int(sym_info.digits) if sym_info is not None else 0
 
     tick = mt5.symbol_info_tick(symbol)
-    if not tick:
-        # Fallback to copy_rates if market is closed/inactive
+    bid = 0.0
+    ask = 0.0
+    spread = 0.0
+    tick_time: Optional[str] = None
+    last_price = 0.0
+    volume = 0
+
+    if tick:
+        bid = float(tick.bid)
+        ask = float(tick.ask)
+        spread = ask - bid
+        last_price = float(tick.last) if tick.last > 0 else float(tick.bid)
+        volume = int(tick.volume)
+        if tick.time:
+            tick_time = _utc_iso_seconds(datetime.fromtimestamp(tick.time, tz=timezone.utc))
+    else:
         rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 0, 1)
         if rates is not None and len(rates) > 0:
             last_price = float(rates[0]["close"])
+            bid = last_price
+            ask = last_price
+            spread = 0.0
             volume = int(rates[0]["tick_volume"])
-        else:
-            last_price = 0.0
-            volume = 0
-    else:
-        last_price = float(tick.last) if tick.last > 0 else float(tick.bid)
-        volume = int(tick.volume)
 
-    # Calculate change percentage from daily close
     rates_d1 = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_D1, 0, 2)
     change_pct = 0.0
+    change_abs = 0.0
+    day_open = 0.0
+    day_high = 0.0
+    day_low = 0.0
+    prev_close = 0.0
+
     if rates_d1 is not None and len(rates_d1) >= 2:
         prev_close = float(rates_d1[0]["close"])
-        current_close = float(rates_d1[-1]["close"])
+        current_bar = rates_d1[-1]
+        day_open = float(current_bar["open"])
+        day_high = float(current_bar["high"])
+        day_low = float(current_bar["low"])
+        current_close = float(current_bar["close"])
         if prev_close > 0:
             change_pct = ((current_close - prev_close) / prev_close) * 100
+        if last_price > 0:
+            change_abs = last_price - prev_close
     elif rates_d1 is not None and len(rates_d1) == 1:
-        open_price = float(rates_d1[0]["open"])
+        bar = rates_d1[0]
+        day_open = float(bar["open"])
+        day_high = float(bar["high"])
+        day_low = float(bar["low"])
+        open_price = day_open
         if open_price > 0 and last_price > 0:
             change_pct = ((last_price - open_price) / open_price) * 100
+            change_abs = last_price - open_price
 
     return {
         "symbol": symbol,
         "last": last_price,
         "changePct": change_pct,
         "volume": volume,
+        "bid": bid,
+        "ask": ask,
+        "spread": spread,
+        "changeAbs": change_abs,
+        "dayOpen": day_open,
+        "dayHigh": day_high,
+        "dayLow": day_low,
+        "prevClose": prev_close,
+        "digits": digits,
+        "tickTime": tick_time,
     }
+
+
+def _tick_side(flags: int) -> Optional[str]:
+    import MetaTrader5 as mt5
+
+    buy = bool(flags & mt5.TICK_FLAG_BUY)
+    sell = bool(flags & mt5.TICK_FLAG_SELL)
+    if buy and not sell:
+        return "buy"
+    if sell and not buy:
+        return "sell"
+    return None
+
+
+def _is_trade_tick(tick: Tick) -> bool:
+    import MetaTrader5 as mt5
+
+    flags = tick.flags or 0
+    has_side = bool(flags & (mt5.TICK_FLAG_BUY | mt5.TICK_FLAG_SELL))
+    return (tick.last or 0.0) > 0 or has_side
+
+
+def _format_tape_ticks(raw_ticks: List[Tick]) -> List[dict]:
+    trade_ticks = [tick for tick in raw_ticks if _is_trade_tick(tick)]
+    selected = trade_ticks if trade_ticks else raw_ticks
+
+    formatted: List[dict] = []
+    for tick in selected:
+        time_msc = tick.time_msc or 0
+        timestamp = (
+            _utc_iso_milliseconds(time_msc)
+            if time_msc > 0
+            else _utc_iso_seconds(tick.time)
+        )
+        formatted.append(
+            {
+                "timestamp": timestamp,
+                "bid": float(tick.bid),
+                "ask": float(tick.ask),
+                "last": float(tick.last or 0.0),
+                "volume": float(tick.volume or 0.0),
+                "side": _tick_side(tick.flags or 0),
+            }
+        )
+    return formatted
+
+
+def _symbol_info_to_instrument_response(symbol: str, info: Dict[str, Any]) -> dict:
+    path = info.get("path", "") or ""
+    path_parts = path.split("\\")
+    exchange = path_parts[0] if path_parts else ""
+
+    return {
+        "symbol": symbol,
+        "description": info.get("description") or symbol,
+        "exchange": exchange,
+        "currencyBase": info.get("currency_base") or "",
+        "currencyProfit": info.get("currency_profit") or "",
+        "digits": int(info.get("digits") or 0),
+        "point": float(info.get("point") or 0.0),
+        "tickSize": float(info.get("trade_tick_size") or 0.0),
+        "tickValue": float(info.get("trade_tick_value") or 0.0),
+        "contractSize": float(info.get("trade_contract_size") or 0.0),
+        "volumeMin": float(info.get("volume_min") or 0.0),
+        "volumeMax": float(info.get("volume_max") or 0.0),
+        "volumeStep": float(info.get("volume_step") or 0.0),
+        "spreadFloating": bool(info.get("spread_float")),
+    }
+
+
+@app.get("/api/v1/market/snapshot/{symbol}", response_model=MarketSnapshotResponse)
+def get_market_snapshot(symbol: str):
+    """
+    Retrieve real-time price snapshot for a B3 asset using MT5.
+    """
+    symbol = symbol.upper()
+
+    connected = market_data_service.mt5_client.connect()
+    if not connected:
+        raise HTTPException(status_code=503, detail="MetaTrader 5 terminal is offline.")
+
+    snapshot = _build_market_snapshot(symbol)
+    if snapshot is None:
+        raise HTTPException(
+            status_code=404, detail=f"Symbol '{symbol}' not found on MetaTrader 5."
+        )
+    return snapshot
+
+
+@app.get("/api/v1/market/snapshots", response_model=MarketSnapshotsResponse)
+def get_market_snapshots(
+    symbols: str = Query(..., description="Comma-separated symbols (max 50)"),
+):
+    """
+    Retrieve real-time price snapshots for multiple symbols in one MT5 session.
+    Unknown symbols are silently skipped.
+    """
+    symbol_list = [item.strip().upper() for item in symbols.split(",") if item.strip()]
+    if len(symbol_list) > 50:
+        raise HTTPException(
+            status_code=422,
+            detail="At most 50 symbols are allowed per batch snapshot request.",
+        )
+
+    connected = market_data_service.mt5_client.connect()
+    if not connected:
+        raise HTTPException(status_code=503, detail="MetaTrader 5 terminal is offline.")
+
+    snapshots = []
+    for symbol in symbol_list:
+        snapshot = _build_market_snapshot(symbol)
+        if snapshot is not None:
+            snapshots.append(snapshot)
+
+    return {"snapshots": snapshots}
+
+
+@app.get("/api/v1/market/ticks/{symbol}", response_model=MarketTicksResponse)
+def get_market_ticks(
+    symbol: str,
+    limit: int = Query(200, ge=1, le=1000, description="Number of recent ticks"),
+):
+    """
+    Retrieve recent time-and-sales ticks for a symbol (newest last).
+    """
+    symbol = symbol.upper()
+
+    connected = market_data_service.mt5_client.connect()
+    if not connected:
+        raise HTTPException(status_code=503, detail="MetaTrader 5 terminal is offline.")
+
+    try:
+        raw_ticks = market_data_service.get_recent_ticks(symbol, limit)
+    except ConnectionError as ce:
+        raise HTTPException(status_code=503, detail=str(ce))
+
+    if not raw_ticks:
+        info = market_data_service.mt5_client.get_symbol_info(symbol)
+        if not info:
+            raise HTTPException(
+                status_code=404, detail=f"Symbol '{symbol}' not found on MetaTrader 5."
+            )
+        return {"ticks": []}
+
+    return {"ticks": _format_tape_ticks(raw_ticks[-limit:])}
+
+
+@app.get(
+    "/api/v1/market/instrument-info/{symbol}",
+    response_model=InstrumentInfoResponse,
+)
+def get_market_instrument_info(symbol: str):
+    """
+    Retrieve curated contract specification fields for a symbol.
+    """
+    symbol = symbol.upper()
+
+    connected = market_data_service.mt5_client.connect()
+    if not connected:
+        raise HTTPException(status_code=503, detail="MetaTrader 5 terminal is offline.")
+
+    try:
+        info = market_data_service.mt5_client.get_symbol_info(symbol)
+    except ConnectionError as ce:
+        raise HTTPException(status_code=503, detail=str(ce))
+
+    if not info:
+        raise HTTPException(
+            status_code=404, detail=f"Symbol '{symbol}' not found on MetaTrader 5."
+        )
+
+    return _symbol_info_to_instrument_response(symbol, info)
 
 
 def _normalize_market_timeframe(timeframe: str) -> str:

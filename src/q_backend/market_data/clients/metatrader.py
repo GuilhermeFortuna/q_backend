@@ -452,6 +452,53 @@ class MetaTraderClient:
 
         return self._run_locked(_fetch)
 
+    def get_recent_ticks(self, symbol: str, limit: int = 200) -> List[Tick]:
+        """
+        Fetches the most recent ticks for a symbol (newest last), capped at `limit`.
+        """
+
+        def _fetch() -> List[Tick]:
+            self._ensure_connected()
+
+            if not mt5.symbol_select(symbol, True):
+                error_code, error_desc = mt5.last_error()
+                logger.warning(
+                    f"Failed to select symbol {symbol} in MarketWatch: "
+                    f"{error_desc} (Code: {error_code})"
+                )
+                return []
+
+            ticks = mt5.copy_ticks_from(
+                symbol, datetime.now(), -limit, mt5.COPY_TICKS_ALL
+            )
+            if ticks is None or len(ticks) == 0:
+                error_code, error_desc = mt5.last_error()
+                logger.error(
+                    f"Failed to fetch recent ticks for {symbol}: "
+                    f"{error_desc} (Code: {error_code})"
+                )
+                return []
+
+            has_last = "last" in ticks.dtype.names
+            has_volume = "volume" in ticks.dtype.names
+            has_flags = "flags" in ticks.dtype.names
+            has_time_msc = "time_msc" in ticks.dtype.names
+
+            return [
+                Tick(
+                    time=datetime.fromtimestamp(int(ticks["time"][i])),
+                    bid=float(ticks["bid"][i]),
+                    ask=float(ticks["ask"][i]),
+                    last=float(ticks["last"][i]) if has_last else 0.0,
+                    volume=float(ticks["volume"][i]) if has_volume else 0.0,
+                    flags=int(ticks["flags"][i]) if has_flags else 0,
+                    time_msc=int(ticks["time_msc"][i]) if has_time_msc else 0,
+                )
+                for i in range(len(ticks))
+            ]
+
+        return self._run_locked(_fetch)
+
     def search_symbols(self, query: str) -> List[Dict[str, Any]]:
         """
         Search for symbols in MetaTrader 5 using a wildcard pattern.

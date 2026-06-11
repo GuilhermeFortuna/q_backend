@@ -104,6 +104,12 @@ class MarketDataService:
         """
         return self.mt5_client.get_ticks(symbol, start, end)
 
+    def get_recent_ticks(self, symbol: str, limit: int = 200) -> List[Tick]:
+        """
+        Fetches the most recent ticks for a given symbol (newest last).
+        """
+        return self.mt5_client.get_recent_ticks(symbol, limit)
+
     def search_symbols(self, query: str) -> list:
         """
         Search for symbols in MetaTrader 5 using wildcard pattern.

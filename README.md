@@ -206,7 +206,19 @@ To run it:
 * **`GET /api/v1/market/instruments`**
   * *Description:* Retrieves B3/Bovespa core instrument master definitions (`PETR4`, `VALE3`, `ITUB4`, `WIN$`, `WDO$`).
 * **`GET /api/v1/market/snapshot/{symbol}`**
-  * *Description:* Obtains high-speed real-time pricing and daily volume data directly from the active terminal.
+  * *Description:* Obtains a real-time quote snapshot directly from the active terminal.
+  * *Response fields:* `symbol`, `last`, `changePct`, `volume` (legacy), plus `bid`, `ask`, `spread`, `changeAbs`, `dayOpen`, `dayHigh`, `dayLow`, `prevClose`, `digits`, `tickTime`.
+* **`GET /api/v1/market/snapshots`**
+  * *Description:* Batch quote snapshots for a watchlist (one MT5 session, unknown symbols skipped).
+  * *Parameters:* `symbols` (required, comma-separated, max 50).
+  * *Response:* `{"snapshots": [MarketSnapshotResponse, ...]}`
+* **`GET /api/v1/market/ticks/{symbol}`**
+  * *Description:* Recent time-and-sales ticks for a symbol (newest last).
+  * *Parameters:* `limit` (default 200, max 1000).
+  * *Response:* `{"ticks": [{"timestamp", "bid", "ask", "last", "volume", "side"}, ...]}`
+* **`GET /api/v1/market/instrument-info/{symbol}`**
+  * *Description:* Curated contract specification fields for charting and order sizing.
+  * *Response fields:* `symbol`, `description`, `exchange`, `currencyBase`, `currencyProfit`, `digits`, `point`, `tickSize`, `tickValue`, `contractSize`, `volumeMin`, `volumeMax`, `volumeStep`, `spreadFloating`.
 * **`GET /api/v1/market/ohlcv/{symbol}`**
   * *Description:* Fetches the historical daily OHLCV rates (past 30 sessions) for frontend charting.
 
