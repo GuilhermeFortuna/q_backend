@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://q:q@localhost:5432/q"
     redis_url: str = "redis://localhost:6380/0"
     data_lake_root: str = "data/lake"
+    port: int = 8000
 
 
 @lru_cache

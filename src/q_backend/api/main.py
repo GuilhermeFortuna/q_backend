@@ -1520,6 +1520,18 @@ def cancel_optimization(study_id: str):
 
 def run_dev():
     """Entry point for running the dev server via `uv run dev`"""
+    import os
     import uvicorn
+    from q_backend.storage.settings import get_settings
 
-    uvicorn.run("q_backend.api.main:app", host="0.0.0.0", port=8000, reload=True)
+    # Try standard PORT env first, then get_settings().port, then fallback to 8000
+    port_env = os.environ.get("PORT")
+    if port_env:
+        port = int(port_env)
+    else:
+        try:
+            port = get_settings().port
+        except Exception:
+            port = 8000
+
+    uvicorn.run("q_backend.api.main:app", host="0.0.0.0", port=port, reload=True)
