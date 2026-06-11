@@ -4,8 +4,10 @@ from pydantic import ValidationError
 from q_backend.backtesting.position_sizing import (
     FixedQuantityPositionSizing,
     FixedSafetyMarginPositionSizing,
+    InverseVolatilityPositionSizing,
     FixedQuantitySizer,
     FixedSafetyMarginSizer,
+    InverseVolatilitySizer,
     build_position_sizer,
 )
 
@@ -51,6 +53,22 @@ def test_build_position_sizer_fixed_safety_margin_null_max_contracts():
 
     assert isinstance(sizer, FixedSafetyMarginSizer)
     assert sizer.max_contracts is None
+
+
+def test_build_position_sizer_inverse_volatility():
+    config = InverseVolatilityPositionSizing(
+        type="inverse_volatility",
+        target_volatility_pct=12.5,
+        min_contracts=1,
+        max_contracts=50,
+    )
+    sizer = build_position_sizer(config, point_value=0.2)
+
+    assert isinstance(sizer, InverseVolatilitySizer)
+    assert sizer.target_volatility_pct == 12.5
+    assert sizer.point_value == 0.2
+    assert sizer.min_contracts == 1
+    assert sizer.max_contracts == 50
 
 
 @pytest.mark.parametrize("quantity", [0, -1.0])

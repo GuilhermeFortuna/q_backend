@@ -3,6 +3,7 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import Annotated, Literal, Optional, Union
 
+import pandas as pd
 from pydantic import BaseModel, Field, model_validator
 
 from q_backend.backtesting.models import (
@@ -32,8 +33,25 @@ class FixedSafetyMarginPositionSizing(BaseModel):
         return self
 
 
+class InverseVolatilityPositionSizing(BaseModel):
+    type: Literal["inverse_volatility"] = "inverse_volatility"
+    target_volatility_pct: float = Field(default=10.0, gt=0)
+    max_contracts: Optional[int] = Field(default=None, ge=1)
+    min_contracts: int = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def max_gte_min(self):
+        if self.max_contracts is not None and self.max_contracts < self.min_contracts:
+            raise ValueError("max_contracts must be >= min_contracts")
+        return self
+
+
 PositionSizingConfig = Annotated[
-    Union[FixedQuantityPositionSizing, FixedSafetyMarginPositionSizing],
+    Union[
+        FixedQuantityPositionSizing,
+        FixedSafetyMarginPositionSizing,
+        InverseVolatilityPositionSizing,
+    ],
     Field(discriminator="type"),
 ]
 
@@ -46,7 +64,12 @@ class PositionSizer(ABC):
 
     @abstractmethod
     def size_signal(
-        self, signal: Signal, current_price: float, current_capital: float
+        self,
+        signal: Signal,
+        current_price: float,
+        current_capital: float,
+        *,
+        current_data: Optional[pd.Series] = None,
     ) -> Optional[Order]:
         """
         Calculates the quantity and creates an Order based on a Signal.
@@ -55,6 +78,7 @@ class PositionSizer(ABC):
             signal: The trading signal.
             current_price: The current market price of the asset.
             current_capital: The current available capital in the backtest.
+            current_data: Optional fill-bar row for sizers that need indicator columns.
 
         Returns:
             Order if the signal warrants trading, else None.
@@ -87,22 +111,23 @@ class FixedQuantitySizer(PositionSizer):
         self.quantity = quantity
 
     def size_signal(
-        self, signal: Signal, current_price: float, current_capital: float
+        self,
+        signal: Signal,
+        current_price: float,
+        current_capital: float,
+        *,
+        current_data: Optional[pd.Series] = None,
     ) -> Optional[Order]:
         if signal.action == SignalAction.HOLD:
             return None
 
         if signal.action == SignalAction.CLOSE:
-            # We don't generate an Order for CLOSE signals right now because
-            # the engine handles CLOSE signals by closing existing open trades directly.
-            # In a more advanced broker execution model, CLOSE could be an opposite market order.
             return None
 
         action = (
             OrderAction.BUY if signal.action == SignalAction.BUY else OrderAction.SELL
         )
 
-        # We assume Market orders for immediate execution for now
         return Order(
             id=str(uuid.uuid4()),
             symbol=signal.symbol,
@@ -114,8 +139,6 @@ class FixedQuantitySizer(PositionSizer):
     def max_position_size(
         self, current_price: float, current_capital: float
     ) -> Optional[float]:
-        # The configured quantity is the maximum position size, not a per-order
-        # amount: the engine caps total open exposure at this value.
         return self.quantity
 
 
@@ -151,7 +174,6 @@ class FixedSafetyMarginSizer(PositionSizer):
 
         if quantity < self.min_contracts:
             if self.min_contracts > 0 and quantity == 0:
-                # Balance below one full margin; holding min contracts is still allowed
                 quantity = self.min_contracts
             else:
                 return 0
@@ -159,7 +181,12 @@ class FixedSafetyMarginSizer(PositionSizer):
         return quantity if quantity > 0 else 0
 
     def size_signal(
-        self, signal: Signal, current_price: float, current_capital: float
+        self,
+        signal: Signal,
+        current_price: float,
+        current_capital: float,
+        *,
+        current_data: Optional[pd.Series] = None,
     ) -> Optional[Order]:
         if signal.action == SignalAction.HOLD:
             return None
@@ -186,15 +213,124 @@ class FixedSafetyMarginSizer(PositionSizer):
     def max_position_size(
         self, current_price: float, current_capital: float
     ) -> Optional[float]:
-        # The full contract count this model would size to is also the cap on
-        # simultaneous open exposure for the symbol.
         return float(self._target_contracts(current_capital))
+
+
+class InverseVolatilitySizer(PositionSizer):
+    """
+    Volatility-targeting sizer: contracts inversely proportional to annualized vol.
+
+    Reads annualized volatility (decimal, e.g. 0.15 for 15%) from
+    ``current_data["volatility"]``. Strategies such as TSMOM expose this column;
+    without it the sizer returns None (no trade).
+    """
+
+    def __init__(
+        self,
+        target_volatility_pct: float,
+        point_value: float = 1.0,
+        max_contracts: int | None = None,
+        min_contracts: int = 0,
+    ):
+        if target_volatility_pct <= 0:
+            raise ValueError("target_volatility_pct must be greater than 0")
+        if point_value <= 0:
+            raise ValueError("point_value must be greater than 0")
+        if min_contracts < 0:
+            raise ValueError("min_contracts must be greater than or equal to 0")
+        if max_contracts is not None and max_contracts < min_contracts:
+            raise ValueError(
+                "max_contracts must be greater than or equal to min_contracts"
+            )
+
+        self.target_volatility_pct = target_volatility_pct
+        self.point_value = point_value
+        self.max_contracts = max_contracts
+        self.min_contracts = min_contracts
+
+    def _read_volatility(self, current_data: Optional[pd.Series]) -> Optional[float]:
+        if current_data is None:
+            return None
+        vol = current_data.get("volatility")
+        if vol is None or (isinstance(vol, float) and (math.isnan(vol) or vol <= 0)):
+            return None
+        try:
+            vol_f = float(vol)
+        except (TypeError, ValueError):
+            return None
+        if math.isnan(vol_f) or vol_f <= 0:
+            return None
+        return vol_f
+
+    def _target_contracts(
+        self,
+        current_price: float,
+        current_capital: float,
+        current_data: Optional[pd.Series],
+    ) -> Optional[int]:
+        vol = self._read_volatility(current_data)
+        if vol is None or current_price <= 0 or current_capital <= 0:
+            return None
+
+        notional_per_contract = vol * current_price * self.point_value
+        if notional_per_contract <= 0:
+            return None
+
+        raw = math.floor(
+            (self.target_volatility_pct / 100.0)
+            * current_capital
+            / notional_per_contract
+        )
+        if self.max_contracts is not None:
+            raw = min(raw, self.max_contracts)
+        raw = max(raw, self.min_contracts)
+        return raw if raw > 0 else None
+
+    def size_signal(
+        self,
+        signal: Signal,
+        current_price: float,
+        current_capital: float,
+        *,
+        current_data: Optional[pd.Series] = None,
+    ) -> Optional[Order]:
+        if signal.action in (SignalAction.HOLD, SignalAction.CLOSE):
+            return None
+
+        quantity = self._target_contracts(current_price, current_capital, current_data)
+        if quantity is None:
+            return None
+
+        action = (
+            OrderAction.BUY if signal.action == SignalAction.BUY else OrderAction.SELL
+        )
+        return Order(
+            id=str(uuid.uuid4()),
+            symbol=signal.symbol,
+            action=action,
+            order_type=OrderType.MARKET,
+            quantity=float(quantity),
+        )
+
+    def max_position_size(
+        self, current_price: float, current_capital: float
+    ) -> Optional[float]:
+        quantity = self._target_contracts(current_price, current_capital, None)
+        if quantity is not None:
+            return float(quantity)
+        if self.max_contracts is not None:
+            return float(self.max_contracts)
+        return None
 
 
 def build_position_sizer(
     config: Optional[
-        FixedQuantityPositionSizing | FixedSafetyMarginPositionSizing
+        FixedQuantityPositionSizing
+        | FixedSafetyMarginPositionSizing
+        | InverseVolatilityPositionSizing
     ] = None,
+    *,
+    point_value: float = 1.0,
 ) -> PositionSizer:
     if config is None:
         return FixedQuantitySizer(quantity=1.0)
@@ -202,8 +338,16 @@ def build_position_sizer(
     if config.type == "fixed_quantity":
         return FixedQuantitySizer(quantity=config.quantity)
 
-    return FixedSafetyMarginSizer(
-        safety_margin_per_contract=config.safety_margin_per_contract,
-        min_contracts=config.min_contracts,
+    if config.type == "fixed_safety_margin":
+        return FixedSafetyMarginSizer(
+            safety_margin_per_contract=config.safety_margin_per_contract,
+            min_contracts=config.min_contracts,
+            max_contracts=config.max_contracts,
+        )
+
+    return InverseVolatilitySizer(
+        target_volatility_pct=config.target_volatility_pct,
+        point_value=point_value,
         max_contracts=config.max_contracts,
+        min_contracts=config.min_contracts,
     )

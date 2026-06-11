@@ -1,4 +1,43 @@
+import numpy as np
 import pandas as pd
+
+
+def compute_realized_vol(
+    close: pd.Series, window: int, periods_per_year: int = 252
+) -> pd.Series:
+    """Rolling annualized close-to-close volatility from log returns."""
+    log_ret = np.log(close / close.shift(1))
+    return log_ret.rolling(window=window, min_periods=window).std() * np.sqrt(
+        periods_per_year
+    )
+
+
+def compute_yang_zhang(
+    open_: pd.Series,
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    window: int,
+    periods_per_year: int = 252,
+) -> pd.Series:
+    """Rolling annualized Yang–Zhang (2000) volatility. Causal: value at bar i
+    uses bars <= i only."""
+    prev_close = close.shift(1)
+    overnight = np.log(open_ / prev_close)
+    open_close = np.log(close / open_)
+
+    u = np.log(high / open_)
+    d = np.log(low / open_)
+    c = np.log(close / open_)
+    rogers_satchell = u * (u - c) + d * (d - c)
+
+    var_overnight = overnight.rolling(window=window, min_periods=window).var()
+    var_open_close = open_close.rolling(window=window, min_periods=window).var()
+    mean_rs = rogers_satchell.rolling(window=window, min_periods=window).mean()
+
+    k = 0.34 / (1.34 + (window + 1) / (window - 1))
+    yz_var = var_overnight + k * var_open_close + (1.0 - k) * mean_rs
+    return np.sqrt(yz_var * periods_per_year)
 
 
 def compute_rsi(close: pd.Series, period: int) -> pd.Series:
