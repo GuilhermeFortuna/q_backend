@@ -34,7 +34,13 @@ from q_backend.market_data.clients.metatrader import _to_naive_local
 import MetaTrader5 as mt5
 from q_backend.market_data.timezone import mt5_datetime_to_utc_iso, unix_seconds_to_utc_iso
 from q_backend.optimization import OptimizationConfig
+from q_backend.optimization.metrics import build_equity_curve
 from q_backend.api import optimization_jobs
+from q_backend.storage.lake import (
+    delete_backtest_artifacts,
+    read_backtest_artifact,
+    write_backtest_artifacts,
+)
 from q_backend.storage.db.engine import session_scope
 from q_backend.storage.db.models import BacktestRun, RunStatus
 from q_backend.storage.db.repositories import (
@@ -227,6 +233,21 @@ class BacktestRunPatchRequest(BaseModel):
     is_saved: bool
 
 
+class EquityArtifactPoint(BaseModel):
+    time: str
+    equity: float
+
+
+class BacktestEquityArtifactResponse(BaseModel):
+    run_id: str
+    points: List[EquityArtifactPoint]
+
+
+class BacktestTradesArtifactResponse(BaseModel):
+    run_id: str
+    trades: List[Dict[str, Any]]
+
+
 class BulkDeleteBacktestsRequest(BaseModel):
     run_ids: List[str]
 
@@ -409,12 +430,24 @@ def _run_tick_backtest(
     registry = engine.run(ticks, parallel_mode=ParallelMode.DAY_TRADE)
 
     metrics = registry.get_performance_metrics(request.initial_capital)
-    closed_trades = [t.model_dump() for t in registry.get_closed_trades()]
+    closed_trade_objects = registry.get_closed_trades()
+    closed_trades = [t.model_dump() for t in closed_trade_objects]
+
+    lake_paths = None
+    if run_id is not None:
+        equity_df = _build_equity_dataframe(
+            closed_trade_objects,
+            request.initial_capital,
+            start,
+            end,
+        )
+        lake_paths = _write_backtest_lake_artifacts(run_id, closed_trades, equity_df)
 
     _finish_backtest_run(
         run_id,
         status=RunStatus.COMPLETED.value,
         result_summary=metrics,
+        lake_paths=lake_paths,
     )
 
     return {
@@ -462,12 +495,36 @@ def _start_backtest_run(request: BacktestRequest) -> Optional[str]:
         return None
 
 
+def _build_equity_dataframe(
+    closed_trades: list,
+    initial_capital: float,
+    start: datetime,
+    end: datetime,
+) -> pd.DataFrame:
+    equity_series = build_equity_curve(closed_trades, initial_capital, start, end)
+    return pd.DataFrame({"time": equity_series.index, "equity": equity_series.values})
+
+
+def _write_backtest_lake_artifacts(
+    run_id: str,
+    closed_trades: list[Dict[str, Any]],
+    equity_curve: pd.DataFrame,
+) -> Optional[Dict[str, str]]:
+    try:
+        trades_df = pd.DataFrame(closed_trades)
+        return write_backtest_artifacts(run_id, trades_df, equity_curve)
+    except Exception as exc:
+        logger.warning("Failed to write backtest lake artifacts: %s", exc)
+        return None
+
+
 def _finish_backtest_run(
     run_id: Optional[str],
     *,
     status: str,
     result_summary: Optional[Dict[str, Any]] = None,
     error_message: Optional[str] = None,
+    lake_paths: Optional[Dict[str, str]] = None,
 ) -> None:
     if run_id is None:
         return
@@ -479,10 +536,55 @@ def _finish_backtest_run(
                 status=status,
                 result_summary=result_summary,
                 error_message=error_message,
+                lake_paths=lake_paths,
                 finished_at=datetime.now(timezone.utc),
             )
     except Exception as exc:
         logger.warning("Failed to persist backtest run finish: %s", exc)
+
+
+def _artifact_datetime_to_iso(value: Any) -> str:
+    if isinstance(value, pd.Timestamp):
+        value = value.to_pydatetime()
+    if isinstance(value, datetime):
+        return mt5_datetime_to_utc_iso(value)
+    return str(value)
+
+
+def _serialize_trades_artifact(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    records: List[Dict[str, Any]] = []
+    for record in df.to_dict(orient="records"):
+        serialized: Dict[str, Any] = {}
+        for key, value in record.items():
+            if value is None or (isinstance(value, float) and pd.isna(value)):
+                serialized[key] = None
+            elif isinstance(value, (pd.Timestamp, datetime)):
+                serialized[key] = _artifact_datetime_to_iso(value)
+            else:
+                serialized[key] = value
+        records.append(serialized)
+    return records
+
+
+def _serialize_equity_artifact(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    time_col = "time" if "time" in df.columns else df.columns[0]
+    equity_col = "equity" if "equity" in df.columns else df.columns[1]
+    points: List[Dict[str, Any]] = []
+    for _, row in df.iterrows():
+        points.append(
+            {
+                "time": _artifact_datetime_to_iso(row[time_col]),
+                "equity": float(row[equity_col]),
+            }
+        )
+    return points
+
+
+def _delete_backtest_lake_artifacts(run_id: str) -> None:
+    try:
+        delete_backtest_artifacts(run_id)
+    except Exception as exc:
+        logger.warning("Failed to delete backtest lake artifacts for %s: %s", run_id, exc)
 
 
 @asynccontextmanager
@@ -1273,12 +1375,24 @@ def run_backtest(request: BacktestRequest):
 
         # 5. Extract Results
         metrics = registry.get_performance_metrics(request.initial_capital)
-        closed_trades = [t.model_dump() for t in registry.get_closed_trades()]
+        closed_trade_objects = registry.get_closed_trades()
+        closed_trades = [t.model_dump() for t in closed_trade_objects]
+
+        lake_paths = None
+        if run_id is not None:
+            equity_df = _build_equity_dataframe(
+                closed_trade_objects,
+                request.initial_capital,
+                start,
+                end,
+            )
+            lake_paths = _write_backtest_lake_artifacts(run_id, closed_trades, equity_df)
 
         _finish_backtest_run(
             run_id,
             status=RunStatus.COMPLETED.value,
             result_summary=metrics,
+            lake_paths=lake_paths,
         )
 
         return {
@@ -1350,6 +1464,9 @@ def bulk_delete_backtests(
 
     deleted_count, missing_ids = delete_backtest_runs(session, parsed_ids)
     not_found.extend(str(run_id) for run_id in missing_ids)
+    deleted_ids = set(parsed_ids) - set(missing_ids)
+    for run_id in deleted_ids:
+        _delete_backtest_lake_artifacts(str(run_id))
     return {"deleted": deleted_count, "not_found": not_found}
 
 
@@ -1397,6 +1514,50 @@ def delete_backtest(run_id: str, session: Session = Depends(get_session)):
 
     if not delete_backtest_run(session, run_uuid):
         raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.")
+
+    _delete_backtest_lake_artifacts(run_id)
+
+
+@app.get(
+    "/api/v1/backtests/{run_id}/artifacts/equity",
+    response_model=BacktestEquityArtifactResponse,
+)
+def get_backtest_equity_artifact(run_id: str):
+    """Return the persisted equity curve for a backtest run."""
+    try:
+        uuid.UUID(run_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=404, detail=f"Backtest run '{run_id}' not found."
+        ) from exc
+
+    try:
+        df = read_backtest_artifact(run_id, "equity")
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return {"run_id": run_id, "points": _serialize_equity_artifact(df)}
+
+
+@app.get(
+    "/api/v1/backtests/{run_id}/artifacts/trades",
+    response_model=BacktestTradesArtifactResponse,
+)
+def get_backtest_trades_artifact(run_id: str):
+    """Return the persisted closed trades for a backtest run."""
+    try:
+        uuid.UUID(run_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=404, detail=f"Backtest run '{run_id}' not found."
+        ) from exc
+
+    try:
+        df = read_backtest_artifact(run_id, "trades")
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return {"run_id": run_id, "trades": _serialize_trades_artifact(df)}
 
 
 @app.post("/api/v1/optimize", response_model=OptimizationStartResponse)

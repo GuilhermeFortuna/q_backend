@@ -1,5 +1,5 @@
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import pandas as pd
@@ -9,6 +9,12 @@ from q_backend.backtesting.models import Trade
 DRAWDOWN_FLOOR = 1e-9
 
 
+def _normalize_timestamp(dt: datetime) -> datetime:
+    if dt.tzinfo is not None:
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
+
 def build_equity_curve(
     closed_trades: list[Trade],
     initial_capital: float,
@@ -16,7 +22,7 @@ def build_equity_curve(
     end: datetime,
 ) -> pd.Series:
     equity = initial_capital
-    points: list[tuple[datetime, float]] = [(start, equity)]
+    points: list[tuple[datetime, float]] = [(_normalize_timestamp(start), equity)]
 
     sorted_trades = sorted(
         closed_trades,
@@ -26,9 +32,9 @@ def build_equity_curve(
         if trade.exit_time is None:
             continue
         equity += trade.pnl or 0.0
-        points.append((trade.exit_time, equity))
+        points.append((_normalize_timestamp(trade.exit_time), equity))
 
-    points.append((end, equity))
+    points.append((_normalize_timestamp(end), equity))
 
     series = pd.Series(
         [value for _, value in points],

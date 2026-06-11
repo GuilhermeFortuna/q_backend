@@ -93,11 +93,20 @@ Three-tier storage keeps analytical payloads separate from operational metadata:
 
 | Tier | Technology | Purpose |
 |------|------------|---------|
-| **Analytical (future)** | Parquet lake at `Q_DATA_LAKE_ROOT` | OHLCV, ticks, features, backtest series, optimization arrays |
+| **Analytical** | Parquet lake at `Q_DATA_LAKE_ROOT` | Backtest trades/equity artifacts (present); OHLCV/ticks/features (future) |
 | **Metadata** | PostgreSQL | Strategies, versions, backtest configs/runs, optimization studies/trials, ingestion run records |
 | **Runtime** | Redis | Job progress (JSON, 24h TTL), cache, locks |
 
 Postgres stores **metadata and lake pointers** (`lake_path`, `lake_paths`, `result_summary`) only. Market data is not stored in Postgres tables.
+
+**Backtest artifact layout** (under `Q_DATA_LAKE_ROOT`, default `data/lake/`):
+
+```
+{data_lake_root}/backtests/{run_id}/trades.parquet
+{data_lake_root}/backtests/{run_id}/equity.parquet
+```
+
+Completed runs from `POST /api/v1/backtest/run` write both files and store relative paths in `BacktestRun.lake_paths`. Walk-forward runs (future) will extend this with `walkforward/{run_id}/...`.
 
 ---
 
@@ -135,8 +144,9 @@ q_backend/
 │       ├── backtesting/  # Engine, Position Sizers, Performance Registry & Strategies
 │       ├── market_data/  # MT5 service wrappers & data pipelines
 │       ├── optimization/ # Optuna runner, study storage, exporters
-│       └── storage/      # Settings, Postgres models, Redis helpers
+│       └── storage/      # Settings, Postgres models, Redis helpers, Parquet lake
 │           ├── settings.py
+│           ├── lake/     # Backtest artifact read/write (Parquet)
 │           ├── db/       # SQLAlchemy models, engine, repositories
 │           └── redis/    # Job progress helpers
 └── tests/
@@ -281,6 +291,13 @@ To run it:
   * *Response:* `{"items": [{"run_id": "...", "symbol": "WIN$", "strategy": "MACrossover", "timeframe": "M5", "status": "completed", "created_at": "2026-06-09T12:00:00Z", "summary": {...}}], "total": 42, "limit": 50, "offset": 0}`
 * **`GET /api/v1/backtests/{run_id}`**
   * *Description:* Full metadata for a single persisted backtest run (config + metrics summary). Does not include trades/bars/indicators.
+* **`GET /api/v1/backtests/{run_id}/artifacts/equity`**
+  * *Description:* Equity curve points for a completed run, read from the Parquet lake. Works without Postgres when artifact files exist on disk.
+  * *Response:* `{"run_id": "<uuid>", "points": [{"time": "<ISO8601>", "equity": <float>}, ...]}`
+* **`GET /api/v1/backtests/{run_id}/artifacts/trades`**
+  * *Description:* Closed trades for a completed run, read from the Parquet lake. Trade objects match the shape returned by `POST /api/v1/backtest/run`.
+  * *Response:* `{"run_id": "<uuid>", "trades": [<trade>, ...]}`
+  * *Errors:* `404` when the run id is invalid or artifacts were never written (e.g. runs predating lake support).
   * *Response:* `{"run_id": "...", "symbol": "WIN$", "strategy": "MACrossover", "timeframe": "M5", "status": "completed", "config": {...}, "result_summary": {...}, "error_message": null, "started_at": "...", "finished_at": "...", "created_at": "..."}`
 
 ### Optuna Parameter Optimization
