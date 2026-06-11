@@ -15,6 +15,8 @@ from q_backend.storage.db.models import (
     Strategy,
     StrategyVersion,
     TrialStatus,
+    WalkForwardRun,
+    WalkForwardWindow,
 )
 
 
@@ -402,3 +404,127 @@ def update_data_ingestion_run(
         ingestion_run.finished_at = finished_at
     session.flush()
     return ingestion_run
+
+
+def create_walkforward_run(
+    session: Session,
+    *,
+    name: str,
+    config: dict[str, Any],
+    status: str = RunStatus.PENDING.value,
+    started_at: Optional[datetime] = None,
+) -> WalkForwardRun:
+    run = WalkForwardRun(
+        name=name,
+        config=config,
+        status=status,
+        started_at=started_at,
+    )
+    session.add(run)
+    session.flush()
+    return run
+
+
+def update_walkforward_run(
+    session: Session,
+    run_id: uuid.UUID,
+    *,
+    status: Optional[str] = None,
+    config: Optional[dict[str, Any]] = None,
+    result_summary: Optional[dict[str, Any]] = None,
+    lake_paths: Optional[dict[str, Any]] = None,
+    error_message: Optional[str] = None,
+    finished_at: Optional[datetime] = None,
+    started_at: Optional[datetime] = None,
+    clear_error_message: bool = False,
+) -> WalkForwardRun:
+    run = session.get(WalkForwardRun, run_id)
+    if run is None:
+        raise ValueError(f"WalkForwardRun {run_id} not found")
+    if status is not None:
+        run.status = status
+    if config is not None:
+        run.config = config
+    if result_summary is not None:
+        run.result_summary = result_summary
+    if lake_paths is not None:
+        run.lake_paths = lake_paths
+    if clear_error_message:
+        run.error_message = None
+    elif error_message is not None:
+        run.error_message = error_message
+    if finished_at is not None:
+        run.finished_at = finished_at
+    if started_at is not None:
+        run.started_at = started_at
+    session.flush()
+    return run
+
+
+def create_walkforward_window(
+    session: Session,
+    *,
+    run_id: uuid.UUID,
+    window_number: int,
+    train_start: datetime,
+    train_end: datetime,
+    test_start: datetime,
+    test_end: datetime,
+    status: str,
+    best_params: dict[str, Any],
+    is_metrics: Optional[dict[str, Any]] = None,
+    oos_metrics: Optional[dict[str, Any]] = None,
+) -> WalkForwardWindow:
+    window = WalkForwardWindow(
+        run_id=run_id,
+        window_number=window_number,
+        train_start=train_start,
+        train_end=train_end,
+        test_start=test_start,
+        test_end=test_end,
+        status=status,
+        best_params=best_params,
+        is_metrics=is_metrics,
+        oos_metrics=oos_metrics,
+    )
+    session.add(window)
+    session.flush()
+    return window
+
+
+def get_walkforward_run(
+    session: Session, run_id: uuid.UUID
+) -> Optional[WalkForwardRun]:
+    return session.execute(
+        select(WalkForwardRun)
+        .where(WalkForwardRun.id == run_id)
+        .options(selectinload(WalkForwardRun.windows))
+    ).scalar_one_or_none()
+
+
+def list_walkforward_runs(
+    session: Session,
+    *,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[WalkForwardRun], int]:
+    base = select(WalkForwardRun)
+    total = session.execute(
+        select(func.count()).select_from(base.subquery())
+    ).scalar_one()
+    runs = session.execute(
+        base.order_by(desc(WalkForwardRun.created_at))
+        .limit(limit)
+        .offset(offset)
+        .options(selectinload(WalkForwardRun.windows))
+    ).scalars().all()
+    return list(runs), total
+
+
+def delete_walkforward_run(session: Session, run_id: uuid.UUID) -> bool:
+    run = get_walkforward_run(session, run_id)
+    if run is None:
+        return False
+    session.delete(run)
+    session.flush()
+    return True

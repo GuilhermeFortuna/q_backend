@@ -175,6 +175,63 @@ class OptimizationTrial(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
 
+class WalkForwardRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "walkforward_runs"
+
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=RunStatus.PENDING.value,
+    )
+    config: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
+    result_summary: Mapped[Optional[dict[str, Any]]] = mapped_column(
+        PortableJSON, nullable=True
+    )
+    lake_paths: Mapped[Optional[dict[str, Any]]] = mapped_column(PortableJSON, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    windows: Mapped[list["WalkForwardWindow"]] = relationship(
+        back_populates="run",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        Index("ix_walkforward_runs_status", "status"),
+        Index("ix_walkforward_runs_created_at", "created_at"),
+    )
+
+
+class WalkForwardWindow(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "walkforward_windows"
+
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("walkforward_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    window_number: Mapped[int] = mapped_column(nullable=False)
+    train_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    train_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    test_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    test_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    best_params: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
+    is_metrics: Mapped[Optional[dict[str, Any]]] = mapped_column(PortableJSON, nullable=True)
+    oos_metrics: Mapped[Optional[dict[str, Any]]] = mapped_column(PortableJSON, nullable=True)
+
+    run: Mapped["WalkForwardRun"] = relationship(back_populates="windows")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "window_number",
+            name="uq_walkforward_windows_run_window",
+        ),
+    )
+
+
 class DataIngestionRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "data_ingestion_runs"
 

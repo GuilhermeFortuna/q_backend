@@ -6,12 +6,14 @@ from typing import Any, Literal, Optional, Protocol
 import pandas as pd
 
 from q_backend.backtesting.engine import BacktestEngine, ParallelMode
+from q_backend.backtesting.models import Trade
 from q_backend.backtesting.factory import build_strategy
 from q_backend.backtesting.position_sizing import (
     PositionSizingConfig,
     build_position_sizer,
 )
 from q_backend.backtesting.costs import TransactionCostConfig
+from q_backend.market_data.clients.metatrader import _to_naive_local
 from q_backend.optimization.metrics import build_equity_curve, compute_extended_metrics
 
 
@@ -41,6 +43,7 @@ class BacktestRunConfig:
 class BacktestRunResult:
     metrics: dict[str, Any]
     trial_user_attrs: dict[str, Any] = field(default_factory=dict)
+    trades: list[Trade] | None = None
 
 
 class BacktestRunner(Protocol):
@@ -82,6 +85,38 @@ class DefaultBacktestRunner:
 
         def data_provider(_config: BacktestRunConfig) -> pd.DataFrame:
             return df
+
+        return cls(data_provider=data_provider)
+
+    @classmethod
+    def from_market_data_sliced(
+        cls,
+        market_data_service: Any,
+        *,
+        symbol: str,
+        timeframe: str,
+        start: datetime,
+        end: datetime,
+    ) -> "DefaultBacktestRunner":
+        """Fetch OHLCV once and slice by ``config.start``/``config.end`` per run.
+
+        Same thread constraint as ``from_market_data``: load on the caller thread,
+        then serve walk-forward windows from an in-memory frame.
+        """
+        ohlcv_data = market_data_service.get_ohlcv(symbol, timeframe, start, end)
+        if not ohlcv_data:
+            raise ValueError("No market data found for the given parameters.")
+
+        df = pd.DataFrame([bar.model_dump() for bar in ohlcv_data])
+        df.set_index("time", inplace=True)
+        df.index = pd.to_datetime(df.index)
+        if df.index.tz is not None:
+            df.index = pd.DatetimeIndex(
+                [_to_naive_local(ts.to_pydatetime()) for ts in df.index]
+            )
+
+        def data_provider(config: BacktestRunConfig) -> pd.DataFrame:
+            return df.loc[config.start : config.end]
 
         return cls(data_provider=data_provider)
 
@@ -151,4 +186,5 @@ class DefaultBacktestRunner:
             trial_user_attrs={
                 "total_trades": metrics.get("total_trades", 0),
             },
+            trades=closed_trades,
         )

@@ -1,3 +1,4 @@
+import json
 import logging
 import shutil
 from pathlib import Path
@@ -10,6 +11,7 @@ from q_backend.storage.settings import get_settings
 logger = logging.getLogger(__name__)
 
 ArtifactKind = Literal["trades", "equity"]
+WalkForwardArtifactKind = Literal["oos_equity", "oos_trades", "windows"]
 
 
 def _project_root() -> Path:
@@ -69,3 +71,62 @@ def delete_backtest_artifacts(run_id: str) -> None:
     if run_dir.is_dir():
         shutil.rmtree(run_dir)
         logger.info("Deleted backtest lake artifacts for run %s", run_id)
+
+
+def _walkforward_run_dir(run_id: str) -> Path:
+    return lake_root() / "walkforward" / run_id
+
+
+def _walkforward_artifact_relative_path(
+    run_id: str, kind: WalkForwardArtifactKind
+) -> str:
+    filenames = {
+        "oos_equity": "oos_equity.parquet",
+        "oos_trades": "oos_trades.parquet",
+        "windows": "windows.parquet",
+    }
+    return f"walkforward/{run_id}/{filenames[kind]}"
+
+
+def _walkforward_artifact_absolute_path(
+    run_id: str, kind: WalkForwardArtifactKind
+) -> Path:
+    return lake_root() / _walkforward_artifact_relative_path(run_id, kind)
+
+
+def write_walkforward_artifacts(
+    run_id: str,
+    oos_equity: pd.DataFrame,
+    oos_trades: pd.DataFrame,
+    windows: pd.DataFrame,
+) -> dict[str, str]:
+    run_dir = _walkforward_run_dir(run_id)
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    oos_equity.to_parquet(run_dir / "oos_equity.parquet", index=False)
+    oos_trades.to_parquet(run_dir / "oos_trades.parquet", index=False)
+    windows.to_parquet(run_dir / "windows.parquet", index=False)
+
+    return {
+        "oos_equity": _walkforward_artifact_relative_path(run_id, "oos_equity"),
+        "oos_trades": _walkforward_artifact_relative_path(run_id, "oos_trades"),
+        "windows": _walkforward_artifact_relative_path(run_id, "windows"),
+    }
+
+
+def read_walkforward_artifact(
+    run_id: str, kind: WalkForwardArtifactKind
+) -> pd.DataFrame:
+    path = _walkforward_artifact_absolute_path(run_id, kind)
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"Walk-forward artifact '{kind}' not found for run '{run_id}'."
+        )
+    return pd.read_parquet(path)
+
+
+def delete_walkforward_artifacts(run_id: str) -> None:
+    run_dir = _walkforward_run_dir(run_id)
+    if run_dir.is_dir():
+        shutil.rmtree(run_dir)
+        logger.info("Deleted walk-forward lake artifacts for run %s", run_id)

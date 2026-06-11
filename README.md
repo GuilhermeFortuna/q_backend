@@ -106,7 +106,17 @@ Postgres stores **metadata and lake pointers** (`lake_path`, `lake_paths`, `resu
 {data_lake_root}/backtests/{run_id}/equity.parquet
 ```
 
-Completed runs from `POST /api/v1/backtest/run` write both files and store relative paths in `BacktestRun.lake_paths`. Walk-forward runs (future) will extend this with `walkforward/{run_id}/...`.
+Completed runs from `POST /api/v1/backtest/run` write both files and store relative paths in `BacktestRun.lake_paths`.
+
+**Walk-forward artifact layout:**
+
+```
+{data_lake_root}/walkforward/{run_id}/oos_equity.parquet
+{data_lake_root}/walkforward/{run_id}/oos_trades.parquet
+{data_lake_root}/walkforward/{run_id}/windows.parquet
+```
+
+Completed runs from `POST /api/v1/walkforward` store relative paths in `walkforward_runs.lake_paths`. The stitched OOS equity curve and trade list live in the lake only; Postgres holds run/window metadata and summary metrics.
 
 ---
 
@@ -316,6 +326,25 @@ To run it:
   * *Description:* Paginated list of persisted optimization studies, newest first.
   * *Parameters:* `limit` (default 50), `offset` (default 0).
   * *Response:* `{"items": [{"study_id": "3f9a...", "name": "WIN$ MA sweep", "status": "done", "best_value": 1.83, "n_trials": 100, "completed_trials": 100, "created_at": "2026-06-09T12:00:00Z"}], "total": 7, "limit": 50, "offset": 0}`
+
+### Walk-forward analysis
+* **`POST /api/v1/walkforward`**
+  * *Description:* Launch an asynchronous walk-forward analysis (optimize in-sample per window, test out-of-sample, stitch OOS equity).
+  * *Request body:* `{"optimization": <OptimizationConfig>, "walkforward": {"train_days": 90, "test_days": 30, "mode": "rolling", "min_windows": 2}}`
+  * *Response:* `{"run_id": "<32-char hex>", "status": "pending"}`
+  * *Errors:* `422` when the date range is too short for `min_windows`, when `engine` is `"tick"`, or for other validation failures.
+* **`GET /api/v1/walkforward/{run_id}`**
+  * *Description:* Live progress (`current_window`, `total_windows`, `phase`, `windows_completed`) from memory/Redis, with DB fallback after restart.
+* **`GET /api/v1/walkforward/{run_id}/results`**
+  * *Description:* Per-window IS/OOS metrics, aggregate OOS metrics, efficiency ratio, and stitched equity curve points. Rebuilt from Postgres + lake when the in-memory job is gone.
+* **`POST /api/v1/walkforward/{run_id}/cancel`**
+  * *Description:* Cooperative cancellation between windows.
+* **`GET /api/v1/walkforwards`**
+  * *Description:* Paginated history list, newest first (`limit`, `offset`).
+* **`DELETE /api/v1/walkforwards/{run_id}`**
+  * *Description:* Delete run metadata and lake artifacts (`204`).
+* **`GET /api/v1/walkforward/{run_id}/artifacts/equity`**
+  * *Description:* Stitched OOS equity curve in the same point-list shape as backtest equity artifacts (`{"run_id", "points": [{"time", "equity"}, ...]}`).
 
 ---
 
