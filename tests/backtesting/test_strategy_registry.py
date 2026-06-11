@@ -13,17 +13,24 @@ from q_backend.backtesting.strategy_registry import (
 )
 from q_backend.backtesting.strategies.bollinger_reversion import BollingerReversionStrategy
 from q_backend.backtesting.strategies.donchian_breakout import DonchianBreakoutStrategy
+from q_backend.backtesting.strategies.fma import FMAStrategy
 from q_backend.backtesting.strategies.macd import MACDStrategy
 from q_backend.backtesting.strategies.rsi_mean_reversion import RSIMeanReversionStrategy
+from q_backend.backtesting.strategies.trb import TRBStrategy
+from q_backend.backtesting.strategies.vma import VMAStrategy
 
 
 REGISTERED_NAMES = [
     "BollingerReversion",
     "DonchianBreakout",
+    "FMA",
     "MACD",
     "MACrossover",
     "RSIMeanReversion",
+    "TRB",
     "TickMaBreakout",
+    "TSMOM",
+    "VMA",
 ]
 
 
@@ -38,6 +45,9 @@ def test_all_strategies_registered():
     ("BollingerReversion", BollingerReversionStrategy),
     ("MACD", MACDStrategy),
     ("DonchianBreakout", DonchianBreakoutStrategy),
+    ("VMA", VMAStrategy),
+    ("FMA", FMAStrategy),
+    ("TRB", TRBStrategy),
 ])
 def test_build_strategy_dispatches(name, expected_class):
     strategy = build_strategy(name, {}, "TEST")

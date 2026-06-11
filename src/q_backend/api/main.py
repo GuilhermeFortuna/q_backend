@@ -24,6 +24,7 @@ from q_backend.backtesting.position_sizing import (
     PositionSizingConfig,
     build_position_sizer,
 )
+from q_backend.backtesting.costs import TransactionCostConfig
 from q_backend.backtesting.engine import BacktestEngine, ParallelMode
 from q_backend.backtesting.tick.chart_data import serialize_tick_chart_data
 from q_backend.backtesting.tick.engine import TickBacktestEngine
@@ -163,6 +164,7 @@ class BacktestRequest(BaseModel):
     strategy: str = "MACrossover"  # Support for multiple strategies in the future
     strategy_params: Dict[str, Any] = {}
     position_sizing: Optional[PositionSizingConfig] = None
+    costs: Optional[TransactionCostConfig] = None
     engine: Literal["candle", "tick"] = "candle"
     display_timeframe: str = "M1"
     tick_flags: Optional[str] = None
@@ -1251,7 +1253,9 @@ def run_backtest(request: BacktestRequest):
         chart_data = serialize_chart_data(df_with_indicators, strategy)
 
         # 3. Setup Position Sizer
-        sizer = build_position_sizer(request.position_sizing)
+        sizer = build_position_sizer(
+            request.position_sizing, point_value=request.point_value
+        )
 
         # 4. Run Engine
         engine = BacktestEngine(
@@ -1263,6 +1267,7 @@ def run_backtest(request: BacktestRequest):
             day_trade_start_time=request.day_trade_start_time,
             day_trade_end_time=request.day_trade_end_time,
             day_trade_close_time=request.day_trade_close_time,
+            costs=request.costs,
         )
         registry = engine.run(df, parallel_mode=ParallelMode.SEQUENTIAL)
 

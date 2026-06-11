@@ -5,6 +5,7 @@ from typing import Annotated, Any, Literal, Optional, Union
 from pydantic import BaseModel, Field, model_validator
 
 from q_backend.backtesting.engine import ParallelMode
+from q_backend.backtesting.costs import TransactionCostConfig
 from q_backend.market_data.clients.metatrader import _to_naive_local
 
 
@@ -89,6 +90,7 @@ class BacktestConfig(BaseModel):
     initial_capital: float = Field(default=100_000.0, gt=0)
     point_value: float = Field(default=1.0, gt=0)
     strategy: str = "MACrossover"
+    costs: Optional[TransactionCostConfig] = None
     parallel_mode: ParallelMode = ParallelMode.SEQUENTIAL
     day_trade: bool = False
     day_trade_start_time: str = "09:00"

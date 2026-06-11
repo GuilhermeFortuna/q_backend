@@ -53,6 +53,7 @@ class OptimizationRunner:
             strategy=backtest.strategy,
             strategy_params=trial_params.strategy_params,
             position_sizing=position_sizing,
+            costs=backtest.costs,
             parallel_mode=backtest.parallel_mode,
             day_trade=backtest.day_trade,
             day_trade_start_time=backtest.day_trade_start_time,

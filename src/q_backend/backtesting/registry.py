@@ -79,6 +79,7 @@ class TradeRegistry:
             return {
                 "total_trades": 0,
                 "total_pnl": 0.0,
+                "total_commission": 0.0,
                 "win_rate": 0.0,
                 "winning_trades": 0,
                 "losing_trades": 0,
@@ -130,6 +131,7 @@ class TradeRegistry:
                 )
 
         total_pnl = sum(t.pnl for t in closed_trades if t.pnl is not None)
+        total_commission = sum(t.commission for t in closed_trades)
         gross_profit = sum(t.pnl for t in winning_trades if t.pnl is not None)
         gross_loss = sum(t.pnl for t in losing_trades if t.pnl is not None)
 
@@ -164,6 +166,7 @@ class TradeRegistry:
         return {
             "total_trades": total_trades,
             "total_pnl": total_pnl,
+            "total_commission": total_commission,
             "win_rate": len(winning_trades) / total_trades,
             "winning_trades": len(winning_trades),
             "losing_trades": len(losing_trades),

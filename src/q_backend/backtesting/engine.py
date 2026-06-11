@@ -5,7 +5,14 @@ from typing import List, Optional
 import pandas as pd
 from enum import Enum
 
-from q_backend.backtesting.models import Signal, Trade, OrderAction, SignalAction
+from q_backend.backtesting.costs import TransactionCostConfig, side_cost
+from q_backend.backtesting.models import (
+    Signal,
+    Trade,
+    OrderAction,
+    SignalAction,
+    TradeStatus,
+)
 from q_backend.backtesting.registry import TradeRegistry
 from q_backend.backtesting.strategy import TradingStrategy
 from q_backend.backtesting.position_sizing import PositionSizer
@@ -29,6 +36,7 @@ def _run_day_trade_chunk(args) -> TradeRegistry:
         day_trade_start_time,
         day_trade_end_time,
         day_trade_close_time,
+        costs,
         chunk,
     ) = args
     engine = BacktestEngine(
@@ -40,6 +48,7 @@ def _run_day_trade_chunk(args) -> TradeRegistry:
         day_trade_start_time=day_trade_start_time,
         day_trade_end_time=day_trade_end_time,
         day_trade_close_time=day_trade_close_time,
+        costs=costs,
     )
     return engine._run_single_chunk(chunk, force_close_at_end=True)
 
@@ -60,6 +69,7 @@ class BacktestEngine:
         day_trade_start_time: str = "09:00",
         day_trade_end_time: str = "16:00",
         day_trade_close_time: str = "17:00",
+        costs: Optional[TransactionCostConfig] = None,
     ):
         self.strategy = strategy
         self.sizer = sizer
@@ -69,6 +79,21 @@ class BacktestEngine:
         self.day_trade_start_time = day_trade_start_time
         self.day_trade_end_time = day_trade_end_time
         self.day_trade_close_time = day_trade_close_time
+        self.costs = costs
+
+    def _close_trade_with_costs(
+        self,
+        registry: TradeRegistry,
+        trade_id: str,
+        exit_time: datetime.datetime,
+        exit_price: float,
+    ) -> Optional[Trade]:
+        trade = registry.trades.get(trade_id)
+        if trade and trade.status != TradeStatus.CLOSED:
+            trade.commission += side_cost(
+                self.costs, exit_price, trade.quantity, trade.point_value
+            )
+        return registry.close_trade(trade_id, exit_time, exit_price)
 
     def run(
         self, data: pd.DataFrame, parallel_mode: ParallelMode = ParallelMode.SEQUENTIAL
@@ -112,6 +137,7 @@ class BacktestEngine:
                     self.day_trade_start_time,
                     self.day_trade_end_time,
                     self.day_trade_close_time,
+                    self.costs,
                     chunk,
                 )
                 for chunk in chunks
@@ -185,7 +211,9 @@ class BacktestEngine:
             if self.day_trade and current_time >= close_t:
                 open_trades = registry.get_open_trades()
                 for t in open_trades:
-                    closed_trade = registry.close_trade(t.id, timestamp, fill_price)
+                    closed_trade = self._close_trade_with_costs(
+                        registry, t.id, timestamp, fill_price
+                    )
                     if closed_trade and closed_trade.pnl is not None:
                         current_capital += closed_trade.pnl
                 pending_exits = []
@@ -200,13 +228,17 @@ class BacktestEngine:
                     t for t in registry.get_open_trades() if t.symbol == sig.symbol
                 ]
                 for t in open_trades:
-                    closed_trade = registry.close_trade(t.id, timestamp, fill_price)
+                    closed_trade = self._close_trade_with_costs(
+                        registry, t.id, timestamp, fill_price
+                    )
                     if closed_trade and closed_trade.pnl is not None:
                         current_capital += closed_trade.pnl
 
             # C. Execute entries queued on the previous bar.
             for sig in pending_entries:
-                order = self.sizer.size_signal(sig, fill_price, current_capital)
+                order = self.sizer.size_signal(
+                    sig, fill_price, current_capital, current_data=current_data
+                )
                 if order:
                     max_size = self.sizer.max_position_size(
                         fill_price, current_capital
@@ -234,6 +266,9 @@ class BacktestEngine:
                         entry_time=timestamp,
                         entry_price=fill_price,
                         point_value=point_val,
+                        commission=side_cost(
+                            self.costs, fill_price, order.quantity, point_val
+                        ),
                     )
                     registry.register_trade(trade)
 
@@ -263,7 +298,9 @@ class BacktestEngine:
                 close_price = current_data.get("close", fill_price)
                 open_trades = registry.get_open_trades()
                 for t in open_trades:
-                    closed_trade = registry.close_trade(t.id, timestamp, close_price)
+                    closed_trade = self._close_trade_with_costs(
+                        registry, t.id, timestamp, close_price
+                    )
                     if closed_trade and closed_trade.pnl is not None:
                         current_capital += closed_trade.pnl
                 pending_exits = []
@@ -276,7 +313,7 @@ class BacktestEngine:
             final_price = final_row.get("close", 0.0)
 
             for t in registry.get_open_trades():
-                registry.close_trade(t.id, final_time, final_price)
+                self._close_trade_with_costs(registry, t.id, final_time, final_price)
 
         return registry
 

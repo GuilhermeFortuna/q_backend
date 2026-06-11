@@ -66,12 +66,26 @@ A separate intrabar engine for MT5 tick arrays (alongside the candle `BacktestEn
   * `DAY_TRADE`: Concurrent chunked backtesting (utilizes standard Python `ProcessPoolExecutor` to process daily sessions across multi-core CPUs in parallel).
 * **Signal & Order Pipeline:** Modular pipeline translating strategy `Signal` structures into executable `Order` definitions using pluggable `PositionSizer` logic.
 * **Vectorized Computations:** Employs precomputed Technical Indicators via vectorized pandas operations, preventing lookahead bias while maintaining massive throughput.
-* **Pluggable Strategy Registry:** Built-in strategies (`MACrossover`, `RSIMeanReversion`, `BollingerReversion`, `MACD`, `DonchianBreakout`) register parameter schemas consumed by the optimization engine and frontend forms via `GET /api/v1/strategies`.
+* **Pluggable Strategy Registry:** Built-in strategies (`MACrossover`, `RSIMeanReversion`, `BollingerReversion`, `MACD`, `DonchianBreakout`, `VMA`, `FMA`, `TRB`, `TSMOM`) register parameter schemas consumed by the optimization engine and frontend forms via `GET /api/v1/strategies`. `VMA`/`FMA`/`TRB` implement the Lai & Lau (2006) price-vs-MA and close-based trading-range rules. `TSMOM` implements the Moskowitz–Ooi–Pedersen (2012) time-series momentum SIGN rule with bar-count rebalancing (Baltas & Kosowski 2017).
+* **Position sizers:** `fixed_quantity`, `fixed_safety_margin`, and `inverse_volatility` (vol targeting). The inverse-volatility sizer reads an annualized `volatility` column from the signal bar passed through the engine fill row — strategies such as `TSMOM` expose this column; without it the sizer skips the order. Sizing formula:
+
+  ```
+  contracts = floor((target_volatility_pct / 100) * capital / (volatility * price * point_value))
+  ```
+
+  clamped to `[min_contracts, max_contracts]`. `target_volatility_pct` is annualized (e.g. `10.0` = 10%). Yang–Zhang and close-to-close estimators live in `technical_indicators.py`.
 * **Advanced Analytics Suite (`TradeRegistry`):** Aggregates execution history and computes comprehensive mathematical metrics:
   * Win Rate, Expectancy, and Profit Factor.
   * Cumulative PnL & Peak Equity Tracking.
   * Precise Maximum Drawdown (Value & Percentage).
   * Recovery Factor & Win/Loss streaks.
+* **Transaction costs (candle engine):** Optional per-run `TransactionCostConfig` on `POST /api/v1/backtest/run` (`costs` field) and optimization backtest config. Both terms default to zero so existing runs stay gross-of-costs unless configured. Each side (entry and exit) pays once:
+
+  ```
+  side_cost = q * cost_per_contract + (cost_bps / 10_000) * p * q * pv
+  ```
+
+  where `q` is contract quantity, `p` is the fill price for that side, and `pv` is the symbol point value. Entry commission is set when the trade opens; exit commission is added at close. Net PnL and `total_commission` in performance metrics reflect both sides. The tick engine is out of scope (spread model only for now).
 
 ### 3. Storage Infrastructure (`storage`)
 
@@ -255,7 +269,7 @@ To run it:
 * **`GET /api/v1/strategies`**
   * *Description:* Returns registered strategy metadata and typed parameter schemas for dynamic UI forms and optimization bounds.
   * *Response:* `{"strategies": [{"name": "MACrossover", "label": "MA Crossover", "description": "...", "params": [{"name": "short_period", "type": "int", "default": 50, ...}]}]}`
-  * *Built-in strategies:* `MACrossover`, `RSIMeanReversion`, `BollingerReversion`, `MACD`, `DonchianBreakout`.
+  * *Built-in strategies:* `MACrossover`, `RSIMeanReversion`, `BollingerReversion`, `MACD`, `DonchianBreakout`, `VMA` (Lai & Lau 2006 variable MA), `FMA` (fixed holding-period MA), `TRB` (close-based trading-range breakout), `TSMOM` (time-series momentum SIGN rule, MOP 2012).
 * **`POST /api/v1/backtest/run`**
   * *Description:* Runs a candle (`engine: "candle"`, default) or tick (`engine: "tick"`) strategy backtest locally.
   * *Candle request (JSON):* `{"symbol": "WIN$", "timeframe": "M5", "start": "2026-01-01T00:00:00Z", "end": "2026-06-01T00:00:00Z", "initial_capital": 100000.0, "point_value": 0.2, "strategy": "MACrossover", "strategy_params": {"short_period": 9, "long_period": 21}}`

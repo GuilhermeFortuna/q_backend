@@ -7,10 +7,14 @@ def test_list_strategies_returns_all_registered():
     assert names == sorted([
         "BollingerReversion",
         "DonchianBreakout",
+        "FMA",
         "MACD",
         "MACrossover",
         "RSIMeanReversion",
+        "TRB",
         "TickMaBreakout",
+        "TSMOM",
+        "VMA",
     ])
 
 

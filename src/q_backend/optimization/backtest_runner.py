@@ -11,6 +11,7 @@ from q_backend.backtesting.position_sizing import (
     PositionSizingConfig,
     build_position_sizer,
 )
+from q_backend.backtesting.costs import TransactionCostConfig
 from q_backend.optimization.metrics import build_equity_curve, compute_extended_metrics
 
 
@@ -25,6 +26,7 @@ class BacktestRunConfig:
     strategy: str
     strategy_params: dict[str, Any]
     position_sizing: PositionSizingConfig | None
+    costs: TransactionCostConfig | None = None
     parallel_mode: ParallelMode = ParallelMode.SEQUENTIAL
     day_trade: bool = False
     day_trade_start_time: str = "09:00"
@@ -111,7 +113,9 @@ class DefaultBacktestRunner:
         strategy = build_strategy(
             config.strategy, config.strategy_params, config.symbol
         )
-        sizer = build_position_sizer(config.position_sizing)
+        sizer = build_position_sizer(
+            config.position_sizing, point_value=config.point_value
+        )
         engine = BacktestEngine(
             strategy,
             sizer,
@@ -121,6 +125,7 @@ class DefaultBacktestRunner:
             day_trade_start_time=config.day_trade_start_time,
             day_trade_end_time=config.day_trade_end_time,
             day_trade_close_time=config.day_trade_close_time,
+            costs=config.costs,
         )
         registry = engine.run(df, parallel_mode=config.parallel_mode)
 

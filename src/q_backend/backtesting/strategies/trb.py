@@ -1,0 +1,159 @@
+from typing import Any, List
+
+import pandas as pd
+
+from q_backend.backtesting.models import Signal, SignalAction, Trade
+from q_backend.backtesting.strategies.lai_lau_common import (
+    add_bar_index,
+    build_timestamp_to_bar,
+    compute_trb_channel_signals,
+    fixed_holding_period_exits,
+)
+from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy, resolve_symbol
+from q_backend.backtesting.strategy_registry import StrategyParamSpec, register_strategy
+
+
+class TRBStrategy(TradingStrategy):
+    """
+    Trading Range Breakout (TRB) rule from Lai & Lau (2006).
+
+    Channels are built from the previous ``period`` closes (excluding the
+    current bar). Breakouts beyond optional bands trigger entries held for a
+    fixed number of bars.
+
+    Deviations from the paper: close-based channels (not high/low like
+    Donchian); shorts instead of a cash leg; ``band_pct`` as a percent of the
+    channel; holding period counted in bars.
+    """
+
+    def __init__(
+        self,
+        period: int = 60,
+        band_pct: float = 0.0,
+        holding_period: int = 10,
+        symbol: str = "BTCUSDT",
+        **kwargs,
+    ):
+        self.period = period
+        self.band_pct = band_pct
+        self.holding_period = holding_period
+        self.symbol = symbol
+        self._timestamp_to_bar: pd.Series | None = None
+        super().__init__(
+            period=period,
+            band_pct=band_pct,
+            holding_period=holding_period,
+            symbol=symbol,
+            **kwargs,
+        )
+
+    def compute_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
+        df = data.copy()
+        if "close" not in df.columns:
+            raise ValueError("Data must contain a 'close' column for the TRB strategy.")
+
+        df = add_bar_index(df)
+        df = compute_trb_channel_signals(df, self.period, self.band_pct)
+        self._timestamp_to_bar = build_timestamp_to_bar(df)
+        return df
+
+    def get_chart_indicators(self) -> List[ChartIndicatorSpec]:
+        return [
+            ChartIndicatorSpec(
+                key="channel_high",
+                label=f"Channel High ({self.period})",
+                pane="price",
+                color="#c9a227",
+            ),
+            ChartIndicatorSpec(
+                key="channel_low",
+                label=f"Channel Low ({self.period})",
+                pane="price",
+                color="#6eb5ff",
+            ),
+            ChartIndicatorSpec(
+                key="trb_upper",
+                label=f"Upper Band ({self.band_pct}%)",
+                pane="price",
+                color="#c9a227",
+            ),
+            ChartIndicatorSpec(
+                key="trb_lower",
+                label=f"Lower Band ({self.band_pct}%)",
+                pane="price",
+                color="#6eb5ff",
+            ),
+        ]
+
+    def check_entry_conditions(self, current_data: pd.Series) -> List[Signal]:
+        symbol = resolve_symbol(current_data, self.symbol)
+        signals: List[Signal] = []
+        if current_data.get("buy_signal", False):
+            signals.append(Signal(symbol=symbol, action=SignalAction.BUY))
+        elif current_data.get("sell_signal", False):
+            signals.append(Signal(symbol=symbol, action=SignalAction.SELL))
+        return signals
+
+    def check_exit_conditions(
+        self, current_data: pd.Series, open_trades: List[Trade]
+    ) -> List[Signal]:
+        symbol = resolve_symbol(current_data, self.symbol)
+        if self._timestamp_to_bar is None:
+            return []
+        return fixed_holding_period_exits(
+            current_data,
+            open_trades,
+            symbol,
+            self.holding_period,
+            self._timestamp_to_bar,
+        )
+
+
+def _build_trb(params: dict[str, Any], symbol: str) -> TRBStrategy:
+    return TRBStrategy(
+        period=int(params["period"]),
+        band_pct=float(params["band_pct"]),
+        holding_period=int(params["holding_period"]),
+        symbol=symbol,
+    )
+
+
+register_strategy(
+    name="TRB",
+    label="Trading Range Breakout (Lai–Lau)",
+    description=(
+        "Close-based trading-range breakout with a fixed bar-count holding "
+        "period (Lai & Lau 2006 TRB rule)."
+    ),
+    params=[
+        StrategyParamSpec(
+            name="period",
+            label="Period",
+            type="int",
+            default=60,
+            min=3,
+            max=240,
+            step=1,
+        ),
+        StrategyParamSpec(
+            name="band_pct",
+            label="Band (%)",
+            type="float",
+            default=0.0,
+            min=0.0,
+            max=5.0,
+            step=0.01,
+        ),
+        StrategyParamSpec(
+            name="holding_period",
+            label="Holding Period (bars)",
+            type="int",
+            default=10,
+            min=1,
+            max=60,
+            step=1,
+        ),
+    ],
+    build=_build_trb,
+    strategy_class=TRBStrategy,
+)
