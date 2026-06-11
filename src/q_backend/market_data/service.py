@@ -4,6 +4,9 @@ from datetime import datetime
 from typing import List, Optional
 from pathlib import Path
 
+import MetaTrader5 as mt5
+import numpy as np
+
 from q_backend.market_data.clients.metatrader import (
     MetaTraderClient,
     OhlcvAvailableRange,
@@ -103,6 +106,21 @@ class MarketDataService:
         Fetches tick market data for a given symbol.
         """
         return self.mt5_client.get_ticks(symbol, start, end)
+
+    def get_ticks_columnar(
+        self,
+        symbol: str,
+        start: datetime,
+        end: datetime,
+        flags: int = mt5.COPY_TICKS_ALL,
+        use_cache: bool = True,
+    ) -> dict[str, np.ndarray]:
+        """
+        Fetches tick market data as aligned NumPy arrays for backtest engines.
+        """
+        return self.mt5_client.get_ticks_columnar(
+            symbol, start, end, flags=flags, use_cache=use_cache
+        )
 
     def get_recent_ticks(self, symbol: str, limit: int = 200) -> List[Tick]:
         """

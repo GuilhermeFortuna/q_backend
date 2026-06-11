@@ -45,9 +45,22 @@
 * **MetaTrader 5 Integration:** High-speed client (`MetaTraderClient`) communicating directly with a running MT5 Windows terminal.
 * **Asset Support:** Tailored to ingestion of **B3 (Bovespa)** symbols (e.g. `PETR4`, `VALE3`, `ITUB4`) and liquid **B3 Futures** contracts (e.g. `WIN$` Mini-Index, `WDO$` Mini-Dollar, and `CCM$` Corn Futures).
 * **Multi-Format Datatypes:** Optimized data schemas for Tick-by-Tick transactions and standardized OHLCV candle streams (from 1-minute `M1` to Monthly `MN1` intervals).
+* **Columnar tick loader:** `MetaTraderClient.get_ticks_columnar` / `MarketDataService.get_ticks_columnar` fetch historical ticks as aligned NumPy arrays (no per-row Pydantic objects) for the tick backtest engine. Results are cached on disk as Parquet (see below).
+* **Tick cache:** Parquet files under `data/tick_cache/` by default (`Q_TICK_CACHE_DIR` overrides). Key = `{symbol_slug}_{sha256(symbol|start|end|flags)[:12]}`. Delete files in that directory to force a refetch from MT5.
 * **Robust Resiliency:** Smart automatic reconnection and local environment configuration mapping.
 
 ### 2. High-Performance Backtesting Engine (`backtesting`)
+
+#### Tick engine (`backtesting/tick`)
+
+A separate intrabar engine for MT5 tick arrays (alongside the candle `BacktestEngine`):
+
+* **`TickStrategy`** — vectorized `compute_signals(ticks) -> TickSignals` (direction, SL/TP distances per tick). Periods count **ticks**, not milliseconds. Causality is enforced in `test_tick_strategy_causality.py`.
+* **`TickBacktestEngine`** — loads columnar ticks, runs the kernel, returns a `TradeRegistry`. Supports `ParallelMode.DAY_TRADE` (split by UTC day from `time_msc`) and `SEQUENTIAL`.
+* **Fill model** — long entries and short covers pay **ask**; long exits and short entries receive **bid**. Single open position; exits checked in order **stop-loss → take-profit → opposite signal**; end-of-chunk force-close at last tick.
+* **Register tick strategies** via `register_strategy(..., engine="tick")` and build with `build_tick_strategy`. First-party example: `TickMaBreakout`.
+
+### 2b. Candle backtesting (`backtesting`)
 * **Multi-Execution Engines:**
   * `SEQUENTIAL`: Standard path tracking (ideal for swing-trading strategies).
   * `DAY_TRADE`: Concurrent chunked backtesting (utilizes standard Python `ProcessPoolExecutor` to process daily sessions across multi-core CPUs in parallel).
@@ -146,6 +159,7 @@ MT5_PATH="C:/Program Files/MetaTrader 5/terminal64.exe"
 Q_DATABASE_URL=postgresql+psycopg://q:q@localhost:5432/q
 Q_REDIS_URL=redis://localhost:6380/0
 Q_DATA_LAKE_ROOT=data/lake
+Q_TICK_CACHE_DIR=data/tick_cache
 ```
 
 ### 2. Install Dependencies

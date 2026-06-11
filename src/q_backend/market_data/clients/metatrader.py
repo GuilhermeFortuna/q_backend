@@ -8,6 +8,13 @@ import numpy as np
 import MetaTrader5 as mt5
 
 from q_backend.market_data.models import OHLCV, Tick
+from q_backend.market_data.tick_cache import load as load_tick_cache
+from q_backend.market_data.tick_cache import make_cache_key
+from q_backend.market_data.tick_cache import store as store_tick_cache
+from q_backend.market_data.timezone import (
+    to_brasilia_naive,
+    unix_seconds_to_brasilia_naive,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,17 +37,120 @@ _MAX_OHLCV_BARS = 50_000
 _HISTORY_ANCHOR = datetime(1990, 1, 1)
 _RANGE_PROBE_YEARS = 2
 _RANGE_FETCH_DAYS = 365
+_TICK_RANGE_FETCH_DAYS = 7
+_MAX_TICKS = 50_000_000
+
+COLUMNAR_TICK_KEYS = (
+    "time_msc",
+    "bid",
+    "ask",
+    "last",
+    "volume",
+    "flags",
+)
 
 
 def _to_naive_local(dt: datetime) -> datetime:
-    """Convert aware datetimes to naive local time to match MT5 bar timestamps."""
-    if dt.tzinfo is not None:
-        return dt.astimezone().replace(tzinfo=None)
-    return dt
+    """Convert aware datetimes to naive Brasília time to match MT5 bar timestamps."""
+    return to_brasilia_naive(dt)
 
 
 def _bar_open_time(rates, index: int) -> datetime:
-    return datetime.fromtimestamp(int(rates[index]["time"]))
+    return unix_seconds_to_brasilia_naive(int(rates[index]["time"]))
+
+
+def _empty_ticks_columnar() -> dict[str, np.ndarray]:
+    return {
+        "time_msc": np.array([], dtype=np.int64),
+        "bid": np.array([], dtype=np.float64),
+        "ask": np.array([], dtype=np.float64),
+        "last": np.array([], dtype=np.float64),
+        "volume": np.array([], dtype=np.float64),
+        "flags": np.array([], dtype=np.int32),
+    }
+
+
+def _time_msc_to_naive_local(msc: int) -> datetime:
+    sec = msc // 1000
+    ms_remainder = msc % 1000
+    base = unix_seconds_to_brasilia_naive(sec)
+    return base + timedelta(milliseconds=ms_remainder)
+
+
+def _ticks_structured_to_columnar(ticks: np.ndarray) -> dict[str, np.ndarray]:
+    if ticks is None or len(ticks) == 0:
+        return _empty_ticks_columnar()
+
+    names = ticks.dtype.names or ()
+    has_time_msc = "time_msc" in names
+    has_last = "last" in names
+    has_volume = "volume" in names
+    has_flags = "flags" in names
+    count = len(ticks)
+
+    if has_time_msc:
+        time_msc = ticks["time_msc"].astype(np.int64, copy=False)
+    else:
+        time_msc = ticks["time"].astype(np.int64, copy=False) * 1000
+
+    bid = ticks["bid"].astype(np.float64, copy=False)
+    ask = ticks["ask"].astype(np.float64, copy=False)
+    last = (
+        ticks["last"].astype(np.float64, copy=False)
+        if has_last
+        else np.zeros(count, dtype=np.float64)
+    )
+    volume = (
+        ticks["volume"].astype(np.float64, copy=False)
+        if has_volume
+        else np.zeros(count, dtype=np.float64)
+    )
+    flags = (
+        ticks["flags"].astype(np.int32, copy=False)
+        if has_flags
+        else np.zeros(count, dtype=np.int32)
+    )
+
+    return {
+        "time_msc": time_msc,
+        "bid": bid,
+        "ask": ask,
+        "last": last,
+        "volume": volume,
+        "flags": flags,
+    }
+
+
+def _map_tick_rows(ticks) -> List[Tick]:
+    """Map a raw MT5 tick array to a list of Tick models (preserving order)."""
+    has_last = "last" in ticks.dtype.names
+    has_volume = "volume" in ticks.dtype.names
+    has_flags = "flags" in ticks.dtype.names
+    has_time_msc = "time_msc" in ticks.dtype.names
+
+    return [
+        Tick(
+            time=unix_seconds_to_brasilia_naive(int(ticks["time"][i])),
+            bid=float(ticks["bid"][i]),
+            ask=float(ticks["ask"][i]),
+            last=float(ticks["last"][i]) if has_last else 0.0,
+            volume=float(ticks["volume"][i]) if has_volume else 0.0,
+            flags=int(ticks["flags"][i]) if has_flags else 0,
+            time_msc=int(ticks["time_msc"][i]) if has_time_msc else 0,
+        )
+        for i in range(len(ticks))
+    ]
+
+
+# Escalating look-back windows for fetching the most recent ticks. We widen the
+# range until we have enough ticks (covers off-hours / illiquid symbols) without
+# scanning unbounded history.
+_RECENT_TICKS_WINDOWS = (
+    timedelta(minutes=10),
+    timedelta(hours=1),
+    timedelta(hours=6),
+    timedelta(days=1),
+)
 
 
 def _rates_to_ohlcv_list(rates) -> List[OHLCV]:
@@ -53,7 +163,7 @@ def _rates_to_ohlcv_list(rates) -> List[OHLCV]:
 
     return [
         OHLCV(
-            time=datetime.fromtimestamp(int(rates["time"][i])),
+            time=unix_seconds_to_brasilia_naive(int(rates["time"][i])),
             open=float(rates["open"][i]),
             high=float(rates["high"][i]),
             low=float(rates["low"][i]),
@@ -401,6 +511,120 @@ class MetaTraderClient:
 
         return self._run_locked(_fetch)
 
+    def _fetch_ticks_range_chunked(
+        self,
+        symbol: str,
+        start: datetime,
+        end: datetime,
+        flags: int,
+    ) -> dict[str, np.ndarray]:
+        start = _to_naive_local(start)
+        end = _to_naive_local(end)
+
+        chunks: List[np.ndarray] = []
+        total_ticks = 0
+        cursor = start
+
+        for _ in range(_MAX_HISTORY_CHUNKS):
+            if cursor > end:
+                break
+
+            chunk_end = min(
+                cursor + timedelta(days=_TICK_RANGE_FETCH_DAYS), end
+            )
+            ticks = mt5.copy_ticks_range(symbol, cursor, chunk_end, flags)
+
+            if ticks is not None and len(ticks) > 0:
+                chunk_len = len(ticks)
+                if total_ticks + chunk_len > _MAX_TICKS:
+                    raise ValueError(
+                        f"Tick range for {symbol} exceeds the maximum of "
+                        f"{_MAX_TICKS:,} ticks; narrow the start/end window."
+                    )
+
+                chunks.append(ticks)
+                total_ticks += chunk_len
+
+                names = ticks.dtype.names or ()
+                if "time_msc" in names:
+                    last_msc = int(ticks["time_msc"][-1])
+                    next_cursor = _time_msc_to_naive_local(last_msc) + timedelta(
+                        milliseconds=1
+                    )
+                else:
+                    last_sec = int(ticks["time"][-1])
+                    next_cursor = unix_seconds_to_brasilia_naive(last_sec) + timedelta(
+                        seconds=1
+                    )
+
+                if next_cursor <= cursor:
+                    break
+                cursor = next_cursor
+            else:
+                cursor = chunk_end + timedelta(seconds=1)
+
+            if total_ticks >= _MAX_TICKS:
+                break
+
+        if not chunks:
+            return _empty_ticks_columnar()
+
+        all_ticks = np.concatenate(chunks) if len(chunks) > 1 else chunks[0]
+        return _ticks_structured_to_columnar(all_ticks)
+
+    def get_ticks_columnar(
+        self,
+        symbol: str,
+        start: datetime,
+        end: datetime,
+        flags: int = mt5.COPY_TICKS_ALL,
+        use_cache: bool = True,
+    ) -> dict[str, np.ndarray]:
+        """
+        Returns aligned NumPy arrays for the range (no per-row Python objects):
+          {
+            "time_msc": int64[],   # epoch milliseconds, the canonical ordering key
+            "bid":      float64[],
+            "ask":      float64[],
+            "last":     float64[],
+            "volume":   float64[],
+            "flags":    int32[],
+          }
+        All arrays share length N and are sorted ascending by time_msc.
+        Returns empty arrays (length 0) when the range has no ticks.
+        """
+
+        def _fetch() -> dict[str, np.ndarray]:
+            self._ensure_connected()
+
+            start_local = _to_naive_local(start)
+            end_local = _to_naive_local(end)
+            cache_key: Optional[str] = None
+
+            if use_cache:
+                cache_key = make_cache_key(symbol, start_local, end_local, flags)
+                cached = load_tick_cache(cache_key)
+                if cached is not None:
+                    return cached
+
+            if not mt5.symbol_select(symbol, True):
+                error_code, error_desc = mt5.last_error()
+                logger.warning(
+                    f"Failed to select symbol {symbol} in MarketWatch: "
+                    f"{error_desc} (Code: {error_code})"
+                )
+
+            result = self._fetch_ticks_range_chunked(
+                symbol, start_local, end_local, flags
+            )
+
+            if use_cache and cache_key is not None:
+                store_tick_cache(cache_key, result)
+
+            return result
+
+        return self._run_locked(_fetch)
+
     def get_ticks(
         self,
         symbol: str,
@@ -432,29 +656,18 @@ class MetaTraderClient:
                 )
                 return []
 
-            has_last = "last" in ticks.dtype.names
-            has_volume = "volume" in ticks.dtype.names
-            has_flags = "flags" in ticks.dtype.names
-            has_time_msc = "time_msc" in ticks.dtype.names
-
-            return [
-                Tick(
-                    time=datetime.fromtimestamp(int(ticks["time"][i])),
-                    bid=float(ticks["bid"][i]),
-                    ask=float(ticks["ask"][i]),
-                    last=float(ticks["last"][i]) if has_last else 0.0,
-                    volume=float(ticks["volume"][i]) if has_volume else 0.0,
-                    flags=int(ticks["flags"][i]) if has_flags else 0,
-                    time_msc=int(ticks["time_msc"][i]) if has_time_msc else 0,
-                )
-                for i in range(len(ticks))
-            ]
+            return _map_tick_rows(ticks)
 
         return self._run_locked(_fetch)
 
     def get_recent_ticks(self, symbol: str, limit: int = 200) -> List[Tick]:
         """
         Fetches the most recent ticks for a symbol (newest last), capped at `limit`.
+
+        Uses ``copy_ticks_range`` over an escalating look-back window rather than
+        ``copy_ticks_from`` with a negative count (which does not return recent
+        history). The window widens until at least ``limit`` ticks are found or the
+        largest window is exhausted, then the newest ``limit`` ticks are returned.
         """
 
         def _fetch() -> List[Tick]:
@@ -468,34 +681,29 @@ class MetaTraderClient:
                 )
                 return []
 
-            ticks = mt5.copy_ticks_from(
-                symbol, datetime.now(), -limit, mt5.COPY_TICKS_ALL
-            )
-            if ticks is None or len(ticks) == 0:
+            end = datetime.now()
+            mapped: List[Tick] = []
+            for window in _RECENT_TICKS_WINDOWS:
+                start = _to_naive_local(end - window)
+                ticks = mt5.copy_ticks_range(
+                    symbol, start, _to_naive_local(end), mt5.COPY_TICKS_ALL
+                )
+                if ticks is None or len(ticks) == 0:
+                    continue
+
+                mapped = _map_tick_rows(ticks)
+                if len(mapped) >= limit:
+                    break
+
+            if not mapped:
                 error_code, error_desc = mt5.last_error()
-                logger.error(
-                    f"Failed to fetch recent ticks for {symbol}: "
-                    f"{error_desc} (Code: {error_code})"
+                logger.warning(
+                    f"No recent ticks for {symbol} within "
+                    f"{_RECENT_TICKS_WINDOWS[-1]}: {error_desc} (Code: {error_code})"
                 )
                 return []
 
-            has_last = "last" in ticks.dtype.names
-            has_volume = "volume" in ticks.dtype.names
-            has_flags = "flags" in ticks.dtype.names
-            has_time_msc = "time_msc" in ticks.dtype.names
-
-            return [
-                Tick(
-                    time=datetime.fromtimestamp(int(ticks["time"][i])),
-                    bid=float(ticks["bid"][i]),
-                    ask=float(ticks["ask"][i]),
-                    last=float(ticks["last"][i]) if has_last else 0.0,
-                    volume=float(ticks["volume"][i]) if has_volume else 0.0,
-                    flags=int(ticks["flags"][i]) if has_flags else 0,
-                    time_msc=int(ticks["time_msc"][i]) if has_time_msc else 0,
-                )
-                for i in range(len(ticks))
-            ]
+            return mapped[-limit:]
 
         return self._run_locked(_fetch)
 

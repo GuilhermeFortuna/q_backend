@@ -10,6 +10,7 @@ def test_list_strategies_returns_all_registered():
         "MACD",
         "MACrossover",
         "RSIMeanReversion",
+        "TickMaBreakout",
     ])
 
 
@@ -43,6 +44,22 @@ def test_list_strategies_macrossover_schema():
     threshold = next(spec for spec in ma.params if spec.name == "threshold")
     assert threshold.type == "float"
     assert threshold.default == 0.0
+
+
+def test_list_strategies_tick_ma_breakout_schema():
+    response = list_strategies()
+    tick = next(item for item in response["strategies"] if item.name == "TickMaBreakout")
+
+    assert tick.label == "Tick MA Breakout"
+    assert tick.engine == "tick"
+    param_names = [spec.name for spec in tick.params]
+    assert param_names == [
+        "short_period",
+        "long_period",
+        "threshold",
+        "sl_points",
+        "tp_points",
+    ]
 
 
 def test_list_strategies_each_has_valid_param_schema():

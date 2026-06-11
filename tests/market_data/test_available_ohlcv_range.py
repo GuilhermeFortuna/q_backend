@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from q_backend.market_data.clients.metatrader import MetaTraderClient
+from q_backend.market_data.timezone import unix_seconds_to_brasilia_naive
 
 _RATE_DTYPE = [
     ("time", "i8"),
@@ -43,8 +44,8 @@ def test_get_available_ohlcv_range_uses_copy_rates_from_for_earliest(mock_mt5):
     result = client.get_available_ohlcv_range("CCM$", "H1")
 
     assert result is not None
-    assert result.start == datetime.fromtimestamp(1_577_836_800)
-    assert result.end == datetime.fromtimestamp(1_704_067_200)
+    assert result.start == unix_seconds_to_brasilia_naive(1_577_836_800)
+    assert result.end == unix_seconds_to_brasilia_naive(1_704_067_200)
     assert result.bar_count == 2
     mock_mt5.copy_rates_from.assert_called_once()
     mock_mt5.copy_rates_from_pos.assert_called_once_with("CCM$", 16385, 0, 1)
@@ -76,7 +77,7 @@ def test_get_available_ohlcv_range_scans_range_when_copy_rates_from_empty(mock_m
     result = client.get_available_ohlcv_range("PETR4", "D1")
 
     assert result is not None
-    assert result.start == datetime.fromtimestamp(1_577_836_800)
+    assert result.start == unix_seconds_to_brasilia_naive(1_577_836_800)
     assert mock_mt5.copy_rates_range.call_count >= 1
 
 

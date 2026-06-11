@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Literal, Type
+from typing import Any, Callable, Literal, Type, Union
 
 from pydantic import BaseModel
 
 from q_backend.backtesting.strategy import TradingStrategy
+from q_backend.backtesting.tick.strategy import TickStrategy
+
+StrategyEngine = Literal["candle", "tick"]
+StrategyBase = Union[TradingStrategy, TickStrategy]
 
 
 class StrategyParamSpec(BaseModel):
@@ -24,6 +28,7 @@ class StrategyInfo(BaseModel):
     label: str
     description: str
     params: list[StrategyParamSpec]
+    engine: StrategyEngine = "candle"
 
 
 class StrategiesResponse(BaseModel):
@@ -32,9 +37,9 @@ class StrategiesResponse(BaseModel):
 
 @dataclass(frozen=True)
 class RegisteredStrategy:
-    strategy_class: Type[TradingStrategy]
+    strategy_class: Type[StrategyBase]
     info: StrategyInfo
-    build: Callable[[dict[str, Any], str], TradingStrategy]
+    build: Callable[[dict[str, Any], str], StrategyBase]
 
 
 _STRATEGY_REGISTRY: dict[str, RegisteredStrategy] = {}
@@ -46,9 +51,10 @@ def register_strategy(
     label: str,
     description: str,
     params: list[StrategyParamSpec],
-    build: Callable[[dict[str, Any], str], TradingStrategy],
-    strategy_class: Type[TradingStrategy],
-) -> Type[TradingStrategy]:
+    build: Callable[[dict[str, Any], str], StrategyBase],
+    strategy_class: Type[StrategyBase],
+    engine: StrategyEngine = "candle",
+) -> Type[StrategyBase]:
     if name in _STRATEGY_REGISTRY:
         raise ValueError(f"Strategy '{name}' is already registered.")
 
@@ -59,6 +65,7 @@ def register_strategy(
             label=label,
             description=description,
             params=params,
+            engine=engine,
         ),
         build=build,
     )
@@ -101,3 +108,6 @@ def merge_strategy_params(name: str, params: dict[str, Any]) -> dict[str, Any]:
         else:
             merged[spec.name] = spec.default
     return merged
+
+
+import q_backend.backtesting.tick.strategies  # noqa: F401 — register tick strategies

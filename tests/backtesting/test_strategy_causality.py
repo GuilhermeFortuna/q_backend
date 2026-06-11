@@ -32,7 +32,9 @@ from q_backend.backtesting.strategy_registry import (
     list_registered_strategies,
 )
 
-STRATEGY_NAMES = [info.name for info in list_registered_strategies()]
+STRATEGY_NAMES = [
+    info.name for info in list_registered_strategies() if info.engine == "candle"
+]
 
 
 def _synthetic_ohlcv(n: int = 260) -> pd.DataFrame:

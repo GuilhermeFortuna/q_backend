@@ -1,7 +1,10 @@
 import pytest
 import pandas as pd
 
+import q_backend.backtesting.tick.strategies  # noqa: F401
 from q_backend.backtesting.factory import build_strategy
+from q_backend.backtesting.tick.factory import build_tick_strategy
+from q_backend.backtesting.tick.strategies.tick_ma_breakout import TickMaBreakoutStrategy
 from q_backend.backtesting.strategy import MACrossoverStrategy
 from q_backend.backtesting.strategy_registry import (
     default_params_for,
@@ -20,6 +23,7 @@ REGISTERED_NAMES = [
     "MACD",
     "MACrossover",
     "RSIMeanReversion",
+    "TickMaBreakout",
 ]
 
 
@@ -69,3 +73,17 @@ def test_merge_strategy_params_round_trips_macrossover_defaults():
 def test_build_strategy_unknown_raises():
     with pytest.raises(ValueError, match="Unknown strategy"):
         build_strategy("Unknown", {}, "TEST")
+
+
+def test_tick_strategy_has_engine_field():
+    from q_backend.backtesting.strategy_registry import get_registered_strategy
+
+    tick_entry = get_registered_strategy("TickMaBreakout")
+    candle_entry = get_registered_strategy("MACrossover")
+    assert tick_entry.info.engine == "tick"
+    assert candle_entry.info.engine == "candle"
+
+
+def test_build_tick_strategy_dispatches():
+    strategy = build_tick_strategy("TickMaBreakout", {}, "TEST")
+    assert isinstance(strategy, TickMaBreakoutStrategy)

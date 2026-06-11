@@ -5,6 +5,7 @@ import numpy as np
 
 from q_backend.market_data.clients import metatrader as mt_module
 from q_backend.market_data.clients.metatrader import MetaTraderClient
+from q_backend.market_data.timezone import unix_seconds_to_brasilia_naive
 
 _RATE_DTYPE = [
     ("time", "i8"),
@@ -48,13 +49,13 @@ def test_get_ohlcv_fetches_range_in_multiple_chunks(mock_mt5):
     client = MetaTraderClient()
     client._is_initialized = True
 
-    start = datetime.fromtimestamp(1_600_000_000)
-    end = datetime.fromtimestamp(1_630_000_000)
+    start = unix_seconds_to_brasilia_naive(1_600_000_000)
+    end = unix_seconds_to_brasilia_naive(1_630_000_000)
     result = client.get_ohlcv("PETR4", "D1", start, end)
 
     assert len(result) == 4
-    assert result[0].time == datetime.fromtimestamp(1_600_000_000)
-    assert result[-1].time == datetime.fromtimestamp(1_630_000_000)
+    assert result[0].time == unix_seconds_to_brasilia_naive(1_600_000_000)
+    assert result[-1].time == unix_seconds_to_brasilia_naive(1_630_000_000)
     assert mock_mt5.copy_rates_range.call_count >= 2
 
 
