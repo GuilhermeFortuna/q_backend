@@ -1,4 +1,5 @@
 from q_backend.api.main import list_strategies
+from q_backend.backtesting.strategy_registry import StrategyCategory
 
 
 def test_list_strategies_returns_all_registered():
@@ -83,3 +84,35 @@ def test_list_strategies_each_has_valid_param_schema():
             if spec.type in {"int", "float"}:
                 assert spec.min is not None
                 assert spec.max is not None
+
+
+VALID_CATEGORIES: set[StrategyCategory] = {
+    "trend",
+    "mean_reversion",
+    "breakout",
+    "momentum",
+    "other",
+}
+
+
+def test_list_strategies_presentation_metadata():
+    response = list_strategies()
+    for strategy in response["strategies"]:
+        assert strategy.category in VALID_CATEGORIES
+        assert strategy.thesis
+        assert strategy.strong_in
+        assert strategy.weak_in
+        for spec in strategy.params:
+            assert spec.hint
+
+
+def test_list_strategies_macrossover_presentation_metadata():
+    response = list_strategies()
+    ma = next(item for item in response["strategies"] if item.name == "MACrossover")
+
+    assert ma.category == "trend"
+    assert ma.strong_in
+    assert ma.weak_in
+
+    short_period = next(spec for spec in ma.params if spec.name == "short_period")
+    assert short_period.hint

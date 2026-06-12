@@ -31,6 +31,7 @@ register_strategy(
             min=2,
             max=400,
             step=1,
+            hint="Shorter = more signals and noise; longer = smoother but slower to react.",
         ),
         StrategyParamSpec(
             name="long_period",
@@ -40,6 +41,7 @@ register_strategy(
             min=2,
             max=400,
             step=1,
+            hint="Longer = fewer trades and later trend confirmation; shorter = more reactive but noisier.",
         ),
         StrategyParamSpec(
             name="short_ma_type",
@@ -47,6 +49,7 @@ register_strategy(
             type="categorical",
             default="sma",
             choices=MA_TYPE_CHOICES,
+            hint="EMA/HMA react faster to new prices; SMA/SMMA lag more and filter noise.",
         ),
         StrategyParamSpec(
             name="long_ma_type",
@@ -54,6 +57,7 @@ register_strategy(
             type="categorical",
             default="sma",
             choices=MA_TYPE_CHOICES,
+            hint="Faster types flip sooner; slower types delay entries and exits.",
         ),
         StrategyParamSpec(
             name="threshold",
@@ -63,8 +67,19 @@ register_strategy(
             min=0.0,
             max=100.0,
             step=0.01,
+            hint="Higher = require a wider MA gap before entry; zero = pure crossover.",
         ),
     ],
     build=_build_ma_crossover,
     strategy_class=MACrossoverStrategy,
+    category="trend",
+    thesis=(
+        "Markets often trend because information diffuses slowly and positioning "
+        "lags price — winners keep winning until the narrative shifts. Long while "
+        "the fast moving average sits above the slow one and flip flat or short on "
+        "the crossover, accepting whipsaw losses in ranges as the price of catching "
+        "every sustained trend."
+    ),
+    strong_in="Sustained directional trends with clear MA separation.",
+    weak_in="Choppy ranges — repeated crossover whipsaws erode capital.",
 )

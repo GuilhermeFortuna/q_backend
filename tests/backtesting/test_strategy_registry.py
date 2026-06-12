@@ -7,9 +7,13 @@ from q_backend.backtesting.tick.factory import build_tick_strategy
 from q_backend.backtesting.tick.strategies.tick_ma_breakout import TickMaBreakoutStrategy
 from q_backend.backtesting.strategy import MACrossoverStrategy
 from q_backend.backtesting.strategy_registry import (
+    _STRATEGY_REGISTRY,
     default_params_for,
     list_registered_strategies,
     merge_strategy_params,
+    register_strategy,
+    StrategyInfo,
+    StrategyParamSpec,
 )
 from q_backend.backtesting.strategies.bollinger_reversion import BollingerReversionStrategy
 from q_backend.backtesting.strategies.donchian_breakout import DonchianBreakoutStrategy
@@ -97,3 +101,63 @@ def test_tick_strategy_has_engine_field():
 def test_build_tick_strategy_dispatches():
     strategy = build_tick_strategy("TickMaBreakout", {}, "TEST")
     assert isinstance(strategy, TickMaBreakoutStrategy)
+
+
+def test_strategy_info_additive_defaults():
+    info = StrategyInfo(
+        name="Test",
+        label="Test",
+        description="Test description",
+        params=[],
+    )
+    assert info.category == "other"
+    assert info.thesis == ""
+    assert info.strong_in == ""
+    assert info.weak_in == ""
+
+
+def test_strategy_param_spec_additive_defaults():
+    spec = StrategyParamSpec(
+        name="x",
+        label="X",
+        type="int",
+        default=1,
+        min=0,
+        max=10,
+    )
+    assert spec.hint is None
+
+
+def test_register_strategy_additive_defaults():
+    class _DummyStrategy:
+        pass
+
+    name = "_TestAdditiveStrategy"
+    _STRATEGY_REGISTRY.pop(name, None)
+
+    register_strategy(
+        name=name,
+        label="Test",
+        description="Test description",
+        params=[
+            StrategyParamSpec(
+                name="x",
+                label="X",
+                type="int",
+                default=1,
+                min=0,
+                max=10,
+            )
+        ],
+        build=lambda _params, _symbol: _DummyStrategy(),
+        strategy_class=_DummyStrategy,
+    )
+
+    entry = _STRATEGY_REGISTRY[name]
+    assert entry.info.category == "other"
+    assert entry.info.thesis == ""
+    assert entry.info.strong_in == ""
+    assert entry.info.weak_in == ""
+    assert entry.info.params[0].hint is None
+
+    del _STRATEGY_REGISTRY[name]

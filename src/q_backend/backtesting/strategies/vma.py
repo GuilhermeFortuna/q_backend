@@ -138,6 +138,7 @@ register_strategy(
             min=2,
             max=400,
             step=1,
+            hint="Longer = smoother MA and fewer flips; shorter = more responsive, more whipsaws.",
         ),
         StrategyParamSpec(
             name="band_pct",
@@ -147,6 +148,7 @@ register_strategy(
             min=0.0,
             max=5.0,
             step=0.01,
+            hint="Wider band = fewer entries, filters small oscillations around the MA.",
         ),
         StrategyParamSpec(
             name="ma_type",
@@ -154,8 +156,17 @@ register_strategy(
             type="categorical",
             default="sma",
             choices=MA_TYPE_CHOICES,
+            hint="Faster types flip sooner; slower types hold longer through noise.",
         ),
     ],
     build=_build_vma,
     strategy_class=VMAStrategy,
+    category="trend",
+    thesis=(
+        "Lai & Lau (2006) VMA rule stays with the trend until the opposite trigger — "
+        "price must cross back through the MA band to exit. Captures sustained moves "
+        "without a fixed time stop, flipping only when price convincingly reverses."
+    ),
+    strong_in="Extended trends where price stays on one side of the MA.",
+    weak_in="Oscillating markets — repeated band crosses generate whipsaw entries and exits.",
 )

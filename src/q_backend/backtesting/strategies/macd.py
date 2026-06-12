@@ -125,6 +125,7 @@ register_strategy(
             min=2,
             max=100,
             step=1,
+            hint="Lower = more sensitive to recent moves, more crosses; higher = smoother MACD.",
         ),
         StrategyParamSpec(
             name="slow_period",
@@ -134,6 +135,7 @@ register_strategy(
             min=2,
             max=400,
             step=1,
+            hint="Higher = longer trend baseline, fewer but more sustained signals.",
         ),
         StrategyParamSpec(
             name="signal_period",
@@ -143,8 +145,18 @@ register_strategy(
             min=2,
             max=100,
             step=1,
+            hint="Lower = faster entry/exit flips; higher = dampened signal line, delayed reversals.",
         ),
     ],
     build=_build_macd,
     strategy_class=MACDStrategy,
+    category="trend",
+    thesis=(
+        "MACD blends two trend horizons — when the fast component crosses above "
+        "the slow, recent upside is outpacing the broader trend, suggesting momentum "
+        "is building. Entries fire on the MACD line crossing its signal line and "
+        "hold until the cross reverses."
+    ),
+    strong_in="Gradual trends with momentum building before price extremes.",
+    weak_in="Sideways chop — signal-line crosses fire without follow-through.",
 )

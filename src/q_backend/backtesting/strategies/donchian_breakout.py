@@ -106,8 +106,17 @@ register_strategy(
             min=2,
             max=400,
             step=1,
+            hint="Shorter channel = more breakouts and false signals; longer = rarer but potentially larger moves.",
         ),
     ],
     build=_build_donchian_breakout,
     strategy_class=DonchianBreakoutStrategy,
+    category="breakout",
+    thesis=(
+        "New highs and lows signal that supply or demand has cleared the recent "
+        "range — the classic turtle logic that breakouts precede continuation. "
+        "Enters when close breaks the N-period high or low channel."
+    ),
+    strong_in="Clean breakouts after consolidation with follow-through momentum.",
+    weak_in="False breakouts in low-volatility ranges — entries at tops and bottoms that reverse.",
 )

@@ -129,6 +129,7 @@ register_strategy(
             min=2,
             max=400,
             step=1,
+            hint="Shorter = tighter bands, more touches; longer = wider bands, fewer extremes.",
         ),
         StrategyParamSpec(
             name="num_std",
@@ -138,8 +139,18 @@ register_strategy(
             min=0.5,
             max=5.0,
             step=0.1,
+            hint="Wider bands = fewer but more extreme entries; tighter = more trades, more noise.",
         ),
     ],
     build=_build_bollinger_reversion,
     strategy_class=BollingerReversionStrategy,
+    category="mean_reversion",
+    thesis=(
+        "Prices tend to cluster around a moving mean; excursions beyond volatility "
+        "bands often reflect temporary imbalance rather than a new equilibrium. "
+        "Enters on close piercing the outer band and exits toward the middle band "
+        "when price reverts."
+    ),
+    strong_in="Stable volatility with frequent band touches that snap back.",
+    weak_in="Volatility expansions and breakouts — band pierces become trend starts, not reversals.",
 )

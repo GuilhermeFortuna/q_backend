@@ -134,6 +134,7 @@ register_strategy(
             min=3,
             max=240,
             step=1,
+            hint="Shorter range = more breakouts, noisier; longer = fewer but wider channels.",
         ),
         StrategyParamSpec(
             name="band_pct",
@@ -143,6 +144,7 @@ register_strategy(
             min=0.0,
             max=5.0,
             step=0.01,
+            hint="Wider band = fewer entries, requires cleaner break; zero = any channel pierce.",
         ),
         StrategyParamSpec(
             name="holding_period",
@@ -152,8 +154,17 @@ register_strategy(
             min=1,
             max=60,
             step=1,
+            hint="Longer = more time for breakout to work, but more exposure if it fails.",
         ),
     ],
     build=_build_trb,
     strategy_class=TRBStrategy,
+    category="breakout",
+    thesis=(
+        "Lai & Lau (2006) TRB rule bets that closing outside the recent close-based "
+        "trading range signals a breakout worth riding for a fixed holding period. "
+        "Channels built from prior closes with optional bands filter marginal pierces."
+    ),
+    strong_in="Range compression followed by decisive close breakouts.",
+    weak_in="Head-fake breakouts that reverse within the holding window.",
 )

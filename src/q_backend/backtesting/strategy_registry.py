@@ -9,6 +9,7 @@ from q_backend.backtesting.strategy import TradingStrategy
 from q_backend.backtesting.tick.strategy import TickStrategy
 
 StrategyEngine = Literal["candle", "tick"]
+StrategyCategory = Literal["trend", "mean_reversion", "breakout", "momentum", "other"]
 StrategyBase = Union[TradingStrategy, TickStrategy]
 
 
@@ -21,6 +22,7 @@ class StrategyParamSpec(BaseModel):
     max: float | None = None
     step: float | None = None
     choices: list[str] | None = None
+    hint: str | None = None
 
 
 class StrategyInfo(BaseModel):
@@ -29,6 +31,10 @@ class StrategyInfo(BaseModel):
     description: str
     params: list[StrategyParamSpec]
     engine: StrategyEngine = "candle"
+    category: StrategyCategory = "other"
+    thesis: str = ""
+    strong_in: str = ""
+    weak_in: str = ""
 
 
 class StrategiesResponse(BaseModel):
@@ -54,6 +60,10 @@ def register_strategy(
     build: Callable[[dict[str, Any], str], StrategyBase],
     strategy_class: Type[StrategyBase],
     engine: StrategyEngine = "candle",
+    category: StrategyCategory = "other",
+    thesis: str = "",
+    strong_in: str = "",
+    weak_in: str = "",
 ) -> Type[StrategyBase]:
     if name in _STRATEGY_REGISTRY:
         raise ValueError(f"Strategy '{name}' is already registered.")
@@ -66,6 +76,10 @@ def register_strategy(
             description=description,
             params=params,
             engine=engine,
+            category=category,
+            thesis=thesis,
+            strong_in=strong_in,
+            weak_in=weak_in,
         ),
         build=build,
     )

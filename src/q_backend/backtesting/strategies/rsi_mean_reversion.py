@@ -106,6 +106,7 @@ register_strategy(
             min=2,
             max=200,
             step=1,
+            hint="Shorter = more extreme RSI readings, more signals; longer = smoother, fewer extremes.",
         ),
         StrategyParamSpec(
             name="oversold",
@@ -115,6 +116,7 @@ register_strategy(
             min=0.0,
             max=50.0,
             step=0.5,
+            hint="Lower = fewer but more extreme buy setups; higher = earlier entries, more false positives.",
         ),
         StrategyParamSpec(
             name="overbought",
@@ -124,8 +126,18 @@ register_strategy(
             min=50.0,
             max=100.0,
             step=0.5,
+            hint="Lower = earlier short entries; higher = waits for stronger overbought before fading rallies.",
         ),
     ],
     build=_build_rsi_mean_reversion,
     strategy_class=RSIMeanReversionStrategy,
+    category="mean_reversion",
+    thesis=(
+        "Sharp selloffs often overshoot fair value as liquidity dries up and stops "
+        "cascade; the bounce when panic exhausts can be captured. Buys when RSI "
+        "crosses up through oversold and shorts when RSI crosses up through "
+        "overbought, betting on reversal rather than breakout continuation."
+    ),
+    strong_in="Range-bound markets with sharp but temporary dislocations.",
+    weak_in="Strong trends — oversold/overbought signals fire early and keep losing.",
 )

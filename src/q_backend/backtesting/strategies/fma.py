@@ -143,6 +143,7 @@ register_strategy(
             min=2,
             max=400,
             step=1,
+            hint="Longer MA = fewer crosses and slower regime detection; shorter = more trades.",
         ),
         StrategyParamSpec(
             name="band_pct",
@@ -152,6 +153,7 @@ register_strategy(
             min=0.0,
             max=5.0,
             step=0.01,
+            hint="Wider band = fewer entries, requires larger deviation from MA; zero = any cross counts.",
         ),
         StrategyParamSpec(
             name="ma_type",
@@ -159,6 +161,7 @@ register_strategy(
             type="categorical",
             default="sma",
             choices=MA_TYPE_CHOICES,
+            hint="Faster MA types trigger sooner; slower types delay entries.",
         ),
         StrategyParamSpec(
             name="holding_period",
@@ -168,8 +171,18 @@ register_strategy(
             min=1,
             max=60,
             step=1,
+            hint="Longer = ride moves further but stay exposed through reversals; shorter = quicker exits.",
         ),
     ],
     build=_build_fma,
     strategy_class=FMAStrategy,
+    category="trend",
+    thesis=(
+        "Lai & Lau (2006) found simple price-vs-moving-average rules persist across "
+        "Asian markets; the FMA variant holds each signal for a fixed bar count "
+        "rather than flipping on every cross. Long when price crosses above the MA "
+        "band, short below, exiting after the holding period regardless of interim noise."
+    ),
+    strong_in="Markets with directional episodes long enough to outlast the fixed hold.",
+    weak_in="Quick reversals — fixed holds keep you in through the turn.",
 )

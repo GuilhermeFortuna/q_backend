@@ -137,6 +137,7 @@ register_strategy(
             min=2,
             max=2000,
             step=1,
+            hint="Fewer ticks = faster signals, more noise; more ticks = smoother but lagged.",
         ),
         StrategyParamSpec(
             name="long_period",
@@ -146,6 +147,7 @@ register_strategy(
             min=2,
             max=5000,
             step=1,
+            hint="More ticks = slower baseline, fewer crosses; fewer = more reactive.",
         ),
         StrategyParamSpec(
             name="threshold",
@@ -155,6 +157,7 @@ register_strategy(
             min=0.0,
             max=100.0,
             step=0.01,
+            hint="Higher = require wider SMA gap before entry; zero = pure crossover.",
         ),
         StrategyParamSpec(
             name="sl_points",
@@ -164,6 +167,7 @@ register_strategy(
             min=0.0,
             max=1000.0,
             step=0.01,
+            hint="Tighter stop = smaller losses per trade but more stop-outs; zero = no stop.",
         ),
         StrategyParamSpec(
             name="tp_points",
@@ -173,8 +177,18 @@ register_strategy(
             min=0.0,
             max=1000.0,
             step=0.01,
+            hint="Tighter target = quicker profit taking, may leave runners; zero = no target.",
         ),
     ],
     build=_build_tick_ma_breakout,
     strategy_class=TickMaBreakoutStrategy,
+    category="trend",
+    thesis=(
+        "Tick-level MA crossover captures microstructure momentum when the fast SMA "
+        "crosses above the slow on raw tick prices — the same trend persistence "
+        "argument at higher resolution. Optional fixed SL/TP cap tick-noise losses "
+        "on each burst."
+    ),
+    strong_in="Tick streams with sustained micro-trends and clean MA separation.",
+    weak_in="Tick noise and mean-reverting microstructure — frequent false crosses without follow-through.",
 )

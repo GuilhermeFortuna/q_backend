@@ -170,6 +170,7 @@ register_strategy(
             min=20,
             max=1000,
             step=1,
+            hint="Longer lookback = smoother momentum signal, slower regime shifts; shorter = faster flips.",
         ),
         StrategyParamSpec(
             name="rebalance_bars",
@@ -179,6 +180,7 @@ register_strategy(
             min=1,
             max=252,
             step=1,
+            hint="More frequent = quicker response to sign changes, more turnover; less = stickier positions.",
         ),
         StrategyParamSpec(
             name="vol_window",
@@ -188,6 +190,7 @@ register_strategy(
             min=2,
             max=400,
             step=1,
+            hint="Shorter = more reactive vol estimate; longer = smoother, less responsive to recent spikes.",
         ),
         StrategyParamSpec(
             name="vol_estimator",
@@ -195,8 +198,18 @@ register_strategy(
             type="categorical",
             default="yang_zhang",
             choices=VOL_ESTIMATOR_CHOICES,
+            hint="Yang-Zhang uses OHLC for gap-aware vol; close-to-close is simpler when only close is available.",
         ),
     ],
     build=_build_tsmom,
     strategy_class=TSMOMStrategy,
+    category="momentum",
+    thesis=(
+        "Moskowitz, Ooi & Pedersen (2012) document time-series momentum — assets "
+        "that rose tend to keep rising over intermediate horizons. The SIGN rule "
+        "goes long when past return is positive and short when negative, rebalanced "
+        "every N bars."
+    ),
+    strong_in="Persistent multi-month trends with clear sign regimes.",
+    weak_in="Rapid sign flips in mean-reverting or crisis-volatile markets — rebalances at the wrong time.",
 )
