@@ -240,6 +240,19 @@ class OptimizationRunner:
             study.tell(trial, objective_value)
         self._fire_callbacks(study, trial.number, callbacks)
 
+    def _tell_validation_pruned(
+        self,
+        study: optuna.Study,
+        trial: optuna.trial.Trial,
+        reason: str,
+        callbacks: list[Callable[[optuna.Study, optuna.trial.FrozenTrial], None]]
+        | None,
+    ) -> None:
+        trial.set_user_attr("status", "pruned")
+        trial.set_user_attr("error", reason)
+        study.tell(trial, state=optuna.trial.TrialState.PRUNED)
+        self._fire_callbacks(study, trial.number, callbacks)
+
     def _run_parallel(
         self,
         study: optuna.Study,
@@ -283,9 +296,16 @@ class OptimizationRunner:
                 for _ in range(batch_size):
                     trial = study.ask()
                     trial_params = suggest_params(trial, self.config.search_space)
-                    validate_trial_params(
-                        trial_params, self.config.backtest.strategy
-                    )
+                    try:
+                        validate_trial_params(
+                            trial_params, self.config.backtest.strategy
+                        )
+                    except optuna.TrialPruned as exc:
+                        self._tell_validation_pruned(
+                            study, trial, str(exc), callbacks
+                        )
+                        dispatched += 1
+                        continue
                     backtest_config = self._build_backtest_config(trial_params)
                     future = pool.submit(_run_backtest_worker, backtest_config)
                     batch.append((future, trial, trial_params))

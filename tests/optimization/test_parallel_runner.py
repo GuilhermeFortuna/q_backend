@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 import pandas as pd
 import pytest
+import optuna
 from concurrent.futures import Future
 
 from q_backend.optimization.backtest_runner import DefaultBacktestRunner
@@ -213,6 +214,61 @@ def test_parallel_unexpected_error_reraises_without_continue(
                 ohlcv=naive_ohlcv_df,
                 max_workers=2,
             ).run()
+
+
+def test_parallel_validation_prune_does_not_fail_chunk(
+    naive_ohlcv_df, inline_process_pool
+):
+    config = OptimizationConfig.model_validate(
+        {
+            "study": {
+                "name": "parallel_validation_prune",
+                "n_trials": 6,
+                "seed": 42,
+                "storage": {"type": "memory"},
+            },
+            "objective": {"mode": "maximize_net_profit"},
+            "backtest": {
+                "symbol": "TEST",
+                "timeframe": "D1",
+                "start": "2024-01-01T00:00:00",
+                "end": "2024-06-01T00:00:00",
+                "initial_capital": 10_000.0,
+                "point_value": 1.0,
+                "strategy": "MACrossover",
+            },
+            "search_space": {
+                "strategy_params": {
+                    "short_period": {"type": "int", "low": 10, "high": 20},
+                    "long_period": {"type": "int", "low": 2, "high": 8},
+                },
+                "risk_params": {
+                    "type": {
+                        "type": "categorical",
+                        "choices": ["fixed_quantity"],
+                    },
+                    "quantity": {"type": "float", "low": 1.0, "high": 1.0},
+                },
+            },
+        }
+    )
+    backtest_runner = DefaultBacktestRunner.from_frame_sliced(naive_ohlcv_df)
+
+    result = OptimizationRunner(
+        config,
+        backtest_runner,
+        ohlcv=naive_ohlcv_df,
+        max_workers=2,
+    ).run()
+
+    assert len(result.study.trials) == 6
+    pruned = [
+        trial
+        for trial in result.study.trials
+        if trial.state == optuna.trial.TrialState.PRUNED
+    ]
+    assert pruned
+    assert all(trial.user_attrs.get("status") == "pruned" for trial in pruned)
 
 
 def test_parallel_should_stop_after_first_batch(naive_ohlcv_df):
