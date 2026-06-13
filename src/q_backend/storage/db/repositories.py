@@ -38,7 +38,7 @@ def mark_active_runs_cancelled(
     the DB has no live worker and would otherwise stay "running" forever.
     Returns the number of rows updated.
     """
-    values: dict[str, Any] = {"status": "cancelled"}
+    values: dict[str, Any] = {"status": RunStatus.CANCELLED.value}
     if error_message is not None and hasattr(model, "error_message"):
         values["error_message"] = error_message
     if hasattr(model, "finished_at"):
