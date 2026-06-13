@@ -371,6 +371,42 @@ def test_from_market_data_sliced_single_fetch_across_walkforward_run():
     service.get_ohlcv.assert_called_once()
 
 
+def test_walkforward_parallel_matches_sequential():
+    start = datetime(2024, 1, 1)
+    end = datetime(2024, 4, 30)
+    full_df = _make_intraday_ohlcv_df(start, 120)
+    config = _walkforward_optimization_config(start=start, end=end, n_trials=3)
+    wf_seq = WalkForwardConfig(
+        train_days=30, test_days=15, mode="rolling", min_windows=2, max_workers=1
+    )
+    wf_par = WalkForwardConfig(
+        train_days=30, test_days=15, mode="rolling", min_windows=2, max_workers=2
+    )
+
+    runner = DefaultBacktestRunner(data_provider=_sliced_data_provider(full_df))
+    seq = WalkForwardRunner(config, wf_seq, runner).run()
+
+    progress: list[WalkForwardProgress] = []
+    par = WalkForwardRunner(config, wf_par, runner, ohlcv=full_df).run(
+        progress_callback=progress.append
+    )
+
+    assert [w.index for w in par.windows] == [w.index for w in seq.windows]
+    assert [w.status for w in par.windows] == [w.status for w in seq.windows]
+    par_completed = [w for w in par.windows if w.status == "completed"]
+    for par_w, seq_w in zip(
+        par_completed, [w for w in seq.windows if w.status == "completed"]
+    ):
+        assert par_w.best_params == seq_w.best_params
+        assert par_w.oos_metrics == seq_w.oos_metrics
+    assert par.efficiency == pytest.approx(seq.efficiency)
+
+    # Parallel path reports a monotonic completion count, one tick per window.
+    assert [p.windows_completed for p in progress] == list(
+        range(1, len(par.windows) + 1)
+    )
+
+
 def test_walkforward_rejects_tick_engine():
     config = OptimizationConfig.model_validate(
         {

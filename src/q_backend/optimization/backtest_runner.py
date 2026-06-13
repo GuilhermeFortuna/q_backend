@@ -88,20 +88,20 @@ class DefaultBacktestRunner:
 
         return cls(data_provider=data_provider)
 
-    @classmethod
-    def from_market_data_sliced(
-        cls,
+    @staticmethod
+    def load_sliced_frame(
         market_data_service: Any,
         *,
         symbol: str,
         timeframe: str,
         start: datetime,
         end: datetime,
-    ) -> "DefaultBacktestRunner":
-        """Fetch OHLCV once and slice by ``config.start``/``config.end`` per run.
+    ) -> pd.DataFrame:
+        """Fetch OHLCV once on the caller thread and return a naive-local frame.
 
-        Same thread constraint as ``from_market_data``: load on the caller thread,
-        then serve walk-forward windows from an in-memory frame.
+        MetaTrader5 must be used from the thread that initialized it, so loading
+        happens here (typically the FastAPI request handler) and the resulting
+        frame can be reused or shipped to worker processes.
         """
         ohlcv_data = market_data_service.get_ohlcv(symbol, timeframe, start, end)
         if not ohlcv_data:
@@ -114,11 +114,36 @@ class DefaultBacktestRunner:
             df.index = pd.DatetimeIndex(
                 [_to_naive_local(ts.to_pydatetime()) for ts in df.index]
             )
+        return df
+
+    @classmethod
+    def from_frame_sliced(cls, df: pd.DataFrame) -> "DefaultBacktestRunner":
+        """Serve walk-forward windows by slicing an in-memory frame per run."""
 
         def data_provider(config: BacktestRunConfig) -> pd.DataFrame:
             return df.loc[config.start : config.end]
 
         return cls(data_provider=data_provider)
+
+    @classmethod
+    def from_market_data_sliced(
+        cls,
+        market_data_service: Any,
+        *,
+        symbol: str,
+        timeframe: str,
+        start: datetime,
+        end: datetime,
+    ) -> "DefaultBacktestRunner":
+        """Fetch OHLCV once and slice by ``config.start``/``config.end`` per run."""
+        df = cls.load_sliced_frame(
+            market_data_service,
+            symbol=symbol,
+            timeframe=timeframe,
+            start=start,
+            end=end,
+        )
+        return cls.from_frame_sliced(df)
 
     def _fetch_data(self, config: BacktestRunConfig) -> pd.DataFrame:
         if self._data_provider is not None:

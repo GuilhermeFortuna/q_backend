@@ -1,4 +1,7 @@
+import logging
+import os
 from collections.abc import Callable
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Literal
@@ -6,16 +9,20 @@ from typing import Any, Literal
 import pandas as pd
 from pydantic import BaseModel, Field
 
+from q_backend.backtesting.engine import ParallelMode
 from q_backend.backtesting.models import Trade
 from q_backend.optimization.backtest_runner import (
     BacktestRunConfig,
     BacktestRunner,
+    DefaultBacktestRunner,
 )
 from q_backend.optimization.metrics import build_equity_curve, compute_extended_metrics
 from q_backend.optimization.models import OptimizationConfig, StorageConfig
 from q_backend.optimization.objectives import resolve_objective
 from q_backend.optimization.runner import OptimizationRunner
 from q_backend.optimization.search_space import build_position_sizing_config
+
+logger = logging.getLogger(__name__)
 
 ONE_DAY = timedelta(days=1)
 
@@ -25,6 +32,9 @@ class WalkForwardConfig(BaseModel):
     test_days: int = Field(ge=1)
     mode: Literal["rolling", "anchored"] = "rolling"
     min_windows: int = Field(default=2, ge=1)
+    # Number of worker processes used to run independent windows in parallel.
+    # None => auto (min(window_count, os.cpu_count())). 1 => force sequential.
+    max_workers: int | None = Field(default=None, ge=1)
 
 
 @dataclass(frozen=True)
@@ -42,6 +52,9 @@ class WalkForwardProgress:
     total_windows: int
     phase: Literal["optimizing", "testing"]
     window_index: int
+    # Set by the parallel path, where windows finish out of order and a monotonic
+    # completion count is the meaningful progress signal. None in the sequential path.
+    windows_completed: int | None = None
 
 
 @dataclass
@@ -127,6 +140,7 @@ class WalkForwardRunner:
         config: OptimizationConfig,
         wf_config: WalkForwardConfig,
         backtest_runner: BacktestRunner,
+        ohlcv: pd.DataFrame | None = None,
     ):
         if config.is_multi_objective():
             raise ValueError(
@@ -140,6 +154,10 @@ class WalkForwardRunner:
         self.config = config
         self.wf_config = wf_config
         self.backtest_runner = backtest_runner
+        # When provided, the raw OHLCV frame is shipped to worker processes so
+        # independent windows can be optimized in parallel. Without it, the runner
+        # falls back to the sequential path using ``backtest_runner``.
+        self._ohlcv = ohlcv
 
     def _build_backtest_config(
         self,
@@ -199,6 +217,93 @@ class WalkForwardRunner:
             )
         )
 
+    def _run_single_window(
+        self,
+        window: WalkForwardWindow,
+        total_windows: int,
+        backtest_runner: BacktestRunner,
+        progress_callback: Callable[[WalkForwardProgress], None] | None = None,
+    ) -> tuple[WalkForwardWindowResult, float | None]:
+        """Optimize one window and test the best params out-of-sample.
+
+        Returns the window result plus its in-sample objective value (or ``None``
+        when the window produced no usable trial). This is the unit of work the
+        parallel path dispatches to worker processes, so it must not touch shared
+        mutable state.
+        """
+        self._notify(
+            progress_callback,
+            window_index=window.index,
+            total_windows=total_windows,
+            phase="optimizing",
+        )
+
+        window_config = self._window_optimization_config(window)
+        opt_result = OptimizationRunner(window_config, backtest_runner).run()
+
+        if opt_result.best_trial is None:
+            return (
+                WalkForwardWindowResult(
+                    index=window.index,
+                    train_start=window.train_start,
+                    train_end=window.train_end,
+                    test_start=window.test_start,
+                    test_end=window.test_end,
+                    status="no_result",
+                ),
+                None,
+            )
+
+        best_trial = opt_result.best_trial
+        strategy_params = best_trial.user_attrs.get("strategy_params", {})
+        risk_params = best_trial.user_attrs.get("risk_params", {})
+        is_metrics = best_trial.user_attrs.get("metrics", {})
+        is_objective = float(
+            resolve_objective(is_metrics, self.config.objective.mode)
+        )
+
+        self._notify(
+            progress_callback,
+            window_index=window.index,
+            total_windows=total_windows,
+            phase="testing",
+        )
+
+        oos_config = self._build_backtest_config(
+            start=window.test_start,
+            end=window.test_end,
+            strategy_params=strategy_params,
+            risk_params=risk_params,
+        )
+        oos_result = backtest_runner.run(oos_config)
+        oos_trades = oos_result.trades or []
+
+        return (
+            WalkForwardWindowResult(
+                index=window.index,
+                train_start=window.train_start,
+                train_end=window.train_end,
+                test_start=window.test_start,
+                test_end=window.test_end,
+                status="completed",
+                best_params={
+                    "strategy_params": strategy_params,
+                    "risk_params": risk_params,
+                    **opt_result.best_params,
+                },
+                is_metrics=is_metrics,
+                oos_metrics=oos_result.metrics,
+                oos_trades=oos_trades,
+            ),
+            is_objective,
+        )
+
+    def _resolve_workers(self, total_windows: int) -> int:
+        configured = self.wf_config.max_workers
+        if configured is None:
+            configured = os.cpu_count() or 1
+        return max(1, min(configured, total_windows))
+
     def run(
         self,
         progress_callback: Callable[[WalkForwardProgress], None] | None = None,
@@ -206,86 +311,110 @@ class WalkForwardRunner:
     ) -> WalkForwardResult:
         backtest = self.config.backtest
         windows = split_windows(backtest.start, backtest.end, self.wf_config)
+        workers = self._resolve_workers(len(windows))
+
+        if workers <= 1 or self._ohlcv is None:
+            if self._ohlcv is None and workers > 1:
+                logger.info(
+                    "Walk-forward running sequentially: no in-memory frame "
+                    "available to share with worker processes."
+                )
+            return self._run_sequential(windows, progress_callback, should_stop)
+        return self._run_parallel(windows, workers, progress_callback, should_stop)
+
+    def _run_sequential(
+        self,
+        windows: list[WalkForwardWindow],
+        progress_callback: Callable[[WalkForwardProgress], None] | None,
+        should_stop: Callable[[], bool] | None,
+    ) -> WalkForwardResult:
         total_windows = len(windows)
         window_results: list[WalkForwardWindowResult] = []
         is_objectives: list[float] = []
-        all_oos_trades: list[Trade] = []
 
         for window in windows:
             if should_stop is not None and should_stop():
                 break
-
-            self._notify(
-                progress_callback,
-                window_index=window.index,
-                total_windows=total_windows,
-                phase="optimizing",
+            result, is_objective = self._run_single_window(
+                window, total_windows, self.backtest_runner, progress_callback
             )
+            window_results.append(result)
+            if is_objective is not None:
+                is_objectives.append(is_objective)
 
-            window_config = self._window_optimization_config(window)
-            opt_result = OptimizationRunner(
-                window_config, self.backtest_runner
-            ).run()
+        return self._finalize_result(window_results, is_objectives)
 
-            if opt_result.best_trial is None:
-                window_results.append(
-                    WalkForwardWindowResult(
-                        index=window.index,
-                        train_start=window.train_start,
-                        train_end=window.train_end,
-                        test_start=window.test_start,
-                        test_end=window.test_end,
-                        status="no_result",
+    def _run_parallel(
+        self,
+        windows: list[WalkForwardWindow],
+        workers: int,
+        progress_callback: Callable[[WalkForwardProgress], None] | None,
+        should_stop: Callable[[], bool] | None,
+    ) -> WalkForwardResult:
+        total_windows = len(windows)
+        results_by_index: dict[int, WalkForwardWindowResult] = {}
+        is_by_index: dict[int, float] = {}
+        completed = 0
+
+        logger.info(
+            "Walk-forward running %d windows across %d worker processes",
+            total_windows,
+            workers,
+        )
+
+        with ProcessPoolExecutor(
+            max_workers=workers,
+            initializer=_init_worker,
+            initargs=(self._ohlcv,),
+        ) as executor:
+            futures = {
+                executor.submit(
+                    _run_window_worker,
+                    self.config,
+                    self.wf_config,
+                    window,
+                    total_windows,
+                ): window
+                for window in windows
+            }
+            for future in as_completed(futures):
+                window = futures[future]
+                if should_stop is not None and should_stop():
+                    for pending in futures:
+                        pending.cancel()
+                result, is_objective = future.result()
+                results_by_index[window.index] = result
+                if is_objective is not None:
+                    is_by_index[window.index] = is_objective
+                completed += 1
+                if progress_callback is not None:
+                    progress_callback(
+                        WalkForwardProgress(
+                            current_window=completed,
+                            total_windows=total_windows,
+                            phase="testing",
+                            window_index=window.index,
+                            windows_completed=completed,
+                        )
                     )
-                )
-                continue
 
-            best_trial = opt_result.best_trial
-            strategy_params = best_trial.user_attrs.get("strategy_params", {})
-            risk_params = best_trial.user_attrs.get("risk_params", {})
-            is_metrics = best_trial.user_attrs.get("metrics", {})
+        ordered = sorted(results_by_index)
+        window_results = [results_by_index[i] for i in ordered]
+        is_objectives = [is_by_index[i] for i in ordered if i in is_by_index]
+        return self._finalize_result(window_results, is_objectives)
 
-            is_objectives.append(
-                float(
-                    resolve_objective(is_metrics, self.config.objective.mode)
-                )
-            )
-
-            self._notify(
-                progress_callback,
-                window_index=window.index,
-                total_windows=total_windows,
-                phase="testing",
-            )
-
-            oos_config = self._build_backtest_config(
-                start=window.test_start,
-                end=window.test_end,
-                strategy_params=strategy_params,
-                risk_params=risk_params,
-            )
-            oos_result = self.backtest_runner.run(oos_config)
-            oos_trades = oos_result.trades or []
-
-            window_results.append(
-                WalkForwardWindowResult(
-                    index=window.index,
-                    train_start=window.train_start,
-                    train_end=window.train_end,
-                    test_start=window.test_start,
-                    test_end=window.test_end,
-                    status="completed",
-                    best_params={
-                        "strategy_params": strategy_params,
-                        "risk_params": risk_params,
-                        **opt_result.best_params,
-                    },
-                    is_metrics=is_metrics,
-                    oos_metrics=oos_result.metrics,
-                    oos_trades=oos_trades,
-                )
-            )
-            all_oos_trades.extend(oos_trades)
+    def _finalize_result(
+        self,
+        window_results: list[WalkForwardWindowResult],
+        is_objectives: list[float],
+    ) -> WalkForwardResult:
+        backtest = self.config.backtest
+        all_oos_trades: list[Trade] = [
+            trade
+            for window in window_results
+            if window.status == "completed"
+            for trade in window.oos_trades
+        ]
 
         oos_equity_curve = build_equity_curve(
             all_oos_trades,
@@ -368,3 +497,38 @@ def _compute_efficiency(
 
     oos_objective = float(resolve_objective(oos_metrics, objective_mode))
     return oos_objective / mean_is
+
+
+# --- Parallel window execution -------------------------------------------------
+#
+# Each window is an independent unit of work (its own Optuna study + OOS backtest),
+# so we fan them out across processes. The OHLCV frame is large and identical for
+# every window, so it is shipped to each worker once via the pool initializer
+# rather than pickled per task.
+
+_WORKER_OHLCV: pd.DataFrame | None = None
+
+
+def _init_worker(ohlcv: pd.DataFrame) -> None:
+    global _WORKER_OHLCV
+    _WORKER_OHLCV = ohlcv
+
+
+def _run_window_worker(
+    config: OptimizationConfig,
+    wf_config: WalkForwardConfig,
+    window: WalkForwardWindow,
+    total_windows: int,
+) -> tuple[WalkForwardWindowResult, float | None]:
+    if _WORKER_OHLCV is None:
+        raise RuntimeError("Worker OHLCV frame was not initialized")
+
+    # Force sequential inner backtests: the window itself is already running in a
+    # dedicated process, so a nested ProcessPoolExecutor (DAY_TRADE mode) would
+    # oversubscribe the machine.
+    window_config = config.model_copy(deep=True)
+    window_config.backtest.parallel_mode = ParallelMode.SEQUENTIAL
+
+    runner = DefaultBacktestRunner.from_frame_sliced(_WORKER_OHLCV)
+    wf_runner = WalkForwardRunner(window_config, wf_config, runner)
+    return wf_runner._run_single_window(window, total_windows, runner)

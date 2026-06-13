@@ -234,7 +234,7 @@ def _write_lake_artifacts(
         return None
 
 
-def _persist_run_finish(job: WalkForwardJob) -> None:
+def _persist_run_finish(job: WalkForwardJob, terminal_status: JobStatus) -> None:
     if job.db_run_id is None:
         return
     result = job.result
@@ -259,7 +259,7 @@ def _persist_run_finish(job: WalkForwardJob) -> None:
             update_walkforward_run(
                 session,
                 job.db_run_id,
-                status=job.status,
+                status=terminal_status,
                 result_summary=result_summary,
                 lake_paths=job.lake_paths,
                 error_message=job.error,
@@ -308,24 +308,28 @@ def start_job(
     )
 
     runner = backtest_runner
+    ohlcv = None
     if runner is None:
         if market_data_service is None:
             raise ValueError(
                 "market_data_service is required when backtest_runner is not provided"
             )
         backtest = request.optimization.backtest
-        runner = DefaultBacktestRunner.from_market_data_sliced(
+        # Load OHLCV once here (MT5 thread constraint). The frame is reused for the
+        # sequential runner and shipped to worker processes for the parallel path.
+        ohlcv = DefaultBacktestRunner.load_sliced_frame(
             market_data_service,
             symbol=backtest.symbol,
             timeframe=backtest.timeframe,
             start=backtest.start,
             end=backtest.end,
         )
+        runner = DefaultBacktestRunner.from_frame_sliced(ohlcv)
 
     with _lock:
         _jobs[run_id] = job
     _persist_progress(job)
-    _executor.submit(_run_job, job, runner)
+    _executor.submit(_run_job, job, runner, ohlcv)
     return job
 
 
@@ -345,7 +349,10 @@ def _make_progress_cb(job: WalkForwardJob) -> Callable[[WalkForwardProgress], No
         job.current_window = progress.current_window
         job.total_windows = progress.total_windows
         job.phase = progress.phase
-        if progress.phase == "testing":
+        if progress.windows_completed is not None:
+            # Parallel path: windows finish out of order, so trust the count.
+            job.windows_completed = progress.windows_completed
+        elif progress.phase == "testing":
             job.windows_completed = progress.window_index + 1
         job.updated_at = _now()
         _persist_progress(job)
@@ -353,7 +360,11 @@ def _make_progress_cb(job: WalkForwardJob) -> Callable[[WalkForwardProgress], No
     return _cb
 
 
-def _run_job(job: WalkForwardJob, backtest_runner: BacktestRunner) -> None:
+def _run_job(
+    job: WalkForwardJob,
+    backtest_runner: BacktestRunner,
+    ohlcv: Optional[pd.DataFrame] = None,
+) -> None:
     job.status = "running"
     job.updated_at = _now()
     _persist_run_status(
@@ -370,6 +381,7 @@ def _run_job(job: WalkForwardJob, backtest_runner: BacktestRunner) -> None:
             job.request.optimization,
             job.request.walkforward,
             backtest_runner,
+            ohlcv=ohlcv,
         )
         job.result = wf_runner.run(
             progress_callback=_make_progress_cb(job),
@@ -386,9 +398,12 @@ def _run_job(job: WalkForwardJob, backtest_runner: BacktestRunner) -> None:
         terminal_status = "failed"
         job.error = str(exc)
     finally:
-        job.status = terminal_status
         job.updated_at = _now()
-        _persist_run_finish(job)
+        # Persist to the DB *before* flipping the in-memory status to terminal, so
+        # a watcher that observes job.status == terminal (e.g. after a restart and
+        # cache clear) never reads a stale "running" row from the database.
+        _persist_run_finish(job, terminal_status)
+        job.status = terminal_status
         _persist_progress(job)
 
 
