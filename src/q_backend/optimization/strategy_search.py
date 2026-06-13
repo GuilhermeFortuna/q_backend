@@ -284,6 +284,7 @@ def evaluate_candidate(
     candidate: SearchCandidate,
     config: StrategySearchConfig,
     backtest_runner: BacktestRunner,
+    ohlcv: pd.DataFrame | None = None,
     progress_callback: Callable[[SearchProgress], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
 ) -> CandidateResult:
@@ -321,6 +322,7 @@ def evaluate_candidate(
             opt_config,
             config.walkforward,
             runner,
+            ohlcv=ohlcv,
         ).run(progress_callback=wf_progress, should_stop=should_stop)
     except Exception as exc:
         base.status = "error"
@@ -438,6 +440,8 @@ class StrategySearchRunner:
                     )
                 )
 
+        ohlcv = getattr(self.backtest_runner, "_df", None)
+
         candidate_offset = len(unsupported)
         for offset, candidate in enumerate(search_candidates):
             current = candidate_offset + offset + 1
@@ -467,6 +471,7 @@ class StrategySearchRunner:
                 candidate,
                 self.config,
                 self.backtest_runner,
+                ohlcv=ohlcv,
                 progress_callback=candidate_progress,
                 should_stop=should_stop,
             )

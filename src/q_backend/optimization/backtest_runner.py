@@ -55,9 +55,11 @@ class DefaultBacktestRunner:
         self,
         data_provider: Callable[[BacktestRunConfig], pd.DataFrame] | None = None,
         market_data_service: Any | None = None,
+        df: pd.DataFrame | None = None,
     ):
         self._data_provider = data_provider
         self._market_data_service = market_data_service
+        self._df = df
 
     @classmethod
     def from_market_data(
@@ -123,7 +125,7 @@ class DefaultBacktestRunner:
         def data_provider(config: BacktestRunConfig) -> pd.DataFrame:
             return df.loc[config.start : config.end]
 
-        return cls(data_provider=data_provider)
+        return cls(data_provider=data_provider, df=df)
 
     @classmethod
     def from_market_data_sliced(
