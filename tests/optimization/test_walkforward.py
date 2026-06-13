@@ -371,40 +371,44 @@ def test_from_market_data_sliced_single_fetch_across_walkforward_run():
     service.get_ohlcv.assert_called_once()
 
 
-def test_walkforward_parallel_matches_sequential():
+def test_walkforward_max_workers_is_inert():
+    """The runner always executes sequentially now (window-level parallelism moved
+    up to the Dramatiq job layer). ``max_workers`` must therefore be a no-op: any
+    value produces identical results, and progress still advances to completion."""
     start = datetime(2024, 1, 1)
     end = datetime(2024, 4, 30)
     full_df = _make_intraday_ohlcv_df(start, 120)
     config = _walkforward_optimization_config(start=start, end=end, n_trials=3)
-    wf_seq = WalkForwardConfig(
+    wf_one = WalkForwardConfig(
         train_days=30, test_days=15, mode="rolling", min_windows=2, max_workers=1
     )
-    wf_par = WalkForwardConfig(
+    wf_many = WalkForwardConfig(
         train_days=30, test_days=15, mode="rolling", min_windows=2, max_workers=2
     )
 
     runner = DefaultBacktestRunner(data_provider=_sliced_data_provider(full_df))
-    seq = WalkForwardRunner(config, wf_seq, runner).run()
+    seq = WalkForwardRunner(config, wf_one, runner).run()
 
     progress: list[WalkForwardProgress] = []
-    par = WalkForwardRunner(config, wf_par, runner, ohlcv=full_df).run(
+    other = WalkForwardRunner(config, wf_many, runner, ohlcv=full_df).run(
         progress_callback=progress.append
     )
 
-    assert [w.index for w in par.windows] == [w.index for w in seq.windows]
-    assert [w.status for w in par.windows] == [w.status for w in seq.windows]
-    par_completed = [w for w in par.windows if w.status == "completed"]
-    for par_w, seq_w in zip(
-        par_completed, [w for w in seq.windows if w.status == "completed"]
-    ):
-        assert par_w.best_params == seq_w.best_params
-        assert par_w.oos_metrics == seq_w.oos_metrics
-    assert par.efficiency == pytest.approx(seq.efficiency)
-
-    # Parallel path reports a monotonic completion count, one tick per window.
-    assert [p.windows_completed for p in progress] == list(
-        range(1, len(par.windows) + 1)
+    assert [w.index for w in other.windows] == [w.index for w in seq.windows]
+    assert [w.status for w in other.windows] == [w.status for w in seq.windows]
+    completed_pairs = zip(
+        [w for w in other.windows if w.status == "completed"],
+        [w for w in seq.windows if w.status == "completed"],
     )
+    for other_w, seq_w in completed_pairs:
+        assert other_w.best_params == seq_w.best_params
+        assert other_w.oos_metrics == seq_w.oos_metrics
+    assert other.efficiency == pytest.approx(seq.efficiency)
+
+    # Progress is reported and advances monotonically to the final window count.
+    counts = [p.current_window for p in progress]
+    assert counts == sorted(counts)
+    assert counts and counts[-1] == len(other.windows)
 
 
 def test_walkforward_rejects_tick_engine():

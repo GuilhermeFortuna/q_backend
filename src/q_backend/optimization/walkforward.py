@@ -1,7 +1,6 @@
 import logging
 import os
 from collections.abc import Callable
-from concurrent.futures import ProcessPoolExecutor, as_completed, wait, FIRST_COMPLETED
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Literal
@@ -9,12 +8,10 @@ from typing import Any, Literal
 import pandas as pd
 from pydantic import BaseModel, Field
 
-from q_backend.backtesting.engine import ParallelMode
 from q_backend.backtesting.models import Trade
 from q_backend.optimization.backtest_runner import (
     BacktestRunConfig,
     BacktestRunner,
-    DefaultBacktestRunner,
 )
 from q_backend.optimization.metrics import build_equity_curve, compute_extended_metrics
 from q_backend.optimization.models import OptimizationConfig, StorageConfig
@@ -308,26 +305,19 @@ class WalkForwardRunner:
             is_objective,
         )
 
-    def _resolve_workers(self, total_windows: int) -> int:
-        return resolve_worker_count(self.wf_config.max_workers, total_windows)
-
     def run(
         self,
         progress_callback: Callable[[WalkForwardProgress], None] | None = None,
         should_stop: Callable[[], bool] | None = None,
     ) -> WalkForwardResult:
+        # Always sequential. Window-level parallelism now lives one layer up: the
+        # walk-forward job fans each window out as its own Dramatiq message, and a
+        # discovery candidate runs its whole walk-forward inside a single worker.
+        # The Dramatiq pool is the only source of CPU parallelism, so this runner
+        # must not spawn a process pool of its own.
         backtest = self.config.backtest
         windows = split_windows(backtest.start, backtest.end, self.wf_config)
-        workers = self._resolve_workers(len(windows))
-
-        if workers <= 1 or self._ohlcv is None:
-            if self._ohlcv is None and workers > 1:
-                logger.info(
-                    "Walk-forward running sequentially: no in-memory frame "
-                    "available to share with worker processes."
-                )
-            return self._run_sequential(windows, progress_callback, should_stop)
-        return self._run_parallel(windows, workers, progress_callback, should_stop)
+        return self._run_sequential(windows, progress_callback, should_stop)
 
     def _run_sequential(
         self,
@@ -349,89 +339,6 @@ class WalkForwardRunner:
             if is_objective is not None:
                 is_objectives.append(is_objective)
 
-        return self._finalize_result(window_results, is_objectives)
-
-    def _run_parallel(
-        self,
-        windows: list[WalkForwardWindow],
-        workers: int,
-        progress_callback: Callable[[WalkForwardProgress], None] | None,
-        should_stop: Callable[[], bool] | None,
-    ) -> WalkForwardResult:
-        total_windows = len(windows)
-        results_by_index: dict[int, WalkForwardWindowResult] = {}
-        is_by_index: dict[int, float] = {}
-        completed = 0
-
-        logger.info(
-            "Walk-forward running %d windows across %d worker processes",
-            total_windows,
-            workers,
-        )
-
-        with ProcessPoolExecutor(
-            max_workers=workers,
-            initializer=_init_worker,
-            initargs=(self._ohlcv,),
-        ) as executor:
-            futures_map = {
-                executor.submit(
-                    _run_window_worker,
-                    self.config,
-                    self.wf_config,
-                    window,
-                    total_windows,
-                ): window
-                for window in windows
-            }
-            pending_futures = set(futures_map.keys())
-
-            while pending_futures:
-                if should_stop is not None and should_stop():
-                    logger.info("Cancellation requested, cancelling pending walk-forward windows.")
-                    for future in pending_futures:
-                        future.cancel()
-                    break
-
-                done_futures, pending_futures = wait(
-                    pending_futures,
-                    timeout=0.5,
-                    return_when=FIRST_COMPLETED,
-                )
-
-                for future in done_futures:
-                    window = futures_map[future]
-                    try:
-                        result, is_objective = future.result()
-                        results_by_index[window.index] = result
-                        if is_objective is not None:
-                            is_by_index[window.index] = is_objective
-                    except Exception as exc:
-                        logger.error("Window %d failed with error: %s", window.index, exc)
-                        results_by_index[window.index] = WalkForwardWindowResult(
-                            index=window.index,
-                            train_start=window.train_start,
-                            train_end=window.train_end,
-                            test_start=window.test_start,
-                            test_end=window.test_end,
-                            status="no_result",
-                        )
-
-                    completed += 1
-                    if progress_callback is not None:
-                        progress_callback(
-                            WalkForwardProgress(
-                                current_window=completed,
-                                total_windows=total_windows,
-                                phase="testing",
-                                window_index=window.index,
-                                windows_completed=completed,
-                            )
-                        )
-
-        ordered = sorted(results_by_index)
-        window_results = [results_by_index[i] for i in ordered]
-        is_objectives = [is_by_index[i] for i in ordered if i in is_by_index]
         return self._finalize_result(window_results, is_objectives)
 
     def _finalize_result(
@@ -537,29 +444,3 @@ def _compute_efficiency(
 # every window, so it is shipped to each worker once via the pool initializer
 # rather than pickled per task.
 
-_WORKER_OHLCV: pd.DataFrame | None = None
-
-
-def _init_worker(ohlcv: pd.DataFrame) -> None:
-    global _WORKER_OHLCV
-    _WORKER_OHLCV = ohlcv
-
-
-def _run_window_worker(
-    config: OptimizationConfig,
-    wf_config: WalkForwardConfig,
-    window: WalkForwardWindow,
-    total_windows: int,
-) -> tuple[WalkForwardWindowResult, float | None]:
-    if _WORKER_OHLCV is None:
-        raise RuntimeError("Worker OHLCV frame was not initialized")
-
-    # Force sequential inner backtests: the window itself is already running in a
-    # dedicated process, so a nested ProcessPoolExecutor (DAY_TRADE mode) would
-    # oversubscribe the machine.
-    window_config = config.model_copy(deep=True)
-    window_config.backtest.parallel_mode = ParallelMode.SEQUENTIAL
-
-    runner = DefaultBacktestRunner.from_frame_sliced(_WORKER_OHLCV)
-    wf_runner = WalkForwardRunner(window_config, wf_config, runner)
-    return wf_runner._run_single_window(window, total_windows, runner)

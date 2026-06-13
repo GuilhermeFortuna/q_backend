@@ -114,12 +114,19 @@ class OptimizationRunner:
         self,
         callbacks: list[Callable[[optuna.Study, optuna.trial.FrozenTrial], None]]
         | None = None,
+        n_trials: int | None = None,
     ) -> OptimizationResult:
+        """Run trials and report the best/pareto result.
+
+        ``n_trials`` overrides ``config.study.n_trials`` — distributed trial workers
+        pass their per-worker chunk size so several workers can share one study
+        (``storage.type == "shared"``) without each running the full budget.
+        """
         self.failures: list[dict[str, Any]] = []
         study = load_or_create_study(self.config)
         study.optimize(
             self._objective,
-            n_trials=self.config.study.n_trials,
+            n_trials=self.config.study.n_trials if n_trials is None else n_trials,
             catch=(Exception,) if self.config.study.continue_on_trial_error else (),
             callbacks=callbacks,
         )

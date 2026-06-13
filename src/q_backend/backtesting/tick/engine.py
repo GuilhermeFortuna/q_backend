@@ -3,7 +3,6 @@ from datetime import datetime, timezone
 from typing import List
 
 import numpy as np
-from concurrent.futures import ProcessPoolExecutor
 
 from q_backend.backtesting.engine import ParallelMode
 from q_backend.backtesting.models import OrderAction, Trade
@@ -84,25 +83,6 @@ def _events_to_registry(
     return registry
 
 
-def _run_tick_day_chunk(args) -> TradeRegistry:
-    (
-        strategy,
-        sizing_config,
-        initial_capital,
-        point_value,
-        symbol,
-        chunk,
-    ) = args
-    engine = TickBacktestEngine(
-        strategy=strategy,
-        sizing_config=sizing_config,
-        initial_capital=initial_capital,
-        point_value=point_value,
-        symbol=symbol,
-    )
-    return engine._run_single_chunk(chunk)
-
-
 class TickBacktestEngine:
     def __init__(
         self,
@@ -130,25 +110,12 @@ class TickBacktestEngine:
             return TradeRegistry()
 
         if parallel_mode == ParallelMode.DAY_TRADE:
-            chunks = _split_ticks_by_day(ticks)
-            args_list = [
-                (
-                    self.strategy,
-                    self.sizing_config,
-                    self.initial_capital,
-                    self.point_value,
-                    self.symbol,
-                    chunk,
-                )
-                for chunk in chunks
-            ]
-
-            with ProcessPoolExecutor() as executor:
-                results = list(executor.map(_run_tick_day_chunk, args_list))
-
+            # Days are independent; run them sequentially in-process and merge. No
+            # nested ProcessPoolExecutor — the Dramatiq worker pool owns CPU
+            # parallelism, so spawning one here would oversubscribe the cores.
             master = TradeRegistry()
-            for registry in results:
-                master.merge(registry)
+            for chunk in _split_ticks_by_day(ticks):
+                master.merge(self._run_single_chunk(chunk))
             return master
 
         return self._run_single_chunk(ticks)

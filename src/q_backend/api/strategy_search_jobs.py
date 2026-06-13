@@ -1,18 +1,17 @@
 """Job manager for asynchronous strategy search runs.
 
-Strategy searches are long and serialized via a single-worker thread pool.
-Progress snapshots are mirrored to Redis under the ``strategy_search`` namespace;
-execution state and full results remain in-memory until the run finishes.
+Searches are dispatched to the Dramatiq worker pool: a coordinator fans each
+candidate out as its own worker message, the last to finish ranks them and runs the
+finalizer. Progress is read from the database and Redis — no per-run state lives in
+the API process.
 """
 
 import json
 import logging
-import threading
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable, Literal, Optional
+from typing import Any, Literal, Optional
 
 import pandas as pd
 
@@ -21,12 +20,26 @@ from q_backend.optimization.strategy_search import (
     CandidateProvider,
     CandidateResult,
     RegistryCandidateProvider,
-    SearchProgress,
     StrategySearchConfig,
     StrategySearchResult,
-    StrategySearchRunner,
+    _rank_results,
+    _unsupported_result,
+    evaluate_candidate,
 )
 from q_backend.optimization.walkforward import split_windows
+from q_backend.tasks.data import load_ohlcv_frame
+from q_backend.tasks.fanin import (
+    clear_job_keys,
+    decrement,
+    init_counter,
+    is_cancelled,
+    set_cancelled,
+)
+from q_backend.tasks.serialization import (
+    candidate_result_from_dict,
+    candidate_result_to_dict,
+)
+from q_backend.tasks.staging import clear_partials, load_partials, stash_partial
 from q_backend.storage.db.engine import session_scope
 from q_backend.storage.db.models import RunStatus, StrategySearchRun
 from q_backend.storage.db.repositories import (
@@ -100,23 +113,20 @@ class StrategySearchJob:
     updated_at: datetime = field(default_factory=_now)
 
 
-_jobs: dict[str, StrategySearchJob] = {}
-_lock = threading.Lock()
-_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="strategy_search")
-
-
 def get_job(run_id: str) -> Optional[StrategySearchJob]:
-    with _lock:
-        return _jobs.get(run_id)
+    """Runs no longer live in the API process; status is read from DB/Redis."""
+    return None
 
 
 def evict_run(run_id: str) -> None:
-    with _lock:
-        _jobs.pop(run_id, None)
     try:
         delete_job_progress(get_redis(), run_id, namespace=PROGRESS_NAMESPACE)
     except Exception:
-        logger.debug("Redis progress delete unavailable for strategy search run %s", run_id)
+        logger.debug(
+            "Redis progress delete unavailable for strategy search run %s", run_id
+        )
+    clear_partials(run_id)
+    clear_job_keys(run_id)
 
 
 def validate_strategy_search_request(config: StrategySearchConfig) -> None:
@@ -136,7 +146,9 @@ def _persist_progress(job: StrategySearchJob) -> None:
             namespace=PROGRESS_NAMESPACE,
         )
     except Exception:
-        logger.debug("Redis progress unavailable for strategy search run %s", job.run_id)
+        logger.debug(
+            "Redis progress unavailable for strategy search run %s", job.run_id
+        )
 
 
 def _persist_run_start(config: StrategySearchConfig) -> tuple[str, Optional[uuid.UUID]]:
@@ -183,7 +195,9 @@ def _build_result_summary(result: StrategySearchResult) -> dict[str, Any]:
     return {
         "objective_mode": result.objective_mode.value,
         "candidate_count": len(result.candidates),
-        "ranked_count": sum(1 for candidate in result.candidates if candidate.rank is not None),
+        "ranked_count": sum(
+            1 for candidate in result.candidates if candidate.rank is not None
+        ),
         "passed_gates_count": sum(
             1 for candidate in result.candidates if candidate.passed_gates
         ),
@@ -301,51 +315,40 @@ def start_job(
     market_data_service: Any | None = None,
     provider: CandidateProvider | None = None,
 ) -> StrategySearchJob:
+    """Persist the run and dispatch it to the worker pool.
+
+    Candidate workers fetch their own market data (cached in the lake), so the
+    ``backtest_runner``/``market_data_service``/``provider`` arguments are retained
+    only for call-site compatibility.
+    """
     validate_strategy_search_request(request)
 
     run_id, db_run_id = _persist_run_start(request)
-    resolved_provider = provider or RegistryCandidateProvider(request)
     job = StrategySearchJob(
         run_id=run_id,
         db_run_id=db_run_id,
         request=request,
-        total_candidates=_resolve_total_candidates(request, resolved_provider),
+        total_candidates=_resolve_total_candidates(
+            request, RegistryCandidateProvider(request)
+        ),
     )
-
-    runner = backtest_runner
-    if runner is None:
-        if market_data_service is None:
-            raise ValueError(
-                "market_data_service is required when backtest_runner is not provided"
-            )
-        backtest = request.backtest
-        runner = DefaultBacktestRunner.from_market_data_sliced(
-            market_data_service,
-            symbol=backtest.symbol,
-            timeframe=backtest.timeframe,
-            start=backtest.start,
-            end=backtest.end,
-        )
-
-    with _lock:
-        _jobs[run_id] = job
     _persist_progress(job)
-    _executor.submit(_run_job, job, runner, resolved_provider)
+
+    from q_backend.tasks import actors
+
+    actors.discovery_coordinator.send(
+        run_id,
+        db_run_id.hex if db_run_id is not None else "",
+        request.model_dump_json(),
+    )
     return job
 
 
 def request_cancel(run_id: str) -> Optional[StrategySearchJob]:
-    job = get_job(run_id)
-    if job is not None:
-        if job.status in ("pending", "running"):
-            job.cancel_requested = True
-            job.updated_at = _now()
-            _persist_progress(job)
-        return job
-    # No live job. A run still marked active in the DB is an orphan left by a
-    # previous process (e.g. the backend restarted mid-search): its worker
-    # thread is gone, so it would stay "running" forever. Cancel it directly
-    # so the UI can clear the stuck run.
+    # Raise the cancel flag so in-flight candidate workers stop and pending
+    # candidate messages drain as no-ops, then flip the DB/Redis state immediately
+    # so the UI clears (and an orphaned run from a previous process is resolved).
+    set_cancelled(run_id)
     _cancel_orphaned_run(run_id)
     return None
 
@@ -368,12 +371,16 @@ def _cancel_orphaned_run(run_id: str) -> bool:
                 finished_at=_now(),
             )
     except Exception as exc:
-        logger.warning("Failed to cancel orphaned strategy search run %s: %s", run_id, exc)
+        logger.warning(
+            "Failed to cancel orphaned strategy search run %s: %s", run_id, exc
+        )
         return False
     try:
         delete_job_progress(get_redis(), run_id, namespace=PROGRESS_NAMESPACE)
     except Exception:
-        logger.debug("Redis progress delete unavailable for strategy search run %s", run_id)
+        logger.debug(
+            "Redis progress delete unavailable for strategy search run %s", run_id
+        )
     return True
 
 
@@ -398,54 +405,171 @@ def reconcile_orphaned_runs() -> int:
     return count
 
 
-def _make_progress_cb(job: StrategySearchJob) -> Callable[[SearchProgress], None]:
-    def _cb(progress: SearchProgress) -> None:
-        job.current_candidate = progress.current_candidate
-        job.total_candidates = progress.total_candidates
-        job.candidate_id = progress.candidate_id
-        job.strategy = progress.strategy
-        job.phase = progress.phase
-        job.window_index = progress.window_index
-        job.total_windows = progress.total_windows
-        job.updated_at = _now()
-        _persist_progress(job)
-
-    return _cb
+# Stash key offset for unsupported candidates so they never collide with the
+# 0..N-1 indices used for evaluated candidates.
+_UNSUPPORTED_OFFSET = 10_000_000
 
 
-def _run_job(
-    job: StrategySearchJob,
-    backtest_runner: BacktestRunner,
-    provider: CandidateProvider,
-) -> None:
-    job.status = "running"
-    job.updated_at = _now()
+def _candidate_runner(request: StrategySearchConfig) -> DefaultBacktestRunner:
+    """Build a runner that slices the run's cached OHLCV frame per window."""
+    backtest = request.backtest
+    return DefaultBacktestRunner.from_frame_sliced(
+        load_ohlcv_frame(
+            backtest.symbol, backtest.timeframe, backtest.start, backtest.end
+        )
+    )
+
+
+def _progress_job(
+    run_id: str,
+    db_run_id: Optional[uuid.UUID],
+    request: StrategySearchConfig,
+    *,
+    status: JobStatus,
+    total_candidates: int,
+    current_candidate: int,
+    candidate_id: Optional[str] = None,
+    strategy: Optional[str] = None,
+    phase: Optional[Literal["optimizing", "testing", "done"]] = None,
+    error: Optional[str] = None,
+) -> StrategySearchJob:
+    return StrategySearchJob(
+        run_id=run_id,
+        db_run_id=db_run_id,
+        request=request,
+        status=status,
+        total_candidates=total_candidates,
+        current_candidate=current_candidate,
+        candidate_id=candidate_id,
+        strategy=strategy,
+        phase=phase,
+        error=error,
+    )
+
+
+def dispatch_candidates(run_id: str, db_run_id_hex: str, config_json: str) -> None:
+    """Coordinator: fan each candidate out to its own worker message."""
+    request = StrategySearchConfig.model_validate_json(config_json)
+    db_run_id = uuid.UUID(db_run_id_hex) if db_run_id_hex else None
+    provider = RegistryCandidateProvider(request)
+    candidates = list(provider.candidates())
+    unsupported = [_unsupported_result(name) for name in provider.unsupported_names()]
+    total = len(candidates) + len(unsupported)
+
+    if is_cancelled(run_id):
+        finalize_discovery(run_id, db_run_id_hex, config_json)
+        return
+
     _persist_run_status(
-        job.db_run_id,
+        db_run_id,
         status=RunStatus.RUNNING.value,
         clear_error_message=True,
         started_at=_now(),
     )
-    _persist_progress(job)
+    # Unsupported candidates need no evaluation — stash them up front.
+    for offset, result in enumerate(unsupported):
+        stash_partial(
+            run_id, _UNSUPPORTED_OFFSET + offset, candidate_result_to_dict(result)
+        )
+
+    _persist_progress(
+        _progress_job(
+            run_id,
+            db_run_id,
+            request,
+            status="running",
+            total_candidates=total,
+            current_candidate=len(unsupported),
+            phase="optimizing",
+        )
+    )
+
+    if not candidates:
+        finalize_discovery(run_id, db_run_id_hex, config_json)
+        return
+
+    init_counter(run_id, len(candidates))
+
+    from q_backend.tasks import actors
+
+    for index in range(len(candidates)):
+        actors.evaluate_discovery_candidate.send(
+            run_id, db_run_id_hex, config_json, index
+        )
+
+
+def run_candidate(
+    run_id: str, db_run_id_hex: str, config_json: str, candidate_index: int
+) -> None:
+    """Candidate worker: walk-forward evaluate one candidate strategy."""
+    request = StrategySearchConfig.model_validate_json(config_json)
+    db_run_id = uuid.UUID(db_run_id_hex) if db_run_id_hex else None
+    provider = RegistryCandidateProvider(request)
+    candidates = list(provider.candidates())
+    candidate = candidates[candidate_index]
+
+    if not is_cancelled(run_id):
+        try:
+            result = evaluate_candidate(candidate, request, _candidate_runner(request))
+        except Exception as exc:  # noqa: BLE001 - isolate a single candidate failure
+            logger.exception(
+                "Discovery candidate %s failed for run %s",
+                candidate.candidate_id,
+                run_id,
+            )
+            result = CandidateResult(
+                candidate_id=candidate.candidate_id,
+                strategy=candidate.strategy,
+                status="error",
+                error=str(exc),
+            )
+        stash_partial(run_id, candidate_index, candidate_result_to_dict(result))
+
+    remaining = decrement(run_id)
+    unsupported_count = len(provider.unsupported_names())
+    completed = unsupported_count + (len(candidates) - max(remaining, 0))
+    _persist_progress(
+        _progress_job(
+            run_id,
+            db_run_id,
+            request,
+            status="running",
+            total_candidates=len(candidates) + unsupported_count,
+            current_candidate=completed,
+            candidate_id=candidate.candidate_id,
+            strategy=candidate.strategy,
+            phase="testing",
+        )
+    )
+    if remaining <= 0:
+        finalize_discovery(run_id, db_run_id_hex, config_json)
+
+
+def finalize_discovery(run_id: str, db_run_id_hex: str, config_json: str) -> None:
+    """Last candidate worker: rank candidates, persist results, mark terminal."""
+    request = StrategySearchConfig.model_validate_json(config_json)
+    db_run_id = uuid.UUID(db_run_id_hex) if db_run_id_hex else None
+    job = StrategySearchJob(run_id=run_id, db_run_id=db_run_id, request=request)
 
     terminal_status: JobStatus = "failed"
     try:
-        job.result = StrategySearchRunner(
-            job.request,
-            backtest_runner,
-            provider=provider,
-        ).run(
-            progress_callback=_make_progress_cb(job),
-            should_stop=lambda: job.cancel_requested,
+        results = [candidate_result_from_dict(p) for p in load_partials(run_id)]
+        ranked = _rank_results(results)
+        best = ranked[0] if ranked and ranked[0].rank == 1 else None
+        job.result = StrategySearchResult(
+            candidates=ranked,
+            objective_mode=request.objective.mode,
+            best=best,
         )
-        job.lake_paths = _write_lake_artifacts(job.run_id, job.result)
-        if job.cancel_requested:
+        job.total_candidates = len(ranked)
+        job.lake_paths = _write_lake_artifacts(run_id, job.result)
+        if is_cancelled(run_id):
             terminal_status = "cancelled"
             job.error = "Cancelled by user"
         else:
             terminal_status = "completed"
     except Exception as exc:  # noqa: BLE001 - surface any failure to the client
-        logger.exception("Strategy search job %s failed", job.run_id)
+        logger.exception("Discovery finalize failed for run %s", run_id)
         terminal_status = "failed"
         job.error = str(exc)
     finally:
@@ -453,6 +577,8 @@ def _run_job(
         _persist_run_finish(job, terminal_status)
         job.status = terminal_status
         _persist_progress(job)
+        clear_partials(run_id)
+        clear_job_keys(run_id)
 
 
 def status_payload(job: StrategySearchJob) -> dict[str, Any]:
@@ -496,7 +622,11 @@ def _serialize_candidate(candidate: CandidateResult) -> dict[str, Any]:
 def serialize_equity_points(series: pd.Series) -> list[dict[str, Any]]:
     points: list[dict[str, Any]] = []
     for timestamp, equity in series.items():
-        ts = timestamp.to_pydatetime() if isinstance(timestamp, pd.Timestamp) else timestamp
+        ts = (
+            timestamp.to_pydatetime()
+            if isinstance(timestamp, pd.Timestamp)
+            else timestamp
+        )
         points.append({"time": _isoformat(ts), "equity": float(equity)})
     return points
 
@@ -511,7 +641,9 @@ def results_payload(job: StrategySearchJob) -> Optional[dict[str, Any]]:
         "status": job.status,
         "objective_mode": result.objective_mode.value,
         "summary": summary,
-        "candidates": [_serialize_candidate(candidate) for candidate in result.candidates],
+        "candidates": [
+            _serialize_candidate(candidate) for candidate in result.candidates
+        ],
         "best": _serialize_candidate(result.best) if result.best is not None else None,
         "search_config": job.request.model_dump(mode="json"),
         "lake_paths": job.lake_paths,
@@ -574,19 +706,23 @@ def status_payload_from_db(run_id: str) -> dict[str, Any] | None:
 
 
 def get_status_payload(run_id: str) -> dict[str, Any] | None:
-    job = get_job(run_id)
-    if job is not None:
-        return status_payload(job)
-
     db_payload = status_payload_from_db(run_id)
 
     try:
         cached = get_job_progress(get_redis(), run_id, namespace=PROGRESS_NAMESPACE)
-        if cached is not None and db_payload is None:
-            return cached
     except Exception:
-        logger.debug("Redis progress read unavailable for strategy search run %s", run_id)
+        logger.debug(
+            "Redis progress read unavailable for strategy search run %s", run_id
+        )
+        cached = None
 
+    # While the run is still active, candidate results aren't in the DB yet (they
+    # are written by the finalizer), so the live Redis snapshot is authoritative.
+    # Once terminal, the DB row is complete and wins.
+    if db_payload is None:
+        return cached
+    if db_payload.get("status") in ("pending", "running") and cached is not None:
+        return cached
     return db_payload
 
 
@@ -604,7 +740,9 @@ def get_persisted_run_status(run_id: str) -> Optional[str]:
     return run.status if run is not None else None
 
 
-def _load_equity_curve_from_lake(run_id: str, candidate_id: str) -> list[dict[str, Any]]:
+def _load_equity_curve_from_lake(
+    run_id: str, candidate_id: str
+) -> list[dict[str, Any]]:
     df = read_strategy_search_candidate_artifact(run_id, candidate_id, "oos_equity")
     time_col = "time" if "time" in df.columns else df.columns[0]
     equity_col = "equity" if "equity" in df.columns else df.columns[1]
@@ -636,7 +774,9 @@ def results_payload_from_db(run_id: str) -> Optional[dict[str, Any]]:
     if run.status not in _FINISHED_STATUSES:
         return None
 
-    candidates = sorted(run.candidates, key=lambda item: (item.rank or 10_000, item.candidate_id))
+    candidates = sorted(
+        run.candidates, key=lambda item: (item.rank or 10_000, item.candidate_id)
+    )
     serialized = [_serialize_db_candidate(candidate) for candidate in candidates]
     best = next((item for item in serialized if item.get("rank") == 1), None)
 
@@ -681,7 +821,8 @@ def candidate_exists_in_run(run_id: str, candidate_id: str) -> bool:
     job = get_job(run_id)
     if job is not None and job.result is not None:
         return any(
-            candidate.candidate_id == candidate_id for candidate in job.result.candidates
+            candidate.candidate_id == candidate_id
+            for candidate in job.result.candidates
         )
 
     try:

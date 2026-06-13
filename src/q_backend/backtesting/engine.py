@@ -1,6 +1,5 @@
 import uuid
 import datetime
-from concurrent.futures import ProcessPoolExecutor
 from typing import List, Optional
 import pandas as pd
 from enum import Enum
@@ -21,36 +20,6 @@ from q_backend.backtesting.position_sizing import PositionSizer
 class ParallelMode(str, Enum):
     SEQUENTIAL = "SEQUENTIAL"
     DAY_TRADE = "DAY_TRADE"
-
-
-def _run_day_trade_chunk(args) -> TradeRegistry:
-    """
-    Top-level helper for multiprocessing since instance methods can be tricky to pickle.
-    """
-    (
-        strategy,
-        sizer,
-        initial_capital,
-        point_values,
-        day_trade,
-        day_trade_start_time,
-        day_trade_end_time,
-        day_trade_close_time,
-        costs,
-        chunk,
-    ) = args
-    engine = BacktestEngine(
-        strategy,
-        sizer,
-        initial_capital,
-        point_values=point_values,
-        day_trade=day_trade,
-        day_trade_start_time=day_trade_start_time,
-        day_trade_end_time=day_trade_end_time,
-        day_trade_close_time=day_trade_close_time,
-        costs=costs,
-    )
-    return engine._run_single_chunk(chunk, force_close_at_end=True)
 
 
 class BacktestEngine:
@@ -123,33 +92,15 @@ class BacktestEngine:
         if parallel_mode == ParallelMode.DAY_TRADE:
             master_registry = TradeRegistry()
 
-            # Group by date
-            chunks = [group for _, group in data.groupby(data.index.date)]
-
-            # Prepare args for multiprocessing
-            args_list = [
-                (
-                    self.strategy,
-                    self.sizer,
-                    self.initial_capital,
-                    self.point_values,
-                    self.day_trade,
-                    self.day_trade_start_time,
-                    self.day_trade_end_time,
-                    self.day_trade_close_time,
-                    self.costs,
-                    chunk,
+            # Each trading day is independent, so we process the day-chunks
+            # sequentially in-process and merge them. We deliberately do NOT spawn a
+            # ProcessPoolExecutor here: the Dramatiq worker pool is the single,
+            # budgeted source of CPU parallelism in the backend, and a nested pool
+            # per backtest would oversubscribe the cores when several jobs run.
+            for _, chunk in data.groupby(data.index.date):
+                master_registry.merge(
+                    self._run_single_chunk(chunk, force_close_at_end=True)
                 )
-                for chunk in chunks
-            ]
-
-            # Execute in parallel
-            with ProcessPoolExecutor() as executor:
-                results = list(executor.map(_run_day_trade_chunk, args_list))
-
-            # Merge results
-            for registry in results:
-                master_registry.merge(registry)
 
             return master_registry
 

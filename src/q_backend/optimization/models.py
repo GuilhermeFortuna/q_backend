@@ -54,7 +54,9 @@ class SearchSpaceConfig(BaseModel):
 
 
 class StorageConfig(BaseModel):
-    type: Literal["memory", "sqlite", "url"] = "memory"
+    # "shared" => the project Postgres in a dedicated `optuna` schema, used so
+    # multiple Dramatiq trial workers can collaborate on one distributed study.
+    type: Literal["memory", "sqlite", "url", "shared"] = "memory"
     path: Optional[str] = None
     url: Optional[str] = None
 

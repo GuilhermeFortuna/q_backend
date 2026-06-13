@@ -1,13 +1,14 @@
 """Job manager for asynchronous Optuna optimization runs.
 
-Studies run on background worker threads. Progress snapshots are mirrored to
-Redis when available; execution state and full results remain in-memory.
+Studies are dispatched to the Dramatiq worker pool. A coordinator splits the trial
+budget across several trial-worker messages that collaborate on one distributed
+Optuna study (shared Postgres storage); the last to finish runs the finalizer.
+Progress is read from the database and Redis — no per-study state lives in the API
+process.
 """
 
 import logging
-import threading
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Literal, Optional
@@ -23,7 +24,17 @@ from q_backend.optimization import (
     TickBacktestRunner,
     serialize_trial,
 )
+from q_backend.optimization.models import StorageConfig
+from q_backend.optimization.storage import load_or_create_study
 from q_backend.optimization.tick_backtest_runner import resolve_tick_flags
+from q_backend.tasks.cpu import fan_out_count
+from q_backend.tasks.fanin import (
+    clear_job_keys,
+    decrement_and_is_last,
+    init_counter,
+    is_cancelled,
+    set_cancelled,
+)
 from q_backend.storage.db.engine import session_scope
 from q_backend.storage.db.models import OptimizationStudy, RunStatus, TrialStatus
 from q_backend.storage.db.repositories import (
@@ -110,24 +121,18 @@ class OptimizationJob:
     updated_at: datetime = field(default_factory=_now)
 
 
-_jobs: dict[str, OptimizationJob] = {}
-_lock = threading.Lock()
-_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="optimize")
-
-
 def get_job(study_id: str) -> Optional[OptimizationJob]:
-    with _lock:
-        return _jobs.get(study_id)
+    """Studies no longer live in the API process; status is read from DB/Redis."""
+    return None
 
 
 def evict_study(study_id: str) -> None:
-    """Remove an in-memory job and cached Redis progress for a study."""
-    with _lock:
-        _jobs.pop(study_id, None)
+    """Remove cached Redis progress and fan-in bookkeeping for a study."""
     try:
         delete_job_progress(get_redis(), study_id)
     except Exception:
         logger.debug("Redis progress delete unavailable for study %s", study_id)
+    clear_job_keys(study_id)
 
 
 def _persist_progress(job: OptimizationJob) -> None:
@@ -146,9 +151,7 @@ def _trial_metrics(trial: optuna.trial.FrozenTrial) -> dict[str, Any]:
 
 
 def _trial_status(trial: optuna.trial.FrozenTrial) -> str:
-    return _OPTUNA_STATE_TO_TRIAL_STATUS.get(
-        trial.state, TrialStatus.PENDING.value
-    )
+    return _OPTUNA_STATE_TO_TRIAL_STATUS.get(trial.state, TrialStatus.PENDING.value)
 
 
 def _persist_study_start(
@@ -287,7 +290,9 @@ def _count_completed_trials(trials: list) -> int:
     return sum(1 for trial in trials if trial.status in _FINISHED_TRIAL_STATUSES)
 
 
-def _optimization_config_from_study_config(config: dict[str, Any]) -> dict[str, Any] | None:
+def _optimization_config_from_study_config(
+    config: dict[str, Any],
+) -> dict[str, Any] | None:
     config_for_validation = {
         key: value for key, value in config.items() if key != "persisted_snapshot"
     }
@@ -310,7 +315,9 @@ def status_payload_from_db(study_id: str) -> dict[str, Any] | None:
         with session_scope() as session:
             study = get_optimization_study(session, study_uuid)
     except Exception as exc:
-        logger.warning("Failed to load optimization study %s from DB: %s", study_id, exc)
+        logger.warning(
+            "Failed to load optimization study %s from DB: %s", study_id, exc
+        )
         return None
 
     if study is None:
@@ -353,6 +360,17 @@ def _enrich_status_with_config(
     return enriched
 
 
+def _apply_cancel_overlay(
+    study_id: str, payload: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """Reflect a raised cancel flag immediately, before DB/Redis mirrors catch up."""
+    if payload is None:
+        return None
+    if is_cancelled(study_id) and payload.get("status") in ("pending", "running"):
+        return {**payload, "status": "cancelled"}
+    return payload
+
+
 def get_status_payload(study_id: str) -> dict[str, Any] | None:
     job = get_job(study_id)
     if job is not None:
@@ -360,18 +378,20 @@ def get_status_payload(study_id: str) -> dict[str, Any] | None:
         optimization_config = job.config.model_dump(mode="json")
         payload["backtest_config"] = optimization_config.get("backtest")
         payload["optimization_config"] = optimization_config
-        return payload
+        return _apply_cancel_overlay(study_id, payload)
 
     db_payload = status_payload_from_db(study_id)
 
     try:
         cached = get_job_progress(get_redis(), study_id)
         if cached is not None and db_payload is None:
-            return _enrich_status_with_config(cached, study_id)
+            return _apply_cancel_overlay(
+                study_id, _enrich_status_with_config(cached, study_id)
+            )
     except Exception:
         logger.debug("Redis progress read unavailable for study %s", study_id)
 
-    return db_payload
+    return _apply_cancel_overlay(study_id, db_payload)
 
 
 def start_job(
@@ -379,6 +399,12 @@ def start_job(
     backtest_runner: Optional[BacktestRunner] = None,
     market_data_service: Any | None = None,
 ) -> OptimizationJob:
+    """Persist the study and dispatch it to the worker pool.
+
+    Trial workers fetch their own market data (cached in the lake), so the
+    ``backtest_runner``/``market_data_service`` arguments are no longer used for
+    execution; they are retained only for call-site compatibility.
+    """
     study_id, db_study_id = _persist_study_start(config)
     job = OptimizationJob(
         study_id=study_id,
@@ -386,51 +412,40 @@ def start_job(
         config=config,
         n_trials=config.study.n_trials,
     )
-
-    runner = backtest_runner
-    if runner is None:
-        if market_data_service is None:
-            raise ValueError(
-                "market_data_service is required when backtest_runner is not provided"
-            )
-        backtest = config.backtest
-        if backtest.engine == "tick":
-            runner = TickBacktestRunner.from_market_data(
-                market_data_service,
-                symbol=backtest.symbol,
-                start=backtest.start,
-                end=backtest.end,
-                flags=resolve_tick_flags(backtest.tick_flags),
-            )
-        else:
-            runner = DefaultBacktestRunner.from_market_data(
-                market_data_service,
-                symbol=backtest.symbol,
-                timeframe=backtest.timeframe,
-                start=backtest.start,
-                end=backtest.end,
-            )
-
-    with _lock:
-        _jobs[study_id] = job
     _persist_progress(job)
-    _executor.submit(_run_job, job, runner)
+
+    from q_backend.tasks import actors
+
+    actors.optimization_coordinator.send(
+        study_id,
+        db_study_id.hex if db_study_id is not None else "",
+        config.model_dump_json(),
+    )
     return job
 
 
+def _mirror_cancelled_in_redis(study_id: str) -> None:
+    """Mark the Redis progress mirror cancelled when the DB row is unavailable."""
+    try:
+        cached = get_job_progress(get_redis(), study_id)
+        if cached is None:
+            return
+        mirrored = dict(cached)
+        mirrored["status"] = "cancelled"
+        set_job_progress(get_redis(), study_id, mirrored)
+    except Exception:
+        logger.debug("Redis progress update unavailable for study %s", study_id)
+
+
 def request_cancel(study_id: str) -> Optional[OptimizationJob]:
-    job = get_job(study_id)
-    if job is not None:
-        if job.status in ("pending", "running"):
-            job.cancel_requested = True
-            job.updated_at = _now()
-            _persist_progress(job)
-        return job
-    # No live job. A study still marked active in the DB is an orphan left by a
-    # previous process (e.g. the backend restarted mid-run): its worker thread
-    # is gone, so it would stay "running" forever. Cancel it directly so the UI
-    # can clear the stuck study.
-    _cancel_orphaned_study(study_id)
+    # Raise the cancel flag so any in-flight trial workers stop and pending trial
+    # messages drain as no-ops. Also flip the DB/Redis state immediately so the UI
+    # clears right away (and so a study with no live workers — an orphan from a
+    # previous process — is resolved too); the finalizer re-persists consistently.
+    set_cancelled(study_id)
+    cancelled_in_db = _cancel_orphaned_study(study_id)
+    if not cancelled_in_db:
+        _mirror_cancelled_in_redis(study_id)
     return None
 
 
@@ -446,7 +461,9 @@ def _cancel_orphaned_study(study_id: str) -> bool:
                 return False
             update_optimization_study(session, study_uuid, status="cancelled")
     except Exception as exc:
-        logger.warning("Failed to cancel orphaned optimization study %s: %s", study_id, exc)
+        logger.warning(
+            "Failed to cancel orphaned optimization study %s: %s", study_id, exc
+        )
         return False
     try:
         delete_job_progress(get_redis(), study_id)
@@ -478,9 +495,7 @@ def _make_progress_cb(
     is_multi = job.config.is_multi_objective()
 
     def _cb(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
-        job.completed_trials = sum(
-            1 for t in study.trials if t.state.is_finished()
-        )
+        job.completed_trials = sum(1 for t in study.trials if t.state.is_finished())
         if not is_multi:
             try:
                 job.best_value = study.best_value
@@ -491,7 +506,7 @@ def _make_progress_cb(
         _persist_progress(job)
         if trial.state.is_finished():
             _persist_trial(job.db_study_id, trial)
-        if job.cancel_requested:
+        if job.cancel_requested or is_cancelled(job.study_id):
             study.stop()
 
     return _cb
@@ -504,32 +519,135 @@ def _best_value(result: OptimizationResult) -> Optional[float]:
     return values[0] if len(values) == 1 else None
 
 
-def _run_job(
-    job: OptimizationJob,
-    backtest_runner: Optional[BacktestRunner] = None,
-) -> None:
-    job.status = "running"
-    job.updated_at = _now()
-    _persist_study_status(job.db_study_id, status="running")
-    _persist_progress(job)
-    try:
-        runner = OptimizationRunner(
-            job.config,
-            backtest_runner or DefaultBacktestRunner(),
+def _build_worker_runner(config: OptimizationConfig) -> BacktestRunner:
+    """Build a backtest runner inside a worker process from cached market data."""
+    from q_backend.tasks.data import load_ohlcv_frame
+    from q_backend.tasks.worker_context import get_worker_market_data_service
+
+    backtest = config.backtest
+    if backtest.engine == "tick":
+        return TickBacktestRunner.from_market_data(
+            get_worker_market_data_service(),
+            symbol=backtest.symbol,
+            start=backtest.start,
+            end=backtest.end,
+            flags=resolve_tick_flags(backtest.tick_flags),
         )
-        result = runner.run(callbacks=[_make_progress_cb(job)])
+    return DefaultBacktestRunner.from_frame_sliced(
+        load_ohlcv_frame(
+            backtest.symbol, backtest.timeframe, backtest.start, backtest.end
+        )
+    )
+
+
+def _distributed_config(
+    config: OptimizationConfig, study_id: str
+) -> OptimizationConfig:
+    """Point a config at the shared Postgres study unique to this run."""
+    worker_config = config.model_copy(deep=True)
+    worker_config.study.storage = StorageConfig(type="shared")
+    worker_config.study.name = f"opt-{study_id}"
+    return worker_config
+
+
+def _split_evenly(total: int, parts: int) -> list[int]:
+    base, remainder = divmod(total, parts)
+    return [base + (1 if i < remainder else 0) for i in range(parts)]
+
+
+def dispatch_study(study_id: str, db_study_id_hex: str, config_json: str) -> None:
+    """Coordinator: create the shared study and fan trials out to worker messages."""
+    config = OptimizationConfig.model_validate_json(config_json)
+    db_study_id = uuid.UUID(db_study_id_hex) if db_study_id_hex else None
+
+    if is_cancelled(study_id):
+        finalize_study(study_id, db_study_id_hex, config_json)
+        return
+
+    _persist_study_status(db_study_id, status="running")
+    running = OptimizationJob(
+        study_id=study_id,
+        db_study_id=db_study_id,
+        config=config,
+        n_trials=config.study.n_trials,
+        status="running",
+    )
+    _persist_progress(running)
+
+    # Create the distributed study once so trial workers only ever load it.
+    load_or_create_study(_distributed_config(config, study_id))
+
+    workers = fan_out_count(config.study.n_trials)
+    init_counter(study_id, workers)
+
+    from q_backend.tasks import actors
+
+    for chunk in _split_evenly(config.study.n_trials, workers):
+        actors.run_optimization_trials.send(
+            study_id, db_study_id_hex, config_json, chunk
+        )
+
+
+def run_trials_chunk(
+    study_id: str, db_study_id_hex: str, config_json: str, n_trials: int
+) -> None:
+    """Trial worker: optimize a chunk of trials against the shared study."""
+    config = OptimizationConfig.model_validate_json(config_json)
+    db_study_id = uuid.UUID(db_study_id_hex) if db_study_id_hex else None
+
+    if not is_cancelled(study_id):
+        job = OptimizationJob(
+            study_id=study_id,
+            db_study_id=db_study_id,
+            config=config,
+            n_trials=config.study.n_trials,
+            status="running",
+        )
+        try:
+            runner = OptimizationRunner(
+                _distributed_config(config, study_id),
+                _build_worker_runner(config),
+            )
+            runner.run(callbacks=[_make_progress_cb(job)], n_trials=n_trials)
+        except Exception:  # noqa: BLE001 - one chunk failing shouldn't strand the study
+            logger.exception("Optimization trial chunk failed for study %s", study_id)
+
+    if decrement_and_is_last(study_id):
+        finalize_study(study_id, db_study_id_hex, config_json)
+
+
+def finalize_study(study_id: str, db_study_id_hex: str, config_json: str) -> None:
+    """Last worker: read the completed study, persist results, mark terminal."""
+    config = OptimizationConfig.model_validate_json(config_json)
+    db_study_id = uuid.UUID(db_study_id_hex) if db_study_id_hex else None
+    job = OptimizationJob(
+        study_id=study_id,
+        db_study_id=db_study_id,
+        config=config,
+        n_trials=config.study.n_trials,
+    )
+    try:
+        # n_trials=0 runs no new trials; it just loads the shared study and
+        # computes the best/pareto result from the trials the workers produced.
+        result = OptimizationRunner(
+            _distributed_config(config, study_id), DefaultBacktestRunner()
+        ).run(n_trials=0)
         job.result = result
+        job.completed_trials = sum(
+            1 for trial in result.study.trials if trial.state.is_finished()
+        )
         job.best_params = result.best_params
         job.best_value = _best_value(result)
-        job.status = "cancelled" if job.cancel_requested else "done"
+        job.status = "cancelled" if is_cancelled(study_id) else "done"
     except Exception as exc:  # noqa: BLE001 - surface any failure to the client
-        logger.exception("Optimization job %s failed", job.study_id)
+        logger.exception("Optimization finalize failed for study %s", study_id)
         job.status = "error"
         job.error = str(exc)
     finally:
         job.updated_at = _now()
         _persist_study_finish(job)
         _persist_progress(job)
+        clear_job_keys(study_id)
 
 
 def status_payload(job: OptimizationJob) -> dict[str, Any]:
@@ -573,7 +691,9 @@ def get_persisted_study_status(study_id: str) -> Optional[str]:
         with session_scope() as session:
             study = get_optimization_study(session, study_uuid)
     except Exception as exc:
-        logger.warning("Failed to load optimization study %s from DB: %s", study_id, exc)
+        logger.warning(
+            "Failed to load optimization study %s from DB: %s", study_id, exc
+        )
         return None
     return study.status if study is not None else None
 
@@ -588,7 +708,9 @@ def results_payload_from_db(study_id: str) -> Optional[dict[str, Any]]:
         with session_scope() as session:
             study = get_optimization_study(session, study_uuid)
     except Exception as exc:
-        logger.warning("Failed to load optimization study %s from DB: %s", study_id, exc)
+        logger.warning(
+            "Failed to load optimization study %s from DB: %s", study_id, exc
+        )
         return None
 
     if study is None:

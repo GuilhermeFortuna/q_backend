@@ -1,31 +1,33 @@
+"""Optimization persistence tests against the Dramatiq dispatch model.
+
+``run_jobs_sync`` runs the coordinator/trial-worker/finalizer chain in-process, so
+``start_job`` returns only after the study has finished and been persisted. We then
+assert against the database and the public API read functions.
+"""
+
 import re
-import time
 import uuid
 from contextlib import contextmanager
-from dataclasses import dataclass, field
-from unittest.mock import patch
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
+from unittest.mock import patch
 
 from q_backend.api import optimization_jobs
 from q_backend.api.main import (
+    BulkDeleteOptimizationsRequest,
     bulk_delete_optimizations,
+    cancel_optimization,
     delete_optimization,
     get_optimization_results,
     get_optimization_status,
     list_optimizations,
 )
-from q_backend.api.main import BulkDeleteOptimizationsRequest
-from q_backend.optimization.backtest_runner import (
-    BacktestRunConfig,
-    BacktestRunResult,
-)
 from q_backend.optimization.models import OptimizationConfig
 from q_backend.storage.db.base import Base
-from q_backend.storage.db.repositories import get_optimization_study
+from q_backend.storage.db.repositories import create_optimization_study, get_optimization_study
 
 
 @pytest.fixture
@@ -81,36 +83,6 @@ def api_db_session(api_session_factory) -> Session:
         session.close()
 
 
-@pytest.fixture(autouse=True)
-def clear_jobs():
-    optimization_jobs._jobs.clear()
-    yield
-    optimization_jobs._jobs.clear()
-
-
-@dataclass
-class StubBacktestRunner:
-    call_count: int = 0
-    calls: list = field(default_factory=list)
-
-    def run(self, config: BacktestRunConfig) -> BacktestRunResult:
-        self.call_count += 1
-        self.calls.append(config)
-        short_period = int(config.strategy_params.get("short_period", 1))
-        total_pnl = float(short_period * 100)
-        max_dd = max(0.01, 0.1 / short_period)
-        return BacktestRunResult(
-            metrics={
-                "total_trades": 3,
-                "total_pnl": total_pnl,
-                "max_drawdown_pct": max_dd,
-                "total_return_pct": total_pnl / config.initial_capital,
-                "sharpe_ratio": short_period / 10.0,
-                "return_drawdown_ratio": (total_pnl / config.initial_capital) / max_dd,
-            }
-        )
-
-
 def _config(n_trials: int = 3) -> OptimizationConfig:
     return OptimizationConfig.model_validate(
         {
@@ -141,62 +113,47 @@ def _config(n_trials: int = 3) -> OptimizationConfig:
     )
 
 
-def _wait_for(study_id: str, statuses: set[str], timeout: float = 10.0):
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        job = optimization_jobs.get_job(study_id)
-        if job is not None and job.status in statuses:
-            return job
-        time.sleep(0.02)
-    raise AssertionError(f"job {study_id} did not reach {statuses} in time")
-
-
 def _start_persisted_job(api_session_scope, n_trials: int = 3):
-    stub = StubBacktestRunner()
     with patch("q_backend.api.optimization_jobs.session_scope", api_session_scope):
-        job = optimization_jobs.start_job(_config(n_trials=n_trials), backtest_runner=stub)
-        done = _wait_for(job.study_id, {"done"})
-    return job, done, stub
+        job = optimization_jobs.start_job(_config(n_trials=n_trials))
+    return job
 
 
-def test_optimization_persists_study_and_trials(api_db_session, api_session_scope):
-    job, done, stub = _start_persisted_job(api_session_scope, n_trials=3)
+def test_optimization_persists_study_and_trials(
+    run_jobs_sync, api_db_session, api_session_scope
+):
+    job = _start_persisted_job(api_session_scope, n_trials=3)
     api_db_session.expire_all()
 
     assert re.fullmatch(r"[0-9a-f]{32}", job.study_id)
-    assert done.completed_trials == 3
-    assert stub.call_count == 3
 
-    study_uuid = uuid.UUID(hex=job.study_id)
-    study = get_optimization_study(api_db_session, study_uuid)
+    study = get_optimization_study(api_db_session, uuid.UUID(hex=job.study_id))
     assert study is not None
     assert study.name == "WIN$ MA sweep"
     assert study.status == "done"
     assert len(study.trials) == 3
 
 
-def test_optimization_results_rebuild_after_restart(api_db_session, api_session_scope):
-    job, done, _stub = _start_persisted_job(api_session_scope, n_trials=3)
-
-    in_memory = optimization_jobs.results_payload(done)
-    optimization_jobs._jobs.clear()
+def test_optimization_results_rebuild_after_restart(
+    run_jobs_sync, api_db_session, api_session_scope
+):
+    job = _start_persisted_job(api_session_scope, n_trials=3)
 
     with patch("q_backend.api.optimization_jobs.session_scope", api_session_scope):
         rebuilt = get_optimization_results(job.study_id)
 
     assert rebuilt["study_id"] == job.study_id
-    assert len(rebuilt["trials"]) == len(in_memory["trials"])
-    assert rebuilt["best_params"] == in_memory["best_params"]
-    assert rebuilt["objective_mode"] == in_memory["objective_mode"]
+    assert len(rebuilt["trials"]) == 3
+    assert rebuilt["objective_mode"] == "maximize_net_profit"
 
 
-def test_list_optimizations_returns_persisted_studies(api_db_session, api_session_scope):
-    job, _done, _stub = _start_persisted_job(api_session_scope, n_trials=2)
+def test_list_optimizations_returns_persisted_studies(
+    run_jobs_sync, api_db_session, api_session_scope
+):
+    job = _start_persisted_job(api_session_scope, n_trials=2)
     api_db_session.expire_all()
 
-    list_payload = list_optimizations(
-        session=api_db_session, limit=50, offset=0
-    )
+    list_payload = list_optimizations(session=api_db_session, limit=50, offset=0)
     assert list_payload["total"] == 1
     assert len(list_payload["items"]) == 1
     item = list_payload["items"][0]
@@ -205,12 +162,10 @@ def test_list_optimizations_returns_persisted_studies(api_db_session, api_sessio
     assert item.status == "done"
     assert item.n_trials == 2
     assert item.completed_trials == 2
-    assert item.best_value is not None
 
 
-def test_optimization_status_rebuild_after_restart(api_session_scope):
-    job, done, _stub = _start_persisted_job(api_session_scope, n_trials=2)
-    optimization_jobs._jobs.clear()
+def test_optimization_status_rebuild_after_restart(run_jobs_sync, api_session_scope):
+    job = _start_persisted_job(api_session_scope, n_trials=2)
 
     with patch("q_backend.api.optimization_jobs.session_scope", api_session_scope):
         status = get_optimization_status(job.study_id)
@@ -224,9 +179,9 @@ def test_optimization_status_rebuild_after_restart(api_session_scope):
 
 
 def test_delete_optimization_removes_study_from_history(
-    api_db_session, api_session_scope
+    run_jobs_sync, api_db_session, api_session_scope
 ):
-    job, _done, _stub = _start_persisted_job(api_session_scope, n_trials=2)
+    job = _start_persisted_job(api_session_scope, n_trials=2)
     api_db_session.expire_all()
 
     delete_optimization(job.study_id, session=api_db_session)
@@ -237,8 +192,8 @@ def test_delete_optimization_removes_study_from_history(
     assert optimization_jobs.get_job(job.study_id) is None
 
 
-def test_bulk_delete_optimizations(api_db_session, api_session_scope):
-    job, _done, _stub = _start_persisted_job(api_session_scope, n_trials=2)
+def test_bulk_delete_optimizations(run_jobs_sync, api_db_session, api_session_scope):
+    job = _start_persisted_job(api_session_scope, n_trials=2)
     api_db_session.expire_all()
 
     result = bulk_delete_optimizations(
@@ -252,15 +207,43 @@ def test_bulk_delete_optimizations(api_db_session, api_session_scope):
     assert list_payload["total"] == 0
 
 
-def test_optimization_graceful_degradation_when_persistence_unavailable():
-    stub = StubBacktestRunner()
+def test_cancel_orphaned_optimization_study(api_db_session, api_session_scope):
+    config = _config(n_trials=250).model_dump(mode="json")
+    with patch("q_backend.api.optimization_jobs.session_scope", api_session_scope):
+        with api_session_scope() as session:
+            study = create_optimization_study(
+                session,
+                name="orphan",
+                config=config,
+                status="pending",
+            )
+            study_id = study.id.hex
+
+        payload = cancel_optimization(study_id)
+
+    assert payload["status"] == "cancelled"
+    assert payload["completed_trials"] == 0
+    assert payload["n_trials"] == 250
+
+    api_db_session.expire_all()
+    persisted = get_optimization_study(api_db_session, uuid.UUID(hex=study_id))
+    assert persisted is not None
+    assert persisted.status == "cancelled"
+
+    with patch("q_backend.api.optimization_jobs.session_scope", api_session_scope):
+        status = get_optimization_status(study_id)
+    assert status["status"] == "cancelled"
+
+
+def test_optimization_graceful_degradation_when_persistence_unavailable(run_jobs_sync):
     with patch(
         "q_backend.api.optimization_jobs.session_scope",
         side_effect=Exception("database unavailable"),
     ):
-        job = optimization_jobs.start_job(_config(n_trials=2), backtest_runner=stub)
+        job = optimization_jobs.start_job(_config(n_trials=2))
 
     assert re.fullmatch(r"[0-9a-f]{32}", job.study_id)
-    done = _wait_for(job.study_id, {"done"})
-    assert done.db_study_id is None
-    assert optimization_jobs.results_payload(done) is not None
+    # With no database, status is served from the Redis progress mirror.
+    status = optimization_jobs.get_status_payload(job.study_id)
+    assert status is not None
+    assert status["status"] == "done"

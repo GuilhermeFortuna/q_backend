@@ -7,12 +7,10 @@ execution state and full results remain in-memory until the run finishes.
 
 import json
 import logging
-import threading
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable, Literal, Optional
+from typing import Any, Literal, Optional
 
 import pandas as pd
 from pydantic import BaseModel
@@ -21,13 +19,24 @@ from q_backend.optimization.backtest_runner import BacktestRunner, DefaultBackte
 from q_backend.optimization.models import OptimizationConfig
 from q_backend.optimization.walkforward import (
     WalkForwardConfig,
-    WalkForwardProgress,
     WalkForwardResult,
     WalkForwardRunner,
     WalkForwardWindowResult,
-    resolve_worker_count,
     split_windows,
 )
+from q_backend.tasks.data import load_ohlcv_frame
+from q_backend.tasks.fanin import (
+    clear_job_keys,
+    decrement,
+    init_counter,
+    is_cancelled,
+    set_cancelled,
+)
+from q_backend.tasks.serialization import (
+    window_partial_from_dict,
+    window_partial_to_dict,
+)
+from q_backend.tasks.staging import clear_partials, load_partials, stash_partial
 from q_backend.storage.db.engine import session_scope
 from q_backend.storage.db.models import RunStatus, WalkForwardRun
 from q_backend.storage.db.repositories import (
@@ -102,23 +111,20 @@ class WalkForwardJob:
     updated_at: datetime = field(default_factory=_now)
 
 
-_jobs: dict[str, WalkForwardJob] = {}
-_lock = threading.Lock()
-_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="walkforward")
-
-
 def get_job(run_id: str) -> Optional[WalkForwardJob]:
-    with _lock:
-        return _jobs.get(run_id)
+    """Runs no longer live in the API process; status is read from DB/Redis."""
+    return None
 
 
 def evict_run(run_id: str) -> None:
-    with _lock:
-        _jobs.pop(run_id, None)
     try:
         delete_job_progress(get_redis(), run_id, namespace=PROGRESS_NAMESPACE)
     except Exception:
-        logger.debug("Redis progress delete unavailable for walk-forward run %s", run_id)
+        logger.debug(
+            "Redis progress delete unavailable for walk-forward run %s", run_id
+        )
+    clear_partials(run_id)
+    clear_job_keys(run_id)
 
 
 def _request_config_payload(request: WalkForwardRequest) -> dict[str, Any]:
@@ -294,6 +300,12 @@ def start_job(
     backtest_runner: Optional[BacktestRunner] = None,
     market_data_service: Any | None = None,
 ) -> WalkForwardJob:
+    """Persist the run and dispatch it to the worker pool.
+
+    Window workers fetch their own market data (cached in the lake), so the
+    ``backtest_runner``/``market_data_service`` arguments are retained only for
+    call-site compatibility.
+    """
     validate_walkforward_request(request)
 
     run_id, db_run_id = _persist_run_start(request)
@@ -309,51 +321,23 @@ def start_job(
             )
         ),
     )
-
-    runner = backtest_runner
-    ohlcv = None
-    if runner is None:
-        if market_data_service is None:
-            raise ValueError(
-                "market_data_service is required when backtest_runner is not provided"
-            )
-        backtest = request.optimization.backtest
-        # Load OHLCV once here (MT5 thread constraint). The frame is reused for the
-        # sequential runner and shipped to worker processes for the parallel path.
-        ohlcv = DefaultBacktestRunner.load_sliced_frame(
-            market_data_service,
-            symbol=backtest.symbol,
-            timeframe=backtest.timeframe,
-            start=backtest.start,
-            end=backtest.end,
-        )
-        runner = DefaultBacktestRunner.from_frame_sliced(ohlcv)
-
-    # Parallelism only engages when we own the in-memory frame to ship to workers.
-    if ohlcv is not None:
-        job.workers = resolve_worker_count(
-            request.walkforward.max_workers, job.total_windows
-        )
-
-    with _lock:
-        _jobs[run_id] = job
     _persist_progress(job)
-    _executor.submit(_run_job, job, runner, ohlcv)
+
+    from q_backend.tasks import actors
+
+    actors.walkforward_coordinator.send(
+        run_id,
+        db_run_id.hex if db_run_id is not None else "",
+        request.model_dump_json(),
+    )
     return job
 
 
 def request_cancel(run_id: str) -> Optional[WalkForwardJob]:
-    job = get_job(run_id)
-    if job is not None:
-        if job.status in ("pending", "running"):
-            job.cancel_requested = True
-            job.updated_at = _now()
-            _persist_progress(job)
-        return job
-    # No live job. A run still marked active in the DB is an orphan left by a
-    # previous process (e.g. the backend restarted mid-run): its worker thread
-    # is gone, so it would stay "running" forever. Cancel it directly so the UI
-    # can clear the stuck run.
+    # Raise the cancel flag so in-flight window workers stop and pending window
+    # messages drain as no-ops, then flip the DB/Redis state immediately so the UI
+    # clears (and an orphaned run from a previous process is resolved too).
+    set_cancelled(run_id)
     _cancel_orphaned_run(run_id)
     return None
 
@@ -381,7 +365,9 @@ def _cancel_orphaned_run(run_id: str) -> bool:
     try:
         delete_job_progress(get_redis(), run_id, namespace=PROGRESS_NAMESPACE)
     except Exception:
-        logger.debug("Redis progress delete unavailable for walk-forward run %s", run_id)
+        logger.debug(
+            "Redis progress delete unavailable for walk-forward run %s", run_id
+        )
     return True
 
 
@@ -406,67 +392,184 @@ def reconcile_orphaned_runs() -> int:
     return count
 
 
-def _make_progress_cb(job: WalkForwardJob) -> Callable[[WalkForwardProgress], None]:
-    def _cb(progress: WalkForwardProgress) -> None:
-        job.current_window = progress.current_window
-        job.total_windows = progress.total_windows
-        job.phase = progress.phase
-        if progress.windows_completed is not None:
-            # Parallel path: windows finish out of order, so trust the count.
-            job.windows_completed = progress.windows_completed
-        elif progress.phase == "testing":
-            job.windows_completed = progress.window_index + 1
-        job.updated_at = _now()
-        _persist_progress(job)
-
-    return _cb
+def _window_runner(request: WalkForwardRequest) -> DefaultBacktestRunner:
+    """Build a runner that slices the run's cached OHLCV frame per window."""
+    backtest = request.optimization.backtest
+    return DefaultBacktestRunner.from_frame_sliced(
+        load_ohlcv_frame(
+            backtest.symbol, backtest.timeframe, backtest.start, backtest.end
+        )
+    )
 
 
-def _run_job(
-    job: WalkForwardJob,
-    backtest_runner: BacktestRunner,
-    ohlcv: Optional[pd.DataFrame] = None,
-) -> None:
-    job.status = "running"
-    job.updated_at = _now()
+def _progress_job(
+    run_id: str,
+    db_run_id: Optional[uuid.UUID],
+    request: WalkForwardRequest,
+    *,
+    status: JobStatus,
+    total_windows: int,
+    windows_completed: int,
+    phase: Optional[Literal["optimizing", "testing"]] = None,
+    error: Optional[str] = None,
+) -> WalkForwardJob:
+    return WalkForwardJob(
+        run_id=run_id,
+        db_run_id=db_run_id,
+        request=request,
+        status=status,
+        current_window=windows_completed,
+        total_windows=total_windows,
+        windows_completed=windows_completed,
+        phase=phase,
+        error=error,
+    )
+
+
+def dispatch_windows(run_id: str, db_run_id_hex: str, request_json: str) -> None:
+    """Coordinator: fan each walk-forward window out to its own worker message."""
+    request = WalkForwardRequest.model_validate_json(request_json)
+    db_run_id = uuid.UUID(db_run_id_hex) if db_run_id_hex else None
+    backtest = request.optimization.backtest
+    windows = split_windows(backtest.start, backtest.end, request.walkforward)
+    total = len(windows)
+
+    if is_cancelled(run_id):
+        finalize_walkforward(run_id, db_run_id_hex, request_json)
+        return
+
     _persist_run_status(
-        job.db_run_id,
+        db_run_id,
         status=RunStatus.RUNNING.value,
         clear_error_message=True,
         started_at=_now(),
     )
-    _persist_progress(job)
+    _persist_progress(
+        _progress_job(
+            run_id,
+            db_run_id,
+            request,
+            status="running",
+            total_windows=total,
+            windows_completed=0,
+            phase="optimizing",
+        )
+    )
+
+    init_counter(run_id, total)
+
+    from q_backend.tasks import actors
+
+    for window in windows:
+        actors.run_walkforward_window.send(
+            run_id, db_run_id_hex, request_json, window.index, total
+        )
+
+
+def run_window(
+    run_id: str,
+    db_run_id_hex: str,
+    request_json: str,
+    window_index: int,
+    total_windows: int,
+) -> None:
+    """Window worker: optimize one window in-sample and test it out-of-sample."""
+    request = WalkForwardRequest.model_validate_json(request_json)
+    db_run_id = uuid.UUID(db_run_id_hex) if db_run_id_hex else None
+    backtest = request.optimization.backtest
+    window = split_windows(backtest.start, backtest.end, request.walkforward)[
+        window_index
+    ]
+
+    if not is_cancelled(run_id):
+        try:
+            runner = _window_runner(request)
+            wf_runner = WalkForwardRunner(
+                request.optimization, request.walkforward, runner
+            )
+            result, is_objective = wf_runner._run_single_window(
+                window, total_windows, runner
+            )
+            stash_partial(
+                run_id, window_index, window_partial_to_dict(result, is_objective)
+            )
+        except Exception:  # noqa: BLE001 - one window failing shouldn't strand the run
+            logger.exception(
+                "Walk-forward window %d failed for run %s", window_index, run_id
+            )
+            stash_partial(
+                run_id,
+                window_index,
+                window_partial_to_dict(
+                    WalkForwardWindowResult(
+                        index=window.index,
+                        train_start=window.train_start,
+                        train_end=window.train_end,
+                        test_start=window.test_start,
+                        test_end=window.test_end,
+                        status="no_result",
+                    ),
+                    None,
+                ),
+            )
+
+    remaining = decrement(run_id)
+    completed = total_windows - max(remaining, 0)
+    _persist_progress(
+        _progress_job(
+            run_id,
+            db_run_id,
+            request,
+            status="running",
+            total_windows=total_windows,
+            windows_completed=completed,
+            phase="testing",
+        )
+    )
+    if remaining <= 0:
+        finalize_walkforward(run_id, db_run_id_hex, request_json)
+
+
+def finalize_walkforward(run_id: str, db_run_id_hex: str, request_json: str) -> None:
+    """Last window worker: stitch the windows, persist results, mark terminal."""
+    request = WalkForwardRequest.model_validate_json(request_json)
+    db_run_id = uuid.UUID(db_run_id_hex) if db_run_id_hex else None
+    job = WalkForwardJob(run_id=run_id, db_run_id=db_run_id, request=request)
 
     terminal_status: JobStatus = "failed"
     try:
-        wf_runner = WalkForwardRunner(
-            job.request.optimization,
-            job.request.walkforward,
-            backtest_runner,
-            ohlcv=ohlcv,
+        pairs = [window_partial_from_dict(p) for p in load_partials(run_id)]
+        pairs.sort(key=lambda pair: pair[0].index)
+        window_results = [result for result, _ in pairs]
+        is_objectives = [obj for _, obj in pairs if obj is not None]
+        job.total_windows = len(window_results)
+        job.windows_completed = sum(
+            1 for result in window_results if result.status == "completed"
         )
-        job.result = wf_runner.run(
-            progress_callback=_make_progress_cb(job),
-            should_stop=lambda: job.cancel_requested,
+        # Reuse the runner's aggregation (OOS equity stitching, efficiency).
+        agg_runner = WalkForwardRunner(
+            request.optimization, request.walkforward, DefaultBacktestRunner()
         )
-        job.lake_paths = _write_lake_artifacts(job.run_id, job.result)
-        if job.cancel_requested:
+        job.result = agg_runner._finalize_result(window_results, is_objectives)
+        job.lake_paths = _write_lake_artifacts(run_id, job.result)
+        if is_cancelled(run_id):
             terminal_status = "cancelled"
             job.error = "Cancelled by user"
         else:
             terminal_status = "completed"
     except Exception as exc:  # noqa: BLE001 - surface any failure to the client
-        logger.exception("Walk-forward job %s failed", job.run_id)
+        logger.exception("Walk-forward finalize failed for run %s", run_id)
         terminal_status = "failed"
         job.error = str(exc)
     finally:
         job.updated_at = _now()
-        # Persist to the DB *before* flipping the in-memory status to terminal, so
-        # a watcher that observes job.status == terminal (e.g. after a restart and
-        # cache clear) never reads a stale "running" row from the database.
+        # Persist to the DB *before* flipping the status to terminal, so a watcher
+        # that observes the terminal status never reads a stale "running" DB row.
         _persist_run_finish(job, terminal_status)
         job.status = terminal_status
         _persist_progress(job)
+        clear_partials(run_id)
+        clear_job_keys(run_id)
 
 
 def status_payload(job: WalkForwardJob) -> dict[str, Any]:
@@ -504,7 +607,11 @@ def _serialize_window(window: WalkForwardWindowResult) -> dict[str, Any]:
 def serialize_equity_points(series: pd.Series) -> list[dict[str, Any]]:
     points: list[dict[str, Any]] = []
     for timestamp, equity in series.items():
-        ts = timestamp.to_pydatetime() if isinstance(timestamp, pd.Timestamp) else timestamp
+        ts = (
+            timestamp.to_pydatetime()
+            if isinstance(timestamp, pd.Timestamp)
+            else timestamp
+        )
         points.append({"time": _isoformat(ts), "equity": float(equity)})
     return points
 
@@ -566,19 +673,21 @@ def status_payload_from_db(run_id: str) -> dict[str, Any] | None:
 
 
 def get_status_payload(run_id: str) -> dict[str, Any] | None:
-    job = get_job(run_id)
-    if job is not None:
-        return status_payload(job)
-
     db_payload = status_payload_from_db(run_id)
 
     try:
         cached = get_job_progress(get_redis(), run_id, namespace=PROGRESS_NAMESPACE)
-        if cached is not None and db_payload is None:
-            return cached
     except Exception:
         logger.debug("Redis progress read unavailable for walk-forward run %s", run_id)
+        cached = None
 
+    # While the run is still active, per-window results aren't in the DB yet (they
+    # are written by the finalizer), so the live Redis snapshot is authoritative.
+    # Once terminal, the DB row is complete and wins.
+    if db_payload is None:
+        return cached
+    if db_payload.get("status") in ("pending", "running") and cached is not None:
+        return cached
     return db_payload
 
 
@@ -687,4 +796,6 @@ def delete_run_lake_artifacts(run_id: str) -> None:
     try:
         delete_walkforward_artifacts(run_id)
     except Exception as exc:
-        logger.warning("Failed to delete walk-forward lake artifacts for %s: %s", run_id, exc)
+        logger.warning(
+            "Failed to delete walk-forward lake artifacts for %s: %s", run_id, exc
+        )
