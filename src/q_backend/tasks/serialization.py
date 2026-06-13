@@ -69,7 +69,10 @@ def _series_to_obj(series: Optional[pd.Series]) -> Optional[dict[str, list]]:
 def _obj_to_series(obj: Optional[dict[str, list]]) -> Optional[pd.Series]:
     if obj is None:
         return None
-    return pd.Series(obj["values"], index=pd.to_datetime(obj["index"]))
+    return pd.Series(
+        obj["values"],
+        index=pd.to_datetime(obj["index"], format="ISO8601"),
+    )
 
 
 def candidate_result_to_dict(candidate: CandidateResult) -> dict[str, Any]:
