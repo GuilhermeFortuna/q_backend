@@ -50,12 +50,50 @@ def load_ohlcv_frame(
     df = DefaultBacktestRunner.load_sliced_frame(
         service, symbol=symbol, timeframe=timeframe, start=start, end=end
     )
+    _write_ohlcv_cache(df, path)
+    return df
+
+
+def prime_ohlcv_cache(
+    market_data_service,
+    *,
+    symbol: str,
+    timeframe: str,
+    start: datetime,
+    end: datetime,
+) -> pd.DataFrame:
+    """Fetch OHLCV on the caller thread and write the worker parquet cache.
+
+    Used by the API ``start_job`` path so MetaTrader5 is touched from the request
+    thread and leaf workers read parquet instead of calling ``get_ohlcv`` again.
+    """
+    path = _cache_path(symbol, timeframe, start, end)
+    if path.is_file():
+        try:
+            cached = pd.read_parquet(path)
+            cached = cached.set_index("time")
+            cached.index = pd.to_datetime(cached.index)
+            return cached
+        except Exception:
+            logger.warning("Corrupt OHLCV cache at %s; refetching", path, exc_info=True)
+
+    df = DefaultBacktestRunner.load_sliced_frame(
+        market_data_service,
+        symbol=symbol,
+        timeframe=timeframe,
+        start=start,
+        end=end,
+    )
+    _write_ohlcv_cache(df, path)
+    return df
+
+
+def _write_ohlcv_cache(df: pd.DataFrame, path: Path) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         df.rename_axis("time").reset_index().to_parquet(path, index=False)
     except Exception:
         logger.warning("Failed to write OHLCV cache at %s", path, exc_info=True)
-    return df
 
 
 def sliced_runner(

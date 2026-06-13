@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Literal, Optional
 
 import optuna
+import pandas as pd
 
 from q_backend.optimization import (
     BacktestRunner,
@@ -25,9 +26,11 @@ from q_backend.optimization import (
     serialize_trial,
 )
 from q_backend.optimization.models import StorageConfig
+from q_backend.optimization.parallel import resolve_worker_count
 from q_backend.optimization.storage import load_or_create_study
 from q_backend.optimization.tick_backtest_runner import resolve_tick_flags
 from q_backend.tasks.cpu import fan_out_count
+from q_backend.tasks.data import load_ohlcv_frame, prime_ohlcv_cache
 from q_backend.tasks.fanin import (
     clear_job_keys,
     decrement_and_is_last,
@@ -66,6 +69,7 @@ STATUS_PAYLOAD_KEYS = frozenset(
         "best_value",
         "best_params",
         "error",
+        "workers",
     }
 )
 
@@ -116,9 +120,28 @@ class OptimizationJob:
     best_params: dict[str, Any] = field(default_factory=dict)
     result: Optional[OptimizationResult] = None
     error: Optional[str] = None
+    workers: int = 1
     cancel_requested: bool = False
     created_at: datetime = field(default_factory=_now)
     updated_at: datetime = field(default_factory=_now)
+
+
+def _compute_study_workers(
+    config: OptimizationConfig,
+    *,
+    backtest_runner: Optional[BacktestRunner] = None,
+) -> int:
+    if backtest_runner is not None or config.backtest.engine == "tick":
+        return 1
+    return resolve_worker_count(config.study.max_workers, config.study.n_trials)
+
+
+def _trial_fan_out_count(config: OptimizationConfig) -> int:
+    """How many Dramatiq trial-chunk messages to dispatch for this study."""
+    if _compute_study_workers(config) > 1:
+        # Candle parallel path owns CPU via an internal process pool.
+        return 1
+    return fan_out_count(config.study.n_trials)
 
 
 def get_job(study_id: str) -> Optional[OptimizationJob]:
@@ -240,7 +263,7 @@ def _upsert_trial_in_session(
         )
 
 
-def _persist_study_finish(job: OptimizationJob) -> None:
+def _persist_study_finish(job: OptimizationJob, terminal_status: JobStatus) -> None:
     if job.db_study_id is None:
         return
     result = job.result
@@ -249,6 +272,7 @@ def _persist_study_finish(job: OptimizationJob) -> None:
         "best_value": job.best_value,
         "failures": result.failures if result is not None else [],
         "error": job.error,
+        "workers": job.workers,
     }
     if result is not None and result.best_trial is not None:
         snapshot["best_trial_number"] = result.best_trial.number
@@ -267,7 +291,7 @@ def _persist_study_finish(job: OptimizationJob) -> None:
             update_optimization_study(
                 session,
                 job.db_study_id,
-                status=job.status,
+                status=terminal_status,
                 config=config,
             )
     except Exception as exc:
@@ -339,6 +363,7 @@ def status_payload_from_db(study_id: str) -> dict[str, Any] | None:
         "best_value": snapshot.get("best_value"),
         "best_params": snapshot.get("best_params", {}),
         "error": snapshot.get("error"),
+        "workers": snapshot.get("workers", 1),
         "backtest_config": backtest_config,
         "optimization_config": optimization_config,
     }
@@ -399,18 +424,30 @@ def start_job(
     backtest_runner: Optional[BacktestRunner] = None,
     market_data_service: Any | None = None,
 ) -> OptimizationJob:
-    """Persist the study and dispatch it to the worker pool.
+    """Persist the study and dispatch it to the worker pool."""
+    workers = _compute_study_workers(config, backtest_runner=backtest_runner)
 
-    Trial workers fetch their own market data (cached in the lake), so the
-    ``backtest_runner``/``market_data_service`` arguments are no longer used for
-    execution; they are retained only for call-site compatibility.
-    """
+    if (
+        backtest_runner is None
+        and config.backtest.engine == "candle"
+        and market_data_service is not None
+    ):
+        backtest = config.backtest
+        prime_ohlcv_cache(
+            market_data_service,
+            symbol=backtest.symbol,
+            timeframe=backtest.timeframe,
+            start=backtest.start,
+            end=backtest.end,
+        )
+
     study_id, db_study_id = _persist_study_start(config)
     job = OptimizationJob(
         study_id=study_id,
         db_study_id=db_study_id,
         config=config,
         n_trials=config.study.n_trials,
+        workers=workers,
     )
     _persist_progress(job)
 
@@ -507,7 +544,7 @@ def _make_progress_cb(
         if trial.state.is_finished():
             _persist_trial(job.db_study_id, trial)
         if job.cancel_requested or is_cancelled(job.study_id):
-            study.stop()
+            job.cancel_requested = True
 
     return _cb
 
@@ -519,25 +556,28 @@ def _best_value(result: OptimizationResult) -> Optional[float]:
     return values[0] if len(values) == 1 else None
 
 
-def _build_worker_runner(config: OptimizationConfig) -> BacktestRunner:
+def _build_worker_runner(
+    config: OptimizationConfig,
+) -> tuple[BacktestRunner, pd.DataFrame | None]:
     """Build a backtest runner inside a worker process from cached market data."""
-    from q_backend.tasks.data import load_ohlcv_frame
     from q_backend.tasks.worker_context import get_worker_market_data_service
 
     backtest = config.backtest
     if backtest.engine == "tick":
-        return TickBacktestRunner.from_market_data(
-            get_worker_market_data_service(),
-            symbol=backtest.symbol,
-            start=backtest.start,
-            end=backtest.end,
-            flags=resolve_tick_flags(backtest.tick_flags),
+        return (
+            TickBacktestRunner.from_market_data(
+                get_worker_market_data_service(),
+                symbol=backtest.symbol,
+                start=backtest.start,
+                end=backtest.end,
+                flags=resolve_tick_flags(backtest.tick_flags),
+            ),
+            None,
         )
-    return DefaultBacktestRunner.from_frame_sliced(
-        load_ohlcv_frame(
-            backtest.symbol, backtest.timeframe, backtest.start, backtest.end
-        )
+    frame = load_ohlcv_frame(
+        backtest.symbol, backtest.timeframe, backtest.start, backtest.end
     )
+    return DefaultBacktestRunner.from_frame_sliced(frame), frame
 
 
 def _distributed_config(
@@ -564,6 +604,7 @@ def dispatch_study(study_id: str, db_study_id_hex: str, config_json: str) -> Non
         finalize_study(study_id, db_study_id_hex, config_json)
         return
 
+    workers = _compute_study_workers(config)
     _persist_study_status(db_study_id, status="running")
     running = OptimizationJob(
         study_id=study_id,
@@ -571,18 +612,19 @@ def dispatch_study(study_id: str, db_study_id_hex: str, config_json: str) -> Non
         config=config,
         n_trials=config.study.n_trials,
         status="running",
+        workers=workers,
     )
     _persist_progress(running)
 
     # Create the distributed study once so trial workers only ever load it.
     load_or_create_study(_distributed_config(config, study_id))
 
-    workers = fan_out_count(config.study.n_trials)
-    init_counter(study_id, workers)
+    leaf_messages = _trial_fan_out_count(config)
+    init_counter(study_id, leaf_messages)
 
     from q_backend.tasks import actors
 
-    for chunk in _split_evenly(config.study.n_trials, workers):
+    for chunk in _split_evenly(config.study.n_trials, leaf_messages):
         actors.run_optimization_trials.send(
             study_id, db_study_id_hex, config_json, chunk
         )
@@ -596,19 +638,31 @@ def run_trials_chunk(
     db_study_id = uuid.UUID(db_study_id_hex) if db_study_id_hex else None
 
     if not is_cancelled(study_id):
+        workers = _compute_study_workers(config)
         job = OptimizationJob(
             study_id=study_id,
             db_study_id=db_study_id,
             config=config,
             n_trials=config.study.n_trials,
             status="running",
+            workers=workers,
         )
         try:
-            runner = OptimizationRunner(
+            runner, ohlcv = _build_worker_runner(config)
+            runner_kwargs: dict[str, Any] = {
+                "ohlcv": ohlcv,
+                "max_workers": config.study.max_workers,
+            }
+            opt_runner = OptimizationRunner(
                 _distributed_config(config, study_id),
-                _build_worker_runner(config),
+                runner,
+                **runner_kwargs,
             )
-            runner.run(callbacks=[_make_progress_cb(job)], n_trials=n_trials)
+            opt_runner.run(
+                callbacks=[_make_progress_cb(job)],
+                n_trials=n_trials,
+                should_stop=lambda: is_cancelled(study_id),
+            )
         except Exception:  # noqa: BLE001 - one chunk failing shouldn't strand the study
             logger.exception("Optimization trial chunk failed for study %s", study_id)
 
@@ -626,6 +680,7 @@ def finalize_study(study_id: str, db_study_id_hex: str, config_json: str) -> Non
         config=config,
         n_trials=config.study.n_trials,
     )
+    terminal_status: JobStatus = "error"
     try:
         # n_trials=0 runs no new trials; it just loads the shared study and
         # computes the best/pareto result from the trials the workers produced.
@@ -638,14 +693,18 @@ def finalize_study(study_id: str, db_study_id_hex: str, config_json: str) -> Non
         )
         job.best_params = result.best_params
         job.best_value = _best_value(result)
-        job.status = "cancelled" if is_cancelled(study_id) else "done"
+        job.workers = _compute_study_workers(config)
+        terminal_status = "cancelled" if is_cancelled(study_id) else "done"
     except Exception as exc:  # noqa: BLE001 - surface any failure to the client
         logger.exception("Optimization finalize failed for study %s", study_id)
-        job.status = "error"
+        terminal_status = "error"
         job.error = str(exc)
     finally:
         job.updated_at = _now()
-        _persist_study_finish(job)
+        # Persist to the DB *before* flipping the status to terminal, so a watcher
+        # that observes the terminal status never reads a stale "running" DB row.
+        _persist_study_finish(job, terminal_status)
+        job.status = terminal_status
         _persist_progress(job)
         clear_job_keys(study_id)
 
@@ -659,6 +718,7 @@ def status_payload(job: OptimizationJob) -> dict[str, Any]:
         "best_value": job.best_value,
         "best_params": job.best_params,
         "error": job.error,
+        "workers": job.workers,
     }
 
 

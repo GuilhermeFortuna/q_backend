@@ -298,6 +298,7 @@ class OptimizationStatusResponse(BaseModel):
     best_value: Optional[float] = None
     best_params: Dict[str, Any] = {}
     error: Optional[str] = None
+    workers: int = 1
     backtest_config: Optional[Dict[str, Any]] = None
     optimization_config: Optional[Dict[str, Any]] = None
 
