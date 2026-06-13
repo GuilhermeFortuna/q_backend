@@ -36,11 +36,14 @@ from q_backend.market_data.timezone import mt5_datetime_to_utc_iso, unix_seconds
 from q_backend.optimization import OptimizationConfig
 from q_backend.optimization.metrics import build_equity_curve
 from q_backend.api import optimization_jobs
+from q_backend.api import strategy_search_jobs
 from q_backend.api import walkforward_jobs
 from q_backend.api.walkforward_jobs import WalkForwardRequest
+from q_backend.optimization.strategy_search import StrategySearchConfig
 from q_backend.storage.lake import (
     delete_backtest_artifacts,
     read_backtest_artifact,
+    read_strategy_search_candidate_artifact,
     read_walkforward_artifact,
     write_backtest_artifacts,
 )
@@ -54,12 +57,14 @@ from q_backend.storage.db.repositories import (
     delete_optimization_study,
     delete_optimization_studies,
     delete_walkforward_run,
+    delete_strategy_search_run,
     find_backtest_run_by_config,
     get_backtest_run,
     get_or_create_strategy,
     list_backtest_runs,
     list_optimization_studies,
     list_walkforward_runs,
+    list_strategy_search_runs,
     update_backtest_run,
 )
 from q_backend.storage.health import storage_status
@@ -369,6 +374,79 @@ class WalkForwardRunListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class StrategySearchStartResponse(BaseModel):
+    run_id: str
+    status: str
+
+
+class StrategySearchStatusResponse(BaseModel):
+    run_id: str
+    status: str
+    current_candidate: int
+    total_candidates: int
+    candidate_id: Optional[str] = None
+    strategy: Optional[str] = None
+    phase: Optional[Literal["optimizing", "testing", "done"]] = None
+    window_index: Optional[int] = None
+    total_windows: Optional[int] = None
+    error: Optional[str] = None
+    search_config: Optional[Dict[str, Any]] = None
+    backtest_config: Optional[Dict[str, Any]] = None
+
+
+class StrategySearchCandidateResponse(BaseModel):
+    candidate_id: str
+    strategy: str
+    status: str
+    rank: Optional[int] = None
+    objective_value: Optional[float] = None
+    robustness_score: Optional[float] = None
+    efficiency: Optional[float] = None
+    gate_flags: List[str] = []
+    passed_gates: bool = False
+    oos_metrics: Optional[Dict[str, Any]] = None
+    is_metrics_summary: Optional[Dict[str, Any]] = None
+    best_params: Optional[Dict[str, Any]] = None
+    window_count: int = 0
+    completed_windows: int = 0
+    error: Optional[str] = None
+
+
+class StrategySearchResultsResponse(BaseModel):
+    run_id: str
+    status: str
+    objective_mode: Optional[str] = None
+    summary: Dict[str, Any] = {}
+    candidates: List[StrategySearchCandidateResponse]
+    best: Optional[StrategySearchCandidateResponse] = None
+    search_config: Optional[Dict[str, Any]] = None
+    lake_paths: Optional[Dict[str, Any]] = None
+
+
+class StrategySearchRunListItem(BaseModel):
+    run_id: str
+    name: str
+    status: str
+    symbol: Optional[str] = None
+    candidate_count: int = 0
+    best_strategy: Optional[str] = None
+    best_objective_value: Optional[float] = None
+    created_at: datetime
+
+
+class StrategySearchRunListResponse(BaseModel):
+    items: List[StrategySearchRunListItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class StrategySearchCandidateEquityArtifactResponse(BaseModel):
+    run_id: str
+    candidate_id: str
+    points: List[EquityArtifactPoint]
 
 
 # Instantiate global service
@@ -1907,6 +1985,185 @@ def get_walkforward_equity_artifact(run_id: str):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     return {"run_id": run_id, "points": _serialize_equity_artifact(df)}
+
+
+@app.post("/api/v1/strategy-search", response_model=StrategySearchStartResponse)
+def start_strategy_search(body: StrategySearchConfig):
+    """Launch an asynchronous strategy search run."""
+    try:
+        job = strategy_search_jobs.start_job(
+            body, market_data_service=market_data_service
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("Error starting strategy search run: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"run_id": job.run_id, "status": job.status}
+
+
+@app.get(
+    "/api/v1/strategy-search/{run_id}",
+    response_model=StrategySearchStatusResponse,
+)
+def get_strategy_search_status(run_id: str):
+    """Return progress/status for a strategy search run."""
+    payload = strategy_search_jobs.get_status_payload(run_id)
+    if payload is None:
+        raise HTTPException(
+            status_code=404, detail=f"Strategy search run '{run_id}' not found."
+        )
+    return payload
+
+
+@app.get(
+    "/api/v1/strategy-search/{run_id}/results",
+    response_model=StrategySearchResultsResponse,
+)
+def get_strategy_search_results(run_id: str):
+    """Return full strategy search results once the run has finished."""
+    job = strategy_search_jobs.get_job(run_id)
+    if job is not None:
+        payload = strategy_search_jobs.results_payload(job)
+        if payload is None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Strategy search run '{run_id}' has no results yet "
+                    f"(status: {job.status})."
+                ),
+            )
+        return payload
+
+    payload = strategy_search_jobs.results_payload_from_db(run_id)
+    if payload is None:
+        persisted_status = strategy_search_jobs.get_persisted_run_status(run_id)
+        if persisted_status is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Strategy search run '{run_id}' has no results yet "
+                    f"(status: {persisted_status})."
+                ),
+            )
+        raise HTTPException(
+            status_code=404, detail=f"Strategy search run '{run_id}' not found."
+        )
+    return payload
+
+
+@app.post(
+    "/api/v1/strategy-search/{run_id}/cancel",
+    response_model=StrategySearchStatusResponse,
+)
+def cancel_strategy_search(run_id: str):
+    """Request cancellation of a running strategy search."""
+    job = strategy_search_jobs.request_cancel(run_id)
+    if job is None:
+        raise HTTPException(
+            status_code=404, detail=f"Strategy search run '{run_id}' not found."
+        )
+    payload = strategy_search_jobs.get_status_payload(run_id)
+    if payload is None:
+        raise HTTPException(
+            status_code=404, detail=f"Strategy search run '{run_id}' not found."
+        )
+    return payload
+
+
+@app.get("/api/v1/strategy-searches", response_model=StrategySearchRunListResponse)
+def list_strategy_searches(
+    session: Session = Depends(get_session),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    """Return a paginated list of strategy search runs, newest first."""
+    runs, total = list_strategy_search_runs(session, limit=limit, offset=offset)
+    return {
+        "items": [
+            StrategySearchRunListItem(
+                **strategy_search_jobs.run_list_item_from_db(run)
+            )
+            for run in runs
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@app.delete("/api/v1/strategy-searches/{run_id}", status_code=204)
+def delete_strategy_search(run_id: str, session: Session = Depends(get_session)):
+    """Delete a persisted strategy search run and its lake artifacts."""
+    try:
+        run_uuid = uuid.UUID(run_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=404, detail=f"Strategy search run '{run_id}' not found."
+        ) from exc
+
+    if not delete_strategy_search_run(session, run_uuid):
+        raise HTTPException(
+            status_code=404, detail=f"Strategy search run '{run_id}' not found."
+        )
+
+    strategy_search_jobs.evict_run(run_id)
+    strategy_search_jobs.delete_run_lake_artifacts(run_id)
+
+
+@app.get(
+    "/api/v1/strategy-search/{run_id}/candidates/{candidate_id}/artifacts/equity",
+    response_model=StrategySearchCandidateEquityArtifactResponse,
+)
+def get_strategy_search_candidate_equity_artifact(run_id: str, candidate_id: str):
+    """Return stitched out-of-sample equity points for one search candidate."""
+    try:
+        uuid.UUID(run_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=404, detail=f"Strategy search run '{run_id}' not found."
+        ) from exc
+
+    if not strategy_search_jobs.candidate_exists_in_run(run_id, candidate_id):
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Candidate '{candidate_id}' not found in strategy search run "
+                f"'{run_id}'."
+            ),
+        )
+
+    job = strategy_search_jobs.get_job(run_id)
+    if job is not None and job.result is not None:
+        candidate = next(
+            (
+                item
+                for item in job.result.candidates
+                if item.candidate_id == candidate_id
+            ),
+            None,
+        )
+        if candidate is not None and candidate.oos_equity_curve is not None:
+            return {
+                "run_id": run_id,
+                "candidate_id": candidate_id,
+                "points": strategy_search_jobs.serialize_equity_points(
+                    candidate.oos_equity_curve
+                ),
+            }
+
+    try:
+        df = read_strategy_search_candidate_artifact(
+            run_id, candidate_id, "oos_equity"
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return {
+        "run_id": run_id,
+        "candidate_id": candidate_id,
+        "points": _serialize_equity_artifact(df),
+    }
 
 
 def run_dev():

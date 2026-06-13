@@ -232,6 +232,70 @@ class WalkForwardWindow(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
 
+class StrategySearchRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "strategy_search_runs"
+
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=RunStatus.PENDING.value,
+    )
+    config: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
+    result_summary: Mapped[Optional[dict[str, Any]]] = mapped_column(
+        PortableJSON, nullable=True
+    )
+    lake_paths: Mapped[Optional[dict[str, Any]]] = mapped_column(PortableJSON, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    candidates: Mapped[list["StrategySearchCandidate"]] = relationship(
+        back_populates="run",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        Index("ix_strategy_search_runs_status", "status"),
+        Index("ix_strategy_search_runs_created_at", "created_at"),
+    )
+
+
+class StrategySearchCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "strategy_search_candidates"
+
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("strategy_search_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    candidate_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    strategy: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    rank: Mapped[Optional[int]] = mapped_column(nullable=True)
+    objective_value: Mapped[Optional[float]] = mapped_column(nullable=True)
+    robustness_score: Mapped[Optional[float]] = mapped_column(nullable=True)
+    efficiency: Mapped[Optional[float]] = mapped_column(nullable=True)
+    gate_flags: Mapped[list[str]] = mapped_column(PortableJSON, nullable=False, default=list)
+    passed_gates: Mapped[bool] = mapped_column(nullable=False, default=False)
+    oos_metrics: Mapped[Optional[dict[str, Any]]] = mapped_column(PortableJSON, nullable=True)
+    is_metrics_summary: Mapped[Optional[dict[str, Any]]] = mapped_column(
+        PortableJSON, nullable=True
+    )
+    best_params: Mapped[Optional[dict[str, Any]]] = mapped_column(PortableJSON, nullable=True)
+    window_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    completed_windows: Mapped[int] = mapped_column(nullable=False, default=0)
+
+    run: Mapped["StrategySearchRun"] = relationship(back_populates="candidates")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "candidate_id",
+            name="uq_strategy_search_candidates_run_candidate",
+        ),
+    )
+
+
 class DataIngestionRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "data_ingestion_runs"
 

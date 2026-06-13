@@ -17,6 +17,8 @@ from q_backend.storage.db.models import (
     TrialStatus,
     WalkForwardRun,
     WalkForwardWindow,
+    StrategySearchRun,
+    StrategySearchCandidate,
 )
 
 
@@ -523,6 +525,140 @@ def list_walkforward_runs(
 
 def delete_walkforward_run(session: Session, run_id: uuid.UUID) -> bool:
     run = get_walkforward_run(session, run_id)
+    if run is None:
+        return False
+    session.delete(run)
+    session.flush()
+    return True
+
+
+def create_strategy_search_run(
+    session: Session,
+    *,
+    name: str,
+    config: dict[str, Any],
+    status: str = RunStatus.PENDING.value,
+    started_at: Optional[datetime] = None,
+) -> StrategySearchRun:
+    run = StrategySearchRun(
+        name=name,
+        config=config,
+        status=status,
+        started_at=started_at,
+    )
+    session.add(run)
+    session.flush()
+    return run
+
+
+def update_strategy_search_run(
+    session: Session,
+    run_id: uuid.UUID,
+    *,
+    status: Optional[str] = None,
+    config: Optional[dict[str, Any]] = None,
+    result_summary: Optional[dict[str, Any]] = None,
+    lake_paths: Optional[dict[str, Any]] = None,
+    error_message: Optional[str] = None,
+    finished_at: Optional[datetime] = None,
+    started_at: Optional[datetime] = None,
+    clear_error_message: bool = False,
+) -> StrategySearchRun:
+    run = session.get(StrategySearchRun, run_id)
+    if run is None:
+        raise ValueError(f"StrategySearchRun {run_id} not found")
+    if status is not None:
+        run.status = status
+    if config is not None:
+        run.config = config
+    if result_summary is not None:
+        run.result_summary = result_summary
+    if lake_paths is not None:
+        run.lake_paths = lake_paths
+    if clear_error_message:
+        run.error_message = None
+    elif error_message is not None:
+        run.error_message = error_message
+    if finished_at is not None:
+        run.finished_at = finished_at
+    if started_at is not None:
+        run.started_at = started_at
+    session.flush()
+    return run
+
+
+def create_strategy_search_candidate(
+    session: Session,
+    *,
+    run_id: uuid.UUID,
+    candidate_id: str,
+    strategy: str,
+    status: str,
+    rank: Optional[int] = None,
+    objective_value: Optional[float] = None,
+    robustness_score: Optional[float] = None,
+    efficiency: Optional[float] = None,
+    gate_flags: Optional[list[str]] = None,
+    passed_gates: bool = False,
+    oos_metrics: Optional[dict[str, Any]] = None,
+    is_metrics_summary: Optional[dict[str, Any]] = None,
+    best_params: Optional[dict[str, Any]] = None,
+    window_count: int = 0,
+    completed_windows: int = 0,
+) -> StrategySearchCandidate:
+    candidate = StrategySearchCandidate(
+        run_id=run_id,
+        candidate_id=candidate_id,
+        strategy=strategy,
+        status=status,
+        rank=rank,
+        objective_value=objective_value,
+        robustness_score=robustness_score,
+        efficiency=efficiency,
+        gate_flags=gate_flags or [],
+        passed_gates=passed_gates,
+        oos_metrics=oos_metrics,
+        is_metrics_summary=is_metrics_summary,
+        best_params=best_params,
+        window_count=window_count,
+        completed_windows=completed_windows,
+    )
+    session.add(candidate)
+    session.flush()
+    return candidate
+
+
+def get_strategy_search_run(
+    session: Session, run_id: uuid.UUID
+) -> Optional[StrategySearchRun]:
+    return session.execute(
+        select(StrategySearchRun)
+        .where(StrategySearchRun.id == run_id)
+        .options(selectinload(StrategySearchRun.candidates))
+    ).scalar_one_or_none()
+
+
+def list_strategy_search_runs(
+    session: Session,
+    *,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[StrategySearchRun], int]:
+    base = select(StrategySearchRun)
+    total = session.execute(
+        select(func.count()).select_from(base.subquery())
+    ).scalar_one()
+    runs = session.execute(
+        base.order_by(desc(StrategySearchRun.created_at))
+        .limit(limit)
+        .offset(offset)
+        .options(selectinload(StrategySearchRun.candidates))
+    ).scalars().all()
+    return list(runs), total
+
+
+def delete_strategy_search_run(session: Session, run_id: uuid.UUID) -> bool:
+    run = get_strategy_search_run(session, run_id)
     if run is None:
         return False
     session.delete(run)

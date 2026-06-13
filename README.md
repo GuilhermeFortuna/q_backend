@@ -74,6 +74,8 @@ A separate intrabar engine for MT5 tick arrays (alongside the candle `BacktestEn
   ```
 
   clamped to `[min_contracts, max_contracts]`. `target_volatility_pct` is annualized (e.g. `10.0` = 10%). Yang–Zhang and close-to-close estimators live in `technical_indicators.py`.
+* **Strategy search (`optimization/strategy_search.py`):** Automatic discovery sweep — for each registered candle strategy, derive an Optuna search space from the registry (WO30), optimize in-sample per walk-forward window, stitch out-of-sample equity, and rank candidates on OOS performance (never in-sample). Walk-forward **gates** flag weak results (too few windows/trades, low IS/OOS efficiency, suspiciously high efficiency). The `CandidateProvider` protocol is the extension seam: `RegistryCandidateProvider` sweeps built-in strategies today; a future genetic search engine will plug in as another provider and reuse the same evaluator and runner.
+
 * **Advanced Analytics Suite (`TradeRegistry`):** Aggregates execution history and computes comprehensive mathematical metrics:
   * Win Rate, Expectancy, and Profit Factor.
   * Cumulative PnL & Peak Equity Tracking.
@@ -117,6 +119,16 @@ Completed runs from `POST /api/v1/backtest/run` write both files and store relat
 ```
 
 Completed runs from `POST /api/v1/walkforward` store relative paths in `walkforward_runs.lake_paths`. The stitched OOS equity curve and trade list live in the lake only; Postgres holds run/window metadata and summary metrics.
+
+**Strategy search artifact layout:**
+
+```
+{data_lake_root}/strategy_search/{run_id}/leaderboard.parquet
+{data_lake_root}/strategy_search/{run_id}/candidates/{candidate_id}/oos_equity.parquet
+{data_lake_root}/strategy_search/{run_id}/candidates/{candidate_id}/oos_trades.parquet  # when present
+```
+
+Completed runs from `POST /api/v1/strategy-search` store relative paths in `strategy_search_runs.lake_paths`. Per-candidate stitched OOS equity curves live in the lake; Postgres holds run metadata, per-candidate summary metrics, and the leaderboard summary.
 
 ---
 
@@ -345,6 +357,25 @@ To run it:
   * *Description:* Delete run metadata and lake artifacts (`204`).
 * **`GET /api/v1/walkforward/{run_id}/artifacts/equity`**
   * *Description:* Stitched OOS equity curve in the same point-list shape as backtest equity artifacts (`{"run_id", "points": [{"time", "equity"}, ...]}`).
+
+### Strategy search (Discovery)
+* **`POST /api/v1/strategy-search`**
+  * *Description:* Launch an asynchronous strategy search (sweep registered candle strategies → optimize → walk-forward validate → OOS-ranked leaderboard).
+  * *Request body:* WO31 `StrategySearchConfig` JSON (`backtest`, `objective`, `walkforward`, `study`, optional `strategies`, `include_risk_search`, `gates`).
+  * *Response:* `{"run_id": "<32-char hex>", "status": "pending"}`
+  * *Errors:* `422` for multi-objective mode, date range too short for `min_windows`, or other validation failures.
+* **`GET /api/v1/strategy-search/{run_id}`**
+  * *Description:* Live progress (`current_candidate`, `total_candidates`, `candidate_id`, `strategy`, `phase`, `window_index`, `total_windows`) from memory/Redis, with DB fallback after restart.
+* **`GET /api/v1/strategy-search/{run_id}/results`**
+  * *Description:* Full leaderboard (per-candidate records, summary, best candidate). Rebuilt from Postgres + lake when the in-memory job is gone.
+* **`POST /api/v1/strategy-search/{run_id}/cancel`**
+  * *Description:* Cooperative cancellation between candidates.
+* **`GET /api/v1/strategy-searches`**
+  * *Description:* Paginated history list, newest first (`limit`, `offset`).
+* **`DELETE /api/v1/strategy-searches/{run_id}`**
+  * *Description:* Delete run metadata and lake artifacts (`204`).
+* **`GET /api/v1/strategy-search/{run_id}/candidates/{candidate_id}/artifacts/equity`**
+  * *Description:* Stitched OOS equity for one candidate (`{"run_id", "candidate_id", "points": [{"time", "equity"}, ...]}`).
 
 ---
 
