@@ -10,6 +10,12 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6380/0"
     data_lake_root: str = "data/lake"
     port: int = 8000
+    # Number of OS processes the Dramatiq worker pool runs. This is the single
+    # backend-wide CPU budget shared by every heavy job (backtests, optimization
+    # trials, walk-forward windows, discovery candidates). Defaults to ~14 of 16
+    # physical cores, leaving headroom for the API process, the MT5 data thread,
+    # and the OS. Override with Q_WORKER_PROCESSES in .env.
+    worker_processes: int = 14
 
 
 @lru_cache
