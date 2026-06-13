@@ -24,13 +24,18 @@
                   │    q_backend API     │
                   │      (FastAPI)       │
                   └──────────┬───────────┘
-                             │  Internal Service Calls
+                             │  Enqueue jobs (Redis)
                              ▼
+                  ┌──────────────────────┐
+                  │  Dramatiq Worker Pool│
+                  │ (Q_WORKER_PROCESSES) │
+                  └──────────┬───────────┘
+                             │  CPU-bound execution
        ┌─────────────────────┴─────────────────────┐
        ▼                                           ▼
 ┌──────────────┐                            ┌──────────────┐
 │ Market Data  │                            │ Backtesting  │
-│  Ingestion   │                            │    Engine    │
+│  Ingestion   │                            │  & Optuna    │
 └──────┬───────┘                            └──────┬───────┘
        │                                           │
        ▼                                           ▼
@@ -40,6 +45,8 @@
 │  (B3/Forex)  │                            │ Crossovers)  │
 └──────────────┘                            └──────────────┘
 ```
+
+Heavy jobs — backtests (via `POST /api/v1/backtest`), Optuna studies, walk-forward runs, and strategy discovery — execute in a **Dramatiq worker pool** backed by Redis, not inside the API process. The API enqueues work, tracks progress in Redis (24h TTL) and Postgres, and serves results from the Parquet lake. Start the worker with `uv run worker` alongside the API (see [Running the Worker Pool](#6-running-the-worker-pool)).
 
 ### 1. Market Data Routing & Ingestion (`market_data`)
 * **MetaTrader 5 Integration:** High-speed client (`MetaTraderClient`) communicating directly with a running MT5 Windows terminal.
@@ -140,7 +147,8 @@ Completed runs from `POST /api/v1/strategy-search` store relative paths in `stra
 * **Broker & Data Clients:** MetaTrader 5 (MT5 Python package), Yahoo Finance (`yfinance`)
 * **Serialization & Validation:** Pydantic `v2` (Declarative typesafe schemas)
 * **Metadata Storage:** PostgreSQL, SQLAlchemy 2.x, Alembic
-* **Runtime State:** Redis (job progress, cache, locks)
+* **Runtime State:** Redis (job progress, cache, locks, Dramatiq broker)
+* **Background Jobs:** Dramatiq (worker pool for backtests, optimization, walk-forward, discovery)
 * **Dependency & Package Manager:** `uv` (Rust-powered modern Python package toolchain)
 * **Unit Testing:** `pytest`
 
@@ -162,10 +170,12 @@ q_backend/
 │       └── run_ccm_backtest.py
 ├── src/
 │   └── q_backend/        # Core packages
-│       ├── api/          # FastAPI App initialization & route definitions
+│       ├── api/          # FastAPI routes & async job managers (backtest, optimize, …)
 │       ├── backtesting/  # Engine, Position Sizers, Performance Registry & Strategies
+│       ├── cli/          # CLI entry points (`worker`, `q-optimize`)
 │       ├── market_data/  # MT5 service wrappers & data pipelines
-│       ├── optimization/ # Optuna runner, study storage, exporters
+│       ├── optimization/ # Optuna runner, study storage, walk-forward, discovery
+│       ├── tasks/        # Dramatiq broker, actors, fan-in, worker context
 │       └── storage/      # Settings, Postgres models, Redis helpers, Parquet lake
 │           ├── settings.py
 │           ├── lake/     # Backtest artifact read/write (Parquet)
@@ -235,8 +245,34 @@ Unit tests use in-memory SQLite and `fakeredis` and do not require Docker. Integ
 Spin up the FastAPI server with auto-reload enabled:
 ```bash
 uv run uvicorn q_backend.api.main:app --reload --port 8000
+# or: uv run dev
 ```
 The interactive API Swagger docs will be immediately accessible at [http://localhost:8000/docs](http://localhost:8000/docs).
+
+For full-stack local development with the Quant desktop app, run the worker pool as well (step 6). Without it, async jobs stay queued and never complete.
+
+### 6. Running the Worker Pool
+
+Heavy jobs — backtests, optimizations, walk-forward analyses, and strategy
+discovery — no longer execute inside the API process. They are dispatched to a
+**Dramatiq worker pool** (backed by Redis) that runs as a **separate process**. Start
+it alongside the API:
+
+```bash
+uv run worker
+```
+
+This launches `dramatiq q_backend.tasks --processes $Q_WORKER_PROCESSES --threads 1`.
+The pool is the single CPU budget shared by every job: a job fans its work out into
+many small messages (per Optuna trial batch, per walk-forward window, per discovery
+candidate, per backtest) that drain into the fixed pool, so running several jobs at
+once shares the cores fairly instead of oversubscribing the machine. Size it with
+`Q_WORKER_PROCESSES` in `.env` (default **14**, leaving headroom on a 16-core box).
+
+> Each worker process opens its own MetaTrader 5 connection on boot. The API and the
+> worker must both be running for jobs to make progress — the API enqueues and serves
+> status; the worker executes. Orphaned runs (worker killed mid-job) are reconciled to
+> `cancelled` on the next API startup.
 
 ---
 
@@ -302,8 +338,16 @@ To run it:
   * *Description:* Returns registered strategy metadata and typed parameter schemas for dynamic UI forms and optimization bounds.
   * *Response:* `{"strategies": [{"name": "MACrossover", "label": "MA Crossover", "description": "...", "params": [{"name": "short_period", "type": "int", "default": 50, ...}]}]}`
   * *Built-in strategies:* `MACrossover`, `RSIMeanReversion`, `BollingerReversion`, `MACD`, `DonchianBreakout`, `VMA` (Lai & Lau 2006 variable MA), `FMA` (fixed holding-period MA), `TRB` (close-based trading-range breakout), `TSMOM` (time-series momentum SIGN rule, MOP 2012).
+* **`POST /api/v1/backtest`**
+  * *Description:* Dispatch an async backtest to the Dramatiq worker pool (preferred for the desktop app). Poll status and fetch the full chart payload when complete.
+  * *Request body:* Same fields as `BacktestJobRequest` (symbol, timeframe, strategy, `engine`, etc.).
+  * *Response:* `{"run_id": "<uuid>", "status": "running"}`
+* **`GET /api/v1/backtest/{run_id}`**
+  * *Description:* Status of an async backtest (`running`, `completed`, `failed`, `cancelled`).
+* **`GET /api/v1/backtest/{run_id}/result`**
+  * *Description:* Full backtest response (metrics, trades, bars, indicators) once the run completes. Payload is read from the Parquet lake.
 * **`POST /api/v1/backtest/run`**
-  * *Description:* Runs a candle (`engine: "candle"`, default) or tick (`engine: "tick"`) strategy backtest locally.
+  * *Description:* Runs a candle (`engine: "candle"`, default) or tick (`engine: "tick"`) strategy backtest **synchronously** in the API process (useful for scripts and quick one-offs).
   * *Candle request (JSON):* `{"symbol": "WIN$", "timeframe": "M5", "start": "2026-01-01T00:00:00Z", "end": "2026-06-01T00:00:00Z", "initial_capital": 100000.0, "point_value": 0.2, "strategy": "MACrossover", "strategy_params": {"short_period": 9, "long_period": 21}}`
   * *Tick request (JSON):* `{"symbol": "WIN$", "engine": "tick", "display_timeframe": "M1", "tick_flags": "all", "start": "2026-01-01T00:00:00Z", "end": "2026-01-02T00:00:00Z", "initial_capital": 100000.0, "point_value": 0.2, "strategy": "TickMaBreakout", "strategy_params": {"short_period": 50, "long_period": 200, "sl_points": 10.0, "tp_points": 20.0}}` — SL/TP live in `strategy_params` (not top-level fields). Tick runs persist with `timeframe: "TICK"` in history; `display_timeframe` only controls chart resampling (`M1`, `M5`, `H1`, …).
   * *Response:* `metrics`, `trades` (exact tick fill prices/times for tick runs), resampled `bars`, `indicators` aligned to bars, optional `run_id`. Strategies tagged `engine: "tick"` or `engine: "candle"` on `GET /api/v1/strategies`.
@@ -313,6 +357,13 @@ To run it:
   * *Response:* `{"items": [{"run_id": "...", "symbol": "WIN$", "strategy": "MACrossover", "timeframe": "M5", "status": "completed", "created_at": "2026-06-09T12:00:00Z", "summary": {...}}], "total": 42, "limit": 50, "offset": 0}`
 * **`GET /api/v1/backtests/{run_id}`**
   * *Description:* Full metadata for a single persisted backtest run (config + metrics summary). Does not include trades/bars/indicators.
+  * *Response:* `{"run_id": "...", "symbol": "WIN$", "strategy": "MACrossover", "timeframe": "M5", "status": "completed", "config": {...}, "result_summary": {...}, "error_message": null, "started_at": "...", "finished_at": "...", "created_at": "..."}`
+* **`PATCH /api/v1/backtests/{run_id}`**
+  * *Description:* Update run metadata (e.g. toggle `saved_only` bookmark flag).
+* **`DELETE /api/v1/backtests/{run_id}`**
+  * *Description:* Delete run metadata and lake artifacts (`204`).
+* **`POST /api/v1/backtests/bulk-delete`**
+  * *Description:* Delete multiple runs by id list.
 * **`GET /api/v1/backtests/{run_id}/artifacts/equity`**
   * *Description:* Equity curve points for a completed run, read from the Parquet lake. Works without Postgres when artifact files exist on disk.
   * *Response:* `{"run_id": "<uuid>", "points": [{"time": "<ISO8601>", "equity": <float>}, ...]}`
@@ -320,12 +371,11 @@ To run it:
   * *Description:* Closed trades for a completed run, read from the Parquet lake. Trade objects match the shape returned by `POST /api/v1/backtest/run`.
   * *Response:* `{"run_id": "<uuid>", "trades": [<trade>, ...]}`
   * *Errors:* `404` when the run id is invalid or artifacts were never written (e.g. runs predating lake support).
-  * *Response:* `{"run_id": "...", "symbol": "WIN$", "strategy": "MACrossover", "timeframe": "M5", "status": "completed", "config": {...}, "result_summary": {...}, "error_message": null, "started_at": "...", "finished_at": "...", "created_at": "..."}`
 
 ### Optuna Parameter Optimization
 * **`POST /api/v1/optimize`**
   * *Description:* Launch an asynchronous Optuna parameter optimization study.
-  * *Request Body (JSON):* Specify study configurations, parameters, bounds, and strategy parameters. Runs in a background thread worker.
+  * *Request Body (JSON):* Specify study configurations, parameters, bounds, and strategy parameters. Dispatched to the Dramatiq worker pool.
   * *Tick engine:* set `backtest.engine` to `"tick"` to optimize tick-native strategies. Ticks for the study symbol and date range are loaded **once** via `MarketDataService.get_ticks_columnar` (cache-backed) when the job starts and reused in memory for every trial — the same load-once pattern as OHLCV for candle studies.
   * *Response:* `{"study_id": "3f9a1c8e7b0d4f6a9c2e1d8b5f4a3c2e", "status": "pending"}` (`study_id` is a 32-char hex string)
 * **`GET /api/v1/optimize/{study_id}`**
