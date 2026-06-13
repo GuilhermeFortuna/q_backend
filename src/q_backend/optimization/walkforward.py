@@ -1,7 +1,7 @@
 import logging
 import os
 from collections.abc import Callable
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed, wait, FIRST_COMPLETED
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Literal
@@ -374,7 +374,7 @@ class WalkForwardRunner:
             initializer=_init_worker,
             initargs=(self._ohlcv,),
         ) as executor:
-            futures = {
+            futures_map = {
                 executor.submit(
                     _run_window_worker,
                     self.config,
@@ -384,26 +384,50 @@ class WalkForwardRunner:
                 ): window
                 for window in windows
             }
-            for future in as_completed(futures):
-                window = futures[future]
+            pending_futures = set(futures_map.keys())
+
+            while pending_futures:
                 if should_stop is not None and should_stop():
-                    for pending in futures:
-                        pending.cancel()
-                result, is_objective = future.result()
-                results_by_index[window.index] = result
-                if is_objective is not None:
-                    is_by_index[window.index] = is_objective
-                completed += 1
-                if progress_callback is not None:
-                    progress_callback(
-                        WalkForwardProgress(
-                            current_window=completed,
-                            total_windows=total_windows,
-                            phase="testing",
-                            window_index=window.index,
-                            windows_completed=completed,
+                    logger.info("Cancellation requested, cancelling pending walk-forward windows.")
+                    for future in pending_futures:
+                        future.cancel()
+                    break
+
+                done_futures, pending_futures = wait(
+                    pending_futures,
+                    timeout=0.5,
+                    return_when=FIRST_COMPLETED,
+                )
+
+                for future in done_futures:
+                    window = futures_map[future]
+                    try:
+                        result, is_objective = future.result()
+                        results_by_index[window.index] = result
+                        if is_objective is not None:
+                            is_by_index[window.index] = is_objective
+                    except Exception as exc:
+                        logger.error("Window %d failed with error: %s", window.index, exc)
+                        results_by_index[window.index] = WalkForwardWindowResult(
+                            index=window.index,
+                            train_start=window.train_start,
+                            train_end=window.train_end,
+                            test_start=window.test_start,
+                            test_end=window.test_end,
+                            status="no_result",
                         )
-                    )
+
+                    completed += 1
+                    if progress_callback is not None:
+                        progress_callback(
+                            WalkForwardProgress(
+                                current_window=completed,
+                                total_windows=total_windows,
+                                phase="testing",
+                                window_index=window.index,
+                                windows_completed=completed,
+                            )
+                        )
 
         ordered = sorted(results_by_index)
         window_results = [results_by_index[i] for i in ordered]
