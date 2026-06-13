@@ -1,3 +1,14 @@
+# Local development stack.
+#
+# Default (infra only — use with native backend/worker for MetaTrader5):
+#   docker compose up -d
+#
+# Full stack in containers (no live MT5):
+#   docker compose --profile containerized up --build
+#
+# Recommended Windows workflow from monorepo root:
+#   ..\dev.ps1
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -9,11 +20,73 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U q -d q"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   redis:
     image: redis:7-alpine
     ports:
       - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    profiles: ["containerized"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      Q_DATABASE_URL: postgresql+psycopg://q:q@postgres:5432/q
+      Q_REDIS_URL: redis://redis:6379/0
+      Q_DATA_LAKE_ROOT: /data/lake
+      Q_TICK_CACHE_DIR: /data/tick_cache
+      Q_WORKER_PROCESSES: ${Q_WORKER_PROCESSES:-4}
+    volumes:
+      - backend_data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    profiles: ["containerized"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["worker"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      Q_DATABASE_URL: postgresql+psycopg://q:q@postgres:5432/q
+      Q_REDIS_URL: redis://redis:6379/0
+      Q_DATA_LAKE_ROOT: /data/lake
+      Q_TICK_CACHE_DIR: /data/tick_cache
+      Q_WORKER_PROCESSES: ${Q_WORKER_PROCESSES:-4}
+    volumes:
+      - backend_data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    restart: unless-stopped
 
 volumes:
   postgres_data:
+  backend_data:
