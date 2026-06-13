@@ -25,6 +25,7 @@ from q_backend.optimization.walkforward import (
     WalkForwardResult,
     WalkForwardRunner,
     WalkForwardWindowResult,
+    resolve_worker_count,
     split_windows,
 )
 from q_backend.storage.db.engine import session_scope
@@ -89,6 +90,7 @@ class WalkForwardJob:
     status: JobStatus = "pending"
     current_window: int = 0
     total_windows: int = 0
+    workers: int = 1
     phase: Optional[Literal["optimizing", "testing"]] = None
     windows_completed: int = 0
     result: Optional[WalkForwardResult] = None
@@ -326,6 +328,12 @@ def start_job(
         )
         runner = DefaultBacktestRunner.from_frame_sliced(ohlcv)
 
+    # Parallelism only engages when we own the in-memory frame to ship to workers.
+    if ohlcv is not None:
+        job.workers = resolve_worker_count(
+            request.walkforward.max_workers, job.total_windows
+        )
+
     with _lock:
         _jobs[run_id] = job
     _persist_progress(job)
@@ -415,6 +423,7 @@ def status_payload(job: WalkForwardJob) -> dict[str, Any]:
         "status": job.status,
         "current_window": job.current_window,
         "total_windows": job.total_windows,
+        "workers": job.workers,
         "phase": job.phase,
         "windows_completed": job.windows_completed,
         "error": job.error,

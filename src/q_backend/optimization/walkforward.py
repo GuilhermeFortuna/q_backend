@@ -79,6 +79,16 @@ class WalkForwardResult:
     efficiency: float | None
 
 
+def resolve_worker_count(max_workers: int | None, total_windows: int) -> int:
+    """Resolve the number of worker processes for a walk-forward run.
+
+    ``None`` => auto (one worker per available CPU), capped by the window count
+    since windows are the unit of parallelism. Never returns less than 1.
+    """
+    configured = max_workers if max_workers is not None else (os.cpu_count() or 1)
+    return max(1, min(configured, max(total_windows, 1)))
+
+
 def _window_duration(start: datetime, end: datetime) -> timedelta:
     return end - start
 
@@ -299,10 +309,7 @@ class WalkForwardRunner:
         )
 
     def _resolve_workers(self, total_windows: int) -> int:
-        configured = self.wf_config.max_workers
-        if configured is None:
-            configured = os.cpu_count() or 1
-        return max(1, min(configured, total_windows))
+        return resolve_worker_count(self.wf_config.max_workers, total_windows)
 
     def run(
         self,
