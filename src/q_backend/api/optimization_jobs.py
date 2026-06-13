@@ -25,12 +25,13 @@ from q_backend.optimization import (
 )
 from q_backend.optimization.tick_backtest_runner import resolve_tick_flags
 from q_backend.storage.db.engine import session_scope
-from q_backend.storage.db.models import RunStatus, TrialStatus
+from q_backend.storage.db.models import OptimizationStudy, RunStatus, TrialStatus
 from q_backend.storage.db.repositories import (
     create_optimization_study,
     create_optimization_trial,
     get_optimization_study,
     get_optimization_trial_by_number,
+    mark_active_runs_cancelled,
     update_optimization_study,
     update_optimization_trial,
 )
@@ -419,13 +420,56 @@ def start_job(
 
 def request_cancel(study_id: str) -> Optional[OptimizationJob]:
     job = get_job(study_id)
-    if job is None:
-        return None
-    if job.status in ("pending", "running"):
-        job.cancel_requested = True
-        job.updated_at = _now()
-        _persist_progress(job)
-    return job
+    if job is not None:
+        if job.status in ("pending", "running"):
+            job.cancel_requested = True
+            job.updated_at = _now()
+            _persist_progress(job)
+        return job
+    # No live job. A study still marked active in the DB is an orphan left by a
+    # previous process (e.g. the backend restarted mid-run): its worker thread
+    # is gone, so it would stay "running" forever. Cancel it directly so the UI
+    # can clear the stuck study.
+    _cancel_orphaned_study(study_id)
+    return None
+
+
+def _cancel_orphaned_study(study_id: str) -> bool:
+    try:
+        study_uuid = _parse_study_uuid(study_id)
+    except ValueError:
+        return False
+    try:
+        with session_scope() as session:
+            study = get_optimization_study(session, study_uuid)
+            if study is None or study.status not in ("pending", "running"):
+                return False
+            update_optimization_study(session, study_uuid, status="cancelled")
+    except Exception as exc:
+        logger.warning("Failed to cancel orphaned optimization study %s: %s", study_id, exc)
+        return False
+    try:
+        delete_job_progress(get_redis(), study_id)
+    except Exception:
+        logger.debug("Redis progress delete unavailable for study %s", study_id)
+    return True
+
+
+def reconcile_orphaned_runs() -> int:
+    """Cancel studies left active by a previous process. Call once on startup.
+
+    The in-memory job registry is empty at startup, so any study still marked
+    pending/running in the DB has no live worker and will never finish.
+    """
+    try:
+        with session_scope() as session:
+            count = mark_active_runs_cancelled(session, OptimizationStudy)
+    except Exception as exc:
+        logger.warning("Failed to reconcile orphaned optimization studies: %s", exc)
+        return 0
+    if count:
+        logger.info("Reconciled %d orphaned optimization study(ies) on startup.", count)
+    return count
 
 
 def _make_progress_cb(

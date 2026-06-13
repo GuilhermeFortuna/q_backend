@@ -42,7 +42,10 @@ from q_backend.optimization.strategy_search import (
 )
 from q_backend.optimization.walkforward import WalkForwardConfig
 from q_backend.storage.db.base import Base
-from q_backend.storage.db.repositories import get_strategy_search_run
+from q_backend.storage.db.repositories import (
+    create_strategy_search_run,
+    get_strategy_search_run,
+)
 from q_backend.storage.lake.artifacts import lake_root
 from q_backend.storage.settings import get_settings
 
@@ -372,6 +375,54 @@ def test_strategy_search_cancel_between_candidates(api_session_scope):
     assert finished.status == "cancelled"
     assert finished.result is not None
     assert len(finished.result.candidates) < finished.total_candidates
+
+
+def test_cancel_orphaned_strategy_search_run(api_db_session, api_session_scope):
+    # Simulate a run left "running" in the DB by a previous process: a DB row
+    # exists but there is no in-memory job (e.g. after a backend restart).
+    with patch("q_backend.api.strategy_search_jobs.session_scope", api_session_scope):
+        with api_session_scope() as session:
+            run = create_strategy_search_run(
+                session,
+                name="orphan",
+                config=_request().model_dump(mode="json"),
+                status="running",
+            )
+            run_id = run.id.hex
+
+        assert strategy_search_jobs.get_job(run_id) is None
+        payload = cancel_strategy_search(run_id)
+
+    assert payload["status"] == "cancelled"
+
+    api_db_session.expire_all()
+    persisted = get_strategy_search_run(api_db_session, uuid.UUID(hex=run_id))
+    assert persisted.status == "cancelled"
+    assert persisted.error_message is not None
+
+
+def test_reconcile_orphaned_strategy_search_runs(api_db_session, api_session_scope):
+    config = _request().model_dump(mode="json")
+    with patch("q_backend.api.strategy_search_jobs.session_scope", api_session_scope):
+        with api_session_scope() as session:
+            running = create_strategy_search_run(
+                session, name="r", config=config, status="running"
+            )
+            pending = create_strategy_search_run(
+                session, name="p", config=config, status="pending"
+            )
+            done = create_strategy_search_run(
+                session, name="d", config=config, status="completed"
+            )
+            running_id, pending_id, done_id = running.id, pending.id, done.id
+
+        count = strategy_search_jobs.reconcile_orphaned_runs()
+
+    assert count == 2
+    api_db_session.expire_all()
+    assert get_strategy_search_run(api_db_session, running_id).status == "cancelled"
+    assert get_strategy_search_run(api_db_session, pending_id).status == "cancelled"
+    assert get_strategy_search_run(api_db_session, done_id).status == "completed"
 
 
 def test_list_and_delete_strategy_search(

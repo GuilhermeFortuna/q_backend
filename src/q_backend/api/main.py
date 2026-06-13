@@ -739,6 +739,12 @@ async def lifespan(app: FastAPI):
         logger.error("MetaTrader 5 terminal initialization failed on startup!")
     else:
         logger.info("MetaTrader 5 terminal initialized successfully on startup.")
+    # Reconcile orphaned runs: any job left pending/running in the DB by a
+    # previous process has no live worker and would otherwise stay "running"
+    # forever, so mark it cancelled.
+    optimization_jobs.reconcile_orphaned_runs()
+    walkforward_jobs.reconcile_orphaned_runs()
+    strategy_search_jobs.reconcile_orphaned_runs()
     yield
     # Shutdown: Disconnect from MetaTrader 5
     logger.info("Shutting down API, disconnecting from MetaTrader 5...")
@@ -1825,10 +1831,13 @@ def delete_optimization(study_id: str, session: Session = Depends(get_session)):
     "/api/v1/optimize/{study_id}/cancel", response_model=OptimizationStatusResponse
 )
 def cancel_optimization(study_id: str):
-    """Request cancellation of a running optimization study."""
-    job = optimization_jobs.request_cancel(study_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail=f"Study '{study_id}' not found.")
+    """Request cancellation of a running optimization study.
+
+    Cancels the live job if present; otherwise cancels an orphaned study left
+    active in the DB by a previous process. A 404 only means the study does not
+    exist anywhere.
+    """
+    optimization_jobs.request_cancel(study_id)
     payload = optimization_jobs.get_status_payload(study_id)
     if payload is None:
         raise HTTPException(status_code=404, detail=f"Study '{study_id}' not found.")
@@ -1905,12 +1914,13 @@ def get_walkforward_results(run_id: str):
     response_model=WalkForwardStatusResponse,
 )
 def cancel_walkforward(run_id: str):
-    """Request cancellation of a running walk-forward analysis."""
-    job = walkforward_jobs.request_cancel(run_id)
-    if job is None:
-        raise HTTPException(
-            status_code=404, detail=f"Walk-forward run '{run_id}' not found."
-        )
+    """Request cancellation of a running walk-forward analysis.
+
+    Cancels the live job if present; otherwise cancels an orphaned run left
+    active in the DB by a previous process. A 404 only means the run does not
+    exist anywhere.
+    """
+    walkforward_jobs.request_cancel(run_id)
     payload = walkforward_jobs.get_status_payload(run_id)
     if payload is None:
         raise HTTPException(
@@ -2057,12 +2067,13 @@ def get_strategy_search_results(run_id: str):
     response_model=StrategySearchStatusResponse,
 )
 def cancel_strategy_search(run_id: str):
-    """Request cancellation of a running strategy search."""
-    job = strategy_search_jobs.request_cancel(run_id)
-    if job is None:
-        raise HTTPException(
-            status_code=404, detail=f"Strategy search run '{run_id}' not found."
-        )
+    """Request cancellation of a running strategy search.
+
+    Cancels the live job if present; otherwise cancels an orphaned run left
+    active in the DB by a previous process. The response reflects the current
+    status, so a 404 only means the run does not exist anywhere.
+    """
+    strategy_search_jobs.request_cancel(run_id)
     payload = strategy_search_jobs.get_status_payload(run_id)
     if payload is None:
         raise HTTPException(

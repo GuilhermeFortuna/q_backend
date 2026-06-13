@@ -1,8 +1,8 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
-from sqlalchemy import Float, cast, desc, func, nulls_last, select
+from sqlalchemy import Float, cast, desc, func, nulls_last, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from q_backend.storage.db.models import (
@@ -20,6 +20,35 @@ from q_backend.storage.db.models import (
     StrategySearchRun,
     StrategySearchCandidate,
 )
+
+
+_ACTIVE_RUN_STATUSES = (RunStatus.PENDING.value, RunStatus.RUNNING.value)
+
+
+def mark_active_runs_cancelled(
+    session: Session,
+    model: type,
+    *,
+    error_message: Optional[str] = None,
+) -> int:
+    """Bulk-cancel runs still marked pending/running for the given model.
+
+    Used to reconcile orphaned runs on startup: when the process restarts,
+    the in-memory job registry is empty, so any run still flagged active in
+    the DB has no live worker and would otherwise stay "running" forever.
+    Returns the number of rows updated.
+    """
+    values: dict[str, Any] = {"status": "cancelled"}
+    if error_message is not None and hasattr(model, "error_message"):
+        values["error_message"] = error_message
+    if hasattr(model, "finished_at"):
+        values["finished_at"] = datetime.now(timezone.utc)
+    result = session.execute(
+        update(model)
+        .where(model.status.in_(_ACTIVE_RUN_STATUSES))
+        .values(**values)
+    )
+    return int(result.rowcount or 0)
 
 
 def create_strategy(

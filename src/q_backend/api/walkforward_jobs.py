@@ -29,11 +29,12 @@ from q_backend.optimization.walkforward import (
     split_windows,
 )
 from q_backend.storage.db.engine import session_scope
-from q_backend.storage.db.models import RunStatus
+from q_backend.storage.db.models import RunStatus, WalkForwardRun
 from q_backend.storage.db.repositories import (
     create_walkforward_run,
     create_walkforward_window,
     get_walkforward_run,
+    mark_active_runs_cancelled,
     update_walkforward_run,
 )
 from q_backend.storage.lake.artifacts import (
@@ -343,13 +344,66 @@ def start_job(
 
 def request_cancel(run_id: str) -> Optional[WalkForwardJob]:
     job = get_job(run_id)
-    if job is None:
-        return None
-    if job.status in ("pending", "running"):
-        job.cancel_requested = True
-        job.updated_at = _now()
-        _persist_progress(job)
-    return job
+    if job is not None:
+        if job.status in ("pending", "running"):
+            job.cancel_requested = True
+            job.updated_at = _now()
+            _persist_progress(job)
+        return job
+    # No live job. A run still marked active in the DB is an orphan left by a
+    # previous process (e.g. the backend restarted mid-run): its worker thread
+    # is gone, so it would stay "running" forever. Cancel it directly so the UI
+    # can clear the stuck run.
+    _cancel_orphaned_run(run_id)
+    return None
+
+
+def _cancel_orphaned_run(run_id: str) -> bool:
+    try:
+        run_uuid = _parse_run_uuid(run_id)
+    except ValueError:
+        return False
+    try:
+        with session_scope() as session:
+            run = get_walkforward_run(session, run_uuid)
+            if run is None or run.status not in ("pending", "running"):
+                return False
+            update_walkforward_run(
+                session,
+                run_uuid,
+                status="cancelled",
+                error_message="Cancelled after backend restart (run was orphaned).",
+                finished_at=_now(),
+            )
+    except Exception as exc:
+        logger.warning("Failed to cancel orphaned walk-forward run %s: %s", run_id, exc)
+        return False
+    try:
+        delete_job_progress(get_redis(), run_id, namespace=PROGRESS_NAMESPACE)
+    except Exception:
+        logger.debug("Redis progress delete unavailable for walk-forward run %s", run_id)
+    return True
+
+
+def reconcile_orphaned_runs() -> int:
+    """Cancel runs left active by a previous process. Call once on startup.
+
+    The in-memory job registry is empty at startup, so any run still marked
+    pending/running in the DB has no live worker and will never finish.
+    """
+    try:
+        with session_scope() as session:
+            count = mark_active_runs_cancelled(
+                session,
+                WalkForwardRun,
+                error_message="Cancelled after backend restart (run was orphaned).",
+            )
+    except Exception as exc:
+        logger.warning("Failed to reconcile orphaned walk-forward runs: %s", exc)
+        return 0
+    if count:
+        logger.info("Reconciled %d orphaned walk-forward run(s) on startup.", count)
+    return count
 
 
 def _make_progress_cb(job: WalkForwardJob) -> Callable[[WalkForwardProgress], None]:
