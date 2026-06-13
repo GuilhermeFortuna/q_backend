@@ -35,14 +35,17 @@ import MetaTrader5 as mt5
 from q_backend.market_data.timezone import mt5_datetime_to_utc_iso, unix_seconds_to_utc_iso
 from q_backend.optimization import OptimizationConfig
 from q_backend.optimization.metrics import build_equity_curve
+from q_backend.api import backtest_jobs
 from q_backend.api import optimization_jobs
 from q_backend.api import strategy_search_jobs
 from q_backend.api import walkforward_jobs
+from q_backend.api.backtest_jobs import BacktestJobRequest
 from q_backend.api.walkforward_jobs import WalkForwardRequest
 from q_backend.optimization.strategy_search import StrategySearchConfig
 from q_backend.storage.lake import (
     delete_backtest_artifacts,
     read_backtest_artifact,
+    read_backtest_result,
     read_strategy_search_candidate_artifact,
     read_walkforward_artifact,
     write_backtest_artifacts,
@@ -204,6 +207,17 @@ class BacktestResponse(BaseModel):
     bars: List[OhlcvBarResponse]
     indicators: List[ChartIndicatorSeries]
     run_id: Optional[str] = None
+
+
+class BacktestStartResponse(BaseModel):
+    run_id: str
+    status: str
+
+
+class BacktestStatusResponse(BaseModel):
+    run_id: str
+    status: str
+    error: Optional[str] = None
 
 
 class BacktestRunListItem(BaseModel):
@@ -745,6 +759,7 @@ async def lifespan(app: FastAPI):
     optimization_jobs.reconcile_orphaned_runs()
     walkforward_jobs.reconcile_orphaned_runs()
     strategy_search_jobs.reconcile_orphaned_runs()
+    backtest_jobs.reconcile_orphaned_runs()
     yield
     # Shutdown: Disconnect from MetaTrader 5
     logger.info("Shutting down API, disconnecting from MetaTrader 5...")
@@ -1567,6 +1582,34 @@ def run_backtest(request: BacktestRequest):
         )
         logger.error(f"Error running backtest: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/backtest", response_model=BacktestStartResponse)
+def start_backtest(request: BacktestJobRequest):
+    """Dispatch a backtest to the worker pool and return its run id for polling."""
+    run_id = backtest_jobs.start_job(request)
+    return {"run_id": run_id, "status": "running"}
+
+
+@app.get("/api/v1/backtest/{run_id}", response_model=BacktestStatusResponse)
+def get_backtest_status(run_id: str):
+    """Return the current status of an async backtest run."""
+    payload = backtest_jobs.get_status_payload(run_id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.")
+    return payload
+
+
+@app.get("/api/v1/backtest/{run_id}/result", response_model=BacktestResponse)
+def get_backtest_result(run_id: str):
+    """Return the full chart payload for a completed async backtest run."""
+    try:
+        return read_backtest_result(run_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Backtest result not ready or not found for run '{run_id}'.",
+        ) from exc
 
 
 @app.get("/api/v1/backtests", response_model=BacktestRunListResponse)

@@ -67,6 +67,25 @@ def read_backtest_artifact(run_id: str, kind: ArtifactKind) -> pd.DataFrame:
     return pd.read_parquet(path)
 
 
+def write_backtest_result(run_id: str, payload: dict[str, Any]) -> str:
+    """Persist the full backtest response (metrics, trades, bars, indicators).
+
+    Backtests are now async jobs, so the chart payload can't be returned inline —
+    it's written here for the results endpoint to serve once the job finishes.
+    """
+    run_dir = _run_dir(run_id)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "result.json").write_text(json.dumps(payload), encoding="utf-8")
+    return f"backtests/{run_id}/result.json"
+
+
+def read_backtest_result(run_id: str) -> dict[str, Any]:
+    path = _run_dir(run_id) / "result.json"
+    if not path.is_file():
+        raise FileNotFoundError(f"Backtest result not found for run '{run_id}'.")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def delete_backtest_artifacts(run_id: str) -> None:
     run_dir = _run_dir(run_id)
     if run_dir.is_dir():
