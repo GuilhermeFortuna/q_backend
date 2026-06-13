@@ -380,6 +380,7 @@ To run it:
   * *Response:* `{"study_id": "3f9a1c8e7b0d4f6a9c2e1d8b5f4a3c2e", "status": "pending"}` (`study_id` is a 32-char hex string)
 * **`GET /api/v1/optimize/{study_id}`**
   * *Description:* Retrieve the active status and current progress (completed trials, best values, error messages) of the optimization study.
+  * *Response fields:* includes `workers` (resolved parallel process count for candle studies; `1` when sequential or tick).
 * **`POST /api/v1/optimize/{study_id}/cancel`**
   * *Description:* Request cancellation of an active optimization study.
 * **`GET /api/v1/optimize/{study_id}/results`**
@@ -388,6 +389,19 @@ To run it:
   * *Description:* Paginated list of persisted optimization studies, newest first.
   * *Parameters:* `limit` (default 50), `offset` (default 0).
   * *Response:* `{"items": [{"study_id": "3f9a...", "name": "WIN$ MA sweep", "status": "done", "best_value": 1.83, "n_trials": 100, "completed_trials": 100, "created_at": "2026-06-09T12:00:00Z"}], "total": 7, "limit": 50, "offset": 0}`
+
+#### Parallel optimization
+
+Candle-engine studies can fan trials out across worker processes when the caller passes an in-memory OHLCV frame to `OptimizationRunner` (see WO36 for API wiring). The main process owns the Optuna study and uses **ask/tell**; workers run only the backtest over a frame shipped once via a `ProcessPoolExecutor` initializer. Inner backtests force `parallel_mode=SEQUENTIAL` so DAY_TRADE subprocess pools do not oversubscribe.
+
+- **TPE under parallelism:** the parallel path builds `TPESampler(constant_liar=True)` so batched `ask()` does not propose near-duplicate trials. Batch size equals worker count.
+- **Candle-only:** tick studies stay on the sequential path (tick arrays are not shared across processes in this release).
+- **Pruning:** median/hyperband intermediate-value pruning is disabled with a warning when parallel mode is active; exception-based pruning (zero trades, `ExpectedTrialFailure`) still applies.
+- **Quality vs speed:** parallel results are not byte-identical to sequential runs (sampler sees completions in a different order). Compare comparable best objectives, not trial order.
+
+Worker count is resolved by `q_backend.optimization.parallel.resolve_worker_count(max_workers, n_trials)`.
+
+**API:** optional `study.max_workers` on `POST /api/v1/optimize` (omit for auto, `1` for sequential). Status responses include `"workers"` — the resolved process count for candle studies (`1` for tick or sequential).
 
 ### Walk-forward analysis
 * **`POST /api/v1/walkforward`**
