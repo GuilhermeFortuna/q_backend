@@ -103,13 +103,21 @@ def run_jobs_sync(monkeypatch, tmp_path):
     monkeypatch.setattr(
         oj,
         "_build_worker_runner",
-        lambda config: DefaultBacktestRunner.from_frame_sliced(
+        lambda config: (
+            DefaultBacktestRunner.from_frame_sliced(
+                _synthetic_ohlcv(
+                    config.backtest.symbol,
+                    config.backtest.timeframe,
+                    config.backtest.start,
+                    config.backtest.end,
+                )
+            ),
             _synthetic_ohlcv(
                 config.backtest.symbol,
                 config.backtest.timeframe,
                 config.backtest.start,
                 config.backtest.end,
-            )
+            ),
         ),
     )
 

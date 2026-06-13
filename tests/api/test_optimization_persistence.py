@@ -236,14 +236,38 @@ def test_cancel_orphaned_optimization_study(api_db_session, api_session_scope):
 
 
 def test_optimization_graceful_degradation_when_persistence_unavailable(run_jobs_sync):
+    config = _config(n_trials=2)
+    config.study.max_workers = 2
     with patch(
         "q_backend.api.optimization_jobs.session_scope",
         side_effect=Exception("database unavailable"),
     ):
-        job = optimization_jobs.start_job(_config(n_trials=2))
+        job = optimization_jobs.start_job(config)
 
     assert re.fullmatch(r"[0-9a-f]{32}", job.study_id)
     # With no database, status is served from the Redis progress mirror.
     status = optimization_jobs.get_status_payload(job.study_id)
     assert status is not None
     assert status["status"] == "done"
+    assert status["workers"] == 2
+
+
+@pytest.mark.parametrize("attempt", range(5))
+def test_optimization_status_rebuild_shows_terminal_not_running(
+    run_jobs_sync, api_session_scope, attempt
+):
+    config = _config(n_trials=3)
+    config.study.max_workers = 2
+    with patch("q_backend.api.optimization_jobs.session_scope", api_session_scope):
+        job = optimization_jobs.start_job(config)
+
+    with patch("q_backend.api.optimization_jobs.session_scope", api_session_scope):
+        status = get_optimization_status(job.study_id)
+
+    assert status["status"] == "done"
+    assert status["workers"] == 2
+
+    with api_session_scope() as session:
+        study = get_optimization_study(session, uuid.UUID(hex=job.study_id))
+        assert study is not None
+        assert study.status == "done"

@@ -51,15 +51,18 @@ def db_scope():
     engine.dispose()
 
 
-def _config(n_trials: int = 5) -> OptimizationConfig:
+def _config(n_trials: int = 5, *, max_workers: int | None = None) -> OptimizationConfig:
+    study: dict = {
+        "name": "job_test",
+        "n_trials": n_trials,
+        "seed": 42,
+        "storage": {"type": "memory"},
+    }
+    if max_workers is not None:
+        study["max_workers"] = max_workers
     return OptimizationConfig.model_validate(
         {
-            "study": {
-                "name": "job_test",
-                "n_trials": n_trials,
-                "seed": 42,
-                "storage": {"type": "memory"},
-            },
+            "study": study,
             "objective": {"mode": "maximize_net_profit"},
             "backtest": {
                 "symbol": "TEST",
@@ -116,3 +119,95 @@ def test_results_payload_none_before_completion():
         n_trials=1,
     )
     assert optimization_jobs.results_payload(job) is None
+
+
+def test_parallel_candle_study_reports_workers_and_completes(run_jobs_sync, db_scope):
+    with patch("q_backend.api.optimization_jobs.session_scope", db_scope):
+        job = optimization_jobs.start_job(_config(n_trials=8, max_workers=2))
+        payload = optimization_jobs.get_status_payload(job.study_id)
+
+    assert payload["status"] == "done"
+    assert payload["workers"] == 2
+    assert payload["completed_trials"] == 8
+    assert payload["best_params"]
+
+
+def test_max_workers_one_uses_sequential_workers(run_jobs_sync, db_scope):
+    with patch("q_backend.api.optimization_jobs.session_scope", db_scope):
+        job = optimization_jobs.start_job(_config(n_trials=5, max_workers=1))
+        payload = optimization_jobs.get_status_payload(job.study_id)
+
+    assert payload["status"] == "done"
+    assert payload["workers"] == 1
+    assert payload["completed_trials"] == 5
+
+
+def test_cancel_mid_run_stops_before_all_trials(run_jobs_sync, db_scope):
+    original_make_cb = optimization_jobs._make_progress_cb
+
+    def wrapped_make_cb(job):
+        inner = original_make_cb(job)
+        finished = {"n": 0}
+
+        def cb(study, trial):
+            inner(study, trial)
+            if trial.state.is_finished():
+                finished["n"] += 1
+                if finished["n"] >= 2:
+                    optimization_jobs.set_cancelled(job.study_id)
+
+        return cb
+
+    with patch("q_backend.api.optimization_jobs.session_scope", db_scope):
+        with patch.object(optimization_jobs, "_make_progress_cb", wrapped_make_cb):
+            job = optimization_jobs.start_job(_config(n_trials=12, max_workers=2))
+        payload = optimization_jobs.get_status_payload(job.study_id)
+
+    assert payload["status"] == "cancelled"
+    assert payload["completed_trials"] < 12
+
+
+def test_start_job_primes_ohlcv_cache_once(
+    run_jobs_sync, db_scope, synthetic_ohlcv, tmp_path, monkeypatch
+):
+    from datetime import datetime
+    from unittest.mock import MagicMock
+
+    from q_backend.optimization.backtest_runner import DefaultBacktestRunner
+
+    monkeypatch.setattr("q_backend.tasks.data._cache_dir", lambda: tmp_path)
+
+    service = MagicMock()
+    frame = synthetic_ohlcv("TEST", "D1", datetime(2024, 1, 1), datetime(2024, 6, 1))
+
+    class Bar:
+        def __init__(self, row):
+            self._row = row
+
+        def model_dump(self):
+            return self._row
+
+    service.get_ohlcv.return_value = [
+        Bar(
+            {
+                "time": idx.to_pydatetime(),
+                "open": row.open,
+                "high": row.high,
+                "low": row.low,
+                "close": row.close,
+                "volume": row.volume,
+            }
+        )
+        for idx, row in frame.iterrows()
+    ]
+
+    with patch("q_backend.api.optimization_jobs.session_scope", db_scope):
+        job = optimization_jobs.start_job(
+            _config(n_trials=6, max_workers=2),
+            market_data_service=service,
+        )
+        payload = optimization_jobs.get_status_payload(job.study_id)
+
+    assert service.get_ohlcv.call_count == 1
+    assert payload["status"] == "done"
+    assert payload["workers"] == 2

@@ -118,3 +118,4 @@ def test_study_config_defaults():
     assert study.seed == 42
     assert study.pruner == "none"
     assert study.continue_on_trial_error is False
+    assert study.max_workers is None
