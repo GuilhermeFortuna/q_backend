@@ -18,6 +18,19 @@ from q_backend.storage.settings import get_settings
 
 
 def main() -> None:
+    # Pin numeric libraries to one thread per worker process before the worker pool
+    # boots; parallelism comes from the processes, not from BLAS/OpenMP threads.
+    # (q_backend.tasks sets these too, but doing it here covers the master process
+    # and any direct numpy import before the broker loads.)
+    for var in (
+        "OMP_NUM_THREADS",
+        "OPENBLAS_NUM_THREADS",
+        "MKL_NUM_THREADS",
+        "NUMEXPR_NUM_THREADS",
+        "NUMBA_NUM_THREADS",
+    ):
+        os.environ.setdefault(var, "1")
+
     processes = str(get_settings().worker_processes)
     argv = [
         sys.executable,

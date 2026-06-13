@@ -20,10 +20,7 @@ from dramatiq.brokers.redis import RedisBroker
 from dramatiq.middleware import Middleware
 
 from q_backend.storage.settings import get_settings
-from q_backend.tasks.worker_context import (
-    init_worker_market_data,
-    shutdown_worker_market_data,
-)
+from q_backend.tasks.worker_context import shutdown_worker_market_data
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +36,13 @@ DEFAULT_MAX_RETRIES = 0
 
 
 class MarketDataMiddleware(Middleware):
-    """Open/close this worker process's MT5 connection around its lifetime."""
+    """Close this worker process's MT5 connection on shutdown.
 
-    def after_worker_boot(self, broker, worker):  # noqa: D401 - dramatiq hook
-        init_worker_market_data()
+    The connection is opened lazily on first use (see
+    ``worker_context.get_worker_market_data_service``) rather than eagerly at boot,
+    so launching a large pool doesn't trigger N simultaneous MT5 handshakes — idle
+    workers never connect, and a worker only connects once it runs a data-backed job.
+    """
 
     def before_worker_shutdown(self, broker, worker):  # noqa: D401 - dramatiq hook
         shutdown_worker_market_data()
