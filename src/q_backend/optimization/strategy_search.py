@@ -58,6 +58,26 @@ class GateConfig(BaseModel):
     efficiency_high: float = 1.5
 
 
+class GeneticSearchConfig(BaseModel):
+    population_size: int = Field(default=40, ge=10, le=200)
+    generations: int = Field(default=10, ge=2, le=50)
+    elite_count: int = Field(default=4, ge=1)
+    crossover_rate: float = Field(default=0.7, ge=0.0, le=1.0)
+    mutation_rate: float = Field(default=0.15, ge=0.0, le=1.0)
+    tournament_size: int = Field(default=3, ge=2)
+    init_seed: int | None = None
+    max_nodes: int = Field(default=24, ge=4)
+    max_depth: int = Field(default=12, ge=3)
+    complexity_lambda: float = 0.001
+    complexity_mu: float = 0.0005
+
+    @model_validator(mode="after")
+    def validate_elite_count(self) -> GeneticSearchConfig:
+        if self.elite_count >= self.population_size:
+            raise ValueError("elite_count must be less than population_size")
+        return self
+
+
 class StrategySearchConfig(BaseModel):
     backtest: BacktestConfig
     objective: ObjectiveConfig
@@ -66,6 +86,7 @@ class StrategySearchConfig(BaseModel):
     strategies: list[str] | None = None
     include_risk_search: bool = True
     gates: GateConfig = Field(default_factory=GateConfig)
+    genetic: GeneticSearchConfig | None = None
 
     @model_validator(mode="after")
     def reject_multi_objective(self) -> StrategySearchConfig:
@@ -121,6 +142,8 @@ class SearchProgress:
     phase: Literal["optimizing", "testing", "done"]
     window_index: int | None
     total_windows: int | None
+    generation: int | None = None
+    total_generations: int | None = None
 
 
 class CandidateProvider(Protocol):

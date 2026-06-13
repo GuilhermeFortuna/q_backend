@@ -7,6 +7,7 @@ def test_list_strategies_returns_all_registered():
     names = [item.name for item in response["strategies"]]
     assert names == sorted([
         "BollingerReversion",
+        "CompositeStrategy",
         "DonchianBreakout",
         "FMA",
         "MACD",
@@ -73,6 +74,8 @@ def test_list_strategies_each_has_valid_param_schema():
         assert strategy.name
         assert strategy.label
         assert strategy.description
+        if strategy.name == "CompositeStrategy":
+            continue
         assert len(strategy.params) >= 1
         for spec in strategy.params:
             assert spec.name
@@ -99,6 +102,8 @@ def test_list_strategies_presentation_metadata():
     response = list_strategies()
     for strategy in response["strategies"]:
         assert strategy.category in VALID_CATEGORIES
+        if strategy.name == "CompositeStrategy":
+            continue
         assert strategy.thesis
         assert strategy.strong_in
         assert strategy.weak_in

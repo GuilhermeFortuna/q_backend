@@ -9,6 +9,7 @@ from q_backend.backtesting.strategies import (  # noqa: F401
     tsmom,
     vma,
 )
+import q_backend.backtesting.genome.composite_strategy  # noqa: F401
 
 __all__ = [
     "bollinger_reversion",

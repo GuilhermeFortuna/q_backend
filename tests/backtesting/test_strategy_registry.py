@@ -26,6 +26,7 @@ from q_backend.backtesting.strategies.vma import VMAStrategy
 
 REGISTERED_NAMES = [
     "BollingerReversion",
+    "CompositeStrategy",
     "DonchianBreakout",
     "FMA",
     "MACD",

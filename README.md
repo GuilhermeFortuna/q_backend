@@ -74,6 +74,29 @@ A separate intrabar engine for MT5 tick arrays (alongside the candle `BacktestEn
 * **Signal & Order Pipeline:** Modular pipeline translating strategy `Signal` structures into executable `Order` definitions using pluggable `PositionSizer` logic.
 * **Vectorized Computations:** Employs precomputed Technical Indicators via vectorized pandas operations, preventing lookahead bias while maintaining massive throughput.
 * **Pluggable Strategy Registry:** Built-in strategies (`MACrossover`, `RSIMeanReversion`, `BollingerReversion`, `MACD`, `DonchianBreakout`, `VMA`, `FMA`, `TRB`, `TSMOM`) register parameter schemas consumed by the optimization engine and frontend forms via `GET /api/v1/strategies`. `VMA`/`FMA`/`TRB` implement the Lai & Lau (2006) price-vs-MA and close-based trading-range rules. `TSMOM` implements the Moskowitz–Ooi–Pedersen (2012) time-series momentum SIGN rule with bar-count rebalancing (Baltas & Kosowski 2017).
+
+#### Genome DSL / `CompositeStrategy`
+
+Genetic strategy search (WO39+) evolves **structure** in a JSON genome document while Optuna optimizes numeric knobs per genome via the existing walk-forward path. The interpreter lives under `q_backend/backtesting/genome/`:
+
+* **`Genome` schema** — versioned DAG of typed nodes (`source.*`, `ind.*`, `cmp.*`, `logic.*`, `exit.*`) with `entry_long` / `entry_short` / `exit_long` / `exit_short` signal refs.
+* **`CompositeStrategy`** — single registry entry (`"CompositeStrategy"`). Each candidate passes its genome in `fixed_params["genome"]`; trial params merge into the genome before interpretation.
+* **Causal by construction** — only backward-looking indicators and `shift(1)` event detection; `transform.shift.bars` is hard-locked to `1`. Covered by `test_strategy_causality.py` (default MA-crossover genome) and `test_composite_genome_causality.py` (seeded random valid genomes).
+* **`derive_genome_search_space(genome)`** — returns WO30-shaped `SearchSpaceConfig` + `fixed_params` from `GENOME_PARAM_BOUNDS`.
+
+Full grammar and design rationale: [`docs/design/genetic-strategy-search.md`](../q_frontend/docs/design/genetic-strategy-search.md) (§2–§3).
+
+#### Genetic synthesis (`optimization/genetic_search.py`)
+
+WO39 adds evolution on top of the genome interpreter without changing WO31's evaluator:
+
+* **`GeneticCandidateProvider`** — owns a population; `candidates()` yields `SearchCandidate(strategy="CompositeStrategy", fixed_params={"genome": ...})`; `report()` runs tournament selection, crossover, mutation, and elitism for the next generation.
+* **`GeneticStrategySearchOrchestrator`** — loops `generations × population_size`, calling `evaluate_candidate` each time (same walk-forward + OOS gates as registry sweep), then `provider.report()`.
+* **Fitness** — OOS `robustness_score` minus a parsimony penalty (`complexity_lambda × node_count + complexity_mu × param_count`). Only gate-passing genomes reproduce by default.
+* **Job seam** — `select_search_orchestrator(config, backtest_runner)` returns the genetic orchestrator when `StrategySearchConfig.genetic` is set, else the existing `StrategySearchRunner`.
+
+See design doc §4–§5.3 for operator details and initial population mix (50% mutated registry fixtures / 50% random valid DAGs).
+
 * **Position sizers:** `fixed_quantity`, `fixed_safety_margin`, and `inverse_volatility` (vol targeting). The inverse-volatility sizer reads an annualized `volatility` column from the signal bar passed through the engine fill row — strategies such as `TSMOM` expose this column; without it the sizer skips the order. Sizing formula:
 
   ```
@@ -81,7 +104,7 @@ A separate intrabar engine for MT5 tick arrays (alongside the candle `BacktestEn
   ```
 
   clamped to `[min_contracts, max_contracts]`. `target_volatility_pct` is annualized (e.g. `10.0` = 10%). Yang–Zhang and close-to-close estimators live in `technical_indicators.py`.
-* **Strategy search (`optimization/strategy_search.py`):** Automatic discovery sweep — for each registered candle strategy, derive an Optuna search space from the registry (WO30), optimize in-sample per walk-forward window, stitch out-of-sample equity, and rank candidates on OOS performance (never in-sample). Walk-forward **gates** flag weak results (too few windows/trades, low IS/OOS efficiency, suspiciously high efficiency). The `CandidateProvider` protocol is the extension seam: `RegistryCandidateProvider` sweeps built-in strategies today; a future genetic search engine will plug in as another provider and reuse the same evaluator and runner.
+* **Strategy search (`optimization/strategy_search.py`):** Automatic discovery sweep — for each registered candle strategy, derive an Optuna search space from the registry (WO30), optimize in-sample per walk-forward window, stitch out-of-sample equity, and rank candidates on OOS performance (never in-sample). Walk-forward **gates** flag weak results (too few windows/trades, low IS/OOS efficiency, suspiciously high efficiency). The `CandidateProvider` protocol is the extension seam: `RegistryCandidateProvider` sweeps built-in strategies; `GeneticCandidateProvider` (WO39) evolves composite genomes via `select_search_orchestrator` when `config.genetic` is set. Both reuse the same `evaluate_candidate` path.
 
 * **Advanced Analytics Suite (`TradeRegistry`):** Aggregates execution history and computes comprehensive mathematical metrics:
   * Win Rate, Expectancy, and Profit Factor.
