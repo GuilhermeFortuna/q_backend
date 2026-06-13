@@ -201,6 +201,35 @@ TIMEFRAME_MAP = {
 }
 
 
+def _get_chunk_days(mt5_timeframe: int) -> int:
+    """
+    Returns the optimal number of days for chunked OHLCV fetching.
+    Prevents MT5 'Invalid params' error (-2) by keeping the requested
+    number of bars within the terminal's/broker's single-request limits.
+    """
+    if mt5_timeframe == mt5.TIMEFRAME_M1:
+        return 15
+    elif mt5_timeframe in (
+        mt5.TIMEFRAME_M2,
+        mt5.TIMEFRAME_M3,
+        mt5.TIMEFRAME_M4,
+        mt5.TIMEFRAME_M5,
+        mt5.TIMEFRAME_M6,
+    ):
+        return 60
+    elif mt5_timeframe in (
+        mt5.TIMEFRAME_M10,
+        mt5.TIMEFRAME_M12,
+        mt5.TIMEFRAME_M15,
+        mt5.TIMEFRAME_M20,
+        mt5.TIMEFRAME_M30,
+    ):
+        return 180
+    else:
+        # H1, H4, D1, etc.
+        return 365
+
+
 class MetaTraderClient:
     """
     Client for interacting with the MetaTrader 5 local terminal.
@@ -325,12 +354,13 @@ class MetaTraderClient:
         chunks: List[np.ndarray] = []
         total_bars = 0
         cursor = start
+        chunk_days = _get_chunk_days(mt5_timeframe)
 
         for _ in range(_MAX_HISTORY_CHUNKS):
             if cursor > end:
                 break
 
-            chunk_end = min(cursor + timedelta(days=_RANGE_FETCH_DAYS), end)
+            chunk_end = min(cursor + timedelta(days=chunk_days), end)
             rates = mt5.copy_rates_range(symbol, mt5_timeframe, cursor, chunk_end)
 
             if rates is not None and len(rates) > 0:
@@ -412,10 +442,11 @@ class MetaTraderClient:
         earliest: Optional[datetime] = None
         cursor = _HISTORY_ANCHOR
         now = datetime.now()
+        chunk_days = _get_chunk_days(mt5_timeframe)
 
         while cursor < now:
             chunk_end = min(
-                datetime(cursor.year + _RANGE_PROBE_YEARS, cursor.month, cursor.day),
+                cursor + timedelta(days=chunk_days),
                 now,
             )
             if chunk_end <= cursor:
@@ -448,9 +479,10 @@ class MetaTraderClient:
 
         total = 0
         cursor = start
+        chunk_days = _get_chunk_days(mt5_timeframe)
 
         while cursor <= end:
-            chunk_end = min(cursor + timedelta(days=_RANGE_FETCH_DAYS), end)
+            chunk_end = min(cursor + timedelta(days=chunk_days), end)
             rates = mt5.copy_rates_range(symbol, mt5_timeframe, cursor, chunk_end)
             if rates is not None and len(rates) > 0:
                 total += len(rates)
