@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import optuna
+from optuna.pruners import NopPruner
 from optuna.storages import BaseStorage, InMemoryStorage, RDBStorage
 
 from q_backend.optimization.models import OptimizationConfig, StorageConfig
@@ -61,8 +62,15 @@ def create_storage(config: StorageConfig) -> BaseStorage:
     raise ValueError(f"Unknown storage type: {config.type}")
 
 
-def load_or_create_study(config: OptimizationConfig) -> optuna.Study:
-    sampler, pruner = create_sampler_and_pruner(config)
+def load_or_create_study(
+    config: OptimizationConfig,
+    *,
+    constant_liar: bool = False,
+    disable_pruning: bool = False,
+) -> optuna.Study:
+    sampler, pruner = create_sampler_and_pruner(config, constant_liar=constant_liar)
+    if disable_pruning:
+        pruner = NopPruner()
     storage = create_storage(config.study.storage)
     return optuna.create_study(
         study_name=config.study.name,

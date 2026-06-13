@@ -1,5 +1,4 @@
 import logging
-import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -16,6 +15,7 @@ from q_backend.optimization.backtest_runner import (
 from q_backend.optimization.metrics import build_equity_curve, compute_extended_metrics
 from q_backend.optimization.models import OptimizationConfig, StorageConfig
 from q_backend.optimization.objectives import resolve_objective
+from q_backend.optimization.parallel import resolve_worker_count
 from q_backend.optimization.runner import OptimizationRunner
 from q_backend.optimization.search_space import build_position_sizing_config
 
@@ -74,16 +74,6 @@ class WalkForwardResult:
     oos_equity_curve: pd.Series
     oos_metrics: dict[str, Any]
     efficiency: float | None
-
-
-def resolve_worker_count(max_workers: int | None, total_windows: int) -> int:
-    """Resolve the number of worker processes for a walk-forward run.
-
-    ``None`` => auto (one worker per available CPU), capped by the window count
-    since windows are the unit of parallelism. Never returns less than 1.
-    """
-    configured = max_workers if max_workers is not None else (os.cpu_count() or 1)
-    return max(1, min(configured, max(total_windows, 1)))
 
 
 def _window_duration(start: datetime, end: datetime) -> timedelta:

@@ -78,6 +78,9 @@ class StudyConfig(BaseModel):
     sampler: Optional[Literal["tpe", "random", "nsgaii"]] = None
     pruner: Literal["none", "median", "hyperband"] = "none"
     storage: StorageConfig = Field(default_factory=lambda: StorageConfig(type="memory"))
+    # Number of worker processes for parallel candle studies. None => auto (one per
+    # CPU, capped by n_trials). 1 => force sequential.
+    max_workers: int | None = Field(default=None, ge=1)
 
 
 class ObjectiveConfig(BaseModel):

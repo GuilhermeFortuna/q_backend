@@ -6,7 +6,10 @@ from q_backend.optimization.models import OptimizationConfig, StudyConfig
 
 
 def create_sampler(
-    study_config: StudyConfig, is_multi_objective: bool
+    study_config: StudyConfig,
+    is_multi_objective: bool,
+    *,
+    constant_liar: bool = False,
 ) -> optuna.samplers.BaseSampler:
     sampler_name = study_config.sampler
     if sampler_name is None:
@@ -14,7 +17,7 @@ def create_sampler(
 
     seed = study_config.seed
     if sampler_name == "tpe":
-        return TPESampler(seed=seed)
+        return TPESampler(seed=seed, constant_liar=constant_liar)
     if sampler_name == "random":
         return RandomSampler(seed=seed)
     if sampler_name == "nsgaii":
@@ -34,8 +37,14 @@ def create_pruner(study_config: StudyConfig) -> optuna.pruners.BasePruner:
 
 def create_sampler_and_pruner(
     config: OptimizationConfig,
+    *,
+    constant_liar: bool = False,
 ) -> tuple[optuna.samplers.BaseSampler, optuna.pruners.BasePruner]:
     return (
-        create_sampler(config.study, config.is_multi_objective()),
+        create_sampler(
+            config.study,
+            config.is_multi_objective(),
+            constant_liar=constant_liar,
+        ),
         create_pruner(config.study),
     )
