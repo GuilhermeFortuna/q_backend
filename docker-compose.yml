@@ -51,7 +51,7 @@ services:
       Q_REDIS_URL: redis://redis:6379/0
       Q_DATA_LAKE_ROOT: /data/lake
       Q_TICK_CACHE_DIR: /data/tick_cache
-      Q_WORKER_PROCESSES: ${Q_WORKER_PROCESSES:-4}
+      Q_WORKER_PROCESSES: ${Q_WORKER_PROCESSES:-28}
     volumes:
       - backend_data:/data
     depends_on:
@@ -75,7 +75,7 @@ services:
       Q_REDIS_URL: redis://redis:6379/0
       Q_DATA_LAKE_ROOT: /data/lake
       Q_TICK_CACHE_DIR: /data/tick_cache
-      Q_WORKER_PROCESSES: ${Q_WORKER_PROCESSES:-4}
+      Q_WORKER_PROCESSES: ${Q_WORKER_PROCESSES:-28}
     volumes:
       - backend_data:/data
     depends_on:
