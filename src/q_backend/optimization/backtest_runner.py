@@ -28,6 +28,11 @@ class BacktestRunConfig:
     strategy: str
     strategy_params: dict[str, Any]
     position_sizing: PositionSizingConfig | None
+    # Bars of indicator warm-up to prepend before ``start``. They are fed to the
+    # strategy so indicators are valid at ``start`` but produce no trades (the engine
+    # starts flat at ``start``). Only honored when the data is served from an in-memory
+    # frame that actually has earlier bars (``from_frame_sliced``).
+    warmup_bars: int = 0
     costs: TransactionCostConfig | None = None
     parallel_mode: ParallelMode = ParallelMode.SEQUENTIAL
     day_trade: bool = False
@@ -120,9 +125,18 @@ class DefaultBacktestRunner:
 
     @classmethod
     def from_frame_sliced(cls, df: pd.DataFrame) -> "DefaultBacktestRunner":
-        """Serve walk-forward windows by slicing an in-memory frame per run."""
+        """Serve walk-forward windows by slicing an in-memory frame per run.
+
+        When ``config.warmup_bars`` is set, the slice reaches that many bars before
+        ``config.start`` (clamped to the frame start) so indicators can warm up; the
+        engine still only trades from ``config.start`` via ``trade_start``.
+        """
 
         def data_provider(config: BacktestRunConfig) -> pd.DataFrame:
+            if config.warmup_bars > 0:
+                start_pos = df.index.searchsorted(config.start)
+                lo = max(0, start_pos - config.warmup_bars)
+                return df.iloc[lo:].loc[: config.end]
             return df.loc[config.start : config.end]
 
         return cls(data_provider=data_provider, df=df)
@@ -189,7 +203,10 @@ class DefaultBacktestRunner:
             day_trade_close_time=config.day_trade_close_time,
             costs=config.costs,
         )
-        registry = engine.run(df, parallel_mode=config.parallel_mode)
+        trade_start = config.start if config.warmup_bars > 0 else None
+        registry = engine.run(
+            df, parallel_mode=config.parallel_mode, trade_start=trade_start
+        )
 
         closed_trades = registry.get_closed_trades()
         base_metrics = registry.get_performance_metrics(config.initial_capital)

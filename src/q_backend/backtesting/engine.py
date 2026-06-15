@@ -65,7 +65,10 @@ class BacktestEngine:
         return registry.close_trade(trade_id, exit_time, exit_price)
 
     def run(
-        self, data: pd.DataFrame, parallel_mode: ParallelMode = ParallelMode.SEQUENTIAL
+        self,
+        data: pd.DataFrame,
+        parallel_mode: ParallelMode = ParallelMode.SEQUENTIAL,
+        trade_start: Optional[datetime.datetime] = None,
     ) -> TradeRegistry:
         """
         Entry point for running a backtest.
@@ -73,6 +76,11 @@ class BacktestEngine:
         Args:
             data: Historical market data.
             parallel_mode: Execution mode (SEQUENTIAL for swing trading, DAY_TRADE for parallel daily processing).
+            trade_start: When set, bars before this timestamp warm the strategy's
+                indicators but produce no trades — the backtest starts flat here. Used
+                by walk-forward to give an out-of-sample window the indicator lookback
+                that sits just before it, so a long-period strategy is not judged on a
+                window where its indicators are still all-NaN.
 
         Returns:
             TradeRegistry: Contains all executed trades and performance metrics.
@@ -99,16 +107,23 @@ class BacktestEngine:
             # per backtest would oversubscribe the cores when several jobs run.
             for _, chunk in data.groupby(data.index.date):
                 master_registry.merge(
-                    self._run_single_chunk(chunk, force_close_at_end=True)
+                    self._run_single_chunk(
+                        chunk, force_close_at_end=True, trade_start=trade_start
+                    )
                 )
 
             return master_registry
 
         else:  # SEQUENTIAL
-            return self._run_single_chunk(data, force_close_at_end=False)
+            return self._run_single_chunk(
+                data, force_close_at_end=False, trade_start=trade_start
+            )
 
     def _run_single_chunk(
-        self, chunk: pd.DataFrame, force_close_at_end: bool
+        self,
+        chunk: pd.DataFrame,
+        force_close_at_end: bool,
+        trade_start: Optional[datetime.datetime] = None,
     ) -> TradeRegistry:
         registry = TradeRegistry()
         current_capital = self.initial_capital
@@ -148,6 +163,10 @@ class BacktestEngine:
         for i in range(len(chunk)):
             current_data = chunk.iloc[i]
             timestamp = current_data.name
+            # Warm-up bars: indicators are already computed over the whole chunk, but
+            # we take no action before trade_start so the run starts flat there.
+            if trade_start is not None and timestamp < trade_start:
+                continue
             current_time = timestamp.time()
             # Orders queued on the previous bar fill at this bar's open. Fall
             # back to close for close-only series that carry no 'open' column.

@@ -23,6 +23,25 @@ logger = logging.getLogger(__name__)
 
 ONE_DAY = timedelta(days=1)
 
+# Param-name fragments whose values are a lookback length in bars. The warm-up a
+# window needs is the largest such value (×3 so recursive indicators like EMA/HMA
+# converge, not just become non-NaN).
+_WARMUP_PARAM_KEYS = ("period", "lookback", "window")
+_WARMUP_MULTIPLIER = 3
+
+
+def _warmup_bars_for_params(strategy_params: dict[str, Any]) -> int:
+    """Bars of indicator warm-up implied by a strategy's period-like parameters."""
+    lookbacks = [
+        int(value)
+        for key, value in strategy_params.items()
+        if isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and any(fragment in key.lower() for fragment in _WARMUP_PARAM_KEYS)
+    ]
+    longest = max(lookbacks, default=0)
+    return longest * _WARMUP_MULTIPLIER
+
 
 class WalkForwardConfig(BaseModel):
     train_days: int = Field(ge=1)
@@ -176,6 +195,11 @@ class WalkForwardRunner:
             strategy=backtest.strategy,
             strategy_params=strategy_params,
             position_sizing=position_sizing,
+            # Warm indicators with the bars right before this (out-of-sample) window —
+            # in rolling mode that is the tail of the training data, so it adds no
+            # look-ahead. Without it a long-period strategy can't trade a short OOS
+            # window (indicators are all-NaN) and is wrongly scored as "no result".
+            warmup_bars=_warmup_bars_for_params(strategy_params),
             costs=backtest.costs,
             parallel_mode=backtest.parallel_mode,
             day_trade=backtest.day_trade,
