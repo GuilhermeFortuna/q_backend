@@ -58,6 +58,20 @@ class GateConfig(BaseModel):
     efficiency_high: float = 1.5
 
 
+class LockboxConfig(BaseModel):
+    enabled: bool = False
+    lockbox_pct: float | None = 0.15
+    lockbox_days: int | None = None
+    min_trades: int = 5
+    max_drawdown_pct: float | None = None
+
+    @model_validator(mode="after")
+    def validate_lockbox_size(self) -> LockboxConfig:
+        if self.enabled and self.lockbox_pct is not None and self.lockbox_days is not None:
+            raise ValueError("lockbox_pct and lockbox_days are mutually exclusive")
+        return self
+
+
 class GeneticSearchConfig(BaseModel):
     population_size: int = Field(default=40, ge=10, le=200)
     generations: int = Field(default=10, ge=2, le=50)
@@ -87,6 +101,7 @@ class StrategySearchConfig(BaseModel):
     include_risk_search: bool = True
     gates: GateConfig = Field(default_factory=GateConfig)
     genetic: GeneticSearchConfig | None = None
+    lockbox: LockboxConfig = Field(default_factory=LockboxConfig)
 
     @model_validator(mode="after")
     def reject_multi_objective(self) -> StrategySearchConfig:
@@ -127,10 +142,25 @@ class CandidateResult:
 
 
 @dataclass
+class GeneticFinalizeSummary:
+    generations_completed: int = 0
+    total_genomes_evaluated: int = 0
+    champion_dsr: float | None = None
+    n_trials_effective: int = 0
+    sr_observed: float | None = None
+    lockbox_metrics: dict[str, Any] | None = None
+    lockbox_passed: bool | None = None
+    lockbox_equity_curve: pd.Series | None = None
+
+
+@dataclass
 class StrategySearchResult:
     candidates: list[CandidateResult]
     objective_mode: ObjectiveMode
     best: CandidateResult | None
+    genetic_summary: GeneticFinalizeSummary | None = None
+    all_generations: list[list[CandidateResult]] | None = None
+    candidate_metadata: dict[str, dict[str, Any]] | None = None
 
 
 @dataclass

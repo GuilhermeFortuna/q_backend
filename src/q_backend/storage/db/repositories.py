@@ -634,6 +634,11 @@ def create_strategy_search_candidate(
     best_params: Optional[dict[str, Any]] = None,
     window_count: int = 0,
     completed_windows: int = 0,
+    generation: Optional[int] = None,
+    genome: Optional[dict[str, Any]] = None,
+    genome_node_count: Optional[int] = None,
+    dsr: Optional[float] = None,
+    complexity_penalty: Optional[float] = None,
 ) -> StrategySearchCandidate:
     candidate = StrategySearchCandidate(
         run_id=run_id,
@@ -651,6 +656,11 @@ def create_strategy_search_candidate(
         best_params=best_params,
         window_count=window_count,
         completed_windows=completed_windows,
+        generation=generation,
+        genome=genome,
+        genome_node_count=genome_node_count,
+        dsr=dsr,
+        complexity_penalty=complexity_penalty,
     )
     session.add(candidate)
     session.flush()
@@ -693,3 +703,17 @@ def delete_strategy_search_run(session: Session, run_id: uuid.UUID) -> bool:
     session.delete(run)
     session.flush()
     return True
+
+
+def get_strategy_search_candidate(
+    session: Session,
+    *,
+    run_id: uuid.UUID,
+    candidate_id: str,
+) -> Optional[StrategySearchCandidate]:
+    return session.execute(
+        select(StrategySearchCandidate).where(
+            StrategySearchCandidate.run_id == run_id,
+            StrategySearchCandidate.candidate_id == candidate_id,
+        )
+    ).scalar_one_or_none()

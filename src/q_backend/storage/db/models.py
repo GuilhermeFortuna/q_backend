@@ -285,6 +285,11 @@ class StrategySearchCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     best_params: Mapped[Optional[dict[str, Any]]] = mapped_column(PortableJSON, nullable=True)
     window_count: Mapped[int] = mapped_column(nullable=False, default=0)
     completed_windows: Mapped[int] = mapped_column(nullable=False, default=0)
+    generation: Mapped[Optional[int]] = mapped_column(nullable=True)
+    genome: Mapped[Optional[dict[str, Any]]] = mapped_column(PortableJSON, nullable=True)
+    genome_node_count: Mapped[Optional[int]] = mapped_column(nullable=True)
+    dsr: Mapped[Optional[float]] = mapped_column(nullable=True)
+    complexity_penalty: Mapped[Optional[float]] = mapped_column(nullable=True)
 
     run: Mapped["StrategySearchRun"] = relationship(back_populates="candidates")
 

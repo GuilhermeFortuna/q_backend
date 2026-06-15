@@ -184,6 +184,11 @@ def write_strategy_search_artifacts(
     leaderboard: pd.DataFrame,
     candidate_equity: dict[str, pd.DataFrame],
     candidate_trades: dict[str, pd.DataFrame] | None = None,
+    *,
+    generation_leaderboards: dict[int, pd.DataFrame] | None = None,
+    candidate_genomes: dict[str, dict[str, Any]] | None = None,
+    lockbox_equity: pd.DataFrame | None = None,
+    lockbox_metrics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     run_dir = _strategy_search_run_dir(run_id)
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -215,7 +220,49 @@ def write_strategy_search_artifacts(
             )
         lake_paths["candidates"][candidate_id] = candidate_paths
 
+    if generation_leaderboards:
+        lake_paths["generations"] = {}
+        for generation, generation_df in generation_leaderboards.items():
+            generation_dir = run_dir / "generations" / str(generation)
+            generation_dir.mkdir(parents=True, exist_ok=True)
+            rel = f"strategy_search/{run_id}/generations/{generation}/leaderboard.parquet"
+            generation_df.to_parquet(generation_dir / "leaderboard.parquet", index=False)
+            lake_paths["generations"][str(generation)] = rel
+
+    if candidate_genomes:
+        lake_paths["genomes"] = {}
+        for candidate_id, genome in candidate_genomes.items():
+            candidate_dir = run_dir / "candidates" / candidate_id
+            candidate_dir.mkdir(parents=True, exist_ok=True)
+            genome_path = candidate_dir / "genome.json"
+            genome_path.write_text(json.dumps(genome), encoding="utf-8")
+            rel = f"strategy_search/{run_id}/candidates/{candidate_id}/genome.json"
+            lake_paths["genomes"][candidate_id] = rel
+
+    if lockbox_equity is not None or lockbox_metrics is not None:
+        lockbox_dir = run_dir / "lockbox"
+        lockbox_dir.mkdir(parents=True, exist_ok=True)
+        lockbox_paths: dict[str, str] = {}
+        if lockbox_equity is not None:
+            lockbox_equity.to_parquet(lockbox_dir / "equity.parquet", index=False)
+            lockbox_paths["equity"] = f"strategy_search/{run_id}/lockbox/equity.parquet"
+        if lockbox_metrics is not None:
+            (lockbox_dir / "metrics.json").write_text(
+                json.dumps(lockbox_metrics), encoding="utf-8"
+            )
+            lockbox_paths["metrics"] = f"strategy_search/{run_id}/lockbox/metrics.json"
+        lake_paths["lockbox"] = lockbox_paths
+
     return lake_paths
+
+
+def read_strategy_search_candidate_genome(run_id: str, candidate_id: str) -> dict[str, Any]:
+    path = lake_root() / "strategy_search" / run_id / "candidates" / candidate_id / "genome.json"
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"Strategy search genome not found for run '{run_id}' candidate '{candidate_id}'."
+        )
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def read_strategy_search_artifact(run_id: str) -> pd.DataFrame:

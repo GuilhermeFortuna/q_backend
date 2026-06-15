@@ -6,6 +6,8 @@ import random
 from collections.abc import Callable
 from typing import Any
 
+import pandas as pd
+
 from q_backend.backtesting.genome.operators import (
     build_initial_population,
     clone_genome,
@@ -18,11 +20,17 @@ from q_backend.backtesting.genome.operators import (
 from q_backend.backtesting.genome.schema import Genome
 from q_backend.backtesting.genome.search_space import derive_genome_search_space
 from q_backend.optimization.auto_search_space import default_risk_search_space
-from q_backend.optimization.backtest_runner import BacktestRunner
+from q_backend.optimization.backtest_runner import BacktestRunConfig, BacktestRunner
+from q_backend.optimization.dsr import deflated_sharpe_ratio
+from q_backend.optimization.lockbox import (
+    backtest_config_for_walkforward,
+    evaluate_lockbox,
+)
 from q_backend.optimization.models import SearchSpaceConfig
 from q_backend.optimization.strategy_search import (
     CandidateProvider,
     CandidateResult,
+    GeneticFinalizeSummary,
     GeneticSearchConfig,
     SearchCandidate,
     SearchProgress,
@@ -64,6 +72,24 @@ def _search_space_for_genome(
     )
 
 
+def search_candidate_for_genome(
+    genome: Genome,
+    search_config: StrategySearchConfig,
+) -> SearchCandidate:
+    """Build the WO31 ``SearchCandidate`` for a single genome.
+
+    Shared by ``GeneticCandidateProvider.candidates`` (in-process orchestrator) and
+    the distributed per-generation candidate worker, so both construct an identical
+    candidate from a genome.
+    """
+    return SearchCandidate(
+        candidate_id=genome.genome_id,
+        strategy="CompositeStrategy",
+        search_space=_search_space_for_genome(genome, search_config),
+        fixed_params={"genome": genome.model_dump()},
+    )
+
+
 class GeneticCandidateProvider:
     """Evolve a population of genomes via WO31's ``CandidateProvider`` seam."""
 
@@ -97,18 +123,42 @@ class GeneticCandidateProvider:
         return list(self._population)
 
     def candidates(self) -> list[SearchCandidate]:
-        candidates: list[SearchCandidate] = []
-        for genome in self._population:
-            genome_dict = genome.model_dump()
-            candidates.append(
-                SearchCandidate(
-                    candidate_id=genome.genome_id,
-                    strategy="CompositeStrategy",
-                    search_space=_search_space_for_genome(genome, self._search),
-                    fixed_params={"genome": genome_dict},
-                )
-            )
-        return candidates
+        return [
+            search_candidate_for_genome(genome, self._search)
+            for genome in self._population
+        ]
+
+    def export_state(self) -> dict[str, Any]:
+        """Serialize the evolving state so a later worker can resume breeding.
+
+        The distributed flow evaluates each generation in separate worker processes,
+        so the RNG/champion/population state must round-trip through Redis between
+        generations. JSON-safe: ``random.Random`` state is a tuple of ints, and
+        ``best_fitness`` may be ``-inf`` (json dumps/loads it as ``-Infinity``).
+        """
+        rng_version, rng_internal, rng_gauss = self._rng.getstate()
+        return {
+            "rng": [rng_version, list(rng_internal), rng_gauss],
+            "generation": self._generation,
+            "next_individual": self._next_individual,
+            "best_fitness": self._best_fitness,
+            "champion": self._champion.model_dump() if self._champion else None,
+            "population": [genome.model_dump() for genome in self._population],
+        }
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Restore state produced by ``export_state`` (in a fresh worker process)."""
+        rng_version, rng_internal, rng_gauss = state["rng"]
+        self._rng.setstate((rng_version, tuple(rng_internal), rng_gauss))
+        self._generation = state["generation"]
+        self._next_individual = state["next_individual"]
+        self._best_fitness = state["best_fitness"]
+        champion = state.get("champion")
+        self._champion = Genome.model_validate(champion) if champion else None
+        self._population = [Genome.model_validate(g) for g in state["population"]]
+        self._genome_by_id = {
+            genome.genome_id: genome for genome in self._population
+        }
 
     def report(self, results: list[CandidateResult]) -> None:
         scored: list[tuple[float, Genome, CandidateResult]] = []
@@ -208,6 +258,28 @@ class GeneticCandidateProvider:
         return draw_valid_child(self._rng, build_child)
 
 
+def _config_for_walkforward(config: StrategySearchConfig) -> StrategySearchConfig:
+    if not config.lockbox.enabled:
+        return config
+    backtest = backtest_config_for_walkforward(config.backtest, config.lockbox)
+    return config.model_copy(update={"backtest": backtest})
+
+
+def _complexity_penalty(genome: Genome, genetic: GeneticSearchConfig) -> float:
+    return (
+        genetic.complexity_lambda * genome_node_count(genome)
+        + genetic.complexity_mu * genome_param_count(genome)
+    )
+
+
+def _daily_returns_from_equity(equity: pd.Series | None) -> list[float]:
+    if equity is None or len(equity) < 2:
+        return []
+    daily = equity.resample("D").last().ffill()
+    returns = daily.pct_change().dropna()
+    return [float(value) for value in returns.tolist()]
+
+
 class GeneticStrategySearchOrchestrator:
     """Run G generations by reusing ``evaluate_candidate`` unchanged."""
 
@@ -223,10 +295,16 @@ class GeneticStrategySearchOrchestrator:
         self.provider = provider
         self.backtest_runner = backtest_runner
         self._generations: list[list[CandidateResult]] = []
+        self._candidate_metadata: dict[str, dict[str, Any]] = {}
+        self._eval_config = _config_for_walkforward(config)
 
     @property
     def generations(self) -> list[list[CandidateResult]]:
         return self._generations
+
+    @property
+    def candidate_metadata(self) -> dict[str, dict[str, Any]]:
+        return dict(self._candidate_metadata)
 
     def run(
         self,
@@ -272,13 +350,23 @@ class GeneticStrategySearchOrchestrator:
 
                 result = evaluate_candidate(
                     candidate,
-                    self.config,
+                    self._eval_config,
                     self.backtest_runner,
                     ohlcv=ohlcv,
                     progress_callback=candidate_progress,
                     should_stop=should_stop,
                 )
                 generation_results.append(result)
+                genome = self.provider._genome_by_id.get(result.candidate_id)
+                if genome is not None:
+                    self._candidate_metadata[result.candidate_id] = {
+                        "generation": self.provider.generation,
+                        "genome": genome.model_dump(),
+                        "genome_node_count": genome_node_count(genome),
+                        "complexity_penalty": _complexity_penalty(
+                            genome, genetic
+                        ),
+                    }
 
                 if progress_callback is not None:
                     progress_callback(
@@ -301,23 +389,88 @@ class GeneticStrategySearchOrchestrator:
             if should_stop is not None and should_stop():
                 break
 
-        return self._assemble_result()
+        return self.finalize()
 
-    def _assemble_result(self) -> StrategySearchResult:
+    def finalize(self) -> StrategySearchResult:
+        """Post-rank DSR + lock-box evaluation; does not alter per-candidate scores."""
         if not self._generations:
             return StrategySearchResult(
                 candidates=[],
                 objective_mode=self.config.objective.mode,
                 best=None,
+                genetic_summary=GeneticFinalizeSummary(),
+                all_generations=[],
+                candidate_metadata={},
             )
+
         final_results = self._generations[-1]
         ranked = _rank_results(final_results)
         best = ranked[0] if ranked and ranked[0].rank == 1 else None
+
+        genetic = self.config.genetic
+        assert genetic is not None
+        total_genomes = sum(len(generation) for generation in self._generations)
+        generations_completed = len(self._generations)
+
+        summary = GeneticFinalizeSummary(
+            generations_completed=generations_completed,
+            total_genomes_evaluated=total_genomes,
+            n_trials_effective=total_genomes,
+        )
+
+        champion_dsr: float | None = None
+        if best is not None and best.oos_metrics is not None:
+            sr_observed = float(best.oos_metrics.get("sharpe_ratio", 0.0))
+            summary.sr_observed = sr_observed
+            returns = _daily_returns_from_equity(best.oos_equity_curve)
+            num_obs = max(len(returns), 2)
+            skewness = 0.0
+            kurtosis = 3.0
+            if len(returns) >= 2:
+                series = pd.Series(returns)
+                skewness = float(series.skew())
+                kurtosis = float(series.kurtosis())
+            champion_dsr = deflated_sharpe_ratio(
+                sr_observed=sr_observed,
+                num_trials=total_genomes,
+                num_observations=num_obs,
+                skewness=skewness,
+                kurtosis=kurtosis,
+            )
+            summary.champion_dsr = champion_dsr
+            if best.candidate_id in self._candidate_metadata:
+                self._candidate_metadata[best.candidate_id]["dsr"] = champion_dsr
+
+        if best is not None and best.best_params is not None:
+            lockbox_params = dict(best.best_params)
+            champion_meta = self._candidate_metadata.get(best.candidate_id, {})
+            genome = champion_meta.get("genome")
+            if genome is not None:
+                strategy_params = dict(lockbox_params.get("strategy_params", {}))
+                strategy_params["genome"] = genome
+                lockbox_params["strategy_params"] = strategy_params
+            lockbox_metrics, lockbox_passed, lockbox_equity = evaluate_lockbox(
+                backtest=self.config.backtest,
+                lockbox=self.config.lockbox,
+                best_params=lockbox_params,
+                strategy=best.strategy,
+                backtest_runner=self.backtest_runner,
+            )
+            summary.lockbox_metrics = lockbox_metrics
+            summary.lockbox_passed = lockbox_passed
+            summary.lockbox_equity_curve = lockbox_equity
+
         return StrategySearchResult(
             candidates=ranked,
             objective_mode=self.config.objective.mode,
             best=best,
+            genetic_summary=summary,
+            all_generations=list(self._generations),
+            candidate_metadata=dict(self._candidate_metadata),
         )
+
+    def _assemble_result(self) -> StrategySearchResult:
+        return self.finalize()
 
 
 def select_search_orchestrator(

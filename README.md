@@ -97,6 +97,16 @@ WO39 adds evolution on top of the genome interpreter without changing WO31's eva
 
 See design doc §4–§5.3 for operator details and initial population mix (50% mutated registry fixtures / 50% random valid DAGs).
 
+#### Overfitting defense (genetic runs)
+
+When `StrategySearchConfig.genetic` is set, a post-evolution **finalize** step applies two screening layers before the run verdict is persisted:
+
+* **Deflated Sharpe Ratio (DSR)** — Bailey & López de Prado correction over the effective trial count (`population × generations`). The champion's OOS Sharpe is deflated for how many genomes were tried; stored as `champion_dsr`, `n_trials_effective`, and `sr_observed` on the run summary.
+* **Held-out lock-box** — optional `lockbox` config carves the final 10–15% of the date range **before** walk-forward windows; the champion is backtested once on that tail with no re-optimization. `lockbox_metrics` and `lockbox_passed` are persisted on the run summary.
+* **Parsimony penalty** — fitness subtracts `complexity_lambda × node_count + complexity_mu × param_count` during evolution (WO39).
+
+High DSR and a passing lock-box are **screening signals, not proof** of live edge. See [`docs/design/genetic-strategy-search.md`](../q_frontend/docs/design/genetic-strategy-search.md) §5.4.
+
 * **Position sizers:** `fixed_quantity`, `fixed_safety_margin`, and `inverse_volatility` (vol targeting). The inverse-volatility sizer reads an annualized `volatility` column from the signal bar passed through the engine fill row — strategies such as `TSMOM` expose this column; without it the sizer skips the order. Sizing formula:
 
   ```

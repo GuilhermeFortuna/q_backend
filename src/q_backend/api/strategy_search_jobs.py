@@ -15,7 +15,17 @@ from typing import Any, Literal, Optional
 
 import pandas as pd
 
+from q_backend.backtesting.genome.operators import genome_node_count
+from q_backend.backtesting.genome.schema import Genome
 from q_backend.optimization.backtest_runner import BacktestRunner, DefaultBacktestRunner
+from q_backend.optimization.genetic_search import (
+    GeneticCandidateProvider,
+    GeneticStrategySearchOrchestrator,
+    _complexity_penalty,
+    _config_for_walkforward,
+    search_candidate_for_genome,
+)
+from q_backend.optimization.lockbox import compute_lockbox_bounds
 from q_backend.optimization.strategy_search import (
     CandidateProvider,
     CandidateResult,
@@ -39,6 +49,7 @@ from q_backend.tasks.serialization import (
     candidate_result_from_dict,
     candidate_result_to_dict,
 )
+from q_backend.tasks import genetic_staging
 from q_backend.tasks.staging import clear_partials, load_partials, stash_partial
 from q_backend.storage.db.engine import session_scope
 from q_backend.storage.db.models import RunStatus, StrategySearchRun
@@ -46,12 +57,14 @@ from q_backend.storage.db.repositories import (
     create_strategy_search_candidate,
     create_strategy_search_run,
     get_strategy_search_run,
+    get_strategy_search_candidate,
     mark_active_runs_cancelled,
     update_strategy_search_run,
 )
 from q_backend.storage.lake.artifacts import (
     delete_strategy_search_artifacts,
     read_strategy_search_candidate_artifact,
+    read_strategy_search_candidate_genome,
     write_strategy_search_artifacts,
 )
 from q_backend.storage.redis.client import get_redis
@@ -105,6 +118,8 @@ class StrategySearchJob:
     phase: Optional[Literal["optimizing", "testing", "done"]] = None
     window_index: Optional[int] = None
     total_windows: Optional[int] = None
+    generation: Optional[int] = None
+    total_generations: Optional[int] = None
     result: Optional[StrategySearchResult] = None
     lake_paths: Optional[dict[str, Any]] = None
     error: Optional[str] = None
@@ -130,11 +145,26 @@ def evict_run(run_id: str) -> None:
 
 
 def validate_strategy_search_request(config: StrategySearchConfig) -> None:
-    split_windows(config.backtest.start, config.backtest.end, config.walkforward)
+    wf_end, _, _ = compute_lockbox_bounds(
+        config.backtest.start, config.backtest.end, config.lockbox
+    )
+    split_windows(config.backtest.start, wf_end, config.walkforward)
+
+
+def _serialize_search_config(config: StrategySearchConfig) -> dict[str, Any]:
+    """Serialize config, omitting default genetic/lockbox blocks for registry compat."""
+    payload = config.model_dump(mode="json", exclude_none=True)
+    if config.genetic is None:
+        payload.pop("genetic", None)
+    if not config.lockbox.enabled:
+        payload.pop("lockbox", None)
+    if config.genetic is not None:
+        payload["provider"] = "genetic"
+    return payload
 
 
 def _request_config_payload(config: StrategySearchConfig) -> dict[str, Any]:
-    return config.model_dump(mode="json")
+    return _serialize_search_config(config)
 
 
 def _persist_progress(job: StrategySearchJob) -> None:
@@ -192,7 +222,7 @@ def _persist_run_status(
 
 def _build_result_summary(result: StrategySearchResult) -> dict[str, Any]:
     best = result.best
-    return {
+    summary: dict[str, Any] = {
         "objective_mode": result.objective_mode.value,
         "candidate_count": len(result.candidates),
         "ranked_count": sum(
@@ -206,11 +236,32 @@ def _build_result_summary(result: StrategySearchResult) -> dict[str, Any]:
         "best_objective_value": best.objective_value if best is not None else None,
         "best_efficiency": best.efficiency if best is not None else None,
     }
+    genetic_summary = result.genetic_summary
+    if genetic_summary is not None:
+        summary.update(
+            {
+                "generations_completed": genetic_summary.generations_completed,
+                "total_genomes_evaluated": genetic_summary.total_genomes_evaluated,
+                "champion_dsr": genetic_summary.champion_dsr,
+                "n_trials_effective": genetic_summary.n_trials_effective,
+                "sr_observed": genetic_summary.sr_observed,
+                "lockbox_metrics": genetic_summary.lockbox_metrics,
+                "lockbox_passed": genetic_summary.lockbox_passed,
+            }
+        )
+    return summary
 
 
-def _build_leaderboard_dataframe(candidates: list[CandidateResult]) -> pd.DataFrame:
+def _build_leaderboard_dataframe(
+    candidates: list[CandidateResult],
+    *,
+    candidate_metadata: dict[str, dict[str, Any]] | None = None,
+    generation: int | None = None,
+) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
+    metadata = candidate_metadata or {}
     for candidate in candidates:
+        meta = metadata.get(candidate.candidate_id, {})
         rows.append(
             {
                 "candidate_id": candidate.candidate_id,
@@ -226,6 +277,10 @@ def _build_leaderboard_dataframe(candidates: list[CandidateResult]) -> pd.DataFr
                 "completed_windows": candidate.completed_windows,
                 "oos_metrics_json": json.dumps(candidate.oos_metrics or {}),
                 "best_params_json": json.dumps(candidate.best_params or {}),
+                "generation": meta.get("generation", generation),
+                "genome_node_count": meta.get("genome_node_count"),
+                "dsr": meta.get("dsr"),
+                "complexity_penalty": meta.get("complexity_penalty"),
             }
         )
     return pd.DataFrame(rows)
@@ -249,10 +304,44 @@ def _write_lake_artifacts(
     run_id: str, result: StrategySearchResult
 ) -> Optional[dict[str, Any]]:
     try:
+        metadata = result.candidate_metadata or {}
+        generation_leaderboards: dict[int, pd.DataFrame] | None = None
+        if result.all_generations is not None:
+            generation_leaderboards = {
+                generation_index: _build_leaderboard_dataframe(
+                    generation_results,
+                    candidate_metadata=metadata,
+                    generation=generation_index,
+                )
+                for generation_index, generation_results in enumerate(
+                    result.all_generations
+                )
+            }
+        candidate_genomes = {
+            candidate_id: meta["genome"]
+            for candidate_id, meta in metadata.items()
+            if meta.get("genome") is not None
+        }
+        lockbox_equity = None
+        genetic_summary = result.genetic_summary
+        if (
+            genetic_summary is not None
+            and genetic_summary.lockbox_equity_curve is not None
+        ):
+            series = genetic_summary.lockbox_equity_curve
+            lockbox_equity = pd.DataFrame({"time": series.index, "equity": series.values})
         return write_strategy_search_artifacts(
             run_id,
-            _build_leaderboard_dataframe(result.candidates),
+            _build_leaderboard_dataframe(
+                result.candidates, candidate_metadata=metadata
+            ),
             _build_candidate_equity_dataframes(result.candidates),
+            generation_leaderboards=generation_leaderboards,
+            candidate_genomes=candidate_genomes or None,
+            lockbox_equity=lockbox_equity,
+            lockbox_metrics=(
+                genetic_summary.lockbox_metrics if genetic_summary is not None else None
+            ),
         )
     except Exception as exc:
         logger.warning("Failed to write strategy search lake artifacts: %s", exc)
@@ -264,10 +353,13 @@ def _persist_run_finish(job: StrategySearchJob, terminal_status: JobStatus) -> N
         return
     result = job.result
     result_summary = _build_result_summary(result) if result is not None else None
+    metadata = result.candidate_metadata if result is not None else None
     try:
         with session_scope() as session:
             if result is not None:
-                for candidate in result.candidates:
+                candidates_to_persist = _candidates_for_persistence(result)
+                for candidate in candidates_to_persist:
+                    meta = (metadata or {}).get(candidate.candidate_id, {})
                     create_strategy_search_candidate(
                         session,
                         run_id=job.db_run_id,
@@ -285,6 +377,11 @@ def _persist_run_finish(job: StrategySearchJob, terminal_status: JobStatus) -> N
                         best_params=candidate.best_params,
                         window_count=candidate.window_count,
                         completed_windows=candidate.completed_windows,
+                        generation=meta.get("generation"),
+                        genome=meta.get("genome"),
+                        genome_node_count=meta.get("genome_node_count"),
+                        dsr=meta.get("dsr"),
+                        complexity_penalty=meta.get("complexity_penalty"),
                     )
             update_strategy_search_run(
                 session,
@@ -299,10 +396,22 @@ def _persist_run_finish(job: StrategySearchJob, terminal_status: JobStatus) -> N
         logger.warning("Failed to persist strategy search run finish: %s", exc)
 
 
+def _candidates_for_persistence(result: StrategySearchResult) -> list[CandidateResult]:
+    if result.all_generations is not None:
+        persisted: list[CandidateResult] = []
+        for generation_results in result.all_generations:
+            persisted.extend(generation_results)
+        return persisted
+    return list(result.candidates)
+
+
 def _resolve_total_candidates(
     config: StrategySearchConfig,
     provider: CandidateProvider,
 ) -> int:
+    if config.genetic is not None:
+        assert config.genetic is not None
+        return config.genetic.population_size * config.genetic.generations
     if isinstance(provider, RegistryCandidateProvider):
         candidates = list(provider.candidates())
         return len(candidates) + len(provider.unsupported_names())
@@ -324,12 +433,18 @@ def start_job(
     validate_strategy_search_request(request)
 
     run_id, db_run_id = _persist_run_start(request)
+    provider: CandidateProvider
+    if request.genetic is not None:
+        provider = GeneticCandidateProvider(request.genetic, request)
+    else:
+        provider = RegistryCandidateProvider(request)
     job = StrategySearchJob(
         run_id=run_id,
         db_run_id=db_run_id,
         request=request,
-        total_candidates=_resolve_total_candidates(
-            request, RegistryCandidateProvider(request)
+        total_candidates=_resolve_total_candidates(request, provider),
+        total_generations=(
+            request.genetic.generations if request.genetic is not None else None
         ),
     )
     _persist_progress(job)
@@ -432,6 +547,8 @@ def _progress_job(
     strategy: Optional[str] = None,
     phase: Optional[Literal["optimizing", "testing", "done"]] = None,
     error: Optional[str] = None,
+    generation: Optional[int] = None,
+    total_generations: Optional[int] = None,
 ) -> StrategySearchJob:
     return StrategySearchJob(
         run_id=run_id,
@@ -444,12 +561,17 @@ def _progress_job(
         strategy=strategy,
         phase=phase,
         error=error,
+        generation=generation,
+        total_generations=total_generations,
     )
 
 
 def dispatch_candidates(run_id: str, db_run_id_hex: str, config_json: str) -> None:
     """Coordinator: fan each candidate out to its own worker message."""
     request = StrategySearchConfig.model_validate_json(config_json)
+    if request.genetic is not None:
+        dispatch_genetic_discovery(run_id, db_run_id_hex, config_json)
+        return
     db_run_id = uuid.UUID(db_run_id_hex) if db_run_id_hex else None
     provider = RegistryCandidateProvider(request)
     candidates = list(provider.candidates())
@@ -545,6 +667,232 @@ def run_candidate(
         finalize_discovery(run_id, db_run_id_hex, config_json)
 
 
+# --- genetic discovery: generation-barrier fan-out -------------------------------
+#
+# A genetic algorithm cannot fan all candidates out at once: generation N+1 is bred
+# from generation N's fitness, so the population evolves between barriers. We fan out
+# one generation's population across the worker pool, barrier on the shared fan-in
+# counter, breed the next generation in the finalizer, and dispatch again — for G
+# generations. The evolving provider state and the accumulated per-generation results
+# live in Redis (``genetic_staging``) so any worker can resume the run.
+
+
+def dispatch_genetic_discovery(
+    run_id: str, db_run_id_hex: str, config_json: str
+) -> None:
+    """Genetic coordinator: mark RUNNING, build generation 0, dispatch its population."""
+    request = StrategySearchConfig.model_validate_json(config_json)
+    db_run_id = uuid.UUID(db_run_id_hex) if db_run_id_hex else None
+    assert request.genetic is not None
+
+    if is_cancelled(run_id):
+        _finalize_genetic(run_id, db_run_id_hex, config_json, cancelled=True)
+        return
+
+    _persist_run_status(
+        db_run_id,
+        status=RunStatus.RUNNING.value,
+        clear_error_message=True,
+        started_at=_now(),
+    )
+
+    provider = GeneticCandidateProvider(request.genetic, request)
+    _dispatch_generation(run_id, db_run_id_hex, config_json, provider, generation=0)
+
+
+def _dispatch_generation(
+    run_id: str,
+    db_run_id_hex: str,
+    config_json: str,
+    provider: GeneticCandidateProvider,
+    generation: int,
+) -> None:
+    """Stash the generation's population and fan each genome out to a worker."""
+    population = provider.population
+    # The stashed state's population *is* this generation — candidate workers read
+    # their genome from it by index, and the finalizer reloads it to breed the next.
+    genetic_staging.set_provider_state(run_id, provider.export_state())
+    # Each generation reuses the run-scoped fan-in counter and partial-staging hash,
+    # cleared between generations so a generation's barrier counts only its own work.
+    clear_partials(run_id)
+    init_counter(run_id, len(population))
+
+    from q_backend.tasks import actors
+
+    for index in range(len(population)):
+        actors.evaluate_genetic_candidate.send(
+            run_id, db_run_id_hex, config_json, generation, index
+        )
+
+
+def run_genetic_candidate(
+    run_id: str,
+    db_run_id_hex: str,
+    config_json: str,
+    generation: int,
+    candidate_index: int,
+) -> None:
+    """Candidate worker: walk-forward evaluate one genome of one generation."""
+    request = StrategySearchConfig.model_validate_json(config_json)
+    db_run_id = uuid.UUID(db_run_id_hex) if db_run_id_hex else None
+    genetic = request.genetic
+    assert genetic is not None
+    population_size = genetic.population_size
+    total = population_size * genetic.generations
+
+    candidate_id: Optional[str] = None
+    if not is_cancelled(run_id):
+        genome = Genome.model_validate(
+            genetic_staging.get_generation_genome(run_id, candidate_index)
+        )
+        candidate_id = genome.genome_id
+        candidate = search_candidate_for_genome(genome, request)
+        try:
+            result = evaluate_candidate(
+                candidate,
+                _config_for_walkforward(request),
+                _candidate_runner(request),
+                should_stop=lambda: is_cancelled(run_id),
+            )
+        except Exception as exc:  # noqa: BLE001 - isolate a single candidate failure
+            logger.exception(
+                "Genetic candidate %s failed for run %s", genome.genome_id, run_id
+            )
+            result = CandidateResult(
+                candidate_id=genome.genome_id,
+                strategy="CompositeStrategy",
+                status="error",
+                error=str(exc),
+            )
+        stash_partial(run_id, candidate_index, candidate_result_to_dict(result))
+        genetic_staging.set_candidate_meta(
+            run_id,
+            {
+                genome.genome_id: {
+                    "generation": generation,
+                    "genome": genome.model_dump(),
+                    "genome_node_count": genome_node_count(genome),
+                    "complexity_penalty": _complexity_penalty(genome, genetic),
+                }
+            },
+        )
+
+    remaining = decrement(run_id)
+    completed = generation * population_size + (population_size - max(remaining, 0))
+    _persist_progress(
+        _progress_job(
+            run_id,
+            db_run_id,
+            request,
+            status="running",
+            total_candidates=total,
+            current_candidate=completed,
+            candidate_id=candidate_id,
+            strategy="CompositeStrategy",
+            phase="testing",
+            generation=generation + 1,
+            total_generations=genetic.generations,
+        )
+    )
+    if remaining <= 0:
+        finalize_generation(run_id, db_run_id_hex, config_json, generation)
+
+
+def finalize_generation(
+    run_id: str, db_run_id_hex: str, config_json: str, generation: int
+) -> None:
+    """Last worker of a generation: breed the next one, or finalize the whole run."""
+    request = StrategySearchConfig.model_validate_json(config_json)
+    genetic = request.genetic
+    assert genetic is not None
+
+    # Reload the provider state stashed at dispatch (population == this generation),
+    # so result→genome mapping and breeding are deterministic regardless of which
+    # worker is last and the arbitrary order partials come back in.
+    provider = GeneticCandidateProvider(genetic, request)
+    provider.load_state(genetic_staging.get_provider_state(run_id))
+
+    results_by_id = {
+        result.candidate_id: result
+        for result in (candidate_result_from_dict(p) for p in load_partials(run_id))
+    }
+    ordered = [
+        results_by_id[genome.genome_id]
+        for genome in provider.population
+        if genome.genome_id in results_by_id
+    ]
+    genetic_staging.append_generation_results(
+        run_id, generation, [candidate_result_to_dict(r) for r in ordered]
+    )
+
+    cancelled = is_cancelled(run_id)
+    next_generation = generation + 1
+    if not cancelled and next_generation < genetic.generations:
+        provider.report(ordered)
+        _dispatch_generation(
+            run_id, db_run_id_hex, config_json, provider, next_generation
+        )
+        return
+
+    _finalize_genetic(run_id, db_run_id_hex, config_json, cancelled=cancelled)
+
+
+def _finalize_genetic(
+    run_id: str, db_run_id_hex: str, config_json: str, *, cancelled: bool
+) -> None:
+    """Rank across generations, run DSR + lock-box, persist results, mark terminal."""
+    request = StrategySearchConfig.model_validate_json(config_json)
+    db_run_id = uuid.UUID(db_run_id_hex) if db_run_id_hex else None
+    assert request.genetic is not None
+    job = StrategySearchJob(
+        run_id=run_id,
+        db_run_id=db_run_id,
+        request=request,
+        total_candidates=_resolve_total_candidates(
+            request, GeneticCandidateProvider(request.genetic, request)
+        ),
+        total_generations=request.genetic.generations,
+    )
+
+    terminal_status: JobStatus = "failed"
+    try:
+        all_generations = [
+            [candidate_result_from_dict(p) for p in generation]
+            for generation in genetic_staging.get_all_generation_results(run_id)
+        ]
+        metadata = genetic_staging.get_all_candidate_meta(run_id)
+
+        # The orchestrator's finalizer (ranking, DSR, lock-box, summary) is reused
+        # verbatim by injecting the accumulated generations and metadata into a shell
+        # instance — the math is identical to the in-process path.
+        provider = GeneticCandidateProvider(request.genetic, request)
+        orchestrator = GeneticStrategySearchOrchestrator(
+            request, provider, _candidate_runner(request)
+        )
+        orchestrator._generations = all_generations
+        orchestrator._candidate_metadata = metadata
+        job.result = orchestrator.finalize()
+        job.total_candidates = len(job.result.candidates)
+        job.lake_paths = _write_lake_artifacts(run_id, job.result)
+        if cancelled:
+            terminal_status = "cancelled"
+            job.error = "Cancelled by user"
+        else:
+            terminal_status = "completed"
+    except Exception as exc:  # noqa: BLE001 - surface any failure to the client
+        logger.exception("Genetic discovery finalize failed for run %s", run_id)
+        terminal_status = "failed"
+        job.error = str(exc)
+    finally:
+        job.updated_at = _now()
+        job.status = terminal_status
+        _persist_run_finish(job, terminal_status)
+        _persist_progress(job)
+        clear_partials(run_id)
+        genetic_staging.clear_genetic_keys(run_id)
+        clear_job_keys(run_id)
+
+
 def finalize_discovery(run_id: str, db_run_id_hex: str, config_json: str) -> None:
     """Last candidate worker: rank candidates, persist results, mark terminal."""
     request = StrategySearchConfig.model_validate_json(config_json)
@@ -582,8 +930,8 @@ def finalize_discovery(run_id: str, db_run_id_hex: str, config_json: str) -> Non
 
 
 def status_payload(job: StrategySearchJob) -> dict[str, Any]:
-    config = job.request.model_dump(mode="json")
-    return {
+    config = _serialize_search_config(job.request)
+    payload: dict[str, Any] = {
         "run_id": job.run_id,
         "status": job.status,
         "current_candidate": job.current_candidate,
@@ -597,10 +945,19 @@ def status_payload(job: StrategySearchJob) -> dict[str, Any]:
         "search_config": config,
         "backtest_config": config.get("backtest"),
     }
+    if job.generation is not None:
+        payload["generation"] = job.generation
+    if job.total_generations is not None:
+        payload["total_generations"] = job.total_generations
+    return payload
 
 
-def _serialize_candidate(candidate: CandidateResult) -> dict[str, Any]:
-    return {
+def _serialize_candidate(
+    candidate: CandidateResult,
+    *,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "candidate_id": candidate.candidate_id,
         "strategy": candidate.strategy,
         "status": candidate.status,
@@ -617,6 +974,18 @@ def _serialize_candidate(candidate: CandidateResult) -> dict[str, Any]:
         "completed_windows": candidate.completed_windows,
         "error": candidate.error,
     }
+    if metadata:
+        if metadata.get("generation") is not None:
+            payload["generation"] = metadata["generation"]
+        if metadata.get("genome") is not None:
+            payload["genome"] = metadata["genome"]
+        if metadata.get("genome_node_count") is not None:
+            payload["genome_node_count"] = metadata["genome_node_count"]
+        if metadata.get("dsr") is not None:
+            payload["dsr"] = metadata["dsr"]
+        if metadata.get("complexity_penalty") is not None:
+            payload["complexity_penalty"] = metadata["complexity_penalty"]
+    return payload
 
 
 def serialize_equity_points(series: pd.Series) -> list[dict[str, Any]]:
@@ -636,22 +1005,34 @@ def results_payload(job: StrategySearchJob) -> Optional[dict[str, Any]]:
     if result is None:
         return None
     summary = _build_result_summary(result)
+    metadata = result.candidate_metadata or {}
     return {
         "run_id": job.run_id,
         "status": job.status,
         "objective_mode": result.objective_mode.value,
         "summary": summary,
         "candidates": [
-            _serialize_candidate(candidate) for candidate in result.candidates
+            _serialize_candidate(
+                candidate,
+                metadata=metadata.get(candidate.candidate_id),
+            )
+            for candidate in result.candidates
         ],
-        "best": _serialize_candidate(result.best) if result.best is not None else None,
-        "search_config": job.request.model_dump(mode="json"),
+        "best": (
+            _serialize_candidate(
+                result.best,
+                metadata=metadata.get(result.best.candidate_id),
+            )
+            if result.best is not None
+            else None
+        ),
+        "search_config": _serialize_search_config(job.request),
         "lake_paths": job.lake_paths,
     }
 
 
 def _serialize_db_candidate(candidate) -> dict[str, Any]:
-    return {
+    payload: dict[str, Any] = {
         "candidate_id": candidate.candidate_id,
         "strategy": candidate.strategy,
         "status": candidate.status,
@@ -668,6 +1049,17 @@ def _serialize_db_candidate(candidate) -> dict[str, Any]:
         "completed_windows": candidate.completed_windows,
         "error": None,
     }
+    if candidate.generation is not None:
+        payload["generation"] = candidate.generation
+    if candidate.genome is not None:
+        payload["genome"] = candidate.genome
+    if candidate.genome_node_count is not None:
+        payload["genome_node_count"] = candidate.genome_node_count
+    if candidate.dsr is not None:
+        payload["dsr"] = candidate.dsr
+    if candidate.complexity_penalty is not None:
+        payload["complexity_penalty"] = candidate.complexity_penalty
+    return payload
 
 
 def status_payload_from_db(run_id: str) -> dict[str, Any] | None:
@@ -820,6 +1212,9 @@ def delete_run_lake_artifacts(run_id: str) -> None:
 def candidate_exists_in_run(run_id: str, candidate_id: str) -> bool:
     job = get_job(run_id)
     if job is not None and job.result is not None:
+        metadata = job.result.candidate_metadata or {}
+        if candidate_id in metadata:
+            return True
         return any(
             candidate.candidate_id == candidate_id
             for candidate in job.result.candidates
@@ -839,3 +1234,32 @@ def candidate_exists_in_run(run_id: str, candidate_id: str) -> bool:
     if run is None:
         return False
     return any(candidate.candidate_id == candidate_id for candidate in run.candidates)
+
+
+def get_candidate_genome(run_id: str, candidate_id: str) -> dict[str, Any] | None:
+    job = get_job(run_id)
+    if job is not None and job.result is not None:
+        metadata = (job.result.candidate_metadata or {}).get(candidate_id)
+        if metadata and metadata.get("genome") is not None:
+            return metadata["genome"]
+
+    try:
+        run_uuid = _parse_run_uuid(run_id)
+    except ValueError:
+        return None
+
+    try:
+        with session_scope() as session:
+            candidate = get_strategy_search_candidate(
+                session, run_id=run_uuid, candidate_id=candidate_id
+            )
+    except Exception:
+        candidate = None
+
+    if candidate is not None and candidate.genome is not None:
+        return candidate.genome
+
+    try:
+        return read_strategy_search_candidate_genome(run_id, candidate_id)
+    except FileNotFoundError:
+        return None

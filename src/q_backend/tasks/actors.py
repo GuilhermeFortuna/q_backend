@@ -95,6 +95,21 @@ def evaluate_discovery_candidate(
     )
 
 
+@dramatiq.actor(**_ACTOR_OPTS)
+def evaluate_genetic_candidate(
+    run_id: str,
+    db_run_id_hex: str,
+    config_json: str,
+    generation: int,
+    candidate_index: int,
+) -> None:
+    from q_backend.api import strategy_search_jobs
+
+    strategy_search_jobs.run_genetic_candidate(
+        run_id, db_run_id_hex, config_json, generation, candidate_index
+    )
+
+
 # --- backtest ---------------------------------------------------------------------
 
 

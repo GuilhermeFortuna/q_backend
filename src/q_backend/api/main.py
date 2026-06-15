@@ -406,6 +406,8 @@ class StrategySearchStatusResponse(BaseModel):
     phase: Optional[Literal["optimizing", "testing", "done"]] = None
     window_index: Optional[int] = None
     total_windows: Optional[int] = None
+    generation: Optional[int] = None
+    total_generations: Optional[int] = None
     error: Optional[str] = None
     search_config: Optional[Dict[str, Any]] = None
     backtest_config: Optional[Dict[str, Any]] = None
@@ -427,6 +429,11 @@ class StrategySearchCandidateResponse(BaseModel):
     window_count: int = 0
     completed_windows: int = 0
     error: Optional[str] = None
+    generation: Optional[int] = None
+    genome: Optional[Dict[str, Any]] = None
+    genome_node_count: Optional[int] = None
+    dsr: Optional[float] = None
+    complexity_penalty: Optional[float] = None
 
 
 class StrategySearchResultsResponse(BaseModel):
@@ -462,6 +469,12 @@ class StrategySearchCandidateEquityArtifactResponse(BaseModel):
     run_id: str
     candidate_id: str
     points: List[EquityArtifactPoint]
+
+
+class StrategySearchCandidateGenomeResponse(BaseModel):
+    run_id: str
+    candidate_id: str
+    genome: Dict[str, Any]
 
 
 # Instantiate global service
@@ -1505,7 +1518,7 @@ def run_backtest(request: BacktestRequest):
         df = pd.DataFrame([b.model_dump() for b in ohlcv_data])
         df.set_index("time", inplace=True)
         # Ensure index is datetime
-        df.index = pd.to_datetime(df.index)
+        df.index = pd.to_datetime(df.index, format="ISO8601")
 
         # 2. Setup Strategy
         try:
@@ -2218,6 +2231,45 @@ def get_strategy_search_candidate_equity_artifact(run_id: str, candidate_id: str
         "run_id": run_id,
         "candidate_id": candidate_id,
         "points": _serialize_equity_artifact(df),
+    }
+
+
+@app.get(
+    "/api/v1/strategy-search/{run_id}/candidates/{candidate_id}/genome",
+    response_model=StrategySearchCandidateGenomeResponse,
+)
+def get_strategy_search_candidate_genome(run_id: str, candidate_id: str):
+    """Return the stored genome document for a genetic search candidate."""
+    try:
+        uuid.UUID(run_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=404, detail=f"Strategy search run '{run_id}' not found."
+        ) from exc
+
+    if not strategy_search_jobs.candidate_exists_in_run(run_id, candidate_id):
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Candidate '{candidate_id}' not found in strategy search run "
+                f"'{run_id}'."
+            ),
+        )
+
+    genome = strategy_search_jobs.get_candidate_genome(run_id, candidate_id)
+    if genome is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Genome not available for candidate '{candidate_id}' "
+                f"in strategy search run '{run_id}'."
+            ),
+        )
+
+    return {
+        "run_id": run_id,
+        "candidate_id": candidate_id,
+        "genome": genome,
     }
 
 
