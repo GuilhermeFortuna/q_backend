@@ -30,6 +30,7 @@ from q_backend.optimization.strategy_search import (
     CandidateProvider,
     CandidateResult,
     RegistryCandidateProvider,
+    SearchProgress,
     StrategySearchConfig,
     StrategySearchResult,
     _rank_results,
@@ -111,7 +112,9 @@ class StrategySearchJob:
     request: StrategySearchConfig
     db_run_id: Optional[uuid.UUID] = None
     status: JobStatus = "pending"
-    current_candidate: int = 0
+    # Float so genetic discovery can report fractional progress (completed walk-forward
+    # windows / windows-per-candidate); the registry path still sets whole candidates.
+    current_candidate: float = 0
     total_candidates: int = 0
     candidate_id: Optional[str] = None
     strategy: Optional[str] = None
@@ -677,6 +680,54 @@ def run_candidate(
 # live in Redis (``genetic_staging``) so any worker can resume the run.
 
 
+def _walkforward_window_count(request: StrategySearchConfig) -> int:
+    """Walk-forward windows each candidate evaluates (constant across candidates).
+
+    Used to convert the global completed-window counter into a fractional candidate
+    count so the progress bar moves on every window, not just on candidate completion.
+    """
+    wf_end, _, _ = compute_lockbox_bounds(
+        request.backtest.start, request.backtest.end, request.lockbox
+    )
+    return len(split_windows(request.backtest.start, wf_end, request.walkforward))
+
+
+def _persist_genetic_progress(
+    run_id: str,
+    db_run_id: Optional[uuid.UUID],
+    request: StrategySearchConfig,
+    *,
+    generation: int,
+    windows_per_candidate: int,
+    candidate_id: Optional[str] = None,
+) -> None:
+    """Mirror live genetic progress, driven by completed windows for smoothness.
+
+    ``current_candidate`` is fractional (completed_windows / windows_per_candidate);
+    the bar advances every window. ``phase`` is kept non-null so the UI treats this as
+    a live run (a null phase is the signal that only persisted/restart state remains).
+    """
+    genetic = request.genetic
+    assert genetic is not None
+    completed_windows = genetic_staging.get_completed_windows(run_id)
+    current = completed_windows / windows_per_candidate if windows_per_candidate else 0
+    _persist_progress(
+        _progress_job(
+            run_id,
+            db_run_id,
+            request,
+            status="running",
+            total_candidates=genetic.population_size * genetic.generations,
+            current_candidate=current,
+            candidate_id=candidate_id,
+            strategy="CompositeStrategy",
+            phase="optimizing",
+            generation=generation + 1,
+            total_generations=genetic.generations,
+        )
+    )
+
+
 def dispatch_genetic_discovery(
     run_id: str, db_run_id_hex: str, config_json: str
 ) -> None:
@@ -708,6 +759,8 @@ def _dispatch_generation(
     generation: int,
 ) -> None:
     """Stash the generation's population and fan each genome out to a worker."""
+    request = StrategySearchConfig.model_validate_json(config_json)
+    db_run_id = uuid.UUID(db_run_id_hex) if db_run_id_hex else None
     population = provider.population
     # The stashed state's population *is* this generation — candidate workers read
     # their genome from it by index, and the finalizer reloads it to breed the next.
@@ -716,6 +769,16 @@ def _dispatch_generation(
     # cleared between generations so a generation's barrier counts only its own work.
     clear_partials(run_id)
     init_counter(run_id, len(population))
+
+    # Surface the generation bar immediately — before any candidate finishes — so the
+    # UI shows "Generation N / G" and a non-zero baseline instead of sitting blank.
+    _persist_genetic_progress(
+        run_id,
+        db_run_id,
+        request,
+        generation=generation,
+        windows_per_candidate=_walkforward_window_count(request),
+    )
 
     from q_backend.tasks import actors
 
@@ -737,8 +800,7 @@ def run_genetic_candidate(
     db_run_id = uuid.UUID(db_run_id_hex) if db_run_id_hex else None
     genetic = request.genetic
     assert genetic is not None
-    population_size = genetic.population_size
-    total = population_size * genetic.generations
+    windows_per_candidate = _walkforward_window_count(request)
 
     candidate_id: Optional[str] = None
     if not is_cancelled(run_id):
@@ -747,11 +809,28 @@ def run_genetic_candidate(
         )
         candidate_id = genome.genome_id
         candidate = search_candidate_for_genome(genome, request)
+
+        def on_window(progress: SearchProgress) -> None:
+            # Each window notifies "optimizing" then "testing"; count once per window
+            # (on "testing", when its optimization is done) to advance the global bar.
+            if progress.phase != "testing":
+                return
+            genetic_staging.bump_completed_windows(run_id)
+            _persist_genetic_progress(
+                run_id,
+                db_run_id,
+                request,
+                generation=generation,
+                windows_per_candidate=windows_per_candidate,
+                candidate_id=candidate_id,
+            )
+
         try:
             result = evaluate_candidate(
                 candidate,
                 _config_for_walkforward(request),
                 _candidate_runner(request),
+                progress_callback=on_window,
                 should_stop=lambda: is_cancelled(run_id),
             )
         except Exception as exc:  # noqa: BLE001 - isolate a single candidate failure
@@ -778,21 +857,13 @@ def run_genetic_candidate(
         )
 
     remaining = decrement(run_id)
-    completed = generation * population_size + (population_size - max(remaining, 0))
-    _persist_progress(
-        _progress_job(
-            run_id,
-            db_run_id,
-            request,
-            status="running",
-            total_candidates=total,
-            current_candidate=completed,
-            candidate_id=candidate_id,
-            strategy="CompositeStrategy",
-            phase="testing",
-            generation=generation + 1,
-            total_generations=genetic.generations,
-        )
+    _persist_genetic_progress(
+        run_id,
+        db_run_id,
+        request,
+        generation=generation,
+        windows_per_candidate=windows_per_candidate,
+        candidate_id=candidate_id,
     )
     if remaining <= 0:
         finalize_generation(run_id, db_run_id_hex, config_json, generation)

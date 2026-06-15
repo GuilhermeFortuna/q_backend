@@ -43,6 +43,30 @@ def _meta_key(run_id: str) -> str:
     return f"job:genetic:meta:{run_id}"
 
 
+def _windows_key(run_id: str) -> str:
+    return f"job:genetic:windows:{run_id}"
+
+
+def bump_completed_windows(run_id: str, *, client: Optional[redis.Redis] = None) -> int:
+    """Atomically count one more completed walk-forward window; return the new total.
+
+    Drives a fine-grained progress bar: candidates run in parallel and each is a long
+    walk-forward, so candidate-completion counting leaves the UI at 0% through the
+    whole first wave. Counting windows lets the bar move continuously from the start.
+    """
+    client = client or get_redis()
+    key = _windows_key(run_id)
+    value = int(client.incr(key))
+    client.expire(key, _TTL_SECONDS)
+    return value
+
+
+def get_completed_windows(run_id: str, *, client: Optional[redis.Redis] = None) -> int:
+    client = client or get_redis()
+    raw = client.get(_windows_key(run_id))
+    return int(raw) if raw is not None else 0
+
+
 def set_provider_state(
     run_id: str, state: dict[str, Any], *, client: Optional[redis.Redis] = None
 ) -> None:
@@ -122,4 +146,9 @@ def get_all_candidate_meta(
 def clear_genetic_keys(run_id: str, *, client: Optional[redis.Redis] = None) -> None:
     """Remove all cross-generation genetic state once the run is terminal."""
     client = client or get_redis()
-    client.delete(_state_key(run_id), _results_key(run_id), _meta_key(run_id))
+    client.delete(
+        _state_key(run_id),
+        _results_key(run_id),
+        _meta_key(run_id),
+        _windows_key(run_id),
+    )
