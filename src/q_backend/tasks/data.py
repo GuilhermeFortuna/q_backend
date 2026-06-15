@@ -41,7 +41,7 @@ def load_ohlcv_frame(
         try:
             cached = pd.read_parquet(path)
             cached = cached.set_index("time")
-            cached.index = pd.to_datetime(cached.index)
+            cached.index = pd.to_datetime(cached.index, format="ISO8601")
             return cached
         except Exception:
             logger.warning("Corrupt OHLCV cache at %s; refetching", path, exc_info=True)
@@ -72,7 +72,7 @@ def prime_ohlcv_cache(
         try:
             cached = pd.read_parquet(path)
             cached = cached.set_index("time")
-            cached.index = pd.to_datetime(cached.index)
+            cached.index = pd.to_datetime(cached.index, format="ISO8601")
             return cached
         except Exception:
             logger.warning("Corrupt OHLCV cache at %s; refetching", path, exc_info=True)

@@ -83,7 +83,7 @@ class DefaultBacktestRunner:
 
         df = pd.DataFrame([bar.model_dump() for bar in ohlcv_data])
         df.set_index("time", inplace=True)
-        df.index = pd.to_datetime(df.index)
+        df.index = pd.to_datetime(df.index, format="ISO8601")
 
         def data_provider(_config: BacktestRunConfig) -> pd.DataFrame:
             return df
@@ -111,7 +111,7 @@ class DefaultBacktestRunner:
 
         df = pd.DataFrame([bar.model_dump() for bar in ohlcv_data])
         df.set_index("time", inplace=True)
-        df.index = pd.to_datetime(df.index)
+        df.index = pd.to_datetime(df.index, format="ISO8601")
         if df.index.tz is not None:
             df.index = pd.DatetimeIndex(
                 [_to_naive_local(ts.to_pydatetime()) for ts in df.index]
@@ -167,7 +167,7 @@ class DefaultBacktestRunner:
 
         df = pd.DataFrame([bar.model_dump() for bar in ohlcv_data])
         df.set_index("time", inplace=True)
-        df.index = pd.to_datetime(df.index)
+        df.index = pd.to_datetime(df.index, format="ISO8601")
         return df
 
     def run(self, config: BacktestRunConfig) -> BacktestRunResult:

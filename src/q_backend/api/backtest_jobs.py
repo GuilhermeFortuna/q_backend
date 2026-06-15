@@ -163,7 +163,7 @@ def _execute_candle(
 
     df = pd.DataFrame([bar.model_dump() for bar in ohlcv_data])
     df.set_index("time", inplace=True)
-    df.index = pd.to_datetime(df.index)
+    df.index = pd.to_datetime(df.index, format="ISO8601")
 
     strategy = build_strategy(request.strategy, request.strategy_params, request.symbol)
     chart_data = serialize_chart_data(strategy.compute_indicators(df.copy()), strategy)
