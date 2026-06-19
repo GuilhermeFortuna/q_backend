@@ -246,6 +246,23 @@ class CompositeStrategy(TradingStrategy):
             df[cols["ma_band_lower"]] = lower
         elif kind == "ind.tsmom":
             self._evaluate_tsmom(df, compiled, params)
+        elif kind == "ind.trend_blend":
+            source = self._binding_series(df, compiled, 0)
+            l1 = int(params["lookback_1"])
+            l2 = int(params["lookback_2"])
+            l3 = int(params["lookback_3"])
+            vol_w = int(params["vol_window"])
+
+            ret1 = source / source.shift(l1) - 1.0
+            ret2 = source / source.shift(l2) - 1.0
+            ret3 = source / source.shift(l3) - 1.0
+
+            sig1 = np.where(ret1.isna(), np.nan, np.sign(ret1))
+            sig2 = np.where(ret2.isna(), np.nan, np.sign(ret2))
+            sig3 = np.where(ret3.isna(), np.nan, np.sign(ret3))
+
+            df[cols["out"]] = (pd.Series(sig1, index=df.index) + sig2 + sig3) / 3.0
+            df[cols["volatility"]] = compute_realized_vol(source, vol_w)
         elif kind == "transform.shift":
             source = self._binding_series(df, compiled, 0)
             df[cols["out"]] = source.shift(int(params.get("bars", 1)))

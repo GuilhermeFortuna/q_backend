@@ -340,9 +340,8 @@ def crossover_genomes(
     return _validate_or_raise(child, max_nodes=max_nodes, max_depth=max_depth)
 
 
-def build_random_genome(
+def _build_random_crossover(
     rng: random.Random,
-    *,
     genome_id: str,
     generation: int,
     max_nodes: int,
@@ -401,9 +400,221 @@ def build_random_genome(
         entry_short=NodeRef(ref=sell_id),
         exit_long=NodeRef(ref=sell_id),
         exit_short=NodeRef(ref=buy_id),
-        metadata={"generation": generation, "origin": "random"},
+        metadata={"generation": generation, "origin": "random_crossover"},
     )
     return _validate_or_raise(genome, max_nodes=max_nodes, max_depth=max_depth)
+
+
+def _build_random_reversion(
+    rng: random.Random,
+    genome_id: str,
+    generation: int,
+    max_nodes: int,
+    max_depth: int,
+) -> Genome:
+    close_id = "n1"
+    osc_id = "n2"
+    buy_id = "n3"
+    sell_id = "n4"
+
+    osc_kind = "ind.rsi"
+    osc_spec = NODE_SPECS[osc_kind]
+    nodes = [
+        GenomeNode(id=close_id, kind=SOURCE_KIND, params={}, inputs=[]),
+        GenomeNode(
+            id=osc_id,
+            kind=osc_kind,
+            params={
+                key: _random_param_ref(rng, key) for key in sorted(osc_spec.allowed_param_keys)
+            },
+            inputs=[close_id],
+        ),
+        GenomeNode(
+            id=buy_id,
+            kind="cmp.cross_above",
+            params={"threshold": {"param": "oversold"}},
+            inputs=[osc_id],
+        ),
+        GenomeNode(
+            id=sell_id,
+            kind="cmp.cross_below",
+            params={"threshold": {"param": "overbought"}},
+            inputs=[osc_id],
+        ),
+    ]
+
+    genome = Genome(
+        version=1,
+        genome_id=genome_id,
+        nodes=nodes,
+        entry_long=NodeRef(ref=buy_id),
+        entry_short=NodeRef(ref=sell_id),
+        exit_long=NodeRef(ref=sell_id),
+        exit_short=NodeRef(ref=buy_id),
+        metadata={"generation": generation, "origin": "random_reversion"},
+    )
+    return _validate_or_raise(genome, max_nodes=max_nodes, max_depth=max_depth)
+
+
+def _build_random_breakout(
+    rng: random.Random,
+    genome_id: str,
+    generation: int,
+    max_nodes: int,
+    max_depth: int,
+) -> Genome:
+    close_id = "n1"
+    ind_id = "n2"
+    buy_id = "n3"
+    sell_id = "n4"
+
+    style = rng.choice(["donchian", "bollinger", "trb"])
+    nodes = [GenomeNode(id=close_id, kind=SOURCE_KIND, params={}, inputs=[])]
+
+    if style == "donchian":
+        spec = NODE_SPECS["ind.donchian"]
+        nodes.append(
+            GenomeNode(
+                id=ind_id,
+                kind="ind.donchian",
+                params={
+                    key: _random_param_ref(rng, key) for key in sorted(spec.allowed_param_keys)
+                },
+                inputs=[],
+            )
+        )
+        nodes.append(
+            GenomeNode(
+                id=buy_id,
+                kind="cmp.cross_above",
+                params={},
+                inputs=[close_id, f"{ind_id}:donchian_upper"],
+            )
+        )
+        nodes.append(
+            GenomeNode(
+                id=sell_id,
+                kind="cmp.cross_below",
+                params={},
+                inputs=[close_id, f"{ind_id}:donchian_lower"],
+            )
+        )
+        genome = Genome(
+            version=1,
+            genome_id=genome_id,
+            nodes=nodes,
+            entry_long=NodeRef(ref=buy_id),
+            entry_short=NodeRef(ref=sell_id),
+            exit_long=NodeRef(ref=sell_id),
+            exit_short=NodeRef(ref=buy_id),
+            metadata={"generation": generation, "origin": "random_donchian"},
+        )
+
+    elif style == "bollinger":
+        spec = NODE_SPECS["ind.bollinger"]
+        exit_id = "n5"
+        nodes.append(
+            GenomeNode(
+                id=ind_id,
+                kind="ind.bollinger",
+                params={
+                    key: _random_param_ref(rng, key) for key in sorted(spec.allowed_param_keys)
+                },
+                inputs=[close_id],
+            )
+        )
+        nodes.append(
+            GenomeNode(
+                id=buy_id,
+                kind="cmp.touch_below",
+                params={},
+                inputs=[close_id, f"{ind_id}:bb_lower"],
+            )
+        )
+        nodes.append(
+            GenomeNode(
+                id=sell_id,
+                kind="cmp.touch_above",
+                params={},
+                inputs=[close_id, f"{ind_id}:bb_upper"],
+            )
+        )
+        nodes.append(
+            GenomeNode(
+                id=exit_id,
+                kind="exit.middle_band",
+                params={},
+                inputs=[close_id, f"{ind_id}:bb_middle"],
+            )
+        )
+        genome = Genome(
+            version=1,
+            genome_id=genome_id,
+            nodes=nodes,
+            entry_long=NodeRef(ref=buy_id),
+            entry_short=NodeRef(ref=sell_id),
+            exit_long=NodeRef(ref=f"{exit_id}:exit_long"),
+            exit_short=NodeRef(ref=f"{exit_id}:exit_short"),
+            metadata={"generation": generation, "origin": "random_bollinger"},
+        )
+
+    else:  # trb
+        spec = NODE_SPECS["ind.trb_channel"]
+        nodes.append(
+            GenomeNode(
+                id=ind_id,
+                kind="ind.trb_channel",
+                params={
+                    key: _random_param_ref(rng, key) for key in sorted(spec.allowed_param_keys)
+                },
+                inputs=[close_id],
+            )
+        )
+        nodes.append(
+            GenomeNode(
+                id=buy_id,
+                kind="cmp.trb_breakout_above",
+                params={},
+                inputs=[close_id, f"{ind_id}:trb_upper", f"{ind_id}:channel_high"],
+            )
+        )
+        nodes.append(
+            GenomeNode(
+                id=sell_id,
+                kind="cmp.trb_breakout_below",
+                params={},
+                inputs=[close_id, f"{ind_id}:trb_lower", f"{ind_id}:channel_low"],
+            )
+        )
+        genome = Genome(
+            version=1,
+            genome_id=genome_id,
+            nodes=nodes,
+            entry_long=NodeRef(ref=buy_id),
+            entry_short=NodeRef(ref=sell_id),
+            exit_long=NodeRef(ref=sell_id),
+            exit_short=NodeRef(ref=buy_id),
+            metadata={"generation": generation, "origin": "random_trb"},
+        )
+
+    return _validate_or_raise(genome, max_nodes=max_nodes, max_depth=max_depth)
+
+
+def build_random_genome(
+    rng: random.Random,
+    *,
+    genome_id: str,
+    generation: int,
+    max_nodes: int,
+    max_depth: int,
+) -> Genome:
+    archetype = rng.choice(["crossover", "reversion", "breakout"])
+    if archetype == "crossover":
+        return _build_random_crossover(rng, genome_id, generation, max_nodes, max_depth)
+    elif archetype == "reversion":
+        return _build_random_reversion(rng, genome_id, generation, max_nodes, max_depth)
+    else:
+        return _build_random_breakout(rng, genome_id, generation, max_nodes, max_depth)
 
 
 def build_initial_population(

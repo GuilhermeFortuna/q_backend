@@ -209,7 +209,7 @@ def test_initial_population_is_valid_and_mixed():
         for genome in population
         if genome.metadata.get("equivalent_registry") or genome.genome_id.startswith("gen0-seed")
     )
-    random_like = sum(1 for genome in population if genome.metadata.get("origin") == "random")
+    random_like = sum(1 for genome in population if genome.metadata.get("origin", "").startswith("random"))
     assert seed_like >= 4
     assert random_like >= 4
     for genome in population:
@@ -442,6 +442,138 @@ def test_deterministic_population_after_reports():
             ]
             provider.report(results)
             history.append([g.genome_id for g in provider.population])
-        return history
-
     assert run_once() == run_once()
+
+
+def test_composite_strategy_param_merging():
+    from q_backend.backtesting.strategy_registry import merge_strategy_params
+    params = {"genome": {"nodes": []}, "custom_param": 42}
+    merged = merge_strategy_params("CompositeStrategy", params)
+    assert merged == params
+    assert merged is not params  # must be a copy
+
+
+def test_apply_gates_efficiency_handling():
+    from q_backend.optimization.strategy_search import _apply_gates, GateConfig
+
+    gates = GateConfig(
+        min_completed_windows=2,
+        min_oos_trades=5,
+        efficiency_low=0.3,
+        efficiency_high=1.5,
+    )
+
+    # 1. Both positive, normal efficiency -> should pass
+    flags, passed = _apply_gates(
+        completed_windows=2,
+        oos_metrics={"total_trades": 10},
+        efficiency=1.0,
+        gates=gates,
+        mean_is=100.0,
+        oos_objective=100.0,
+    )
+    assert passed
+    assert not flags
+
+    # 2. Both positive, high efficiency -> suspicious
+    flags, passed = _apply_gates(
+        completed_windows=2,
+        oos_metrics={"total_trades": 10},
+        efficiency=2.0,
+        gates=gates,
+        mean_is=100.0,
+        oos_objective=200.0,
+    )
+    assert not passed
+    assert "suspicious_efficiency" in flags
+
+    # 3. Both negative, OOS worse than IS -> should NOT be suspicious
+    flags, passed = _apply_gates(
+        completed_windows=2,
+        oos_metrics={"total_trades": 10},
+        efficiency=2.0,
+        gates=gates,
+        mean_is=-100.0,
+        oos_objective=-200.0,
+    )
+    assert passed
+    assert not flags
+
+    # 4. IS positive, OOS negative -> low efficiency (overfit)
+    flags, passed = _apply_gates(
+        completed_windows=2,
+        oos_metrics={"total_trades": 10},
+        efficiency=-0.5,
+        gates=gates,
+        mean_is=100.0,
+        oos_objective=-50.0,
+    )
+    assert not passed
+    assert "low_efficiency" in flags
+
+
+def test_random_genome_archetype_diversity():
+    import random
+    from q_backend.backtesting.genome.operators import build_random_genome
+    from q_backend.backtesting.genome.validate import validate_genome
+
+    rng = random.Random(42)
+    origins = set()
+    for i in range(100):
+        genome = build_random_genome(rng, genome_id=f"rand-{i}", generation=0, max_nodes=24, max_depth=12)
+        validate_genome(genome, max_depth=12, max_node_count=24)
+        origins.add(genome.metadata.get("origin"))
+
+    assert "random_crossover" in origins
+    assert "random_reversion" in origins
+    assert any(o in origins for o in ("random_donchian", "random_bollinger", "random_trb"))
+
+
+def test_trend_blend_compilation():
+    from q_backend.backtesting.genome.composite_strategy import CompositeStrategy
+    import pandas as pd
+
+    trend_blend_genome = {
+        "version": 1,
+        "genome_id": "test-trend-blend",
+        "nodes": [
+            {"id": "n1", "kind": "source.close", "params": {}, "inputs": []},
+            {
+                "id": "n2",
+                "kind": "ind.trend_blend",
+                "params": {
+                    "lookback_1": 5,
+                    "lookback_2": 10,
+                    "lookback_3": 20,
+                    "vol_window": 10,
+                },
+                "inputs": ["n1"],
+            },
+            {
+                "id": "n3",
+                "kind": "cmp.cross_above",
+                "params": {"threshold": 0.0},
+                "inputs": ["n2:out"],
+            },
+            {
+                "id": "n4",
+                "kind": "cmp.cross_below",
+                "params": {"threshold": 0.0},
+                "inputs": ["n2:out"],
+            },
+        ],
+        "entry_long": {"ref": "n3"},
+        "entry_short": {"ref": "n4"},
+        "exit_long": {"ref": "n4"},
+        "exit_short": {"ref": "n3"},
+    }
+
+    df = pd.DataFrame({"close": [100.0 + i * 0.5 for i in range(100)]})
+    strategy = CompositeStrategy(genome=trend_blend_genome, symbol="TEST")
+    res = strategy.compute_indicators(df)
+
+    assert "g_n2" in res.columns
+    assert "g_n2__volatility" in res.columns
+    assert "entry_long_signal" in res.columns
+
+

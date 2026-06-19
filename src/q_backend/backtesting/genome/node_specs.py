@@ -351,6 +351,15 @@ NODE_SPECS: dict[str, NodeSpec] = {
         {"out": "exit_policy"},
         frozenset(),
     ),
+    "ind.trend_blend": NodeSpec(
+        "ind.trend_blend",
+        1,
+        1,
+        ("price_series",),
+        ("out", "volatility"),
+        {"out": "oscillator", "volatility": "oscillator"},
+        frozenset({"lookback_1", "lookback_2", "lookback_3", "vol_window"}),
+    ),
 }
 
 ALLOWED_NODE_KINDS = frozenset(NODE_SPECS.keys())
