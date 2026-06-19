@@ -11,6 +11,8 @@ import pandas as pd
 
 from q_backend.backtesting.genome.activity import genome_signal_activity
 from q_backend.backtesting.genome.operators import (
+    DEFAULT_MUTATION_OPERATOR_WEIGHTS,
+    adapt_mutation_rate,
     build_initial_population,
     clone_genome,
     crossover_genomes,
@@ -18,6 +20,8 @@ from q_backend.backtesting.genome.operators import (
     genome_node_count,
     genome_param_count,
     mutate_genome,
+    population_structural_diversity,
+    update_mutation_operator_weights,
 )
 from q_backend.backtesting.genome.schema import Genome
 from q_backend.backtesting.genome.search_space import derive_genome_search_space
@@ -259,7 +263,27 @@ class GeneticCandidateProvider:
         self._champion: Genome | None = None
         self._champion_fitness = float("-inf")
         self._best_fitness = float("-inf")
+        self._stagnation_generations = 0
+        self._effective_mutation_rate = genetic_config.mutation_rate
+        self._mutation_operator_weights = dict(DEFAULT_MUTATION_OPERATOR_WEIGHTS)
+        self._parent_fitness_by_id: dict[str, float] = {}
         self.initial_population = [clone_genome(genome) for genome in self._population]
+
+    @property
+    def effective_mutation_rate(self) -> float:
+        return self._effective_mutation_rate
+
+    @property
+    def stagnation_generations(self) -> int:
+        return self._stagnation_generations
+
+    @property
+    def structural_diversity(self) -> float:
+        return population_structural_diversity(self._population)
+
+    @property
+    def mutation_operator_weights(self) -> dict[str, float]:
+        return dict(self._mutation_operator_weights)
 
     @property
     def generation(self) -> int:
@@ -289,6 +313,10 @@ class GeneticCandidateProvider:
             "generation": self._generation,
             "next_individual": self._next_individual,
             "best_fitness": self._best_fitness,
+            "stagnation_generations": self._stagnation_generations,
+            "effective_mutation_rate": self._effective_mutation_rate,
+            "mutation_operator_weights": self._mutation_operator_weights,
+            "parent_fitness_by_id": self._parent_fitness_by_id,
             "champion": self._champion.model_dump() if self._champion else None,
             "population": [genome.model_dump() for genome in self._population],
         }
@@ -300,6 +328,16 @@ class GeneticCandidateProvider:
         self._generation = state["generation"]
         self._next_individual = state["next_individual"]
         self._best_fitness = state["best_fitness"]
+        self._stagnation_generations = state.get("stagnation_generations", 0)
+        self._effective_mutation_rate = state.get(
+            "effective_mutation_rate",
+            self._genetic.mutation_rate,
+        )
+        self._mutation_operator_weights = state.get(
+            "mutation_operator_weights",
+            dict(DEFAULT_MUTATION_OPERATOR_WEIGHTS),
+        )
+        self._parent_fitness_by_id = state.get("parent_fitness_by_id", {})
         champion = state.get("champion")
         self._champion = Genome.model_validate(champion) if champion else None
         self._population = [Genome.model_validate(g) for g in state["population"]]
@@ -309,6 +347,7 @@ class GeneticCandidateProvider:
 
     def report(self, results: list[CandidateResult]) -> None:
         scored: list[tuple[float, Genome, CandidateResult]] = []
+        generation_best = self._best_fitness
         for result in results:
             genome = self._genome_by_id.get(result.candidate_id)
             if genome is None:
@@ -330,8 +369,45 @@ class GeneticCandidateProvider:
                 self._champion_fitness = fitness
                 self._champion = clone_genome(genome)
 
+            if self._genetic.adaptive_operator_weights:
+                mutation_op = genome.metadata.get("last_mutation_op")
+                parent_ids = genome.metadata.get("parent_ids") or []
+                if mutation_op and parent_ids:
+                    parent_fitnesses = [
+                        self._parent_fitness_by_id.get(parent_id)
+                        for parent_id in parent_ids
+                    ]
+                    parent_fitnesses = [
+                        value for value in parent_fitnesses if value is not None
+                    ]
+                    if parent_fitnesses:
+                        parent_best = max(parent_fitnesses)
+                        self._mutation_operator_weights = update_mutation_operator_weights(
+                            self._mutation_operator_weights,
+                            operator=str(mutation_op),
+                            fitness_delta=fitness - parent_best,
+                        )
+
+        if self._best_fitness > generation_best:
+            self._stagnation_generations = 0
+        else:
+            self._stagnation_generations += 1
+
+        structural_diversity = population_structural_diversity(self._population)
+        self._effective_mutation_rate = adapt_mutation_rate(
+            base_rate=self._genetic.mutation_rate,
+            min_rate=self._genetic.mutation_rate_min,
+            max_rate=self._genetic.mutation_rate_max,
+            stagnation_generations=self._stagnation_generations,
+            stagnation_patience=self._genetic.stagnation_patience,
+            structural_diversity=structural_diversity,
+        )
+
         scored.sort(key=lambda item: item[0], reverse=True)
         reproducers = [(fitness, genome) for fitness, genome, _result in scored]
+        self._parent_fitness_by_id = {
+            genome.genome_id: fitness for fitness, genome in reproducers
+        }
 
         next_population: list[Genome] = []
         elite_ids: set[str] = set()
@@ -393,7 +469,15 @@ class GeneticCandidateProvider:
                 )
             else:
                 child = clone_genome(parent_a)
-            if self._rng.random() < self._genetic.mutation_rate:
+            child_metadata = dict(child.metadata)
+            child_metadata.pop("last_mutation_op", None)
+            child.metadata = child_metadata
+            if self._rng.random() < self._effective_mutation_rate:
+                operator_weights = (
+                    self._mutation_operator_weights
+                    if self._genetic.adaptive_operator_weights
+                    else None
+                )
                 child = mutate_genome(
                     self._rng,
                     child,
@@ -402,6 +486,7 @@ class GeneticCandidateProvider:
                     probe_df=self._probe_df,
                     min_signals=self._genetic.min_seed_signals,
                     repair_max_attempts=self._genetic.repair_max_attempts,
+                    operator_weights=operator_weights,
                 )
             return clone_genome(
                 child,

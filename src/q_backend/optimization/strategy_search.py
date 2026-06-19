@@ -94,11 +94,17 @@ class GeneticSearchConfig(BaseModel):
     prescreen_min_signals: int = Field(default=1, ge=0)
     min_seed_signals: int = Field(default=1, ge=0)
     repair_max_attempts: int = Field(default=8, ge=1)
+    mutation_rate_min: float = Field(default=0.10, ge=0.0, le=1.0)
+    mutation_rate_max: float = Field(default=0.50, ge=0.0, le=1.0)
+    stagnation_patience: int = Field(default=2, ge=1)
+    adaptive_operator_weights: bool = True
 
     @model_validator(mode="after")
     def validate_elite_count(self) -> GeneticSearchConfig:
         if self.elite_count >= self.population_size:
             raise ValueError("elite_count must be less than population_size")
+        if self.mutation_rate_min > self.mutation_rate_max:
+            raise ValueError("mutation_rate_min must be <= mutation_rate_max")
         return self
 
 

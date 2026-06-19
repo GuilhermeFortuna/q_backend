@@ -15,6 +15,7 @@ from q_backend.backtesting.genome.activity import (
 from q_backend.backtesting.genome.node_specs import (
     NODE_SPECS,
     OutputType,
+    parse_input_ref,
     port_output_type,
 )
 from q_backend.backtesting.genome.param_bounds import GENOME_PARAM_BOUNDS
@@ -34,6 +35,18 @@ INDICATOR_KINDS = sorted(
 CMP_KINDS = sorted(kind for kind in NODE_SPECS if kind.startswith("cmp."))
 EXIT_BOOL_KINDS = ("exit.opposite_signal",)
 SOURCE_KIND = "source.close"
+
+MUTATION_OPERATORS = (
+    "rewire",
+    "swap_indicator",
+    "nudge_param",
+    "swap_exit",
+    "add_node",
+    "remove_node",
+)
+DEFAULT_MUTATION_OPERATOR_WEIGHTS: dict[str, float] = {
+    op: 1.0 for op in MUTATION_OPERATORS
+}
 
 
 def genome_node_count(genome: Genome) -> int:
@@ -73,6 +86,370 @@ def _primary_output_type(node: GenomeNode) -> OutputType:
         return "exit_policy"
     port = spec.output_ports[0]
     return spec.port_types[port]
+
+
+def genome_structural_fingerprint(genome: Genome) -> tuple[str, ...]:
+    """Sorted node-kind multiset used for cheap structural diversity."""
+    return tuple(sorted(node.kind for node in genome.nodes))
+
+
+def population_structural_diversity(population: list[Genome]) -> float:
+    """Share of unique structural fingerprints in the population (no backtests)."""
+    if not population:
+        return 1.0
+    fingerprints = {genome_structural_fingerprint(genome) for genome in population}
+    return len(fingerprints) / len(population)
+
+
+def adapt_mutation_rate(
+    *,
+    base_rate: float,
+    min_rate: float,
+    max_rate: float,
+    stagnation_generations: int,
+    stagnation_patience: int,
+    structural_diversity: float,
+) -> float:
+    """Raise mutation toward max when stagnating or structurally homogeneous."""
+    if min_rate >= max_rate:
+        return base_rate
+    if stagnation_generations == 0:
+        return base_rate
+
+    pressure = 0.0
+    if stagnation_generations >= stagnation_patience:
+        overshoot = stagnation_generations - stagnation_patience + 1
+        pressure += min(1.0, overshoot / max(stagnation_patience, 1))
+    if structural_diversity < 0.5:
+        pressure += 0.5 - structural_diversity
+    pressure = min(1.0, pressure)
+
+    adapted = base_rate + pressure * (max_rate - base_rate)
+    return min(max_rate, max(min_rate, adapted))
+
+
+def _weighted_choice(
+    rng: random.Random,
+    choices: tuple[str, ...],
+    weights: dict[str, float],
+) -> str:
+    total = sum(max(weights.get(choice, 1.0), 0.0) for choice in choices)
+    if total <= 0:
+        return rng.choice(choices)
+    pick = rng.uniform(0.0, total)
+    cumulative = 0.0
+    for choice in choices:
+        cumulative += max(weights.get(choice, 1.0), 0.0)
+        if pick <= cumulative:
+            return choice
+    return choices[-1]
+
+
+def update_mutation_operator_weights(
+    weights: dict[str, float],
+    *,
+    operator: str,
+    fitness_delta: float,
+    learning_rate: float = 0.15,
+    min_weight: float = 0.05,
+    max_weight: float = 5.0,
+) -> dict[str, float]:
+    """Nudge operator weights toward ops that recently improved fitness."""
+    updated = dict(weights)
+    if operator not in updated:
+        return updated
+    if fitness_delta > 0:
+        updated[operator] = min(max_weight, updated[operator] * (1.0 + learning_rate))
+    elif fitness_delta < 0:
+        updated[operator] = max(min_weight, updated[operator] * (1.0 - learning_rate * 0.5))
+    return updated
+
+
+def _cuttable_nodes(genome: Genome) -> list[GenomeNode]:
+    return [
+        node
+        for node in genome.nodes
+        if node.kind.startswith(("ind.", "cmp.", "logic."))
+    ]
+
+
+def _compatible_cut_nodes(cut_a: GenomeNode, cuts_b: list[GenomeNode]) -> list[GenomeNode]:
+    output_type = _primary_output_type(cut_a)
+    spec_a = NODE_SPECS[cut_a.kind]
+    return [
+        node
+        for node in cuts_b
+        if _primary_output_type(node) == output_type
+        and NODE_SPECS[node.kind].min_inputs == spec_a.min_inputs
+        and NODE_SPECS[node.kind].max_inputs == spec_a.max_inputs
+    ]
+
+
+def _subtree_node_ids(genome: Genome, root_id: str) -> set[str]:
+    nodes_by_id = {node.id: node for node in genome.nodes}
+    collected: set[str] = set()
+    stack = [root_id]
+    while stack:
+        node_id = stack.pop()
+        if node_id in collected or node_id not in nodes_by_id:
+            continue
+        collected.add(node_id)
+        for raw_input in nodes_by_id[node_id].inputs:
+            parent_id, _ = parse_input_ref(raw_input)
+            stack.append(parent_id)
+    return collected
+
+
+def _remap_input_ref(raw_input: str, id_map: dict[str, str]) -> str:
+    node_id, port = parse_input_ref(raw_input)
+    mapped_id = id_map.get(node_id, node_id)
+    if ":" in raw_input:
+        return f"{mapped_id}:{port}"
+    return mapped_id
+
+
+def _next_unique_node_id(existing_ids: set[str], start: int) -> tuple[str, int]:
+    candidate = start
+    while True:
+        node_id = f"n{candidate}"
+        if node_id not in existing_ids:
+            return node_id, candidate + 1
+        candidate += 1
+
+
+def _copy_subtree_with_new_ids(
+    genome: Genome,
+    subtree_ids: set[str],
+    *,
+    existing_ids: set[str],
+    start_counter: int,
+) -> tuple[list[GenomeNode], dict[str, str], int]:
+    nodes_by_id = {node.id: node for node in genome.nodes}
+    id_map: dict[str, str] = {}
+    counter = start_counter
+    for node_id in sorted(subtree_ids):
+        new_id, counter = _next_unique_node_id(existing_ids | set(id_map.values()), counter)
+        id_map[node_id] = new_id
+
+    copied: list[GenomeNode] = []
+    for node_id in sorted(subtree_ids):
+        source = nodes_by_id[node_id]
+        copied.append(
+            GenomeNode(
+                id=id_map[node_id],
+                kind=source.kind,
+                params=copy.deepcopy(source.params),
+                inputs=[_remap_input_ref(raw_input, id_map) for raw_input in source.inputs],
+            )
+        )
+    return copied, id_map, counter
+
+
+
+def _reachable_node_ids(genome: Genome) -> set[str]:
+    nodes_by_id = {node.id: node for node in genome.nodes}
+    seeds: list[str] = []
+    for ref in (
+        genome.entry_long.ref,
+        genome.entry_short.ref,
+        genome.exit_long.ref,
+        genome.exit_short.ref,
+    ):
+        node_id, _ = parse_input_ref(ref)
+        seeds.append(node_id)
+
+    reachable: set[str] = set()
+    stack = list(seeds)
+    while stack:
+        node_id = stack.pop()
+        if node_id in reachable or node_id not in nodes_by_id:
+            continue
+        reachable.add(node_id)
+        for raw_input in nodes_by_id[node_id].inputs:
+            parent_id, _ = parse_input_ref(raw_input)
+            stack.append(parent_id)
+    return reachable
+
+
+def _prune_unreachable_nodes(genome: Genome) -> Genome:
+    reachable = _reachable_node_ids(genome)
+    child = clone_genome(genome)
+    child.nodes = [node for node in child.nodes if node.id in reachable]
+    return child
+
+
+def _rewire_consumers(
+    genome: Genome,
+    *,
+    old_root_id: str,
+    new_root_id: str,
+) -> None:
+    for node in genome.nodes:
+        rewired_inputs: list[str] = []
+        for raw_input in node.inputs:
+            parent_id, port = parse_input_ref(raw_input)
+            if parent_id == old_root_id:
+                rewired_inputs.append(
+                    f"{new_root_id}:{port}" if ":" in raw_input else new_root_id
+                )
+            else:
+                rewired_inputs.append(raw_input)
+        node.inputs = rewired_inputs
+    for attr in ("entry_long", "entry_short", "exit_long", "exit_short"):
+        ref = getattr(genome, attr)
+        node_id, port = parse_input_ref(ref.ref)
+        if node_id == old_root_id:
+            mapped = f"{new_root_id}:{port}" if ":" in ref.ref else new_root_id
+            setattr(genome, attr, NodeRef(ref=mapped))
+
+
+def _max_numeric_node_suffix(node_ids: set[str]) -> int:
+    suffixes = [
+        int(node_id[1:])
+        for node_id in node_ids
+        if node_id.startswith("n") and node_id[1:].isdigit()
+    ]
+    return max(suffixes, default=0)
+
+
+def _prune_subtree_leaves(
+    subtree_ids: set[str],
+    genome: Genome,
+    *,
+    keep_root: str,
+) -> set[str]:
+    nodes_by_id = {node.id: node for node in genome.nodes}
+    dependents: dict[str, int] = {node_id: 0 for node_id in subtree_ids}
+    for node_id in subtree_ids:
+        for raw_input in nodes_by_id[node_id].inputs:
+            parent_id, _ = parse_input_ref(raw_input)
+            if parent_id in subtree_ids:
+                dependents[parent_id] = dependents.get(parent_id, 0) + 1
+
+    leaves = [
+        node_id
+        for node_id in subtree_ids
+        if node_id != keep_root and dependents.get(node_id, 0) == 0
+    ]
+    if not leaves:
+        return subtree_ids
+    pruned = set(subtree_ids)
+    pruned.remove(leaves[0])
+    return pruned
+
+
+def _single_node_crossover(
+    child: Genome,
+    cut_a: GenomeNode,
+    cut_b: GenomeNode,
+    *,
+    max_nodes: int,
+    max_depth: int,
+) -> Genome:
+    cut_a.kind = cut_b.kind
+    cut_a.params = copy.deepcopy(cut_b.params)
+    return _validate_or_raise(child, max_nodes=max_nodes, max_depth=max_depth)
+
+
+def _subtree_crossover(
+    rng: random.Random,
+    parent_a: Genome,
+    parent_b: Genome,
+    cut_a: GenomeNode,
+    cut_b: GenomeNode,
+    *,
+    max_nodes: int,
+    max_depth: int,
+) -> Genome:
+    child = clone_genome(parent_a)
+    nodes_by_id = {node.id: node for node in child.nodes}
+    if cut_a.id not in nodes_by_id:
+        return child
+
+    subtree_b_ids = _subtree_node_ids(parent_b, cut_b.id)
+    if len(subtree_b_ids) <= 1:
+        raise GenomeValidationError("subtree too small for crossover")
+
+    pruned_ids = set(subtree_b_ids)
+    while True:
+        existing_ids = {node.id for node in child.nodes if node.id != cut_a.id}
+        imported, id_map, _counter = _copy_subtree_with_new_ids(
+            parent_b,
+            pruned_ids,
+            existing_ids=existing_ids,
+            start_counter=_max_numeric_node_suffix(existing_ids) + 1,
+        )
+        new_root_id = id_map[cut_b.id]
+
+        child.nodes = [node for node in child.nodes if node.id != cut_a.id]
+        child.nodes.extend(imported)
+        _rewire_consumers(child, old_root_id=cut_a.id, new_root_id=new_root_id)
+        child = _prune_unreachable_nodes(child)
+
+        try:
+            return _validate_or_raise(child, max_nodes=max_nodes, max_depth=max_depth)
+        except GenomeValidationError:
+            if len(pruned_ids) <= 1:
+                raise
+            next_pruned = _prune_subtree_leaves(
+                pruned_ids,
+                parent_b,
+                keep_root=cut_b.id,
+            )
+            if next_pruned == pruned_ids:
+                raise
+            pruned_ids = next_pruned
+            child = clone_genome(parent_a)
+
+
+def _crossover_attempt(
+    rng: random.Random,
+    parent_a: Genome,
+    parent_b: Genome,
+    *,
+    max_nodes: int,
+    max_depth: int,
+    prefer_subtree: bool,
+) -> Genome:
+    child = clone_genome(parent_a)
+    cuts_a = _cuttable_nodes(child)
+    cuts_b = _cuttable_nodes(parent_b)
+    if not cuts_a or not cuts_b:
+        return child
+
+    cut_a = rng.choice(cuts_a)
+    compatible_b = _compatible_cut_nodes(cut_a, cuts_b)
+    if not compatible_b:
+        return child
+
+    multi_node = [
+        node
+        for node in compatible_b
+        if len(_subtree_node_ids(parent_b, node.id)) > 1
+    ]
+    if prefer_subtree and multi_node:
+        cut_b = rng.choice(multi_node)
+        try:
+            return _subtree_crossover(
+                rng,
+                parent_a,
+                parent_b,
+                cut_a,
+                cut_b,
+                max_nodes=max_nodes,
+                max_depth=max_depth,
+            )
+        except GenomeValidationError:
+            pass
+
+    cut_b = rng.choice(compatible_b)
+    return _single_node_crossover(
+        child,
+        cut_a,
+        cut_b,
+        max_nodes=max_nodes,
+        max_depth=max_depth,
+    )
 
 
 def _validate_or_raise(
@@ -135,16 +512,16 @@ def mutate_genome(
     probe_df: pd.DataFrame | None = None,
     min_signals: int = 0,
     repair_max_attempts: int = 8,
+    operator_weights: dict[str, float] | None = None,
 ) -> Genome:
-    op = rng.choice(
-        ["rewire", "swap_indicator", "nudge_param", "swap_exit", "add_node", "remove_node"]
-    )
+    weights = operator_weights or DEFAULT_MUTATION_OPERATOR_WEIGHTS
+    op = _weighted_choice(rng, MUTATION_OPERATORS, weights)
     if op == "rewire":
-        return _mutate_rewire(rng, genome, max_nodes=max_nodes, max_depth=max_depth)
-    if op == "swap_indicator":
-        return _mutate_swap_indicator(rng, genome, max_nodes=max_nodes, max_depth=max_depth)
-    if op == "nudge_param":
-        return _mutate_nudge_param(
+        mutated = _mutate_rewire(rng, genome, max_nodes=max_nodes, max_depth=max_depth)
+    elif op == "swap_indicator":
+        mutated = _mutate_swap_indicator(rng, genome, max_nodes=max_nodes, max_depth=max_depth)
+    elif op == "nudge_param":
+        mutated = _mutate_nudge_param(
             rng,
             genome,
             max_nodes=max_nodes,
@@ -153,11 +530,17 @@ def mutate_genome(
             min_signals=min_signals,
             repair_max_attempts=repair_max_attempts,
         )
-    if op == "swap_exit":
-        return _mutate_swap_exit(rng, genome, max_nodes=max_nodes, max_depth=max_depth)
-    if op == "add_node":
-        return _mutate_add_node(rng, genome, max_nodes=max_nodes, max_depth=max_depth)
-    return _mutate_remove_node(rng, genome, max_nodes=max_nodes, max_depth=max_depth)
+    elif op == "swap_exit":
+        mutated = _mutate_swap_exit(rng, genome, max_nodes=max_nodes, max_depth=max_depth)
+    elif op == "add_node":
+        mutated = _mutate_add_node(rng, genome, max_nodes=max_nodes, max_depth=max_depth)
+    else:
+        mutated = _mutate_remove_node(rng, genome, max_nodes=max_nodes, max_depth=max_depth)
+
+    metadata = dict(mutated.metadata)
+    metadata["last_mutation_op"] = op
+    mutated.metadata = metadata
+    return mutated
 
 
 def _mutate_rewire(
@@ -365,28 +748,14 @@ def crossover_genomes(
     max_nodes: int,
     max_depth: int,
 ) -> Genome:
-    child = clone_genome(parent_a)
-    cuts_a = [node for node in child.nodes if node.kind.startswith(("ind.", "cmp.", "logic."))]
-    cuts_b = [node for node in parent_b.nodes if node.kind.startswith(("ind.", "cmp.", "logic."))]
-    if not cuts_a or not cuts_b:
-        return child
-
-    cut_a = rng.choice(cuts_a)
-    output_type = _primary_output_type(cut_a)
-    compatible_b = [
-        node
-        for node in cuts_b
-        if _primary_output_type(node) == output_type
-        and NODE_SPECS[node.kind].min_inputs == NODE_SPECS[cut_a.kind].min_inputs
-        and NODE_SPECS[node.kind].max_inputs == NODE_SPECS[cut_a.kind].max_inputs
-    ]
-    if not compatible_b:
-        return child
-    cut_b = rng.choice(compatible_b)
-
-    cut_a.kind = cut_b.kind
-    cut_a.params = copy.deepcopy(cut_b.params)
-    return _validate_or_raise(child, max_nodes=max_nodes, max_depth=max_depth)
+    return _crossover_attempt(
+        rng,
+        parent_a,
+        parent_b,
+        max_nodes=max_nodes,
+        max_depth=max_depth,
+        prefer_subtree=True,
+    )
 
 
 def _build_random_crossover(
