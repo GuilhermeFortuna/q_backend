@@ -118,3 +118,13 @@ def run_backtest(run_id: str, request_json: str) -> None:
     from q_backend.api import backtest_jobs
 
     backtest_jobs.run_backtest_job(run_id, request_json)
+
+
+# --- storage ingest (WO48) ------------------------------------------------------
+
+
+@dramatiq.actor(**_ACTOR_OPTS)
+def run_storage_ingest(job_id: str, request_json: str) -> None:
+    from q_backend.api import storage_jobs
+
+    storage_jobs.run_ingest_job(job_id, request_json)

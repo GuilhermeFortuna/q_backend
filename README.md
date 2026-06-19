@@ -56,6 +56,7 @@ Heavy jobs — backtests (via `POST /api/v1/backtest`), Optuna studies, walk-for
 * **Multi-Format Datatypes:** Optimized data schemas for Tick-by-Tick transactions and standardized OHLCV candle streams (from 1-minute `M1` to Monthly `MN1` intervals).
 * **Columnar tick loader:** `MetaTraderClient.get_ticks_columnar` / `MarketDataService.get_ticks_columnar` fetch historical ticks as aligned NumPy arrays (no per-row Pydantic objects) for the tick backtest engine. Results are cached on disk as Parquet (see below).
 * **Tick cache:** Parquet files under `data/tick_cache/` by default (`Q_TICK_CACHE_DIR` overrides). Key = `{symbol_slug}_{sha256(symbol|start|end|flags)[:12]}`. Delete files in that directory to force a refetch from MT5.
+* **Local market store (WO48):** Portable OHLCV parquet under `data/market/` by default (`Q_MARKET_DATA_ROOT` / `Settings.market_data_root`). Layout: `ohlcv/{symbol_slug}/{timeframe}/{YYYY}.parquet` plus `catalog.json`. Copy the folder or repoint the root to move data between machines (e.g. Windows ingest → Linux backtest). **Storage API:** `GET /api/v1/storage/inventory`, `POST /api/v1/storage/ingest` (MT5 → local, Windows-only source), `GET /api/v1/storage/ingest/{job_id}`, `DELETE /api/v1/storage/{symbol}/{timeframe}`.
 * **Robust Resiliency:** Smart automatic reconnection and local environment configuration mapping.
 
 ### 2. High-Performance Backtesting Engine (`backtesting`)

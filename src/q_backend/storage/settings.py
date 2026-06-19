@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://q:q@localhost:5432/q"
     redis_url: str = "redis://localhost:6380/0"
     data_lake_root: str = "data/lake"
+    market_data_root: str = "data/market"
     port: int = 8000
     # Number of OS processes the Dramatiq worker pool runs. This is the single
     # backend-wide CPU budget shared by every heavy job (backtests, optimization

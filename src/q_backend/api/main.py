@@ -42,10 +42,13 @@ from q_backend.storage.runtime_config import get_data_source, set_data_source
 from q_backend.optimization import OptimizationConfig
 from q_backend.optimization.metrics import build_equity_curve
 from q_backend.api import backtest_jobs
+from q_backend.api import storage_jobs
 from q_backend.api import optimization_jobs
 from q_backend.api import strategy_search_jobs
 from q_backend.api import walkforward_jobs
+from q_backend.api.storage_jobs import IngestJobRequest
 from q_backend.api.backtest_jobs import BacktestJobRequest
+from q_backend.market_data import local_store
 from q_backend.api.walkforward_jobs import WalkForwardRequest
 from q_backend.optimization.strategy_search import StrategySearchConfig
 from q_backend.storage.lake import (
@@ -104,6 +107,8 @@ class SystemHealthResponse(BaseModel):
     storageStatus: StorageStatusResponse
     mt5_available: bool
     active_provider: Literal["mt5", "local"]
+    market_data_root: str
+    market_data_inventory_count: int
 
 
 class DataSourceResponse(BaseModel):
@@ -114,6 +119,42 @@ class DataSourceResponse(BaseModel):
 
 class DataSourceUpdateRequest(BaseModel):
     source: Literal["auto", "mt5", "local"]
+
+
+class StorageInventoryItem(BaseModel):
+    symbol: str
+    timeframe: str
+    start: str
+    end: str
+    rows: int
+    bytes: int
+    updated_at: str
+
+
+class StorageInventoryResponse(BaseModel):
+    root: str
+    items: List[StorageInventoryItem]
+
+
+class StorageIngestStartResponse(BaseModel):
+    job_id: str
+    status: Literal["queued"]
+
+
+class StorageIngestStatusResponse(BaseModel):
+    job_id: str
+    status: Literal["queued", "running", "completed", "failed"]
+    progress: float
+    detail: str
+    results: Optional[List[Dict[str, Any]]] = None
+    error: Optional[str] = None
+
+
+class StorageDeleteResponse(BaseModel):
+    deleted: bool
+    symbol: str
+    timeframe: str
+
 
 class InstrumentResponse(BaseModel):
     symbol: str
@@ -949,12 +990,68 @@ def get_system_health():
         "storageStatus": storage_status(),
         "mt5_available": mt5_up,
         "active_provider": market_data_service.active_provider(),
+        "market_data_root": str(local_store.market_data_root()),
+        "market_data_inventory_count": local_store.inventory_count(),
     }
 
 
 @app.get("/api/v1/system/data-source", response_model=DataSourceResponse)
 def get_data_source_setting():
     return _data_source_payload()
+
+
+@app.get("/api/v1/storage/inventory", response_model=StorageInventoryResponse)
+def get_storage_inventory():
+    return {
+        "root": str(local_store.market_data_root()),
+        "items": local_store.list_inventory(),
+    }
+
+
+@app.post("/api/v1/storage/ingest", response_model=StorageIngestStartResponse)
+def start_storage_ingest(request: IngestJobRequest):
+    if not market_data_service.mt5_available():
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Ingestion requires MetaTrader 5 as the source. "
+                "MT5 is not available on this machine."
+            ),
+        )
+    try:
+        storage_jobs.validate_timeframes(request.timeframes)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    job_id = storage_jobs.start_job(request)
+    return {"job_id": job_id, "status": "queued"}
+
+
+@app.get(
+    "/api/v1/storage/ingest/{job_id}",
+    response_model=StorageIngestStatusResponse,
+)
+def get_storage_ingest_status(job_id: str):
+    payload = storage_jobs.get_status_payload(job_id)
+    if payload is None:
+        raise HTTPException(
+            status_code=404, detail=f"Storage ingest job '{job_id}' not found."
+        )
+    return payload
+
+
+@app.delete(
+    "/api/v1/storage/{symbol}/{timeframe}",
+    response_model=StorageDeleteResponse,
+)
+def delete_storage_series(symbol: str, timeframe: str):
+    local_store.delete_ohlcv(symbol.upper(), timeframe.upper())
+    return {
+        "deleted": True,
+        "symbol": symbol.upper(),
+        "timeframe": timeframe.upper(),
+    }
+
 
 @app.put("/api/v1/system/data-source", response_model=DataSourceResponse)
 def update_data_source_setting(body: DataSourceUpdateRequest):
