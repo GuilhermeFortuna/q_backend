@@ -8,6 +8,7 @@ from q_backend.market_data import local_store
 from q_backend.market_data.clients.metatrader import (
     OhlcvAvailableRange,
     _empty_ticks_columnar,
+    _time_msc_to_naive_local,
 )
 from q_backend.market_data.models import OHLCV, Tick
 
@@ -37,7 +38,23 @@ class LocalParquetClient:
         return local_store.available_range(symbol, timeframe)
 
     def get_ticks(self, symbol: str, start: datetime, end: datetime) -> list[Tick]:
-        return []
+        arrays = local_store.read_ticks_columnar(symbol, start, end)
+        if len(arrays["time_msc"]) == 0:
+            return []
+        ticks: list[Tick] = []
+        for i in range(len(arrays["time_msc"])):
+            ticks.append(
+                Tick(
+                    time=_time_msc_to_naive_local(int(arrays["time_msc"][i])),
+                    bid=float(arrays["bid"][i]),
+                    ask=float(arrays["ask"][i]),
+                    last=float(arrays["last"][i]),
+                    volume=float(arrays["volume"][i]),
+                    flags=int(arrays["flags"][i]),
+                    time_msc=int(arrays["time_msc"][i]),
+                )
+            )
+        return ticks
 
     def get_ticks_columnar(
         self,
@@ -47,10 +64,23 @@ class LocalParquetClient:
         flags: int | None = None,
         use_cache: bool = True,
     ) -> dict[str, np.ndarray]:
-        return _empty_ticks_columnar()
+        if flags is not None:
+            logger.debug(
+                "LocalParquetClient serves all stored ticks for %s "
+                "(requested flags=%s ignored in local mode)",
+                symbol,
+                flags,
+            )
+        return local_store.read_ticks_columnar(symbol, start, end)
 
     def get_recent_ticks(self, symbol: str, limit: int = 200) -> list[Tick]:
-        return []
+        entry = local_store.tick_available_range(symbol)
+        if entry is None:
+            return []
+        start = datetime.fromisoformat(entry["start"])
+        end = datetime.fromisoformat(entry["end"])
+        ticks = self.get_ticks(symbol, start, end)
+        return ticks[-limit:]
 
     def search_symbols(self, query: str) -> list[dict[str, Any]]:
         needle = query.strip().upper()

@@ -177,3 +177,77 @@ def test_ingest_job_isolates_timeframe_failures(market_root, monkeypatch):
     by_tf = {row["timeframe"]: row for row in status["results"]}
     assert by_tf["D1"]["status"] == "completed"
     assert by_tf["H1"]["status"] == "failed"
+
+
+def _synthetic_ticks(n: int = 50) -> dict:
+    import numpy as np
+
+    from q_backend.market_data.clients.metatrader import _naive_local_to_time_msc
+
+    base = datetime(2024, 3, 1, 10, 0, 0)
+    time_msc = np.array(
+        [_naive_local_to_time_msc(base.replace(second=i % 60)) for i in range(n)],
+        dtype=np.int64,
+    )
+    prices = 40.0 + np.arange(n, dtype=np.float64) * 0.01
+    return {
+        "time_msc": time_msc,
+        "bid": prices - 0.01,
+        "ask": prices + 0.01,
+        "last": prices,
+        "volume": np.ones(n, dtype=np.float64),
+        "flags": np.zeros(n, dtype=np.int32),
+    }
+
+
+def test_tick_ingest_job_completes_with_faked_mt5(market_root, monkeypatch):
+    pytest.importorskip("fakeredis")
+    import fakeredis
+
+    fake = fakeredis.FakeRedis(decode_responses=True)
+    monkeypatch.setattr(storage_jobs, "get_redis", lambda: fake)
+
+    class _SyncActor:
+        def send(self, job_id, request_json):
+            storage_jobs.run_ingest_job(job_id, request_json)
+
+    monkeypatch.setattr(
+        "q_backend.tasks.actors.run_storage_ingest", _SyncActor(), raising=False
+    )
+    monkeypatch.setattr(
+        "q_backend.tasks.worker_context.get_worker_market_data_service",
+        lambda: market_data_service,
+    )
+
+    call_months: list[str] = []
+
+    def _fake_ticks(symbol, start, end, flags=None, use_cache=True):
+        call_months.append(f"{start.year}-{start.month:02d}")
+        return _synthetic_ticks()
+
+    with patch.object(market_data_service, "mt5_available", return_value=True):
+        with patch.object(
+            market_data_service.mt5_client,
+            "get_ticks_columnar",
+            side_effect=_fake_ticks,
+        ):
+            job_id = start_storage_ingest(
+                IngestJobRequest(
+                    symbol="PETR4",
+                    start=datetime(2024, 3, 1),
+                    end=datetime(2024, 4, 15),
+                    kind="ticks",
+                )
+            )["job_id"]
+
+    status = get_storage_ingest_status(job_id)
+    assert status["status"] == "completed"
+    assert len(status["results"]) == 2
+    assert all(row["status"] == "completed" for row in status["results"])
+    assert call_months == ["2024-03", "2024-04"]
+
+    inventory = get_storage_inventory()["items"]
+    tick_rows = [row for row in inventory if row.get("kind") == "ticks"]
+    assert len(tick_rows) == 1
+    assert tick_rows[0]["symbol"] == "PETR4"
+    assert (market_root / "ticks" / "PETR4").is_dir()

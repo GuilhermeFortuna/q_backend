@@ -1,4 +1,4 @@
-"""LocalParquetClient reads from the local store (WO48)."""
+"""LocalParquetClient reads from the local store (WO48 / WO50)."""
 
 from __future__ import annotations
 
@@ -78,3 +78,29 @@ def test_local_search_and_symbol_info(market_root):
     info = client.get_symbol_info("PETR4")
     assert info is not None
     assert info["name"] == "PETR4"
+
+
+def test_local_get_ticks_columnar_matches_written_arrays(market_root):
+    time_msc = np.array(
+        [_naive_local_to_time_msc(datetime(2024, 6, 1, 10, 0, i)) for i in range(3)],
+        dtype=np.int64,
+    )
+    prices = np.array([10.0, 10.1, 10.2], dtype=np.float64)
+    arrays = {
+        "time_msc": time_msc,
+        "bid": prices - 0.01,
+        "ask": prices + 0.01,
+        "last": prices,
+        "volume": np.ones(3, dtype=np.float64),
+        "flags": np.zeros(3, dtype=np.int32),
+    }
+    local_store.write_ticks("PETR4", arrays)
+
+    client = LocalParquetClient()
+    result = client.get_ticks_columnar(
+        "PETR4", datetime(2024, 6, 1, 10, 0, 0), datetime(2024, 6, 1, 10, 0, 2)
+    )
+
+    assert len(result["time_msc"]) == 3
+    np.testing.assert_array_equal(result["time_msc"], arrays["time_msc"])
+    np.testing.assert_array_almost_equal(result["bid"], arrays["bid"])

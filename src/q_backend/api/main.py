@@ -641,6 +641,15 @@ def _run_tick_backtest(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     if len(arrays["time_msc"]) == 0:
+        if market_data_service.active_provider() == "local":
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    "No local tick data for the given parameters. "
+                    "Ingest ticks via Storage API "
+                    "(POST /api/v1/storage/ingest with kind=\"ticks\")."
+                ),
+            )
         raise HTTPException(
             status_code=404,
             detail="No tick data found for the given parameters.",
@@ -1019,7 +1028,8 @@ def start_storage_ingest(request: IngestJobRequest):
             ),
         )
     try:
-        storage_jobs.validate_timeframes(request.timeframes)
+        if request.kind == "bars":
+            storage_jobs.validate_timeframes(request.timeframes)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

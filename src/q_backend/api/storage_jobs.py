@@ -1,4 +1,4 @@
-"""Background jobs for MT5 → local OHLCV parquet ingestion (WO48)."""
+"""Background jobs for MT5 → local parquet ingestion (WO48 / WO50)."""
 
 from __future__ import annotations
 
@@ -24,9 +24,11 @@ class IngestJobRequest(BaseModel):
     timeframes: list[str] = Field(default_factory=list)
     start: datetime
     end: datetime
+    kind: Literal["bars", "ticks"] = "bars"
+
     @model_validator(mode="after")
-    def validate_request(self) -> "IngestJobRequest":
-        if len(self.timeframes) < 1:
+    def validate_timeframes_for_kind(self) -> "IngestJobRequest":
+        if self.kind == "bars" and len(self.timeframes) < 1:
             raise ValueError("At least one timeframe is required for bar ingestion.")
         return self
 
@@ -179,6 +181,76 @@ def _run_bars_ingest(
     return results, detail, status, terminal_error
 
 
+def _run_ticks_ingest(
+    job_id: str,
+    symbol: str,
+    start: datetime,
+    end: datetime,
+    service: Any,
+) -> tuple[list[dict[str, Any]], str, str, Optional[str]]:
+    results: list[dict[str, Any]] = []
+    month_chunks = _iter_month_chunks(start, end)
+    total = len(month_chunks)
+    if total == 0:
+        raise ValueError("Tick ingest range must span at least one calendar month.")
+
+    for index, (chunk_start, chunk_end, month_label) in enumerate(month_chunks):
+        detail = f"Ingesting {symbol} ticks {month_label} ({index + 1}/{total})"
+        _persist_progress(
+            job_id,
+            {
+                "job_id": job_id,
+                "status": "running",
+                "progress": index / total,
+                "detail": detail,
+                "results": results,
+                "error": None,
+            },
+        )
+        try:
+            arrays = service.mt5_client.get_ticks_columnar(
+                symbol, chunk_start, chunk_end, use_cache=False
+            )
+            if len(arrays.get("time_msc", [])) == 0:
+                raise ValueError(
+                    f"No ticks returned from MT5 for {symbol} in {month_label}."
+                )
+            catalog_entry = local_store.write_ticks(symbol, arrays)
+            results.append(
+                IngestTimeframeResult(
+                    timeframe=month_label,
+                    rows=len(arrays["time_msc"]),
+                    start=catalog_entry.get("start"),
+                    end=catalog_entry.get("end"),
+                    status="completed",
+                ).model_dump()
+            )
+        except Exception as exc:  # noqa: BLE001 — isolate per month
+            logger.warning(
+                "Tick ingest failed for %s/%s: %s", symbol, month_label, exc
+            )
+            results.append(
+                IngestTimeframeResult(
+                    timeframe=month_label,
+                    status="failed",
+                    error=str(exc),
+                ).model_dump()
+            )
+
+    completed = sum(1 for row in results if row.get("status") == "completed")
+    failed = total - completed
+    status = "completed" if completed > 0 else "failed"
+    terminal_error: Optional[str] = None
+    if failed and completed:
+        detail = f"Ingested {completed}/{total} months of ticks for {symbol}"
+    elif failed:
+        detail = f"Tick ingestion failed for all months on {symbol}"
+        terminal_error = detail
+    else:
+        detail = f"Tick ingestion completed for {symbol}"
+    return results, detail, status, terminal_error
+
+
 def run_ingest_job(job_id: str, request_json: str) -> None:
     request = IngestJobRequest.model_validate_json(request_json)
     from q_backend.tasks.worker_context import get_worker_market_data_service
@@ -197,7 +269,7 @@ def run_ingest_job(job_id: str, request_json: str) -> None:
                 "job_id": job_id,
                 "status": "running",
                 "progress": 0.0,
-                "detail": f"Ingesting {symbol} bars",
+                "detail": f"Ingesting {symbol} ({request.kind})",
                 "results": [],
                 "error": None,
             },
@@ -208,10 +280,15 @@ def run_ingest_job(job_id: str, request_json: str) -> None:
                 "Ingestion requires MetaTrader 5; MT5 is not available on this machine."
             )
 
-        timeframes = validate_timeframes(request.timeframes)
-        results, detail, status, terminal_error = _run_bars_ingest(
-            job_id, symbol, timeframes, start, end, service
-        )
+        if request.kind == "ticks":
+            results, detail, status, terminal_error = _run_ticks_ingest(
+                job_id, symbol, start, end, service
+            )
+        else:
+            timeframes = validate_timeframes(request.timeframes)
+            results, detail, status, terminal_error = _run_bars_ingest(
+                job_id, symbol, timeframes, start, end, service
+            )
 
         _persist_progress(
             job_id,
