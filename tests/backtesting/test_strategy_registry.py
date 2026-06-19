@@ -18,6 +18,7 @@ from q_backend.backtesting.strategy_registry import (
 from q_backend.backtesting.strategies.bollinger_reversion import BollingerReversionStrategy
 from q_backend.backtesting.strategies.donchian_breakout import DonchianBreakoutStrategy
 from q_backend.backtesting.strategies.fma import FMAStrategy
+from q_backend.backtesting.strategies.gatev_pairs import GatevPairsStrategy
 from q_backend.backtesting.strategies.hurst_trend_blend import HurstTrendBlendStrategy
 from q_backend.backtesting.strategies.macd import MACDStrategy
 from q_backend.backtesting.strategies.rsi_mean_reversion import RSIMeanReversionStrategy
@@ -30,6 +31,7 @@ REGISTERED_NAMES = [
     "CompositeStrategy",
     "DonchianBreakout",
     "FMA",
+    "GatevPairs",
     "HurstTrendBlend",
     "MACD",
     "MACrossover",
@@ -56,10 +58,12 @@ def test_all_strategies_registered():
     ("FMA", FMAStrategy),
     ("TRB", TRBStrategy),
     ("HurstTrendBlend", HurstTrendBlendStrategy),
+    ("GatevPairs", GatevPairsStrategy),
 ])
 def test_build_strategy_dispatches(name, expected_class):
     strategy = build_strategy(name, {}, "TEST")
     assert isinstance(strategy, expected_class)
+
 
 
 def test_build_strategy_ma_crossover_with_params():

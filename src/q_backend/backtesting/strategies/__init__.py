@@ -2,6 +2,7 @@ from q_backend.backtesting.strategies import (  # noqa: F401
     bollinger_reversion,
     donchian_breakout,
     fma,
+    gatev_pairs,
     hurst_trend_blend,
     ma_crossover,
     macd,
@@ -16,6 +17,7 @@ __all__ = [
     "bollinger_reversion",
     "donchian_breakout",
     "fma",
+    "gatev_pairs",
     "hurst_trend_blend",
     "ma_crossover",
     "macd",
@@ -24,3 +26,4 @@ __all__ = [
     "tsmom",
     "vma",
 ]
+

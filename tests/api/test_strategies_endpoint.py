@@ -10,6 +10,7 @@ def test_list_strategies_returns_all_registered():
         "CompositeStrategy",
         "DonchianBreakout",
         "FMA",
+        "GatevPairs",
         "HurstTrendBlend",
         "MACD",
         "MACrossover",

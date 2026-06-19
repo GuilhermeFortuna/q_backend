@@ -65,7 +65,13 @@ def test_strategy_indicators_are_causal(strategy_name):
     strategy = entry.build(default_params_for(strategy_name), "TEST")
 
     data = _synthetic_ohlcv()
+    data["close_a"] = data["close"]
+    data["close_b"] = data["close"] * 0.99
+    data["open_a"] = data["open"]
+    data["open_b"] = data["open"] * 0.99
+
     full = strategy.compute_indicators(data)
+
 
     added_cols = [c for c in full.columns if c not in data.columns]
     assert added_cols, f"{strategy_name}: compute_indicators added no columns"
