@@ -236,3 +236,94 @@ class TestTSMOMInverseVolIntegration:
             (target_pct / 100.0) * capital / (vol * fill_price * point_value)
         )
         assert first_trade.quantity == pytest.approx(float(expected), rel=0, abs=0)
+
+
+class TestRollingNeweyWest:
+    def test_rolling_newey_west_t_stat_basic(self):
+        from q_backend.backtesting.strategies.tsmom import compute_rolling_newey_west_t_stat
+        returns = np.array([0.01] * 10, dtype=np.float64)
+        t_stat = compute_rolling_newey_west_t_stat(returns, 5, 2)
+        assert t_stat[4] == 0.0
+
+        returns = np.array([0.01, -0.02, 0.03, -0.01, 0.02, 0.01, -0.01, 0.02, 0.01, -0.02], dtype=np.float64)
+        t_stat = compute_rolling_newey_west_t_stat(returns, 5, 1)
+        assert len(t_stat) == 10
+        assert np.isnan(t_stat[3])
+        assert not np.isnan(t_stat[4])
+        assert not np.isnan(t_stat[9])
+
+
+class TestSizerSignalStrengthScaling:
+    def test_fixed_quantity_sizer_scaling(self):
+        from q_backend.backtesting.position_sizing import FixedQuantitySizer
+        from q_backend.backtesting.models import Signal, SignalAction
+
+        sizer_no_scale = FixedQuantitySizer(quantity=10.0, scale_by_signal_strength=False)
+        sig = Signal(symbol="TEST", action=SignalAction.BUY, strength=0.5)
+        order = sizer_no_scale.size_signal(sig, 100.0, 1000.0)
+        assert order.quantity == 10.0
+
+        sizer_scale = FixedQuantitySizer(quantity=10.0, scale_by_signal_strength=True)
+        order = sizer_scale.size_signal(sig, 100.0, 1000.0)
+        assert order.quantity == 5.0
+
+    def test_fixed_safety_margin_sizer_scaling(self):
+        from q_backend.backtesting.position_sizing import FixedSafetyMarginSizer
+        from q_backend.backtesting.models import Signal, SignalAction
+
+        sizer = FixedSafetyMarginSizer(safety_margin_per_contract=5000.0, scale_by_signal_strength=True)
+        sig = Signal(symbol="TEST", action=SignalAction.BUY, strength=0.5)
+        order = sizer.size_signal(sig, 100.0, 10000.0)
+        assert order.quantity == 1.0
+
+    def test_inverse_volatility_sizer_scaling(self):
+        from q_backend.backtesting.position_sizing import InverseVolatilitySizer
+        from q_backend.backtesting.models import Signal, SignalAction
+
+        sizer = InverseVolatilitySizer(target_volatility_pct=10.0, point_value=1.0, scale_by_signal_strength=True)
+        sig = Signal(symbol="TEST", action=SignalAction.BUY, strength=0.5)
+        row = pd.Series({"volatility": 0.01})
+        order = sizer.size_signal(sig, 100.0, 10000.0, current_data=row)
+        assert order.quantity == 500.0
+
+
+class TestTSMOMTrendRuleIntegration:
+    def test_trend_rule_backtest_run(self):
+        strategy = build_strategy(
+            "TSMOM",
+            {
+                "lookback_bars": 5,
+                "rebalance_bars": 3,
+                "vol_window": 5,
+                "vol_estimator": "close_to_close",
+                "trading_rule": "trend",
+                "trend_signal_cap": 2.0,
+                "nw_lags": 2,
+                "rebalance_on_every_bar": "true",
+            },
+            "TEST",
+        )
+
+        closes = [100.0 + i for i in range(15)]
+        df = _ohlc_frame(closes)
+
+        result = strategy.compute_indicators(df.copy())
+        assert "t_stat" in result.columns
+        assert "signal_strength" in result.columns
+
+        sizer = build_position_sizer(
+            InverseVolatilityPositionSizing(
+                target_volatility_pct=10.0,
+                scale_by_signal_strength=True,
+            )
+        )
+        engine = BacktestEngine(
+            strategy,
+            sizer,
+            initial_capital=100000.0,
+            point_values={"TEST": 1.0},
+        )
+
+        registry = engine.run(df, parallel_mode=ParallelMode.SEQUENTIAL)
+        trades = registry.get_closed_trades() + registry.get_open_trades()
+        assert trades, "Expected at least one trade"
