@@ -1,11 +1,17 @@
 import logging
 import threading
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any, Union, Callable, TypeVar
 
 import numpy as np
-import MetaTrader5 as mt5
+
+try:
+    import MetaTrader5 as mt5
+    MT5_IMPORTABLE = True
+except Exception:  # ImportError on Linux; DLL errors on misconfigured Windows
+    mt5 = None  # type: ignore[assignment]
+    MT5_IMPORTABLE = False
 
 from q_backend.market_data.models import OHLCV, Tick
 from q_backend.market_data.tick_cache import load as load_tick_cache
@@ -75,6 +81,15 @@ def _time_msc_to_naive_local(msc: int) -> datetime:
     ms_remainder = msc % 1000
     base = unix_seconds_to_brasilia_naive(sec)
     return base + timedelta(milliseconds=ms_remainder)
+
+
+def _naive_local_to_time_msc(dt: datetime) -> int:
+    """Inverse of ``_time_msc_to_naive_local`` for range filtering."""
+    dt = _to_naive_local(dt)
+    ms = dt.microsecond // 1000
+    base = dt.replace(microsecond=0)
+    utc_wall = base.replace(tzinfo=timezone.utc)
+    return int(utc_wall.timestamp()) * 1000 + ms
 
 
 def _ticks_structured_to_columnar(ticks: np.ndarray) -> dict[str, np.ndarray]:
@@ -176,29 +191,81 @@ def _rates_to_ohlcv_list(rates) -> List[OHLCV]:
     ]
 
 
-TIMEFRAME_MAP = {
-    "M1": mt5.TIMEFRAME_M1,
-    "M2": mt5.TIMEFRAME_M2,
-    "M3": mt5.TIMEFRAME_M3,
-    "M4": mt5.TIMEFRAME_M4,
-    "M5": mt5.TIMEFRAME_M5,
-    "M6": mt5.TIMEFRAME_M6,
-    "M10": mt5.TIMEFRAME_M10,
-    "M12": mt5.TIMEFRAME_M12,
-    "M15": mt5.TIMEFRAME_M15,
-    "M20": mt5.TIMEFRAME_M20,
-    "M30": mt5.TIMEFRAME_M30,
-    "H1": mt5.TIMEFRAME_H1,
-    "H2": mt5.TIMEFRAME_H2,
-    "H3": mt5.TIMEFRAME_H3,
-    "H4": mt5.TIMEFRAME_H4,
-    "H6": mt5.TIMEFRAME_H6,
-    "H8": mt5.TIMEFRAME_H8,
-    "H12": mt5.TIMEFRAME_H12,
-    "D1": mt5.TIMEFRAME_D1,
-    "W1": mt5.TIMEFRAME_W1,
-    "MN1": mt5.TIMEFRAME_MN1,
-}
+TIMEFRAME_NAMES = (
+    "M1",
+    "M2",
+    "M3",
+    "M4",
+    "M5",
+    "M6",
+    "M10",
+    "M12",
+    "M15",
+    "M20",
+    "M30",
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H6",
+    "H8",
+    "H12",
+    "D1",
+    "W1",
+    "MN1",
+)
+
+TIMEFRAME_MAP = {name: name for name in TIMEFRAME_NAMES}
+
+
+def _mt5_timeframe(name: str) -> int:
+    if mt5 is None:
+        raise RuntimeError(
+            "MetaTrader5 is not available on this platform. "
+            "Install the Windows MetaTrader5 package or use data_source='local'."
+        )
+    attr = f"TIMEFRAME_{name}"
+    value = getattr(mt5, attr, None)
+    if value is None:
+        raise ValueError(f"Unknown MT5 timeframe constant: {attr}")
+    return int(value)
+
+
+def _resolve_mt5_timeframe(timeframe: str) -> int:
+    name = timeframe.upper()
+    if name not in TIMEFRAME_MAP:
+        raise ValueError(
+            f"Invalid timeframe '{timeframe}'. Choose from: {list(TIMEFRAME_MAP.keys())}"
+        )
+    return _mt5_timeframe(name)
+
+
+def _default_copy_ticks_all() -> int:
+    if mt5 is None:
+        return 1
+    return int(mt5.COPY_TICKS_ALL)
+
+
+def _default_copy_ticks_trade() -> int:
+    if mt5 is None:
+        return 2
+    return int(mt5.COPY_TICKS_TRADE)
+
+
+COPY_TICKS_ALL = _default_copy_ticks_all()
+COPY_TICKS_TRADE = _default_copy_ticks_trade()
+TICK_FLAG_BUY = int(getattr(mt5, "TICK_FLAG_BUY", 32)) if mt5 is not None else 32
+TICK_FLAG_SELL = int(getattr(mt5, "TICK_FLAG_SELL", 64)) if mt5 is not None else 64
+
+
+def resolve_copy_ticks_flags(tick_flags: str | None) -> int:
+    if tick_flags is None or tick_flags.lower() == "all":
+        return _default_copy_ticks_all()
+    if tick_flags.lower() == "trade":
+        return _default_copy_ticks_trade()
+    raise ValueError(
+        f"Invalid tick_flags '{tick_flags}'. Expected 'all' or 'trade'."
+    )
 
 
 def _get_chunk_days(mt5_timeframe: int) -> int:
@@ -263,6 +330,10 @@ class MetaTraderClient:
             if self._is_initialized:
                 return True
 
+            if mt5 is None:
+                logger.error("MetaTrader5 package is not installed or failed to import.")
+                return False
+
             init_kwargs = {}
             if self.path:
                 init_kwargs["path"] = self.path
@@ -311,6 +382,14 @@ class MetaTraderClient:
                 logger.info("Disconnected from MetaTrader 5 terminal.")
 
         self._run_locked(_disconnect)
+
+    def is_available(self) -> bool:
+        if not MT5_IMPORTABLE or mt5 is None:
+            return False
+        try:
+            return self.connect()
+        except Exception:
+            return False
 
     def _ensure_connected(self) -> None:
         if not self._is_initialized:
@@ -400,11 +479,7 @@ class MetaTraderClient:
         def _fetch() -> List[OHLCV]:
             self._ensure_connected()
 
-            mt5_timeframe = TIMEFRAME_MAP.get(timeframe.upper())
-            if mt5_timeframe is None:
-                raise ValueError(
-                    f"Invalid timeframe '{timeframe}'. Choose from: {list(TIMEFRAME_MAP.keys())}"
-                )
+            mt5_timeframe = _resolve_mt5_timeframe(timeframe)
 
             if not mt5.symbol_select(symbol, True):
                 error_code, error_desc = mt5.last_error()
@@ -505,11 +580,7 @@ class MetaTraderClient:
         def _fetch() -> Optional[OhlcvAvailableRange]:
             self._ensure_connected()
 
-            mt5_timeframe = TIMEFRAME_MAP.get(timeframe.upper())
-            if mt5_timeframe is None:
-                raise ValueError(
-                    f"Invalid timeframe '{timeframe}'. Choose from: {list(TIMEFRAME_MAP.keys())}"
-                )
+            mt5_timeframe = _resolve_mt5_timeframe(timeframe)
 
             if not mt5.symbol_select(symbol, True):
                 error_code, error_desc = mt5.last_error()
@@ -609,7 +680,7 @@ class MetaTraderClient:
         symbol: str,
         start: datetime,
         end: datetime,
-        flags: int = mt5.COPY_TICKS_ALL,
+        flags: int | None = None,
         use_cache: bool = True,
     ) -> dict[str, np.ndarray]:
         """
@@ -629,12 +700,17 @@ class MetaTraderClient:
         def _fetch() -> dict[str, np.ndarray]:
             self._ensure_connected()
 
+            resolved_flags = (
+                _default_copy_ticks_all() if flags is None else flags
+            )
             start_local = _to_naive_local(start)
             end_local = _to_naive_local(end)
             cache_key: Optional[str] = None
 
             if use_cache:
-                cache_key = make_cache_key(symbol, start_local, end_local, flags)
+                cache_key = make_cache_key(
+                    symbol, start_local, end_local, resolved_flags
+                )
                 cached = load_tick_cache(cache_key)
                 if cached is not None:
                     return cached
@@ -647,7 +723,7 @@ class MetaTraderClient:
                 )
 
             result = self._fetch_ticks_range_chunked(
-                symbol, start_local, end_local, flags
+                symbol, start_local, end_local, resolved_flags
             )
 
             if use_cache and cache_key is not None:
@@ -662,7 +738,7 @@ class MetaTraderClient:
         symbol: str,
         start: datetime,
         end: datetime,
-        flags: int = mt5.COPY_TICKS_ALL,
+        flags: int | None = None,
     ) -> List[Tick]:
         """
         Fetches historical ticks for a given symbol within a datetime range.
@@ -671,6 +747,9 @@ class MetaTraderClient:
         def _fetch() -> List[Tick]:
             self._ensure_connected()
 
+            resolved_flags = (
+                _default_copy_ticks_all() if flags is None else flags
+            )
             start = _to_naive_local(start)
             end = _to_naive_local(end)
 
@@ -680,7 +759,7 @@ class MetaTraderClient:
                     f"Failed to select symbol {symbol} in MarketWatch: {error_desc} (Code: {error_code})"
                 )
 
-            ticks = mt5.copy_ticks_range(symbol, start, end, flags)
+            ticks = mt5.copy_ticks_range(symbol, start, end, resolved_flags)
             if ticks is None or len(ticks) == 0:
                 error_code, error_desc = mt5.last_error()
                 logger.error(

@@ -1,17 +1,18 @@
 import os
 import logging
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 from pathlib import Path
 
-import MetaTrader5 as mt5
 import numpy as np
 
+from q_backend.market_data.clients.local import LocalParquetClient
 from q_backend.market_data.clients.metatrader import (
     MetaTraderClient,
     OhlcvAvailableRange,
 )
 from q_backend.market_data.models import OHLCV, Tick
+from q_backend.storage.runtime_config import get_data_source
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,8 @@ def load_env():
 
 class MarketDataService:
     """
-    High-level service managing market data connections and routing requests.
+    High-level service managing market data connections and routing requests
+    to the active provider (MetaTrader 5 or local parquet).
     """
 
     def __init__(self):
@@ -70,13 +72,49 @@ class MarketDataService:
         self.mt5_client = MetaTraderClient(
             path=path, login=login, password=password, server=server
         )
+        self._local_client = LocalParquetClient()
+
+    def _resolve_provider(self):
+        source = get_data_source()
+        if source == "mt5":
+            if not self.mt5_client.is_available():
+                raise ConnectionError(
+                    "data_source is 'mt5' but MetaTrader 5 is not available. "
+                    "Install MetaTrader5, start the terminal, or switch to 'auto'/'local'."
+                )
+            return self.mt5_client
+        if source == "local":
+            return self._local_client
+        # auto
+        if self.mt5_client.is_available():
+            return self.mt5_client
+        return self._local_client
+
+    def active_provider(self) -> Literal["mt5", "local"]:
+        provider = self._resolve_provider()
+        return "mt5" if provider is self.mt5_client else "local"
+
+    def mt5_available(self) -> bool:
+        return self.mt5_client.is_available()
+
+    def is_available(self) -> bool:
+        try:
+            self._resolve_provider()
+            return True
+        except ConnectionError:
+            return False
 
     def initialize(self) -> bool:
         """
-        Initializes the underlying market data clients.
+        Best-effort MT5 connect on startup. Failure does not crash the API;
+        auto mode falls back to the local provider.
         """
-        logger.info("Initializing MetaTrader client connection...")
-        return self.mt5_client.connect()
+        logger.info("Initializing MetaTrader client connection (best-effort)...")
+        try:
+            return self.mt5_client.connect()
+        except Exception as exc:
+            logger.warning("MetaTrader connect failed on startup: %s", exc)
+            return False
 
     def shutdown(self) -> None:
         """
@@ -85,51 +123,36 @@ class MarketDataService:
         logger.info("Shutting down market data clients...")
         self.mt5_client.disconnect()
 
+    def get_symbol_info(self, symbol: str) -> Optional[dict]:
+        return self._resolve_provider().get_symbol_info(symbol)
+
     def get_ohlcv(
         self, symbol: str, timeframe: str, start: datetime, end: datetime
     ) -> List[OHLCV]:
-        """
-        Fetches OHLCV market data for a given symbol and timeframe.
-        """
-        return self.mt5_client.get_ohlcv(symbol, timeframe, start, end)
+        return self._resolve_provider().get_ohlcv(symbol, timeframe, start, end)
 
     def get_available_ohlcv_range(
         self, symbol: str, timeframe: str
     ) -> Optional[OhlcvAvailableRange]:
-        """
-        Returns the earliest and latest OHLCV bar timestamps available in MT5.
-        """
-        return self.mt5_client.get_available_ohlcv_range(symbol, timeframe)
+        return self._resolve_provider().get_available_ohlcv_range(symbol, timeframe)
 
     def get_ticks(self, symbol: str, start: datetime, end: datetime) -> List[Tick]:
-        """
-        Fetches tick market data for a given symbol.
-        """
-        return self.mt5_client.get_ticks(symbol, start, end)
+        return self._resolve_provider().get_ticks(symbol, start, end)
 
     def get_ticks_columnar(
         self,
         symbol: str,
         start: datetime,
         end: datetime,
-        flags: int = mt5.COPY_TICKS_ALL,
+        flags: int | None = None,
         use_cache: bool = True,
     ) -> dict[str, np.ndarray]:
-        """
-        Fetches tick market data as aligned NumPy arrays for backtest engines.
-        """
-        return self.mt5_client.get_ticks_columnar(
+        return self._resolve_provider().get_ticks_columnar(
             symbol, start, end, flags=flags, use_cache=use_cache
         )
 
     def get_recent_ticks(self, symbol: str, limit: int = 200) -> List[Tick]:
-        """
-        Fetches the most recent ticks for a given symbol (newest last).
-        """
-        return self.mt5_client.get_recent_ticks(symbol, limit)
+        return self._resolve_provider().get_recent_ticks(symbol, limit)
 
     def search_symbols(self, query: str) -> list:
-        """
-        Search for symbols in MetaTrader 5 using wildcard pattern.
-        """
-        return self.mt5_client.search_symbols(query)
+        return self._resolve_provider().search_symbols(query)

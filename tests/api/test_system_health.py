@@ -35,18 +35,18 @@ def test_system_health_includes_storage_status():
 
 
 def test_storage_failure_does_not_change_top_level_health():
-    market_data_service.mt5_client._is_initialized = True
-    try:
-        with patch(
-            "q_backend.api.main.storage_status",
-            return_value={
-                "postgres": {"status": "error", "error": "db down"},
-                "redis": {"status": "error", "error": "redis down"},
-            },
-        ):
-            body = get_system_health()
+    with patch.object(market_data_service, "mt5_available", return_value=True):
+        try:
+            with patch(
+                "q_backend.api.main.storage_status",
+                return_value={
+                    "postgres": {"status": "error", "error": "db down"},
+                    "redis": {"status": "error", "error": "redis down"},
+                },
+            ):
+                body = get_system_health()
 
-        assert body["status"] == "healthy"
-        assert body["dataLakeStatus"] == "online"
-    finally:
-        market_data_service.mt5_client._is_initialized = False
+            assert body["status"] == "healthy"
+            assert body["dataLakeStatus"] == "online"
+        finally:
+            pass

@@ -30,9 +30,15 @@ from q_backend.backtesting.tick.chart_data import serialize_tick_chart_data
 from q_backend.backtesting.tick.engine import TickBacktestEngine
 from q_backend.backtesting.tick.factory import build_tick_strategy
 from q_backend.backtesting.tick.strategy import TickArrays
-from q_backend.market_data.clients.metatrader import _to_naive_local
-import MetaTrader5 as mt5
+from q_backend.market_data.clients.metatrader import (
+    _to_naive_local,
+    resolve_copy_ticks_flags,
+    TICK_FLAG_BUY,
+    TICK_FLAG_SELL,
+)
+from q_backend.market_data.clients import metatrader as mt5_client_module
 from q_backend.market_data.timezone import mt5_datetime_to_utc_iso, unix_seconds_to_utc_iso
+from q_backend.storage.runtime_config import get_data_source, set_data_source
 from q_backend.optimization import OptimizationConfig
 from q_backend.optimization.metrics import build_equity_curve
 from q_backend.api import backtest_jobs
@@ -96,7 +102,18 @@ class SystemHealthResponse(BaseModel):
     dataLakeStatus: str
     lastSyncAt: str
     storageStatus: StorageStatusResponse
+    mt5_available: bool
+    active_provider: Literal["mt5", "local"]
 
+
+class DataSourceResponse(BaseModel):
+    source: Literal["auto", "mt5", "local"]
+    mt5_available: bool
+    active_provider: Literal["mt5", "local"]
+
+
+class DataSourceUpdateRequest(BaseModel):
+    source: Literal["auto", "mt5", "local"]
 
 class InstrumentResponse(BaseModel):
     symbol: str
@@ -530,13 +547,28 @@ def _backtest_request_config(request: BacktestRequest) -> Dict[str, Any]:
 
 
 def _resolve_tick_flags(tick_flags: Optional[str]) -> int:
-    if tick_flags is None or tick_flags.lower() == "all":
-        return mt5.COPY_TICKS_ALL
-    if tick_flags.lower() == "trade":
-        return mt5.COPY_TICKS_TRADE
-    raise ValueError(
-        f"Invalid tick_flags '{tick_flags}'. Expected 'all' or 'trade'."
-    )
+    try:
+        return resolve_copy_ticks_flags(tick_flags)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+def _require_mt5_live() -> None:
+    """Raise 503 when MT5 is required but unavailable; no-op when live MT5 is up."""
+    if market_data_service.mt5_available():
+        return
+    if get_data_source() == "mt5":
+        raise HTTPException(
+            status_code=503, detail="MetaTrader 5 terminal is offline."
+        )
+
+
+def _data_source_payload() -> dict:
+    return {
+        "source": get_data_source(),
+        "mt5_available": market_data_service.mt5_available(),
+        "active_provider": market_data_service.active_provider(),
+    }
 
 
 def _columnar_to_tick_arrays(columnar: Dict[str, Any]) -> TickArrays:
@@ -761,10 +793,13 @@ def _delete_backtest_lake_artifacts(run_id: str) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Connect to MetaTrader 5
-    logger.info("Starting up API, connecting to MetaTrader 5...")
+    logger.info("Starting up API, initializing market data providers...")
     success = market_data_service.initialize()
     if not success:
-        logger.error("MetaTrader 5 terminal initialization failed on startup!")
+        logger.warning(
+            "MetaTrader 5 terminal initialization failed on startup; "
+            "auto mode will use the local provider."
+        )
     else:
         logger.info("MetaTrader 5 terminal initialized successfully on startup.")
     # Reconcile orphaned runs: any job left pending/running in the DB by a
@@ -802,7 +837,7 @@ def read_root():
     return {
         "status": "online",
         "service": "QuantLauncher Backend API",
-        "mt5_connected": market_data_service.mt5_client._is_initialized,
+        "mt5_connected": market_data_service.mt5_available(),
     }
 
 
@@ -812,7 +847,7 @@ def get_symbol_info(symbol: str):
     Get detailed information about a specific financial symbol.
     """
     try:
-        info = market_data_service.mt5_client.get_symbol_info(symbol)
+        info = market_data_service.get_symbol_info(symbol)
         if not info:
             raise HTTPException(
                 status_code=404,
@@ -905,14 +940,29 @@ def get_system_health():
     """
     Exposes platform health telemetry.
     """
-    is_connected = market_data_service.mt5_client._is_initialized
+    mt5_up = market_data_service.mt5_available()
     return {
-        "status": "healthy" if is_connected else "degraded",
+        "status": "healthy" if mt5_up else "degraded",
         "backendVersion": "0.1.0",
-        "dataLakeStatus": "online" if is_connected else "offline",
+        "dataLakeStatus": "online" if mt5_up else "offline",
         "lastSyncAt": datetime.now().isoformat(),
         "storageStatus": storage_status(),
+        "mt5_available": mt5_up,
+        "active_provider": market_data_service.active_provider(),
     }
+
+
+@app.get("/api/v1/system/data-source", response_model=DataSourceResponse)
+def get_data_source_setting():
+    return _data_source_payload()
+
+@app.put("/api/v1/system/data-source", response_model=DataSourceResponse)
+def update_data_source_setting(body: DataSourceUpdateRequest):
+    try:
+        set_data_source(body.source)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _data_source_payload()
 
 
 @app.get("/api/v1/market/instruments", response_model=List[InstrumentResponse])
@@ -953,12 +1003,14 @@ def get_market_instruments():
         },
     ]
 
-    connected = market_data_service.mt5_client._is_initialized
+    connected = market_data_service.mt5_available()
     if not connected:
         logger.warning("MT5 not connected, returning cached asset definitions.")
         return b3_symbols
 
-    import MetaTrader5 as mt5
+    mt5 = mt5_client_module.mt5
+    if mt5 is None:
+        return b3_symbols
 
     active_symbols = []
     for item in b3_symbols:
@@ -982,9 +1034,12 @@ def search_symbols(
     if not q.strip():
         return []
 
-    connected = market_data_service.mt5_client.connect()
-    if not connected:
-        raise HTTPException(status_code=503, detail="MetaTrader 5 terminal is offline.")
+    if not market_data_service.mt5_available():
+        if get_data_source() == "mt5":
+            raise HTTPException(
+                status_code=503, detail="MetaTrader 5 terminal is offline."
+            )
+        return []
 
     try:
         raw_symbols = market_data_service.search_symbols(q.strip())
@@ -1037,7 +1092,9 @@ def _build_market_snapshot(symbol: str) -> Optional[dict]:
     Build a market snapshot dict for a resolvable symbol, or None when the symbol
     cannot be selected in MT5.
     """
-    import MetaTrader5 as mt5
+    mt5 = mt5_client_module.mt5
+    if mt5 is None:
+        return None
 
     symbol = symbol.upper()
     if not mt5.symbol_select(symbol, True):
@@ -1119,10 +1176,8 @@ def _build_market_snapshot(symbol: str) -> Optional[dict]:
 
 
 def _tick_side(flags: int) -> Optional[str]:
-    import MetaTrader5 as mt5
-
-    buy = bool(flags & mt5.TICK_FLAG_BUY)
-    sell = bool(flags & mt5.TICK_FLAG_SELL)
+    buy = bool(flags & TICK_FLAG_BUY)
+    sell = bool(flags & TICK_FLAG_SELL)
     if buy and not sell:
         return "buy"
     if sell and not buy:
@@ -1131,10 +1186,8 @@ def _tick_side(flags: int) -> Optional[str]:
 
 
 def _is_trade_tick(tick: Tick) -> bool:
-    import MetaTrader5 as mt5
-
     flags = tick.flags or 0
-    has_side = bool(flags & (mt5.TICK_FLAG_BUY | mt5.TICK_FLAG_SELL))
+    has_side = bool(flags & (TICK_FLAG_BUY | TICK_FLAG_SELL))
     return (tick.last or 0.0) > 0 or has_side
 
 
@@ -1193,9 +1246,12 @@ def get_market_snapshot(symbol: str):
     """
     symbol = symbol.upper()
 
-    connected = market_data_service.mt5_client.connect()
-    if not connected:
-        raise HTTPException(status_code=503, detail="MetaTrader 5 terminal is offline.")
+    _require_mt5_live()
+    if not market_data_service.mt5_available():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Live snapshot unavailable for '{symbol}' (local data provider).",
+        )
 
     snapshot = _build_market_snapshot(symbol)
     if snapshot is None:
@@ -1220,9 +1276,9 @@ def get_market_snapshots(
             detail="At most 50 symbols are allowed per batch snapshot request.",
         )
 
-    connected = market_data_service.mt5_client.connect()
-    if not connected:
-        raise HTTPException(status_code=503, detail="MetaTrader 5 terminal is offline.")
+    _require_mt5_live()
+    if not market_data_service.mt5_available():
+        return {"snapshots": []}
 
     snapshots = []
     for symbol in symbol_list:
@@ -1243,17 +1299,20 @@ def get_market_ticks(
     """
     symbol = symbol.upper()
 
-    connected = market_data_service.mt5_client.connect()
-    if not connected:
-        raise HTTPException(status_code=503, detail="MetaTrader 5 terminal is offline.")
+    if not market_data_service.mt5_available():
+        if get_data_source() == "mt5":
+            raise HTTPException(
+                status_code=503, detail="MetaTrader 5 terminal is offline."
+            )
+        return {"ticks": []}
 
     try:
         raw_ticks = market_data_service.get_recent_ticks(symbol, limit)
     except ConnectionError as ce:
-        raise HTTPException(status_code=503, detail=str(ce))
+        raise HTTPException(status_code=503, detail=str(ce)) from ce
 
     if not raw_ticks:
-        info = market_data_service.mt5_client.get_symbol_info(symbol)
+        info = market_data_service.get_symbol_info(symbol)
         if not info:
             raise HTTPException(
                 status_code=404, detail=f"Symbol '{symbol}' not found on MetaTrader 5."
@@ -1273,12 +1332,18 @@ def get_market_instrument_info(symbol: str):
     """
     symbol = symbol.upper()
 
-    connected = market_data_service.mt5_client.connect()
-    if not connected:
-        raise HTTPException(status_code=503, detail="MetaTrader 5 terminal is offline.")
+    if not market_data_service.mt5_available():
+        if get_data_source() == "mt5":
+            raise HTTPException(
+                status_code=503, detail="MetaTrader 5 terminal is offline."
+            )
+        raise HTTPException(
+            status_code=404,
+            detail=f"Symbol '{symbol}' not found (local data provider).",
+        )
 
     try:
-        info = market_data_service.mt5_client.get_symbol_info(symbol)
+        info = market_data_service.get_symbol_info(symbol)
     except ConnectionError as ce:
         raise HTTPException(status_code=503, detail=str(ce))
 
@@ -1363,14 +1428,46 @@ def get_market_ohlcv(
     Retrieve historical OHLCV data for a B3 asset.
     Returns the most recent `count` bars by default, or a date range when start/end are provided.
     """
-    import MetaTrader5 as mt5
-
     symbol = symbol.upper()
     mt5_timeframe = _normalize_market_timeframe(timeframe)
 
-    connected = market_data_service.mt5_client.connect()
-    if not connected:
-        raise HTTPException(status_code=503, detail="MetaTrader 5 terminal is offline.")
+    if not market_data_service.mt5_available():
+        if get_data_source() == "mt5":
+            raise HTTPException(
+                status_code=503, detail="MetaTrader 5 terminal is offline."
+            )
+        if start is not None and end is not None:
+            start = _to_naive_local(start)
+            end = _to_naive_local(end)
+            if start >= end:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Start datetime must be before end datetime.",
+                )
+            try:
+                ohlcv_data = market_data_service.get_ohlcv(
+                    symbol, mt5_timeframe, start, end
+                )
+            except ValueError as ve:
+                raise HTTPException(status_code=400, detail=str(ve)) from ve
+            except ConnectionError as ce:
+                raise HTTPException(status_code=503, detail=str(ce)) from ce
+            if not ohlcv_data:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No OHLCV data found for symbol '{symbol}'.",
+                )
+            return [_ohlcv_to_bar_response(row) for row in ohlcv_data]
+        raise HTTPException(
+            status_code=404,
+            detail=f"No OHLCV data found for symbol '{symbol}' (local data provider).",
+        )
+
+    mt5 = mt5_client_module.mt5
+    if mt5 is None:
+        raise HTTPException(
+            status_code=503, detail="MetaTrader 5 terminal is offline."
+        )
 
     if not mt5.symbol_select(symbol, True):
         raise HTTPException(
@@ -1411,16 +1508,16 @@ def get_market_ohlcv(
         return [_ohlcv_to_bar_response(row) for row in ohlcv_data]
 
     timeframe_map = {
-        "M1": mt5.TIMEFRAME_M1,
-        "M5": mt5.TIMEFRAME_M5,
-        "M15": mt5.TIMEFRAME_M15,
-        "M30": mt5.TIMEFRAME_M30,
-        "H1": mt5.TIMEFRAME_H1,
-        "H4": mt5.TIMEFRAME_H4,
-        "D1": mt5.TIMEFRAME_D1,
+        "M1": mt5_client_module._mt5_timeframe("M1"),
+        "M5": mt5_client_module._mt5_timeframe("M5"),
+        "M15": mt5_client_module._mt5_timeframe("M15"),
+        "M30": mt5_client_module._mt5_timeframe("M30"),
+        "H1": mt5_client_module._mt5_timeframe("H1"),
+        "H4": mt5_client_module._mt5_timeframe("H4"),
+        "D1": mt5_client_module._mt5_timeframe("D1"),
     }
 
-    mt5_tf = timeframe_map.get(mt5_timeframe, mt5.TIMEFRAME_D1)
+    mt5_tf = timeframe_map.get(mt5_timeframe, mt5_client_module._mt5_timeframe("D1"))
     rates = mt5.copy_rates_from_pos(symbol, mt5_tf, 0, count)
     if rates is None or len(rates) == 0:
         raise HTTPException(
@@ -1446,9 +1543,10 @@ def get_market_ohlcv_available_range(
     symbol = symbol.upper()
     mt5_timeframe = _normalize_market_timeframe(timeframe)
 
-    connected = market_data_service.mt5_client.connect()
-    if not connected:
-        raise HTTPException(status_code=503, detail="MetaTrader 5 terminal is offline.")
+    if not market_data_service.is_available():
+        raise HTTPException(
+            status_code=503, detail="Market data provider is unavailable."
+        )
 
     try:
         available_range = market_data_service.get_available_ohlcv_range(
