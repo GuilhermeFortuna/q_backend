@@ -7,13 +7,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from q_backend.api.main import (
-    _fetch_ohlcv_available_range,
-    _fetch_ohlcv_rows,
-    _ohlcv_to_bar_response,
-    get_market_ohlcv_available_range,
-    market_data_service,
-)
+from q_backend.api.dependencies import market_data_service
+from q_backend.api.routers.market import get_market_ohlcv_available_range
+from q_backend.market_data import api_service as market_service
 from q_backend.market_data import local_store
 from q_backend.market_data.models import OHLCV
 from q_backend.storage.runtime_config import set_data_source
@@ -62,7 +58,9 @@ def test_ohlcv_available_range_uses_local_store_when_symbol_not_in_mt5(market_ro
             "q_backend.market_data.routing.symbol_selectable_in_mt5",
             return_value=False,
         ):
-            available = _fetch_ohlcv_available_range("BGI$", "D1")
+            available = market_service.fetch_ohlcv_available_range(
+                market_data_service, "BGI$", "D1"
+            )
 
     assert available is not None
     assert available.symbol == "BGI$"
@@ -77,7 +75,9 @@ def test_ohlcv_count_query_reads_local_store_when_symbol_not_in_mt5(market_root)
             "q_backend.market_data.routing.symbol_selectable_in_mt5",
             return_value=False,
         ):
-            rows = _fetch_ohlcv_rows("BGI$", "D1", count=500, start=None, end=None)
+            rows = market_service.fetch_ohlcv_rows(
+                market_data_service, "BGI$", "D1", count=500, start=None, end=None
+            )
 
     assert len(rows) == 2
     assert rows[-1].close == 41.0
@@ -91,9 +91,11 @@ def test_market_ohlcv_response_shape_for_local_bars(market_root):
             "q_backend.market_data.routing.symbol_selectable_in_mt5",
             return_value=False,
         ):
-            rows = _fetch_ohlcv_rows("BGI$", "D1", count=500, start=None, end=None)
+            rows = market_service.fetch_ohlcv_rows(
+                market_data_service, "BGI$", "D1", count=500, start=None, end=None
+            )
 
-    payload = [_ohlcv_to_bar_response(row) for row in rows]
+    payload = [market_service.ohlcv_to_bar_response(row) for row in rows]
     assert len(payload) == 2
     assert payload[0]["close"] == 40.5
 
@@ -139,8 +141,10 @@ def test_ohlcv_uses_mt5_when_symbol_exists_in_terminal(market_root):
             "q_backend.market_data.routing.symbol_selectable_in_mt5",
             return_value=True,
         ):
-            with patch("q_backend.api.main.mt5_client_module.mt5", mock_mt5):
-                rows = _fetch_ohlcv_rows("PETR4", "D1", count=1, start=None, end=None)
+            with patch("q_backend.market_data.clients.metatrader.mt5", mock_mt5):
+                rows = market_service.fetch_ohlcv_rows(
+                    market_data_service, "PETR4", "D1", count=1, start=None, end=None
+                )
 
     assert len(rows) == 1
     mock_mt5.copy_rates_from_pos.assert_called_once()

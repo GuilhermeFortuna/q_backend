@@ -289,6 +289,21 @@ uv run uvicorn q_backend.api.main:app --reload --port 8000
 ```
 The interactive API Swagger docs will be immediately accessible at [http://localhost:8000/docs](http://localhost:8000/docs).
 
+### API layout
+
+`q_backend.api.main` is a thin assembly module: it creates the FastAPI app, registers
+CORS middleware, wires the lifespan, and `include_router`s per-domain routers from
+`q_backend.api.routers/`. Request/response models live in `q_backend.api.schemas/`.
+Shared providers (the app-wide `market_data_service` singleton, database session
+dependency, and cross-domain MT5 helpers) live in `q_backend.api.dependencies`.
+Domain logic stays in the existing packages (`market_data/`, `backtesting/`,
+`optimization/`, etc.) or in `api/services/` when API-specific.
+
+Later decomposition work (WO57–WO60) migrates remaining routes out of `main.py` into
+`api/routers/<domain>.py` following the conventions documented in
+`api/routers/__init__.py`. The market domain (WO57) lives in `routers/market.py`,
+`schemas/market.py`, and `market_data/api_service.py`.
+
 For full-stack local development with the Quant desktop app, run the worker pool as well (step 6). Without it, async jobs stay queued and never complete.
 
 ### 6. Running the Worker Pool

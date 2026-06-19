@@ -6,12 +6,12 @@ from unittest.mock import patch
 
 import pytest
 
-from q_backend.api.main import (
+from q_backend.api.routers.system import (
     get_data_source_setting,
     get_system_health,
     update_data_source_setting,
 )
-from q_backend.api.main import DataSourceUpdateRequest
+from q_backend.api.schemas.system import DataSourceUpdateRequest
 from q_backend.market_data.clients import metatrader
 from q_backend.market_data.service import MarketDataService
 from q_backend.storage import runtime_config
@@ -64,14 +64,13 @@ def test_resolve_provider_respects_runtime_config(tmp_path, monkeypatch):
         service._resolve_provider()
 
     # Platform supports MT5 (e.g. Windows) but the terminal is momentarily
-    # disconnected: auto and mt5 must still resolve to MT5 — the outage surfaces
-    # from the MT5 call, never a silent fall back to local.
+    # disconnected: auto serves local parquet; explicit mt5 still targets MT5.
     monkeypatch.setattr(service.mt5_client, "is_supported", lambda: True)
     monkeypatch.setattr(service.mt5_client, "is_available", lambda: False)
 
     runtime_config.set_data_source("auto")
-    assert service.active_provider() == "mt5"
-    assert service._resolve_provider() is service.mt5_client
+    assert service.active_provider() == "local"
+    assert service._resolve_provider() is service._local_client
 
     runtime_config.set_data_source("mt5")
     assert service.active_provider() == "mt5"
@@ -93,7 +92,7 @@ def test_data_source_endpoints_round_trip(runtime_config_file):
 
 def test_system_health_includes_provider_fields():
     with patch(
-        "q_backend.api.main.storage_status",
+        "q_backend.api.routers.system.storage_status",
         return_value={"postgres": {"status": "ok"}, "redis": {"status": "ok"}},
     ):
         body = get_system_health()

@@ -6,18 +6,14 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from q_backend.api.main import (
-    _build_market_snapshot,
-    _format_tape_ticks,
-    _symbol_info_to_instrument_response,
-    _tick_side,
-    _utc_iso_milliseconds,
+from q_backend.api.dependencies import market_data_service
+from q_backend.api.routers.market import (
     get_market_instrument_info,
     get_market_snapshot,
     get_market_snapshots,
     get_market_ticks,
-    market_data_service,
 )
+from q_backend.market_data import api_service as market_service
 from q_backend.storage.runtime_config import set_data_source
 from q_backend.market_data.models import Tick
 from q_backend.market_data.timezone import unix_seconds_to_utc_iso
@@ -73,7 +69,7 @@ def mock_mt5():
     mock.TICK_FLAG_SELL = 64
     mock.COPY_TICKS_ALL = 7
     with patch.dict(sys.modules, {"MetaTrader5": mock}):
-        with patch("q_backend.api.main.mt5_client_module.mt5", mock):
+        with patch("q_backend.market_data.clients.metatrader.mt5", mock):
             yield mock
 
 
@@ -91,7 +87,7 @@ def test_build_market_snapshot_enriched_fields(mock_mt5):
         _d1_rates() if tf == mock_mt5.TIMEFRAME_D1 else None
     )
 
-    snapshot = _build_market_snapshot("PETR4")
+    snapshot = market_service.build_market_snapshot("PETR4")
 
     assert snapshot is not None
     assert snapshot["symbol"] == "PETR4"
@@ -123,7 +119,7 @@ def test_build_market_snapshot_market_closed_fallback(mock_mt5):
         )
     )
 
-    snapshot = _build_market_snapshot("PETR4")
+    snapshot = market_service.build_market_snapshot("PETR4")
 
     assert snapshot is not None
     assert snapshot["last"] == 41.0
@@ -164,7 +160,7 @@ def test_get_market_snapshots_returns_multiple_and_skips_bad_symbol(mock_mt5):
 
     with patch.object(market_data_service, "mt5_available", return_value=True):
         with patch(
-            "q_backend.api.main._build_market_snapshot",
+            "q_backend.market_data.api_service.build_market_snapshot",
             side_effect=lambda symbol: good_snapshot if symbol == "PETR4" else None,
         ):
             body = get_market_snapshots(symbols="PETR4,BADSYM,VALE3")
@@ -192,10 +188,10 @@ def test_get_market_snapshots_returns_503_when_offline(tmp_path, monkeypatch):
 
 
 def test_tick_side_mapping(mock_mt5):
-    assert _tick_side(32) == "buy"
-    assert _tick_side(64) == "sell"
-    assert _tick_side(96) is None
-    assert _tick_side(0) is None
+    assert market_service.tick_side(32) == "buy"
+    assert market_service.tick_side(64) == "sell"
+    assert market_service.tick_side(96) is None
+    assert market_service.tick_side(0) is None
 
 
 def test_format_tape_ticks_filters_informational_ticks(mock_mt5):
@@ -220,12 +216,12 @@ def test_format_tape_ticks_filters_informational_ticks(mock_mt5):
         ),
     ]
 
-    formatted = _format_tape_ticks(raw_ticks)
+    formatted = market_service.format_tape_ticks(raw_ticks)
 
     assert len(formatted) == 1
     assert formatted[0]["side"] == "buy"
     assert formatted[0]["last"] == 41.08
-    assert formatted[0]["timestamp"] == _utc_iso_milliseconds(1_749_486_731_123)
+    assert formatted[0]["timestamp"] == market_service.utc_iso_milliseconds(1_749_486_731_123)
 
 
 def test_format_tape_ticks_falls_back_to_quote_ticks_for_fx(mock_mt5):
@@ -241,7 +237,7 @@ def test_format_tape_ticks_falls_back_to_quote_ticks_for_fx(mock_mt5):
         )
     ]
 
-    formatted = _format_tape_ticks(raw_ticks)
+    formatted = market_service.format_tape_ticks(raw_ticks)
 
     assert len(formatted) == 1
     assert formatted[0]["side"] is None
@@ -310,7 +306,7 @@ def test_symbol_info_to_instrument_response_maps_fields():
         "spread_float": True,
     }
 
-    body = _symbol_info_to_instrument_response("WIN$", info)
+    body = market_service.symbol_info_to_instrument_response("WIN$", info)
 
     assert body == {
         "symbol": "WIN$",

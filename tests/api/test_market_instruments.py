@@ -7,7 +7,8 @@ from unittest.mock import patch
 
 import pytest
 
-from q_backend.api.main import get_market_instruments, market_data_service, search_symbols
+from q_backend.api.dependencies import market_data_service
+from q_backend.api.routers.market import get_market_instruments, search_symbols
 from q_backend.market_data import local_store
 from q_backend.market_data.models import OHLCV
 from q_backend.storage.runtime_config import set_data_source

@@ -1,4 +1,4 @@
-from q_backend.api.main import list_strategies
+from q_backend.api.routers.strategies import list_strategies
 from q_backend.backtesting.strategy_registry import StrategyCategory
 
 

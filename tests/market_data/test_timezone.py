@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 import numpy as np
 
-from q_backend.api.main import _ohlcv_to_bar_response
+from q_backend.market_data import api_service as market_service
 from q_backend.market_data.models import OHLCV
 from q_backend.market_data.timezone import (
     mt5_datetime_to_utc_iso,
@@ -63,13 +63,13 @@ def test_ohlcv_to_bar_response_from_unix_row():
         ],
     )
 
-    bar = _ohlcv_to_bar_response(row)
+    bar = market_service.ohlcv_to_bar_response(row)
 
     assert bar["timestamp"] == "2024-01-01T15:00:00Z"
 
 
 def test_ohlcv_to_bar_response_from_ohlcv_model():
-    bar = _ohlcv_to_bar_response(
+    bar = market_service.ohlcv_to_bar_response(
         OHLCV(
             time=datetime(2024, 1, 1, 12, 0, 0),
             open=1.0,
