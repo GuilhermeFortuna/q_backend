@@ -457,7 +457,7 @@ class StrategySearchStartResponse(BaseModel):
 class StrategySearchStatusResponse(BaseModel):
     run_id: str
     status: str
-    current_candidate: int
+    current_candidate: float
     total_candidates: int
     candidate_id: Optional[str] = None
     strategy: Optional[str] = None
@@ -469,6 +469,7 @@ class StrategySearchStatusResponse(BaseModel):
     error: Optional[str] = None
     search_config: Optional[Dict[str, Any]] = None
     backtest_config: Optional[Dict[str, Any]] = None
+    logs: Optional[List[str]] = None
 
 
 class StrategySearchCandidateResponse(BaseModel):

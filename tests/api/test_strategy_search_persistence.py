@@ -340,3 +340,24 @@ def test_strategy_search_migration_revision_chain():
     assert revision.down_revision == "20260611_0003"
     assert callable(revision.module.upgrade)
     assert callable(revision.module.downgrade)
+
+
+def test_strategy_search_status_response_preserves_trial_logs():
+    from q_backend.api.main import StrategySearchStatusResponse
+
+    sample_log = (
+        "[I 2026-06-15 07:37:19,667] Candidate genome-001 - Window 0 - "
+        "Trial 1 finished with value: -0.645 and parameters: {'period': 27}. "
+        "Best is trial 0 with value: -0.645."
+    )
+    payload = {
+        "run_id": "a" * 32,
+        "status": "running",
+        "current_candidate": 36.25,
+        "total_candidates": 144,
+        "logs": [sample_log],
+    }
+
+    response = StrategySearchStatusResponse.model_validate(payload)
+    assert response.logs == [sample_log]
+    assert response.current_candidate == 36.25
