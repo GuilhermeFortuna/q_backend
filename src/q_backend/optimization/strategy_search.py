@@ -340,6 +340,7 @@ def evaluate_candidate(
     ohlcv: pd.DataFrame | None = None,
     progress_callback: Callable[[SearchProgress], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
+    run_id: str | None = None,
 ) -> CandidateResult:
     base = CandidateResult(
         candidate_id=candidate.candidate_id,
@@ -376,6 +377,8 @@ def evaluate_candidate(
             config.walkforward,
             runner,
             ohlcv=ohlcv,
+            run_id=run_id,
+            candidate_id=candidate.candidate_id,
         ).run(progress_callback=wf_progress, should_stop=should_stop)
     except Exception as exc:
         base.status = "error"

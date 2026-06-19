@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from typing import Any, Literal
 
 import pandas as pd
+import optuna
 from pydantic import BaseModel, Field
 
 from q_backend.backtesting.models import Trade
@@ -157,6 +158,8 @@ class WalkForwardRunner:
         wf_config: WalkForwardConfig,
         backtest_runner: BacktestRunner,
         ohlcv: pd.DataFrame | None = None,
+        run_id: str | None = None,
+        candidate_id: str | None = None,
     ):
         if config.is_multi_objective():
             raise ValueError(
@@ -174,6 +177,8 @@ class WalkForwardRunner:
         # independent windows can be optimized in parallel. Without it, the runner
         # falls back to the sequential path using ``backtest_runner``.
         self._ohlcv = ohlcv
+        self.run_id = run_id
+        self.candidate_id = candidate_id
 
     def _build_backtest_config(
         self,
@@ -260,7 +265,49 @@ class WalkForwardRunner:
         )
 
         window_config = self._window_optimization_config(window)
-        opt_result = OptimizationRunner(window_config, backtest_runner).run()
+
+        callbacks = []
+        if self.run_id:
+            def optuna_callback(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
+                from datetime import datetime
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
+                
+                # Check state
+                if trial.state == optuna.trial.TrialState.COMPLETE:
+                    val_str = f"value: {trial.value}"
+                elif trial.state == optuna.trial.TrialState.PRUNED:
+                    val_str = "state: PRUNED"
+                else:
+                    val_str = f"state: {trial.state.name}"
+                
+                params_str = ", ".join(f"'{k}': {v}" for k, v in trial.params.items())
+                params_str = "{" + params_str + "}"
+                
+                try:
+                    best_trial = study.best_trial
+                    best_val = best_trial.value
+                    best_num = best_trial.number
+                    best_str = f"Best is trial {best_num} with value: {best_val}"
+                except ValueError:
+                    best_str = "No best trial yet"
+                
+                candidate_prefix = f"Candidate {self.candidate_id} - " if self.candidate_id else ""
+                window_prefix = f"Window {window.index} - "
+                msg = f"[I {timestamp}] {candidate_prefix}{window_prefix}Trial {trial.number} finished with {val_str} and parameters: {params_str}. {best_str}."
+                
+                try:
+                    from q_backend.storage.redis.client import get_redis
+                    redis_client = get_redis()
+                    log_key = f"strategy_search:logs:{self.run_id}"
+                    redis_client.rpush(log_key, msg)
+                    redis_client.ltrim(log_key, -100, -1)
+                    redis_client.expire(log_key, 86400)
+                except Exception as e:
+                    logger.warning("Failed to write trial progress to Redis: %s", e)
+
+            callbacks.append(optuna_callback)
+
+        opt_result = OptimizationRunner(window_config, backtest_runner).run(callbacks=callbacks)
 
         if opt_result.best_trial is None:
             return (

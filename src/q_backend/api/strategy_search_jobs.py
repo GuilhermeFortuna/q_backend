@@ -635,7 +635,9 @@ def run_candidate(
 
     if not is_cancelled(run_id):
         try:
-            result = evaluate_candidate(candidate, request, _candidate_runner(request))
+            result = evaluate_candidate(
+                candidate, request, _candidate_runner(request), run_id=run_id
+            )
         except Exception as exc:  # noqa: BLE001 - isolate a single candidate failure
             logger.exception(
                 "Discovery candidate %s failed for run %s",
@@ -832,6 +834,7 @@ def run_genetic_candidate(
                 _candidate_runner(request),
                 progress_callback=on_window,
                 should_stop=lambda: is_cancelled(run_id),
+                run_id=run_id,
             )
         except Exception as exc:  # noqa: BLE001 - isolate a single candidate failure
             logger.exception(
@@ -1168,6 +1171,18 @@ def status_payload_from_db(run_id: str) -> dict[str, Any] | None:
     }
 
 
+def _get_redis_logs(run_id: str) -> list[str]:
+    try:
+        redis_client = get_redis()
+        log_key = f"strategy_search:logs:{run_id}"
+        logs = redis_client.lrange(log_key, 0, -1)
+        if logs:
+            return [log.decode("utf-8") if isinstance(log, bytes) else log for log in logs]
+    except Exception as e:
+        logger.warning("Failed to retrieve trial logs from Redis for run %s: %s", run_id, e)
+    return []
+
+
 def get_status_payload(run_id: str) -> dict[str, Any] | None:
     db_payload = status_payload_from_db(run_id)
 
@@ -1183,9 +1198,13 @@ def get_status_payload(run_id: str) -> dict[str, Any] | None:
     # are written by the finalizer), so the live Redis snapshot is authoritative.
     # Once terminal, the DB row is complete and wins.
     if db_payload is None:
+        if cached is not None:
+            cached["logs"] = _get_redis_logs(run_id)
         return cached
     if db_payload.get("status") in ("pending", "running") and cached is not None:
+        cached["logs"] = _get_redis_logs(run_id)
         return cached
+    db_payload["logs"] = _get_redis_logs(run_id)
     return db_payload
 
 
