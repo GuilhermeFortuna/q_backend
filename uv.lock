@@ -561,10 +561,25 @@ wheels = [
 
 [[package]]
 name = "metatrader5"
+version = "0.0.0"
+source = { directory = "docker/metatrader5-stub" }
+resolution-markers = [
+    "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version < '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+]
+
+[[package]]
+name = "metatrader5"
 version = "5.0.5735"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.14' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and sys_platform == 'win32'",
+]
 dependencies = [
-    { name = "numpy" },
+    { name = "numpy", marker = "sys_platform == 'win32'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d9/db/42dc3437c7371492262b0642c64c7b5f67c396bbcb8101ccf182981b67b3/metatrader5-5.0.5735-cp312-cp312-win_amd64.whl", hash = "sha256:f6e8584e48f2c3f5de818f17ee65f0f5adfa1e4af29cd5f4bf3f72b91ff06e10", size = 48062, upload-time = "2026-04-04T16:44:09.905Z" },
@@ -1161,7 +1176,8 @@ dependencies = [
     { name = "alembic" },
     { name = "dramatiq", extra = ["redis"] },
     { name = "fastapi" },
-    { name = "metatrader5" },
+    { name = "metatrader5", version = "0.0.0", source = { directory = "docker/metatrader5-stub" }, marker = "sys_platform != 'win32'" },
+    { name = "metatrader5", version = "5.0.5735", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
     { name = "numba" },
     { name = "numpy" },
     { name = "optuna" },
@@ -1189,7 +1205,8 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.14.0" },
     { name = "dramatiq", extras = ["redis"], specifier = ">=1.17.0" },
     { name = "fastapi", specifier = ">=0.136.3" },
-    { name = "metatrader5", specifier = ">=5.0.5735" },
+    { name = "metatrader5", marker = "sys_platform != 'win32'", directory = "docker/metatrader5-stub" },
+    { name = "metatrader5", marker = "sys_platform == 'win32'", specifier = ">=5.0.5735" },
     { name = "numba", specifier = ">=0.65.1" },
     { name = "numpy", specifier = ">=2.4.4" },
     { name = "optuna", specifier = ">=4.9.0" },

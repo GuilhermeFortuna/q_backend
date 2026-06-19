@@ -7,7 +7,8 @@ dependencies = [
     "alembic>=1.14.0",
     "dramatiq[redis]>=1.17.0",
     "fastapi>=0.136.3",
-    "metatrader5>=5.0.5735",
+    "metatrader5>=5.0.5735; sys_platform == 'win32'",
+    "metatrader5; sys_platform != 'win32'",
     "numpy>=2.4.4",
     "optuna>=4.9.0",
     "pandas>=3.0.2",
@@ -46,3 +47,9 @@ build-backend = "hatchling.build"
 
 [tool.black]
 target-version = ["py312"]
+
+[tool.uv.sources]
+metatrader5 = [
+    { path = "docker/metatrader5-stub", marker = "sys_platform != 'win32'" }
+]
+

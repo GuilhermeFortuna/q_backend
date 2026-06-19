@@ -21,8 +21,7 @@ COPY docker/metatrader5-stub ./docker/metatrader5-stub
 COPY docker/entrypoint.sh /entrypoint.sh
 
 RUN chmod +x /entrypoint.sh \
-    && uv sync --frozen --no-dev --no-install-package metatrader5 \
-    && uv pip install ./docker/metatrader5-stub
+    && uv sync --frozen --no-dev
 
 ENV PATH="/app/.venv/bin:${PATH}"
 
