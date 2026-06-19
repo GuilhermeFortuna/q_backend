@@ -144,6 +144,7 @@ def _genetic_search_config(
             tournament_size=2,
             max_nodes=12,
             max_depth=8,
+            max_workers=1,
         ),
     )
 

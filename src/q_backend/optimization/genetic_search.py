@@ -28,7 +28,12 @@ from q_backend.optimization.lockbox import (
     backtest_config_for_walkforward,
     evaluate_lockbox,
 )
+from q_backend.optimization.genetic_parallel import (
+    evaluate_generation_parallel,
+    eval_config_for_parallel_workers,
+)
 from q_backend.optimization.models import SearchSpaceConfig
+from q_backend.optimization.parallel import resolve_worker_count
 from q_backend.optimization.strategy_search import (
     CandidateProvider,
     CandidateResult,
@@ -450,6 +455,221 @@ class GeneticStrategySearchOrchestrator:
     def candidate_metadata(self) -> dict[str, dict[str, Any]]:
         return dict(self._candidate_metadata)
 
+    def _prescreen_result(
+        self,
+        candidate: SearchCandidate,
+        genome: Genome | None,
+        *,
+        genetic: GeneticSearchConfig,
+        probe_frame: pd.DataFrame | None,
+    ) -> CandidateResult | None:
+        prescreen_min = genetic.prescreen_min_signals
+        if (
+            prescreen_min <= 0
+            or probe_frame is None
+            or len(probe_frame) == 0
+            or genome is None
+            or genome_signal_activity(
+                genome,
+                probe_frame,
+                min_signals=prescreen_min,
+                max_depth=genetic.max_depth,
+                max_node_count=genetic.max_nodes,
+            ).is_tradeable
+        ):
+            return None
+        return CandidateResult(
+            candidate_id=candidate.candidate_id,
+            strategy=candidate.strategy,
+            status="no_result",
+            error="pre-screen: no in-sample signals",
+        )
+
+    def _record_candidate_metadata(
+        self,
+        result: CandidateResult,
+        genome: Genome | None,
+        *,
+        genetic: GeneticSearchConfig,
+    ) -> None:
+        if genome is None:
+            return
+        selection_fitness, fitness_breakdown = candidate_fitness_details(
+            result,
+            genome,
+            genetic,
+            gates=self.config.gates,
+        )
+        self._candidate_metadata[result.candidate_id] = {
+            "generation": self.provider.generation,
+            "genome": genome.model_dump(),
+            "genome_node_count": genome_node_count(genome),
+            "complexity_penalty": _complexity_penalty(genome, genetic),
+            "selection_fitness": selection_fitness,
+            "fitness_breakdown": fitness_breakdown,
+        }
+
+    def _evaluate_generation_serial(
+        self,
+        candidates: list[SearchCandidate],
+        *,
+        genetic: GeneticSearchConfig,
+        ohlcv: pd.DataFrame | None,
+        generation_number: int,
+        progress_callback: Callable[[SearchProgress], None] | None,
+        should_stop: Callable[[], bool] | None,
+    ) -> list[CandidateResult]:
+        generation_results: list[CandidateResult] = []
+        for candidate_index, candidate in enumerate(candidates):
+            if should_stop is not None and should_stop():
+                break
+
+            def candidate_progress(
+                progress: SearchProgress,
+                *,
+                _candidate_index: int = candidate_index,
+                _generation: int = self.provider.generation,
+            ) -> None:
+                if progress_callback is None:
+                    return
+                progress_callback(
+                    SearchProgress(
+                        current_candidate=_candidate_index + 1,
+                        total_candidates=len(candidates),
+                        candidate_id=progress.candidate_id,
+                        strategy=progress.strategy,
+                        phase=progress.phase,
+                        window_index=progress.window_index,
+                        total_windows=progress.total_windows,
+                        generation=_generation + 1,
+                        total_generations=genetic.generations,
+                    )
+                )
+
+            genome = self.provider._genome_by_id.get(candidate.candidate_id)
+            prescreened = self._prescreen_result(
+                candidate,
+                genome,
+                genetic=genetic,
+                probe_frame=self._probe_frame,
+            )
+            if prescreened is not None:
+                result = prescreened
+            else:
+                result = evaluate_candidate(
+                    candidate,
+                    self._eval_config,
+                    self.backtest_runner,
+                    ohlcv=ohlcv,
+                    progress_callback=candidate_progress,
+                    should_stop=should_stop,
+                )
+
+            generation_results.append(result)
+            self._record_candidate_metadata(result, genome, genetic=genetic)
+
+            if progress_callback is not None:
+                progress_callback(
+                    SearchProgress(
+                        current_candidate=candidate_index + 1,
+                        total_candidates=len(candidates),
+                        candidate_id=candidate.candidate_id,
+                        strategy=candidate.strategy,
+                        phase="done",
+                        window_index=None,
+                        total_windows=None,
+                        generation=generation_number,
+                        total_generations=genetic.generations,
+                    )
+                )
+
+        return generation_results
+
+    def _evaluate_generation(
+        self,
+        candidates: list[SearchCandidate],
+        *,
+        genetic: GeneticSearchConfig,
+        ohlcv: pd.DataFrame | None,
+        eval_frame: pd.DataFrame | None,
+        generation_number: int,
+        progress_callback: Callable[[SearchProgress], None] | None,
+        should_stop: Callable[[], bool] | None,
+    ) -> list[CandidateResult]:
+        workers = resolve_worker_count(genetic.max_workers, len(candidates))
+        if (
+            workers == 1
+            or eval_frame is None
+            or len(eval_frame) == 0
+        ):
+            return self._evaluate_generation_serial(
+                candidates,
+                genetic=genetic,
+                ohlcv=ohlcv,
+                generation_number=generation_number,
+                progress_callback=progress_callback,
+                should_stop=should_stop,
+            )
+
+        entries: list[tuple[SearchCandidate, CandidateResult | None]] = []
+        for candidate in candidates:
+            if should_stop is not None and should_stop():
+                break
+            genome = self.provider._genome_by_id.get(candidate.candidate_id)
+            prescreened = self._prescreen_result(
+                candidate,
+                genome,
+                genetic=genetic,
+                probe_frame=self._probe_frame,
+            )
+            entries.append((candidate, prescreened))
+
+        eval_candidates = [candidate for candidate, result in entries if result is None]
+        evaluated: list[CandidateResult] = []
+        if eval_candidates:
+            evaluated = evaluate_generation_parallel(
+                eval_candidates,
+                eval_config_for_parallel_workers(self._eval_config),
+                eval_frame,
+                max_workers=genetic.max_workers,
+                generation=generation_number,
+                total_generations=genetic.generations,
+                progress_callback=progress_callback,
+                should_stop=should_stop,
+            )
+
+        generation_results: list[CandidateResult] = []
+        eval_iter = iter(evaluated)
+        for candidate, existing in entries:
+            if should_stop is not None and should_stop():
+                break
+            genome = self.provider._genome_by_id.get(candidate.candidate_id)
+            if existing is not None:
+                result = existing
+            else:
+                try:
+                    result = next(eval_iter)
+                except StopIteration:
+                    break
+            generation_results.append(result)
+            self._record_candidate_metadata(result, genome, genetic=genetic)
+            if existing is not None and progress_callback is not None:
+                progress_callback(
+                    SearchProgress(
+                        current_candidate=len(generation_results),
+                        total_candidates=len(candidates),
+                        candidate_id=candidate.candidate_id,
+                        strategy=candidate.strategy,
+                        phase="done",
+                        window_index=None,
+                        total_windows=None,
+                        generation=generation_number,
+                        total_generations=genetic.generations,
+                    )
+                )
+
+        return generation_results
+
     def run(
         self,
         progress_callback: Callable[[SearchProgress], None] | None = None,
@@ -458,105 +678,27 @@ class GeneticStrategySearchOrchestrator:
         genetic = self.config.genetic
         assert genetic is not None
         ohlcv = getattr(self.backtest_runner, "_df", None)
-        probe_frame = self._probe_frame
+        eval_frame = (
+            self._probe_frame
+            if self._probe_frame is not None
+            else ohlcv
+        )
 
         for _generation_index in range(genetic.generations):
             if should_stop is not None and should_stop():
                 break
 
             candidates = self.provider.candidates()
-            generation_results: list[CandidateResult] = []
-
-            for candidate_index, candidate in enumerate(candidates):
-                if should_stop is not None and should_stop():
-                    break
-
-                def candidate_progress(
-                    progress: SearchProgress,
-                    *,
-                    _candidate_index: int = candidate_index,
-                    _generation: int = self.provider.generation,
-                ) -> None:
-                    if progress_callback is None:
-                        return
-                    progress_callback(
-                        SearchProgress(
-                            current_candidate=_candidate_index + 1,
-                            total_candidates=len(candidates),
-                            candidate_id=progress.candidate_id,
-                            strategy=progress.strategy,
-                            phase=progress.phase,
-                            window_index=progress.window_index,
-                            total_windows=progress.total_windows,
-                            generation=_generation + 1,
-                            total_generations=genetic.generations,
-                        )
-                    )
-
-                result: CandidateResult
-                genome = self.provider._genome_by_id.get(candidate.candidate_id)
-                prescreen_min = genetic.prescreen_min_signals
-                if (
-                    prescreen_min > 0
-                    and probe_frame is not None
-                    and len(probe_frame) > 0
-                    and genome is not None
-                    and not genome_signal_activity(
-                        genome,
-                        probe_frame,
-                        min_signals=prescreen_min,
-                        max_depth=genetic.max_depth,
-                        max_node_count=genetic.max_nodes,
-                    ).is_tradeable
-                ):
-                    result = CandidateResult(
-                        candidate_id=candidate.candidate_id,
-                        strategy=candidate.strategy,
-                        status="no_result",
-                        error="pre-screen: no in-sample signals",
-                    )
-                else:
-                    result = evaluate_candidate(
-                        candidate,
-                        self._eval_config,
-                        self.backtest_runner,
-                        ohlcv=ohlcv,
-                        progress_callback=candidate_progress,
-                        should_stop=should_stop,
-                    )
-                generation_results.append(result)
-                if genome is not None:
-                    selection_fitness, fitness_breakdown = candidate_fitness_details(
-                        result,
-                        genome,
-                        genetic,
-                        gates=self.config.gates,
-                    )
-                    self._candidate_metadata[result.candidate_id] = {
-                        "generation": self.provider.generation,
-                        "genome": genome.model_dump(),
-                        "genome_node_count": genome_node_count(genome),
-                        "complexity_penalty": _complexity_penalty(
-                            genome, genetic
-                        ),
-                        "selection_fitness": selection_fitness,
-                        "fitness_breakdown": fitness_breakdown,
-                    }
-
-                if progress_callback is not None:
-                    progress_callback(
-                        SearchProgress(
-                            current_candidate=candidate_index + 1,
-                            total_candidates=len(candidates),
-                            candidate_id=candidate.candidate_id,
-                            strategy=candidate.strategy,
-                            phase="done",
-                            window_index=None,
-                            total_windows=None,
-                            generation=self.provider.generation + 1,
-                            total_generations=genetic.generations,
-                        )
-                    )
+            generation_number = self.provider.generation + 1
+            generation_results = self._evaluate_generation(
+                candidates,
+                genetic=genetic,
+                ohlcv=ohlcv,
+                eval_frame=eval_frame,
+                generation_number=generation_number,
+                progress_callback=progress_callback,
+                should_stop=should_stop,
+            )
 
             self._generations.append(generation_results)
             self.provider.report(generation_results)

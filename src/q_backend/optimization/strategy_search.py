@@ -73,8 +73,8 @@ class LockboxConfig(BaseModel):
 
 
 class GeneticSearchConfig(BaseModel):
-    population_size: int = Field(default=40, ge=10, le=200)
-    generations: int = Field(default=10, ge=2, le=50)
+    population_size: int = Field(default=48, ge=10, le=200)
+    generations: int = Field(default=12, ge=2, le=50)
     elite_count: int = Field(default=4, ge=1)
     crossover_rate: float = Field(default=0.7, ge=0.0, le=1.0)
     mutation_rate: float = Field(default=0.15, ge=0.0, le=1.0)
@@ -84,6 +84,7 @@ class GeneticSearchConfig(BaseModel):
     max_depth: int = Field(default=12, ge=3)
     complexity_lambda: float = 0.001
     complexity_mu: float = 0.0005
+    max_workers: int | None = Field(default=None, ge=1)
     # Selection-signal shaping (does not change gates or the reported leaderboard).
     gate_penalty_efficiency: float = 0.5
     gate_penalty_trades: float = 0.5

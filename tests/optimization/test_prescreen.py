@@ -80,6 +80,7 @@ def _config(
     init_seed: int = 7,
     prescreen_min_signals: int = 1,
     min_seed_signals: int = 0,
+    max_workers: int | None = 1,
 ) -> StrategySearchConfig:
     return StrategySearchConfig(
         backtest={
@@ -118,6 +119,7 @@ def _config(
             max_depth=8,
             prescreen_min_signals=prescreen_min_signals,
             min_seed_signals=min_seed_signals,
+            max_workers=max_workers,
         ),
     )
 
