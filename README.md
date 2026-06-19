@@ -97,6 +97,7 @@ WO39 adds evolution on top of the genome interpreter without changing WO31's eva
 * **`GeneticStrategySearchOrchestrator`** — loops `generations × population_size`, calling `evaluate_candidate` each time (same walk-forward + OOS gates as registry sweep), then `provider.report()`.
 * **Fitness** — OOS `robustness_score` minus a parsimony penalty (`complexity_lambda × node_count + complexity_mu × param_count`). Gate-passing genomes occupy the top fitness band; near-viable failures can still breed via graded penalties (WO52).
 * **Graded selection (WO52)** — tournament breeding uses a continuous selection fitness: robustness minus complexity minus *soft* gate penalties, with finite floors for `no_result` / `error` genomes. This gives the GA a gradient before any genome clears the hard gates; the published leaderboard still requires `passed_gates`.
+* **Trade-viability (WO53)** — generation and repair bias toward genomes that fire in-sample (`genome_signal_activity`); a cheap pre-screen skips walk-forward for genomes with no entry signals (`prescreen_min_signals`, default `1`; set `0` to disable).
 * **Job seam** — `select_search_orchestrator(config, backtest_runner)` returns the genetic orchestrator when `StrategySearchConfig.genetic` is set, else the existing `StrategySearchRunner`.
 
 See design doc §4–§5.3 for operator details and initial population mix (50% mutated registry fixtures / 50% random valid DAGs).

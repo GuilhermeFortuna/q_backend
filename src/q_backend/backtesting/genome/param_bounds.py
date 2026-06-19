@@ -45,8 +45,8 @@ GENOME_PARAM_BOUNDS: dict[str, StrategyParamSpec] = {
         label="Threshold",
         type="float",
         default=0.0,
-        min=0.0,
-        max=100.0,
+        min=-50.0,
+        max=50.0,
         step=0.01,
     ),
     "period": StrategyParamSpec(

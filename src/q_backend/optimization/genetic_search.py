@@ -9,6 +9,7 @@ from typing import Any
 
 import pandas as pd
 
+from q_backend.backtesting.genome.activity import genome_signal_activity
 from q_backend.backtesting.genome.operators import (
     build_initial_population,
     clone_genome,
@@ -21,7 +22,7 @@ from q_backend.backtesting.genome.operators import (
 from q_backend.backtesting.genome.schema import Genome
 from q_backend.backtesting.genome.search_space import derive_genome_search_space
 from q_backend.optimization.auto_search_space import default_risk_search_space
-from q_backend.optimization.backtest_runner import BacktestRunConfig, BacktestRunner
+from q_backend.optimization.backtest_runner import BacktestRunConfig, BacktestRunner, DefaultBacktestRunner
 from q_backend.optimization.dsr import deflated_sharpe_ratio
 from q_backend.optimization.lockbox import (
     backtest_config_for_walkforward,
@@ -159,6 +160,40 @@ def candidate_fitness(
     return fitness
 
 
+def _resolve_probe_frame(
+    backtest_runner: BacktestRunner,
+    config: StrategySearchConfig,
+) -> pd.DataFrame | None:
+    """Reuse the runner's cached frame or one slice from its data provider."""
+    df = getattr(backtest_runner, "_df", None)
+    if df is not None and len(df) > 0:
+        return df
+    if not isinstance(backtest_runner, DefaultBacktestRunner):
+        return None
+    provider = getattr(backtest_runner, "_data_provider", None)
+    if provider is None:
+        return None
+    backtest = config.backtest
+    run_cfg = BacktestRunConfig(
+        symbol=backtest.symbol,
+        timeframe=backtest.timeframe,
+        start=backtest.start,
+        end=backtest.end,
+        initial_capital=backtest.initial_capital,
+        point_value=backtest.point_value,
+        strategy=backtest.strategy or "CompositeStrategy",
+        strategy_params={},
+        position_sizing=None,
+    )
+    try:
+        resolved = provider(run_cfg)
+    except Exception:
+        return None
+    if resolved is None or len(resolved) == 0:
+        return None
+    return resolved
+
+
 def _search_space_for_genome(
     genome: Genome,
     search_config: StrategySearchConfig,
@@ -198,9 +233,11 @@ class GeneticCandidateProvider:
         self,
         genetic_config: GeneticSearchConfig,
         search_config: StrategySearchConfig,
+        probe_df: pd.DataFrame | None = None,
     ) -> None:
         self._genetic = genetic_config
         self._search = search_config
+        self._probe_df = probe_df
         self._rng = random.Random(genetic_config.init_seed)
         self._generation = 0
         self._next_individual = 0
@@ -209,6 +246,9 @@ class GeneticCandidateProvider:
             population_size=genetic_config.population_size,
             max_nodes=genetic_config.max_nodes,
             max_depth=genetic_config.max_depth,
+            ohlcv=probe_df,
+            min_seed_signals=genetic_config.min_seed_signals,
+            repair_max_attempts=genetic_config.repair_max_attempts,
         )
         self._genome_by_id = {genome.genome_id: genome for genome in self._population}
         self._champion: Genome | None = None
@@ -354,6 +394,9 @@ class GeneticCandidateProvider:
                     child,
                     max_nodes=self._genetic.max_nodes,
                     max_depth=self._genetic.max_depth,
+                    probe_df=self._probe_df,
+                    min_signals=self._genetic.min_seed_signals,
+                    repair_max_attempts=self._genetic.repair_max_attempts,
                 )
             return clone_genome(
                 child,
@@ -397,6 +440,7 @@ class GeneticStrategySearchOrchestrator:
         self._generations: list[list[CandidateResult]] = []
         self._candidate_metadata: dict[str, dict[str, Any]] = {}
         self._eval_config = _config_for_walkforward(config)
+        self._probe_frame = _resolve_probe_frame(backtest_runner, config)
 
     @property
     def generations(self) -> list[list[CandidateResult]]:
@@ -414,6 +458,7 @@ class GeneticStrategySearchOrchestrator:
         genetic = self.config.genetic
         assert genetic is not None
         ohlcv = getattr(self.backtest_runner, "_df", None)
+        probe_frame = self._probe_frame
 
         for _generation_index in range(genetic.generations):
             if should_stop is not None and should_stop():
@@ -448,16 +493,38 @@ class GeneticStrategySearchOrchestrator:
                         )
                     )
 
-                result = evaluate_candidate(
-                    candidate,
-                    self._eval_config,
-                    self.backtest_runner,
-                    ohlcv=ohlcv,
-                    progress_callback=candidate_progress,
-                    should_stop=should_stop,
-                )
+                result: CandidateResult
+                genome = self.provider._genome_by_id.get(candidate.candidate_id)
+                prescreen_min = genetic.prescreen_min_signals
+                if (
+                    prescreen_min > 0
+                    and probe_frame is not None
+                    and len(probe_frame) > 0
+                    and genome is not None
+                    and not genome_signal_activity(
+                        genome,
+                        probe_frame,
+                        min_signals=prescreen_min,
+                        max_depth=genetic.max_depth,
+                        max_node_count=genetic.max_nodes,
+                    ).is_tradeable
+                ):
+                    result = CandidateResult(
+                        candidate_id=candidate.candidate_id,
+                        strategy=candidate.strategy,
+                        status="no_result",
+                        error="pre-screen: no in-sample signals",
+                    )
+                else:
+                    result = evaluate_candidate(
+                        candidate,
+                        self._eval_config,
+                        self.backtest_runner,
+                        ohlcv=ohlcv,
+                        progress_callback=candidate_progress,
+                        should_stop=should_stop,
+                    )
                 generation_results.append(result)
-                genome = self.provider._genome_by_id.get(result.candidate_id)
                 if genome is not None:
                     selection_fitness, fitness_breakdown = candidate_fitness_details(
                         result,
@@ -590,7 +657,11 @@ def select_search_orchestrator(
     if config.genetic is not None:
         genetic_provider = provider
         if genetic_provider is None:
-            genetic_provider = GeneticCandidateProvider(config.genetic, config)
+            genetic_provider = GeneticCandidateProvider(
+                config.genetic,
+                config,
+                probe_df=_resolve_probe_frame(backtest_runner, config),
+            )
         if not isinstance(genetic_provider, GeneticCandidateProvider):
             raise TypeError(
                 "Genetic search requires GeneticCandidateProvider when config.genetic is set"

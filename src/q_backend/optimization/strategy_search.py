@@ -90,6 +90,9 @@ class GeneticSearchConfig(BaseModel):
     gate_penalty_windows: float = 0.5
     no_result_floor: float = -2.0
     error_floor: float = -4.0
+    prescreen_min_signals: int = Field(default=1, ge=0)
+    min_seed_signals: int = Field(default=1, ge=0)
+    repair_max_attempts: int = Field(default=8, ge=1)
 
     @model_validator(mode="after")
     def validate_elite_count(self) -> GeneticSearchConfig:

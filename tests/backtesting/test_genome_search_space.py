@@ -25,8 +25,8 @@ def test_ma_genome_search_space_matches_registry_bounds():
 
     threshold = search_space.strategy_params["threshold"]
     assert isinstance(threshold, FloatParam)
-    assert threshold.low == 0.0
-    assert threshold.high == 100.0
+    assert threshold.low == -50.0
+    assert threshold.high == 50.0
 
     short_type = search_space.strategy_params["short_ma_type"]
     assert isinstance(short_type, CategoricalParam)

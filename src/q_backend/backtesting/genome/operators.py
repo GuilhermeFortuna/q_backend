@@ -6,6 +6,12 @@ import copy
 import random
 from typing import Any
 
+import pandas as pd
+
+from q_backend.backtesting.genome.activity import (
+    genome_signal_activity,
+    repair_genome,
+)
 from q_backend.backtesting.genome.node_specs import (
     NODE_SPECS,
     OutputType,
@@ -126,6 +132,9 @@ def mutate_genome(
     *,
     max_nodes: int,
     max_depth: int,
+    probe_df: pd.DataFrame | None = None,
+    min_signals: int = 0,
+    repair_max_attempts: int = 8,
 ) -> Genome:
     op = rng.choice(
         ["rewire", "swap_indicator", "nudge_param", "swap_exit", "add_node", "remove_node"]
@@ -135,7 +144,15 @@ def mutate_genome(
     if op == "swap_indicator":
         return _mutate_swap_indicator(rng, genome, max_nodes=max_nodes, max_depth=max_depth)
     if op == "nudge_param":
-        return _mutate_nudge_param(rng, genome, max_nodes=max_nodes, max_depth=max_depth)
+        return _mutate_nudge_param(
+            rng,
+            genome,
+            max_nodes=max_nodes,
+            max_depth=max_depth,
+            probe_df=probe_df,
+            min_signals=min_signals,
+            repair_max_attempts=repair_max_attempts,
+        )
     if op == "swap_exit":
         return _mutate_swap_exit(rng, genome, max_nodes=max_nodes, max_depth=max_depth)
     if op == "add_node":
@@ -205,7 +222,39 @@ def _mutate_nudge_param(
     *,
     max_nodes: int,
     max_depth: int,
+    probe_df: pd.DataFrame | None = None,
+    min_signals: int = 0,
+    repair_max_attempts: int = 8,
 ) -> Genome:
+    if (
+        probe_df is not None
+        and len(probe_df) > 0
+        and min_signals > 0
+        and not genome_signal_activity(
+            genome,
+            probe_df,
+            min_signals=min_signals,
+            max_depth=max_depth,
+            max_node_count=max_nodes,
+        ).is_tradeable
+    ):
+        repaired = repair_genome(
+            rng,
+            genome,
+            probe_df,
+            min_signals=min_signals,
+            max_nodes=max_nodes,
+            max_depth=max_depth,
+            max_attempts=repair_max_attempts,
+        )
+        if genome_signal_activity(
+            repaired,
+            probe_df,
+            min_signals=min_signals,
+            max_depth=max_depth,
+            max_node_count=max_nodes,
+        ).is_tradeable:
+            return repaired
     return _light_mutate_params(rng, genome, max_nodes=max_nodes, max_depth=max_depth)
 
 
@@ -611,10 +660,113 @@ def build_random_genome(
     archetype = rng.choice(["crossover", "reversion", "breakout"])
     if archetype == "crossover":
         return _build_random_crossover(rng, genome_id, generation, max_nodes, max_depth)
-    elif archetype == "reversion":
+    if archetype == "reversion":
         return _build_random_reversion(rng, genome_id, generation, max_nodes, max_depth)
-    else:
-        return _build_random_breakout(rng, genome_id, generation, max_nodes, max_depth)
+    return _build_random_breakout(rng, genome_id, generation, max_nodes, max_depth)
+
+
+def _tradeable_registry_fallback(
+    rng: random.Random,
+    *,
+    genome_id: str,
+    generation: int,
+) -> Genome:
+    template = Genome.model_validate(
+        copy.deepcopy(REGISTRY_GENOME_FIXTURES["MACrossover"])
+    )
+    return clone_genome(template, genome_id=genome_id, generation=generation)
+
+
+def _ensure_tradeable_genome(
+    rng: random.Random,
+    genome: Genome,
+    *,
+    ohlcv: pd.DataFrame,
+    min_signals: int,
+    max_nodes: int,
+    max_depth: int,
+    repair_max_attempts: int,
+    genome_id: str,
+    generation: int,
+) -> Genome:
+    if genome_signal_activity(
+        genome,
+        ohlcv,
+        min_signals=min_signals,
+        max_depth=max_depth,
+        max_node_count=max_nodes,
+    ).is_tradeable:
+        return genome
+
+    repaired = repair_genome(
+        rng,
+        genome,
+        ohlcv,
+        min_signals=min_signals,
+        max_nodes=max_nodes,
+        max_depth=max_depth,
+        max_attempts=repair_max_attempts,
+    )
+    if genome_signal_activity(
+        repaired,
+        ohlcv,
+        min_signals=min_signals,
+        max_depth=max_depth,
+        max_node_count=max_nodes,
+    ).is_tradeable:
+        return repaired
+
+    return _tradeable_registry_fallback(
+        rng,
+        genome_id=genome_id,
+        generation=generation,
+    )
+
+
+def _draw_tradeable_random_genome(
+    rng: random.Random,
+    *,
+    genome_id: str,
+    generation: int,
+    max_nodes: int,
+    max_depth: int,
+    ohlcv: pd.DataFrame,
+    min_signals: int,
+    repair_max_attempts: int,
+) -> Genome:
+    redraw_cap = repair_max_attempts + 1
+    for _ in range(redraw_cap):
+        genome = build_random_genome(
+            rng,
+            genome_id=genome_id,
+            generation=generation,
+            max_nodes=max_nodes,
+            max_depth=max_depth,
+        )
+        genome = _ensure_tradeable_genome(
+            rng,
+            genome,
+            ohlcv=ohlcv,
+            min_signals=min_signals,
+            max_nodes=max_nodes,
+            max_depth=max_depth,
+            repair_max_attempts=repair_max_attempts,
+            genome_id=genome_id,
+            generation=generation,
+        )
+        if genome_signal_activity(
+            genome,
+            ohlcv,
+            min_signals=min_signals,
+            max_depth=max_depth,
+            max_node_count=max_nodes,
+        ).is_tradeable:
+            return genome
+    return _tradeable_registry_fallback(
+        rng,
+        genome_id=genome_id,
+        generation=generation,
+    )
 
 
 def build_initial_population(
@@ -623,11 +775,15 @@ def build_initial_population(
     population_size: int,
     max_nodes: int,
     max_depth: int,
+    ohlcv: pd.DataFrame | None = None,
+    min_seed_signals: int = 0,
+    repair_max_attempts: int = 8,
 ) -> list[Genome]:
     population: list[Genome] = []
     registry_templates = list(REGISTRY_GENOME_FIXTURES.values())
     seed_count = population_size // 2
     random_count = population_size - seed_count
+    probe_enabled = ohlcv is not None and len(ohlcv) > 0 and min_seed_signals > 0
 
     for index in range(seed_count):
         template = Genome.model_validate(copy.deepcopy(rng.choice(registry_templates)))
@@ -642,19 +798,44 @@ def build_initial_population(
             )
         except GenomeValidationError:
             genome = clone_genome(template)
+        if probe_enabled:
+            genome = _ensure_tradeable_genome(
+                rng,
+                genome,
+                ohlcv=ohlcv,
+                min_signals=min_seed_signals,
+                max_nodes=max_nodes,
+                max_depth=max_depth,
+                repair_max_attempts=repair_max_attempts,
+                genome_id=f"gen0-seed-{index}",
+                generation=0,
+            )
         population.append(genome)
 
     for index in range(random_count):
-        genome = _draw_valid(
-            rng,
-            builder=lambda: build_random_genome(
+        genome_id = f"gen0-rand-{index}"
+        if probe_enabled:
+            genome = _draw_tradeable_random_genome(
                 rng,
-                genome_id=f"gen0-rand-{index}",
+                genome_id=genome_id,
                 generation=0,
                 max_nodes=max_nodes,
                 max_depth=max_depth,
-            ),
-        )
+                ohlcv=ohlcv,
+                min_signals=min_seed_signals,
+                repair_max_attempts=repair_max_attempts,
+            )
+        else:
+            genome = _draw_valid(
+                rng,
+                builder=lambda: build_random_genome(
+                    rng,
+                    genome_id=genome_id,
+                    generation=0,
+                    max_nodes=max_nodes,
+                    max_depth=max_depth,
+                ),
+            )
         population.append(genome)
 
     return population
