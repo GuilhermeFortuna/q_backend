@@ -2,20 +2,21 @@
 
 from __future__ import annotations
 
+import inspect
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pandas as pd
 import pytest
 
+from q_backend.api import backtest_jobs
+from q_backend.api.backtest_jobs import BacktestJobRequest
 from q_backend.api.main import app
 from q_backend.api.routers import backtest as backtest_router
-from q_backend.api.schemas.backtest import BacktestRequest
 from q_backend.backtesting import run_service as backtest_run_service
 from q_backend.market_data.models import OHLCV
 
 BACKTEST_ROUTES: list[tuple[str, str]] = [
-    ("POST", "/api/v1/backtest/run"),
     ("POST", "/api/v1/backtest"),
     ("GET", "/api/v1/backtest/{run_id}"),
     ("GET", "/api/v1/backtest/{run_id}/result"),
@@ -29,7 +30,6 @@ BACKTEST_ROUTES: list[tuple[str, str]] = [
 ]
 
 BACKTEST_OPENAPI_PATHS: list[str] = [
-    "/api/v1/backtest/run",
     "/api/v1/backtest",
     "/api/v1/backtest/{run_id}",
     "/api/v1/backtest/{run_id}/result",
@@ -65,6 +65,23 @@ def test_backtest_openapi_paths_present():
     paths = app.openapi()["paths"]
     for path in BACKTEST_OPENAPI_PATHS:
         assert path in paths
+
+
+def test_no_sync_backtest_run_route():
+    inventory = _route_inventory()
+    assert ("POST", "/api/v1/backtest/run") not in inventory
+    assert "/api/v1/backtest/run" not in app.openapi()["paths"]
+
+
+def test_run_service_has_no_execution_imports():
+    source = inspect.getsource(backtest_run_service)
+    for forbidden in (
+        "BacktestEngine",
+        "TickBacktestEngine",
+        "build_strategy",
+        "build_tick_strategy",
+    ):
+        assert forbidden not in source
 
 
 def test_backtests_run_id_route_resolves_per_method():
@@ -131,8 +148,8 @@ def sample_ohlcv():
     return bars
 
 
-def test_run_backtest_handler_delegates_to_run_service(sample_ohlcv):
-    request = BacktestRequest.model_validate(
+def test_start_backtest_handler_delegates_to_backtest_jobs(sample_ohlcv):
+    request = BacktestJobRequest.model_validate(
         {
             "symbol": "WIN$",
             "timeframe": "M5",
@@ -142,16 +159,9 @@ def test_run_backtest_handler_delegates_to_run_service(sample_ohlcv):
             "strategy_params": {"short_period": 5, "long_period": 10},
         }
     )
-    expected = {
-        "metrics": {"total_pnl": 1.0},
-        "trades": [],
-        "bars": [],
-        "indicators": [],
-        "run_id": "test-run",
-    }
 
-    with patch.object(backtest_run_service, "run_sync", return_value=expected) as run_sync:
-        payload = backtest_router.run_backtest(request)
+    with patch.object(backtest_jobs, "start_job", return_value="run-123") as start_job:
+        payload = backtest_router.start_backtest(request)
 
-    run_sync.assert_called_once_with(request)
-    assert payload == expected
+    start_job.assert_called_once_with(request)
+    assert payload == {"run_id": "run-123", "status": "running"}

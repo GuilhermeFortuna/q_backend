@@ -14,16 +14,29 @@ from q_backend.api.routers.backtest import (
     delete_backtest,
     get_backtest,
     get_backtest_equity_artifact,
+    get_backtest_result,
     get_backtest_trades_artifact,
-    run_backtest,
+    start_backtest,
 )
-from q_backend.api.schemas.backtest import BacktestRequest
+from q_backend.api.backtest_jobs import BacktestJobRequest
 from q_backend.api.schemas.common import BulkDeleteBacktestsRequest
 from q_backend.market_data.models import OHLCV
 from q_backend.storage.db.base import Base
 from q_backend.storage.db.models import BacktestRun
 from q_backend.storage.lake.artifacts import lake_root
 from q_backend.storage.settings import get_settings
+from backtest_test_helpers import mock_worker_market_service, run_async_backtest
+
+REQUEST_BODY = {
+    "symbol": "WIN$",
+    "timeframe": "M5",
+    "start": "2024-01-01T00:00:00Z",
+    "end": "2024-02-01T00:00:00Z",
+    "initial_capital": 100000.0,
+    "point_value": 0.2,
+    "strategy": "MACrossover",
+    "strategy_params": {"short_period": 5, "long_period": 10},
+}
 
 
 @pytest.fixture
@@ -107,29 +120,13 @@ def sample_ohlcv():
 
 
 def test_run_backtest_writes_lake_artifacts_and_sets_lake_paths(
-    api_db_session, api_session_scope, sample_ohlcv, lake_root_path
+    run_jobs_sync, api_db_session, api_session_scope, sample_ohlcv, lake_root_path
 ):
-    request_body = {
-        "symbol": "WIN$",
-        "timeframe": "M5",
-        "start": "2024-01-01T00:00:00Z",
-        "end": "2024-02-01T00:00:00Z",
-        "initial_capital": 100000.0,
-        "point_value": 0.2,
-        "strategy": "MACrossover",
-        "strategy_params": {"short_period": 5, "long_period": 10},
-    }
-
-    with (
-        patch(
-            "q_backend.backtesting.run_service.market_data_service.get_ohlcv",
-            return_value=sample_ohlcv,
-        ),
-        patch("q_backend.backtesting.run_service.session_scope", api_session_scope),
-    ):
-        run_payload = run_backtest(BacktestRequest.model_validate(request_body))
-
-    run_id = run_payload["run_id"]
+    run_id, run_payload = run_async_backtest(
+        REQUEST_BODY,
+        api_session_scope=api_session_scope,
+        sample_ohlcv=sample_ohlcv,
+    )
     assert run_id is not None
 
     run = api_db_session.get(BacktestRun, uuid.UUID(run_id))
@@ -151,40 +148,34 @@ def test_run_backtest_writes_lake_artifacts_and_sets_lake_paths(
 
 
 def test_run_backtest_succeeds_when_lake_write_fails(
-    api_db_session, api_session_scope, sample_ohlcv, lake_root_path
+    run_jobs_sync, api_db_session, api_session_scope, sample_ohlcv, lake_root_path
 ):
-    request_body = {
-        "symbol": "WIN$",
-        "timeframe": "M5",
-        "start": "2024-01-01T00:00:00Z",
-        "end": "2024-02-01T00:00:00Z",
-        "initial_capital": 100000.0,
-        "point_value": 0.2,
-        "strategy": "MACrossover",
-        "strategy_params": {"short_period": 5, "long_period": 10},
-    }
-
+    mock_service = mock_worker_market_service(ohlcv=sample_ohlcv)
     with (
         patch(
-            "q_backend.backtesting.run_service.market_data_service.get_ohlcv",
-            return_value=sample_ohlcv,
+            "q_backend.tasks.worker_context.get_worker_market_data_service",
+            return_value=mock_service,
         ),
-        patch("q_backend.backtesting.run_service.session_scope", api_session_scope),
+        patch("q_backend.api.backtest_jobs.session_scope", api_session_scope),
         patch(
-            "q_backend.backtesting.run_service.write_backtest_artifacts",
+            "q_backend.api.backtest_jobs.write_backtest_artifacts",
             side_effect=OSError("disk full"),
         ),
     ):
-        run_payload = run_backtest(BacktestRequest.model_validate(request_body))
+        start_resp = start_backtest(BacktestJobRequest.model_validate(REQUEST_BODY))
 
-    assert run_payload["run_id"] is not None
-    assert "metrics" in run_payload
+    run_id = start_resp["run_id"]
+    assert run_id is not None
 
-    detail = get_backtest(run_payload["run_id"], session=api_db_session)
+    detail = get_backtest(run_id, session=api_db_session)
     assert detail.status == "completed"
 
-    run = api_db_session.get(BacktestRun, uuid.UUID(run_payload["run_id"]))
+    run = api_db_session.get(BacktestRun, uuid.UUID(run_id))
     assert run.lake_paths is None
+
+    with pytest.raises(HTTPException) as exc:
+        get_backtest_result(run_id)
+    assert exc.value.status_code == 404
 
 
 def test_artifact_endpoints_return_404_for_unknown_run(lake_root_path):
@@ -200,29 +191,14 @@ def test_artifact_endpoints_return_404_for_unknown_run(lake_root_path):
 
 
 def test_artifact_endpoints_return_404_when_files_deleted(
-    api_db_session, api_session_scope, sample_ohlcv, lake_root_path
+    run_jobs_sync, api_db_session, api_session_scope, sample_ohlcv, lake_root_path
 ):
-    request_body = {
-        "symbol": "WIN$",
-        "timeframe": "M5",
-        "start": "2024-01-01T00:00:00Z",
-        "end": "2024-02-01T00:00:00Z",
-        "initial_capital": 100000.0,
-        "point_value": 0.2,
-        "strategy": "MACrossover",
-        "strategy_params": {"short_period": 5, "long_period": 10},
-    }
+    run_id, _run_payload = run_async_backtest(
+        REQUEST_BODY,
+        api_session_scope=api_session_scope,
+        sample_ohlcv=sample_ohlcv,
+    )
 
-    with (
-        patch(
-            "q_backend.backtesting.run_service.market_data_service.get_ohlcv",
-            return_value=sample_ohlcv,
-        ),
-        patch("q_backend.backtesting.run_service.session_scope", api_session_scope),
-    ):
-        run_payload = run_backtest(BacktestRequest.model_validate(request_body))
-
-    run_id = run_payload["run_id"]
     artifact_dir = lake_root() / "backtests" / run_id
     for path in artifact_dir.iterdir():
         path.unlink()
@@ -233,29 +209,13 @@ def test_artifact_endpoints_return_404_when_files_deleted(
 
 
 def test_delete_backtest_removes_lake_artifacts(
-    api_db_session, api_session_scope, sample_ohlcv, lake_root_path
+    run_jobs_sync, api_db_session, api_session_scope, sample_ohlcv, lake_root_path
 ):
-    request_body = {
-        "symbol": "WIN$",
-        "timeframe": "M5",
-        "start": "2024-01-01T00:00:00Z",
-        "end": "2024-02-01T00:00:00Z",
-        "initial_capital": 100000.0,
-        "point_value": 0.2,
-        "strategy": "MACrossover",
-        "strategy_params": {"short_period": 5, "long_period": 10},
-    }
-
-    with (
-        patch(
-            "q_backend.backtesting.run_service.market_data_service.get_ohlcv",
-            return_value=sample_ohlcv,
-        ),
-        patch("q_backend.backtesting.run_service.session_scope", api_session_scope),
-    ):
-        run_payload = run_backtest(BacktestRequest.model_validate(request_body))
-
-    run_id = run_payload["run_id"]
+    run_id, _run_payload = run_async_backtest(
+        REQUEST_BODY,
+        api_session_scope=api_session_scope,
+        sample_ohlcv=sample_ohlcv,
+    )
     assert (lake_root() / "backtests" / run_id).is_dir()
 
     delete_backtest(run_id, session=api_db_session)
@@ -264,29 +224,13 @@ def test_delete_backtest_removes_lake_artifacts(
 
 
 def test_bulk_delete_backtests_removes_lake_artifacts(
-    api_db_session, api_session_scope, sample_ohlcv, lake_root_path
+    run_jobs_sync, api_db_session, api_session_scope, sample_ohlcv, lake_root_path
 ):
-    request_body = {
-        "symbol": "WIN$",
-        "timeframe": "M5",
-        "start": "2024-01-01T00:00:00Z",
-        "end": "2024-02-01T00:00:00Z",
-        "initial_capital": 100000.0,
-        "point_value": 0.2,
-        "strategy": "MACrossover",
-        "strategy_params": {"short_period": 5, "long_period": 10},
-    }
-
-    with (
-        patch(
-            "q_backend.backtesting.run_service.market_data_service.get_ohlcv",
-            return_value=sample_ohlcv,
-        ),
-        patch("q_backend.backtesting.run_service.session_scope", api_session_scope),
-    ):
-        run_payload = run_backtest(BacktestRequest.model_validate(request_body))
-
-    run_id = run_payload["run_id"]
+    run_id, _run_payload = run_async_backtest(
+        REQUEST_BODY,
+        api_session_scope=api_session_scope,
+        sample_ohlcv=sample_ohlcv,
+    )
     assert (lake_root() / "backtests" / run_id).is_dir()
 
     bulk_delete_backtests(

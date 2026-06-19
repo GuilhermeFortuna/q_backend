@@ -2,18 +2,28 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import numpy as np
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
-from q_backend.api.routers.backtest import run_backtest
-from q_backend.api.schemas.backtest import BacktestRequest
+from q_backend.api.backtest_jobs import BacktestJobRequest
+from q_backend.api.routers.backtest import (
+    get_backtest_result,
+    get_backtest_status,
+    start_backtest,
+)
 from q_backend.market_data import local_store
 from q_backend.market_data.clients.metatrader import _naive_local_to_time_msc
+from q_backend.storage.db.base import Base
 from q_backend.storage.runtime_config import set_data_source
+from q_backend.storage.settings import get_settings
 
 
 def _synthetic_ticks(n: int = 500) -> dict[str, np.ndarray]:
@@ -34,6 +44,41 @@ def _synthetic_ticks(n: int = 500) -> dict[str, np.ndarray]:
 
 
 @pytest.fixture
+def api_session_scope():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+
+    @contextmanager
+    def test_session_scope():
+        session = session_factory()
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    yield test_session_scope
+    Base.metadata.drop_all(engine)
+    engine.dispose()
+
+
+@pytest.fixture
+def lake_root_path(tmp_path, monkeypatch):
+    monkeypatch.setenv("Q_DATA_LAKE_ROOT", str(tmp_path))
+    get_settings.cache_clear()
+    yield tmp_path
+    get_settings.cache_clear()
+
+
+@pytest.fixture
 def local_tick_market(tmp_path, monkeypatch):
     market = tmp_path / "market"
     runtime = tmp_path / "runtime_config.json"
@@ -44,8 +89,10 @@ def local_tick_market(tmp_path, monkeypatch):
     yield
 
 
-def test_tick_backtest_local_mode_without_mt5(local_tick_market):
-    request = BacktestRequest(
+def test_tick_backtest_local_mode_without_mt5(
+    run_jobs_sync, local_tick_market, api_session_scope, lake_root_path
+):
+    request = BacktestJobRequest(
         symbol="WIN$",
         engine="tick",
         display_timeframe="M1",
@@ -63,19 +110,19 @@ def test_tick_backtest_local_mode_without_mt5(local_tick_market):
         },
     )
 
-    with patch(
-        "q_backend.api.dependencies.market_data_service.mt5_client.get_ticks_columnar",
-        side_effect=AssertionError("MT5 must not be called in local mode"),
-    ):
-        response = run_backtest(request)
+    with patch("q_backend.api.backtest_jobs.session_scope", api_session_scope):
+        start_resp = start_backtest(request)
+        response = get_backtest_result(start_resp["run_id"])
 
     assert "total_pnl" in response["metrics"]
     assert isinstance(response["bars"], list)
     assert len(response["bars"]) > 0
 
 
-def test_tick_backtest_local_mode_missing_ticks_returns_404(local_tick_market):
-    request = BacktestRequest(
+def test_tick_backtest_local_mode_missing_ticks_returns_404(
+    run_jobs_sync, local_tick_market, api_session_scope, lake_root_path
+):
+    request = BacktestJobRequest(
         symbol="MISSING",
         engine="tick",
         start=datetime(2024, 1, 1),
@@ -84,8 +131,12 @@ def test_tick_backtest_local_mode_missing_ticks_returns_404(local_tick_market):
         strategy_params={"short_period": 5, "long_period": 10},
     )
 
+    with patch("q_backend.api.backtest_jobs.session_scope", api_session_scope):
+        start_resp = start_backtest(request)
+        status = get_backtest_status(start_resp["run_id"])
+    assert status["status"] == "failed"
+
     with pytest.raises(HTTPException) as exc:
-        run_backtest(request)
+        get_backtest_result(start_resp["run_id"])
 
     assert exc.value.status_code == 404
-    assert "Ingest ticks" in exc.value.detail

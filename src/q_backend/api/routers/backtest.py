@@ -8,7 +8,6 @@ from q_backend.api.backtest_jobs import BacktestJobRequest
 from q_backend.api.deps import get_session
 from q_backend.api.schemas.backtest import (
     BacktestEquityArtifactResponse,
-    BacktestRequest,
     BacktestResponse,
     BacktestRunDetailResponse,
     BacktestRunListResponse,
@@ -24,12 +23,6 @@ from q_backend.storage.lake import read_backtest_result
 router = APIRouter(tags=["backtest"])
 
 
-@router.post("/api/v1/backtest/run", response_model=BacktestResponse)
-def run_backtest(request: BacktestRequest):
-    """Run a backtest for a specific symbol and strategy."""
-    return backtest_run_service.run_sync(request)
-
-
 @router.post("/api/v1/backtest", response_model=BacktestStartResponse)
 def start_backtest(request: BacktestJobRequest):
     """Dispatch a backtest to the worker pool and return its run id for polling."""
@@ -42,7 +35,9 @@ def get_backtest_status(run_id: str):
     """Return the current status of an async backtest run."""
     payload = backtest_jobs.get_status_payload(run_id)
     if payload is None:
-        raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.")
+        raise HTTPException(
+            status_code=404, detail=f"Backtest run '{run_id}' not found."
+        )
     return payload
 
 

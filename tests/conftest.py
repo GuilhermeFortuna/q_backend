@@ -147,5 +147,6 @@ def run_jobs_sync(monkeypatch, tmp_path):
     monkeypatch.setattr(
         actors, "evaluate_genetic_candidate", _SyncActor(sj.run_genetic_candidate)
     )
+    monkeypatch.setattr(actors, "run_backtest", _SyncActor(bj.run_backtest_job))
 
     return fake

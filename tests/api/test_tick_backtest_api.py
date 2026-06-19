@@ -11,11 +11,14 @@ from sqlalchemy.pool import StaticPool
 
 from q_backend.api.routers.backtest import (
     get_backtest,
+    get_backtest_result,
+    get_backtest_status,
     list_backtests,
-    run_backtest,
+    start_backtest,
 )
-from q_backend.api.schemas.backtest import BacktestRequest
+from q_backend.api.backtest_jobs import BacktestJobRequest
 from q_backend.storage.db.base import Base
+from backtest_test_helpers import mock_worker_market_service, run_async_backtest
 
 
 @pytest.fixture
@@ -86,7 +89,7 @@ def _sample_columnar(n: int = 120) -> dict[str, np.ndarray]:
 
 
 def test_tick_backtest_returns_metrics_trades_bars_and_run_id(
-    api_db_session, api_session_scope
+    run_jobs_sync, api_db_session, api_session_scope
 ):
     request_body = {
         "symbol": "WIN$",
@@ -106,16 +109,13 @@ def test_tick_backtest_returns_metrics_trades_bars_and_run_id(
         },
     }
 
-    with (
-        patch(
-            "q_backend.backtesting.run_service.market_data_service.get_ticks_columnar",
-            return_value=_sample_columnar(),
-        ),
-        patch("q_backend.backtesting.run_service.session_scope", api_session_scope),
-    ):
-        payload = run_backtest(BacktestRequest.model_validate(request_body))
+    run_id, payload = run_async_backtest(
+        request_body,
+        api_session_scope=api_session_scope,
+        ticks_columnar=_sample_columnar(),
+    )
 
-    assert payload["run_id"] is not None
+    assert run_id is not None
     assert "total_pnl" in payload["metrics"]
     assert isinstance(payload["trades"], list)
     assert isinstance(payload["bars"], list)
@@ -134,15 +134,15 @@ def test_tick_backtest_returns_metrics_trades_bars_and_run_id(
     assert list_payload["total"] == 1
     assert list_payload["items"][0].timeframe == "TICK"
 
-    detail = get_backtest(payload["run_id"], session=api_db_session)
+    detail = get_backtest(run_id, session=api_db_session)
     assert detail.timeframe == "TICK"
     assert detail.config["engine"] == "tick"
     assert detail.config["display_timeframe"] == "M1"
     assert detail.config["timeframe"] == "TICK"
 
 
-def test_tick_backtest_no_ticks_returns_404():
-    request = BacktestRequest.model_validate(
+def test_tick_backtest_no_ticks_returns_404(run_jobs_sync, api_session_scope):
+    request = BacktestJobRequest.model_validate(
         {
             "symbol": "WIN$",
             "engine": "tick",
@@ -152,26 +152,37 @@ def test_tick_backtest_no_ticks_returns_404():
             "strategy_params": {"short_period": 5, "long_period": 10},
         }
     )
-
-    with patch(
-        "q_backend.backtesting.run_service.market_data_service.get_ticks_columnar",
-        return_value={
+    mock_service = mock_worker_market_service(
+        ticks_columnar={
             "time_msc": np.array([], dtype=np.int64),
             "bid": np.array([], dtype=np.float64),
             "ask": np.array([], dtype=np.float64),
             "last": np.array([], dtype=np.float64),
             "volume": np.array([], dtype=np.float64),
             "flags": np.array([], dtype=np.int32),
-        },
-    ):
-        with pytest.raises(HTTPException) as exc:
-            run_backtest(request)
+        }
+    )
 
+    with (
+        patch(
+            "q_backend.tasks.worker_context.get_worker_market_data_service",
+            return_value=mock_service,
+        ),
+        patch("q_backend.api.backtest_jobs.session_scope", api_session_scope),
+    ):
+        start_resp = start_backtest(request)
+
+    run_id = start_resp["run_id"]
+    status = get_backtest_status(run_id)
+    assert status["status"] == "failed"
+
+    with pytest.raises(HTTPException) as exc:
+        get_backtest_result(run_id)
     assert exc.value.status_code == 404
 
 
-def test_tick_backtest_mt5_offline_returns_503():
-    request = BacktestRequest.model_validate(
+def test_tick_backtest_mt5_offline_returns_503(run_jobs_sync, api_session_scope):
+    request = BacktestJobRequest.model_validate(
         {
             "symbol": "WIN$",
             "engine": "tick",
@@ -180,12 +191,25 @@ def test_tick_backtest_mt5_offline_returns_503():
             "strategy": "TickMaBreakout",
         }
     )
+    mock_service = mock_worker_market_service()
+    mock_service.get_ticks_columnar.side_effect = ConnectionError(
+        "MetaTrader 5 terminal is offline."
+    )
 
-    with patch(
-        "q_backend.backtesting.run_service.market_data_service.get_ticks_columnar",
-        side_effect=ConnectionError("MetaTrader 5 terminal is offline."),
+    with (
+        patch(
+            "q_backend.tasks.worker_context.get_worker_market_data_service",
+            return_value=mock_service,
+        ),
+        patch("q_backend.api.backtest_jobs.session_scope", api_session_scope),
     ):
-        with pytest.raises(HTTPException) as exc:
-            run_backtest(request)
+        start_resp = start_backtest(request)
 
-    assert exc.value.status_code == 503
+    run_id = start_resp["run_id"]
+    status = get_backtest_status(run_id)
+    assert status["status"] == "failed"
+    assert "offline" in (status.get("error") or "").lower()
+
+    with pytest.raises(HTTPException) as exc:
+        get_backtest_result(run_id)
+    assert exc.value.status_code == 404

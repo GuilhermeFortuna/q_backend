@@ -37,6 +37,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
+pythonpath = ["tests/api"]
 markers = [
     "integration: requires running Postgres and Redis (docker compose)",
 ]
