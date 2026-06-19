@@ -114,6 +114,8 @@ def _coerce_param_value(spec: StrategyParamSpec, raw: Any) -> Any:
 
 
 def merge_strategy_params(name: str, params: dict[str, Any]) -> dict[str, Any]:
+    if name == "CompositeStrategy":
+        return params.copy()
     entry = get_registered_strategy(name)
     merged: dict[str, Any] = {}
     for spec in entry.info.params:

@@ -309,6 +309,8 @@ def _apply_gates(
     oos_metrics: dict[str, Any],
     efficiency: float | None,
     gates: GateConfig,
+    mean_is: float | None = None,
+    oos_objective: float | None = None,
 ) -> tuple[list[str], bool]:
     flags: list[str] = []
     if completed_windows < gates.min_completed_windows:
@@ -317,9 +319,26 @@ def _apply_gates(
     if oos_trades < gates.min_oos_trades:
         flags.append("few_oos_trades")
     if efficiency is not None:
-        if efficiency < gates.efficiency_low:
+        is_overfit = False
+        if mean_is is not None and oos_objective is not None:
+            if mean_is > 0 and oos_objective <= 0:
+                is_overfit = True
+            elif mean_is > 0 and oos_objective > 0 and efficiency < gates.efficiency_low:
+                is_overfit = True
+        else:
+            if efficiency < gates.efficiency_low:
+                is_overfit = True
+        if is_overfit:
             flags.append("low_efficiency")
-        elif efficiency > gates.efficiency_high:
+
+        is_suspicious = False
+        if mean_is is not None and oos_objective is not None:
+            if mean_is > 0 and oos_objective > 0 and efficiency > gates.efficiency_high:
+                is_suspicious = True
+        else:
+            if efficiency > gates.efficiency_high:
+                is_suspicious = True
+        if is_suspicious:
             flags.append("suspicious_efficiency")
     return flags, len(flags) == 0
 
@@ -410,11 +429,17 @@ def evaluate_candidate(
     if best is not None:
         base.best_params = best.best_params
 
+    mean_is = None
+    if base.is_metrics_summary is not None:
+        mean_is = base.is_metrics_summary.get("mean_objective")
+
     gate_flags, passed = _apply_gates(
         completed_windows=base.completed_windows,
         oos_metrics=wf_result.oos_metrics,
         efficiency=wf_result.efficiency,
         gates=config.gates,
+        mean_is=mean_is,
+        oos_objective=base.objective_value,
     )
     base.gate_flags = gate_flags
     base.passed_gates = passed
