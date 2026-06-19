@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
+from q_backend.api.dependencies import market_data_service
 from q_backend.api.routers.system import (
     get_data_source_setting,
     get_system_health,
@@ -78,16 +79,16 @@ def test_resolve_provider_respects_runtime_config(tmp_path, monkeypatch):
 
 
 def test_data_source_endpoints_round_trip(runtime_config_file):
-    body = get_data_source_setting()
+    body = get_data_source_setting(mds=market_data_service)
     assert body["source"] in ("auto", "mt5", "local")
     assert "mt5_available" in body
     assert body["active_provider"] in ("mt5", "local")
 
-    updated = update_data_source_setting(DataSourceUpdateRequest(source="local"))
+    updated = update_data_source_setting(DataSourceUpdateRequest(source="local"), mds=market_data_service)
     assert updated["source"] == "local"
     assert runtime_config_file.read_text(encoding="utf-8").strip().startswith("{")
 
-    update_data_source_setting(DataSourceUpdateRequest(source="auto"))
+    update_data_source_setting(DataSourceUpdateRequest(source="auto"), mds=market_data_service)
 
 
 def test_system_health_includes_provider_fields():
@@ -95,7 +96,7 @@ def test_system_health_includes_provider_fields():
         "q_backend.api.routers.system.storage_status",
         return_value={"postgres": {"status": "ok"}, "redis": {"status": "ok"}},
     ):
-        body = get_system_health()
+        body = get_system_health(mds=market_data_service)
 
     assert "mt5_available" in body
     assert body["active_provider"] in ("mt5", "local")

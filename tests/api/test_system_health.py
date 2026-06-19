@@ -14,7 +14,7 @@ def test_system_health_backward_compatible_fields():
             "redis": {"status": "ok"},
         },
     ):
-        body = get_system_health()
+        body = get_system_health(mds=market_data_service)
 
     for field in LEGACY_HEALTH_FIELDS:
         assert field in body
@@ -28,7 +28,7 @@ def test_system_health_includes_storage_status():
             "redis": {"status": "error", "error": "unavailable"},
         },
     ):
-        body = get_system_health()
+        body = get_system_health(mds=market_data_service)
 
     assert body["storageStatus"]["postgres"]["status"] == "ok"
     assert body["storageStatus"]["redis"]["status"] == "error"
@@ -45,7 +45,7 @@ def test_storage_failure_does_not_change_top_level_health():
                     "redis": {"status": "error", "error": "redis down"},
                 },
             ):
-                body = get_system_health()
+                body = get_system_health(mds=market_data_service)
 
             assert body["status"] == "healthy"
             assert body["dataLakeStatus"] == "online"

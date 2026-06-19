@@ -45,7 +45,7 @@ def test_instruments_include_stored_symbols(market_root):
     local_store.write_ohlcv("BBAS3", "D1", _bars())
 
     with patch.object(market_data_service, "mt5_available", return_value=False):
-        instruments = get_market_instruments()
+        instruments = get_market_instruments(mds=market_data_service)
 
     symbols = {item["symbol"] for item in instruments}
     assert "PETR4" in symbols
@@ -60,7 +60,7 @@ def test_instruments_keep_default_metadata_for_overlapping_symbols(market_root):
     local_store.write_ohlcv("PETR4", "D1", _bars())
 
     with patch.object(market_data_service, "mt5_available", return_value=False):
-        instruments = get_market_instruments()
+        instruments = get_market_instruments(mds=market_data_service)
 
     petr4 = next(item for item in instruments if item["symbol"] == "PETR4")
     assert petr4["name"] == "PETROBRAS PN N2"
@@ -71,7 +71,7 @@ def test_search_finds_stored_symbols_without_mt5(market_root):
     local_store.write_ohlcv("BBAS3", "D1", _bars())
 
     with patch.object(market_data_service, "mt5_available", return_value=False):
-        results = search_symbols(q="bbas")
+        results = search_symbols(q="bbas", mds=market_data_service)
 
     assert len(results) == 1
     assert results[0]["symbol"] == "BBAS3"
@@ -94,7 +94,7 @@ def test_search_merges_local_and_mt5_hits(market_root):
                 }
             ],
         ):
-            results = search_symbols(q="val")
+            results = search_symbols(q="val", mds=market_data_service)
 
     symbols = {item["symbol"] for item in results}
     assert "VALE3" in symbols
@@ -105,6 +105,6 @@ def test_search_returns_503_when_mt5_required_but_offline(market_root):
 
     with patch.object(market_data_service, "mt5_available", return_value=False):
         with pytest.raises(Exception) as exc_info:
-            search_symbols(q="petr")
+            search_symbols(q="petr", mds=market_data_service)
 
     assert exc_info.value.status_code == 503

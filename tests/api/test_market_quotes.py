@@ -136,7 +136,7 @@ def test_get_market_snapshot_returns_503_when_offline(tmp_path, monkeypatch):
     set_data_source("mt5")
     with patch.object(market_data_service, "mt5_available", return_value=False):
         with pytest.raises(Exception) as exc_info:
-            get_market_snapshot("PETR4")
+            get_market_snapshot("PETR4", mds=market_data_service)
     assert exc_info.value.status_code == 503
 
 
@@ -163,7 +163,7 @@ def test_get_market_snapshots_returns_multiple_and_skips_bad_symbol(mock_mt5):
             "q_backend.market_data.api_service.build_market_snapshot",
             side_effect=lambda symbol: good_snapshot if symbol == "PETR4" else None,
         ):
-            body = get_market_snapshots(symbols="PETR4,BADSYM,VALE3")
+            body = get_market_snapshots(symbols="PETR4,BADSYM,VALE3", mds=market_data_service)
 
     assert len(body["snapshots"]) == 1
     assert body["snapshots"][0]["symbol"] == "PETR4"
@@ -172,7 +172,7 @@ def test_get_market_snapshots_returns_multiple_and_skips_bad_symbol(mock_mt5):
 def test_get_market_snapshots_rejects_more_than_50_symbols():
     symbols = ",".join(f"SYM{i}" for i in range(51))
     with pytest.raises(Exception) as exc_info:
-        get_market_snapshots(symbols=symbols)
+        get_market_snapshots(symbols=symbols, mds=market_data_service)
     assert exc_info.value.status_code == 422
 
 
@@ -183,7 +183,7 @@ def test_get_market_snapshots_returns_503_when_offline(tmp_path, monkeypatch):
     set_data_source("mt5")
     with patch.object(market_data_service, "mt5_available", return_value=False):
         with pytest.raises(Exception) as exc_info:
-            get_market_snapshots(symbols="PETR4")
+            get_market_snapshots(symbols="PETR4", mds=market_data_service)
     assert exc_info.value.status_code == 503
 
 
@@ -270,7 +270,7 @@ def test_get_market_ticks_respects_limit_and_returns_newest_last(mock_mt5):
         with patch.object(
             market_data_service, "get_recent_ticks", return_value=ticks
         ) as get_recent:
-            body = get_market_ticks("PETR4", limit=1)
+            body = get_market_ticks("PETR4", limit=1, mds=market_data_service)
 
     get_recent.assert_called_once_with("PETR4", 1)
     assert len(body["ticks"]) == 1
@@ -285,7 +285,7 @@ def test_get_market_ticks_returns_404_for_unknown_symbol():
                 market_data_service, "get_symbol_info", return_value=None
             ):
                 with pytest.raises(Exception) as exc_info:
-                    get_market_ticks("UNKNOWN")
+                    get_market_ticks("UNKNOWN", mds=market_data_service)
     assert exc_info.value.status_code == 404
 
 
@@ -330,5 +330,5 @@ def test_get_market_instrument_info_returns_404_for_unknown_symbol():
     with patch.object(market_data_service, "mt5_available", return_value=True):
         with patch.object(market_data_service, "get_symbol_info", return_value=None):
             with pytest.raises(Exception) as exc_info:
-                get_market_instrument_info("UNKNOWN")
+                get_market_instrument_info("UNKNOWN", mds=market_data_service)
     assert exc_info.value.status_code == 404

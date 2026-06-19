@@ -108,7 +108,7 @@ def test_market_ohlcv_available_range_endpoint_returns_local_bounds(market_root)
             "q_backend.market_data.routing.symbol_selectable_in_mt5",
             return_value=False,
         ):
-            payload = get_market_ohlcv_available_range("BGI$", timeframe="D1")
+            payload = get_market_ohlcv_available_range("BGI$", timeframe="D1", mds=market_data_service)
 
     assert payload["symbol"] == "BGI$"
     assert payload["bar_count"] == 2

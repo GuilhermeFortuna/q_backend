@@ -11,9 +11,10 @@ def get_market_data_service() -> MarketDataService:
     return market_data_service
 
 
-def _require_mt5_live() -> None:
+def _require_mt5_live(service: MarketDataService | None = None) -> None:
     """Raise 503 when MT5 is required but unavailable; no-op when live MT5 is up."""
-    if market_data_service.mt5_available():
+    service = service or market_data_service
+    if service.mt5_available():
         return
     if get_data_source() == "mt5":
         raise HTTPException(
@@ -21,11 +22,12 @@ def _require_mt5_live() -> None:
         )
 
 
-def _data_source_payload() -> dict:
+def _data_source_payload(service: MarketDataService | None = None) -> dict:
+    service = service or market_data_service
     return {
         "source": get_data_source(),
-        "mt5_available": market_data_service.mt5_connected(),
-        "active_provider": market_data_service.active_provider(),
+        "mt5_available": service.mt5_connected(),
+        "active_provider": service.active_provider(),
     }
 
 

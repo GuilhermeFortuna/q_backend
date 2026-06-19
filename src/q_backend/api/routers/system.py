@@ -1,14 +1,15 @@
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
-from q_backend.api.dependencies import _data_source_payload, market_data_service
+from q_backend.api.dependencies import _data_source_payload, get_market_data_service
 from q_backend.api.schemas.system import (
     DataSourceResponse,
     DataSourceUpdateRequest,
     SystemHealthResponse,
 )
 from q_backend.market_data import local_store
+from q_backend.market_data.service import MarketDataService
 from q_backend.storage.health import storage_status
 from q_backend.storage.runtime_config import set_data_source
 
@@ -16,20 +17,20 @@ router = APIRouter(tags=["system"])
 
 
 @router.get("/")
-def read_root():
+def read_root(mds: MarketDataService = Depends(get_market_data_service)):
     return {
         "status": "online",
         "service": "QuantLauncher Backend API",
-        "mt5_connected": market_data_service.mt5_connected(),
+        "mt5_connected": mds.mt5_connected(),
     }
 
 
 @router.get("/api/v1/system/health", response_model=SystemHealthResponse)
-def get_system_health():
+def get_system_health(mds: MarketDataService = Depends(get_market_data_service)):
     """
     Exposes platform health telemetry.
     """
-    mt5_up = market_data_service.mt5_connected()
+    mt5_up = mds.mt5_connected()
     return {
         "status": "healthy" if mt5_up else "degraded",
         "backendVersion": "0.1.0",
@@ -37,21 +38,26 @@ def get_system_health():
         "lastSyncAt": datetime.now().isoformat(),
         "storageStatus": storage_status(),
         "mt5_available": mt5_up,
-        "active_provider": market_data_service.active_provider(),
+        "active_provider": mds.active_provider(),
         "market_data_root": str(local_store.market_data_root()),
         "market_data_inventory_count": local_store.inventory_count(),
     }
 
 
 @router.get("/api/v1/system/data-source", response_model=DataSourceResponse)
-def get_data_source_setting():
-    return _data_source_payload()
+def get_data_source_setting(
+    mds: MarketDataService = Depends(get_market_data_service),
+):
+    return _data_source_payload(mds)
 
 
 @router.put("/api/v1/system/data-source", response_model=DataSourceResponse)
-def update_data_source_setting(body: DataSourceUpdateRequest):
+def update_data_source_setting(
+    body: DataSourceUpdateRequest,
+    mds: MarketDataService = Depends(get_market_data_service),
+):
     try:
         set_data_source(body.source)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return _data_source_payload()
+    return _data_source_payload(mds)

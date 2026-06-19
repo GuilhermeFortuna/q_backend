@@ -2,9 +2,9 @@ import logging
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
-from q_backend.api.dependencies import _require_mt5_live, market_data_service
+from q_backend.api.dependencies import _require_mt5_live, get_market_data_service
 from q_backend.api.schemas.market import (
     InstrumentInfoResponse,
     InstrumentResponse,
@@ -17,6 +17,7 @@ from q_backend.api.schemas.market import (
 from q_backend.market_data import api_service as market_service
 from q_backend.market_data.clients.metatrader import _to_naive_local
 from q_backend.market_data.models import OHLCV, Tick
+from q_backend.market_data.service import MarketDataService
 from q_backend.market_data.timezone import mt5_datetime_to_utc_iso
 from q_backend.storage.runtime_config import get_data_source
 
@@ -26,12 +27,15 @@ router = APIRouter(tags=["market"])
 
 
 @router.get("/api/v1/market-data/symbol/{symbol}")
-def get_symbol_info(symbol: str):
+def get_symbol_info(
+    symbol: str,
+    mds: MarketDataService = Depends(get_market_data_service),
+):
     """
     Get detailed information about a specific financial symbol.
     """
     try:
-        info = market_data_service.get_symbol_info(symbol)
+        info = mds.get_symbol_info(symbol)
         if not info:
             raise HTTPException(
                 status_code=404,
@@ -57,6 +61,7 @@ def get_ohlcv(
     end: Optional[datetime] = Query(
         None, description="End datetime (ISO-8601). Defaults to current time."
     ),
+    mds: MarketDataService = Depends(get_market_data_service),
 ):
     """
     Get historical OHLCV data (bars) for a specified symbol.
@@ -75,7 +80,7 @@ def get_ohlcv(
         )
 
     try:
-        ohlcv_data = market_data_service.get_ohlcv(symbol, timeframe, start, end)
+        ohlcv_data = mds.get_ohlcv(symbol, timeframe, start, end)
         return ohlcv_data
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -95,6 +100,7 @@ def get_ticks(
     end: Optional[datetime] = Query(
         None, description="End datetime (ISO-8601). Defaults to current time."
     ),
+    mds: MarketDataService = Depends(get_market_data_service),
 ):
     """
     Get tick market data for a specified symbol.
@@ -110,7 +116,7 @@ def get_ticks(
         )
 
     try:
-        ticks_data = market_data_service.get_ticks(symbol, start, end)
+        ticks_data = mds.get_ticks(symbol, start, end)
         return ticks_data
     except ConnectionError as ce:
         raise HTTPException(status_code=503, detail=str(ce))
@@ -120,16 +126,19 @@ def get_ticks(
 
 
 @router.get("/api/v1/market/instruments", response_model=List[InstrumentResponse])
-def get_market_instruments():
+def get_market_instruments(
+    mds: MarketDataService = Depends(get_market_data_service),
+):
     """
     Retrieve tradable instruments: default B3 assets plus symbols stored locally.
     """
-    return market_service.list_market_instruments(market_data_service)
+    return market_service.list_market_instruments(mds)
 
 
 @router.get("/api/v1/market/symbols/search", response_model=List[InstrumentResponse])
 def search_symbols(
-    q: str = Query(..., description="Query to search stored and MT5 symbols")
+    q: str = Query(..., description="Query to search stored and MT5 symbols"),
+    mds: MarketDataService = Depends(get_market_data_service),
 ):
     """
     Search stored local market data and, when available, the MT5 terminal.
@@ -138,7 +147,7 @@ def search_symbols(
         return []
 
     try:
-        return market_service.search_instrument_sources(market_data_service, q)
+        return market_service.search_instrument_sources(mds, q)
     except HTTPException:
         raise
     except Exception as exc:
@@ -147,14 +156,17 @@ def search_symbols(
 
 
 @router.get("/api/v1/market/snapshot/{symbol}", response_model=MarketSnapshotResponse)
-def get_market_snapshot(symbol: str):
+def get_market_snapshot(
+    symbol: str,
+    mds: MarketDataService = Depends(get_market_data_service),
+):
     """
     Retrieve real-time price snapshot for a B3 asset using MT5.
     """
     symbol = symbol.upper()
 
-    _require_mt5_live()
-    if not market_data_service.mt5_available():
+    _require_mt5_live(mds)
+    if not mds.mt5_available():
         raise HTTPException(
             status_code=404,
             detail=f"Live snapshot unavailable for '{symbol}' (local data provider).",
@@ -171,6 +183,7 @@ def get_market_snapshot(symbol: str):
 @router.get("/api/v1/market/snapshots", response_model=MarketSnapshotsResponse)
 def get_market_snapshots(
     symbols: str = Query(..., description="Comma-separated symbols (max 50)"),
+    mds: MarketDataService = Depends(get_market_data_service),
 ):
     """
     Retrieve real-time price snapshots for multiple symbols in one MT5 session.
@@ -183,8 +196,8 @@ def get_market_snapshots(
             detail="At most 50 symbols are allowed per batch snapshot request.",
         )
 
-    _require_mt5_live()
-    if not market_data_service.mt5_available():
+    _require_mt5_live(mds)
+    if not mds.mt5_available():
         return {"snapshots": []}
 
     snapshots = []
@@ -200,13 +213,14 @@ def get_market_snapshots(
 def get_market_ticks(
     symbol: str,
     limit: int = Query(200, ge=1, le=1000, description="Number of recent ticks"),
+    mds: MarketDataService = Depends(get_market_data_service),
 ):
     """
     Retrieve recent time-and-sales ticks for a symbol (newest last).
     """
     symbol = symbol.upper()
 
-    if not market_data_service.mt5_available():
+    if not mds.mt5_available():
         if get_data_source() == "mt5":
             raise HTTPException(
                 status_code=503, detail="MetaTrader 5 terminal is offline."
@@ -214,12 +228,12 @@ def get_market_ticks(
         return {"ticks": []}
 
     try:
-        raw_ticks = market_data_service.get_recent_ticks(symbol, limit)
+        raw_ticks = mds.get_recent_ticks(symbol, limit)
     except ConnectionError as ce:
         raise HTTPException(status_code=503, detail=str(ce)) from ce
 
     if not raw_ticks:
-        info = market_data_service.get_symbol_info(symbol)
+        info = mds.get_symbol_info(symbol)
         if not info:
             raise HTTPException(
                 status_code=404, detail=f"Symbol '{symbol}' not found on MetaTrader 5."
@@ -233,13 +247,16 @@ def get_market_ticks(
     "/api/v1/market/instrument-info/{symbol}",
     response_model=InstrumentInfoResponse,
 )
-def get_market_instrument_info(symbol: str):
+def get_market_instrument_info(
+    symbol: str,
+    mds: MarketDataService = Depends(get_market_data_service),
+):
     """
     Retrieve curated contract specification fields for a symbol.
     """
     symbol = symbol.upper()
 
-    if not market_data_service.mt5_available():
+    if not mds.mt5_available():
         if get_data_source() == "mt5":
             raise HTTPException(
                 status_code=503, detail="MetaTrader 5 terminal is offline."
@@ -250,7 +267,7 @@ def get_market_instrument_info(symbol: str):
         )
 
     try:
-        info = market_data_service.get_symbol_info(symbol)
+        info = mds.get_symbol_info(symbol)
     except ConnectionError as ce:
         raise HTTPException(status_code=503, detail=str(ce))
 
@@ -277,6 +294,7 @@ def get_market_ohlcv(
     end: Optional[datetime] = Query(
         None, description="End datetime (ISO-8601). Requires start."
     ),
+    mds: MarketDataService = Depends(get_market_data_service),
 ):
     """
     Retrieve historical OHLCV data for a symbol from local storage or MT5.
@@ -286,7 +304,7 @@ def get_market_ohlcv(
 
     try:
         ohlcv_data = market_service.fetch_ohlcv_rows(
-            market_data_service,
+            mds,
             symbol,
             timeframe,
             count=count,
@@ -317,6 +335,7 @@ def get_market_ohlcv_available_range(
     timeframe: str = Query(
         "D1", description="Candle timeframe (e.g. M1, M5, M15, H1, D1)"
     ),
+    mds: MarketDataService = Depends(get_market_data_service),
 ):
     """
     Returns the earliest and latest OHLCV bar timestamps available for a symbol.
@@ -325,7 +344,7 @@ def get_market_ohlcv_available_range(
 
     try:
         available_range = market_service.fetch_ohlcv_available_range(
-            market_data_service, symbol, timeframe
+            mds, symbol, timeframe
         )
     except HTTPException:
         raise
