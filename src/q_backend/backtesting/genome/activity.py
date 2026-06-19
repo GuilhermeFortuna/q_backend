@@ -157,19 +157,23 @@ def _repair_recenter_thresholds(
         output_type = parent_spec.port_types.get(port, parent_spec.port_types["out"])
 
         low = float(series.quantile(0.25))
+        median = float(series.quantile(0.50))
         high = float(series.quantile(0.75))
         if output_type == "oscillator":
             low = max(0.0, low)
             high = min(100.0, high)
-        if low == high:
-            target = float(series.median())
-        else:
-            target = rng.uniform(low, high)
+            median = min(max(median, low), high)
 
-        if node.kind == "cmp.cross_below":
-            node.params["threshold"] = target
-        else:
-            node.params["threshold"] = target
+        if low >= high:
+            target = median
+        elif node.kind == "cmp.cross_above":
+            # Entry crosses up through the threshold, so sit it in the lower half of
+            # the observed range — the series then rises past it and fires.
+            target = rng.uniform(low, median)
+        else:  # cmp.cross_below crosses down, so place it in the upper half.
+            target = rng.uniform(median, high)
+
+        node.params["threshold"] = target
         changed = True
 
     if not changed:
