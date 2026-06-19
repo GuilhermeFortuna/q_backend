@@ -76,7 +76,7 @@ A separate intrabar engine for MT5 tick arrays (alongside the candle `BacktestEn
   * `DAY_TRADE`: Concurrent chunked backtesting (utilizes standard Python `ProcessPoolExecutor` to process daily sessions across multi-core CPUs in parallel).
 * **Signal & Order Pipeline:** Modular pipeline translating strategy `Signal` structures into executable `Order` definitions using pluggable `PositionSizer` logic.
 * **Vectorized Computations:** Employs precomputed Technical Indicators via vectorized pandas operations, preventing lookahead bias while maintaining massive throughput.
-* **Pluggable Strategy Registry:** Built-in strategies (`MACrossover`, `RSIMeanReversion`, `BollingerReversion`, `MACD`, `DonchianBreakout`, `VMA`, `FMA`, `TRB`, `TSMOM`) register parameter schemas consumed by the optimization engine and frontend forms via `GET /api/v1/strategies`. `VMA`/`FMA`/`TRB` implement the Lai & Lau (2006) price-vs-MA and close-based trading-range rules. `TSMOM` implements the Moskowitz–Ooi–Pedersen (2012) time-series momentum SIGN rule with bar-count rebalancing (Baltas & Kosowski 2017).
+* **Pluggable Strategy Registry:** Built-in candle strategies (`MACrossover`, `RSIMeanReversion`, `BollingerReversion`, `MACD`, `DonchianBreakout`, `VMA`, `FMA`, `TRB`, `TSMOM`, `GatevPairs`, `HurstTrendBlend`) plus tick strategies (`TickMaBreakout`) and the genome interpreter entry (`CompositeStrategy`) register parameter schemas consumed by the optimization engine and frontend forms via `GET /api/v1/strategies`. `VMA`/`FMA`/`TRB` implement the Lai & Lau (2006) price-vs-MA and close-based trading-range rules. `TSMOM` implements the Moskowitz–Ooi–Pedersen (2012) time-series momentum SIGN rule with bar-count rebalancing (Baltas & Kosowski 2017). `GatevPairs` implements Gatev–Goetzmann–Rouwenhorst (2006) distance-based pairs trading. `HurstTrendBlend` blends trend and mean-reversion regimes using a Hurst exponent filter.
 
 #### Genome DSL / `CompositeStrategy`
 
@@ -142,7 +142,8 @@ Three-tier storage keeps analytical payloads separate from operational metadata:
 
 | Tier | Technology | Purpose |
 |------|------------|---------|
-| **Analytical** | Parquet lake at `Q_DATA_LAKE_ROOT` | Backtest trades/equity artifacts (present); OHLCV/ticks/features (future) |
+| **Analytical** | Parquet lake at `Q_DATA_LAKE_ROOT` | Backtest, walk-forward, and strategy-search artifacts |
+| **Market data** | Parquet store at `Q_MARKET_DATA_ROOT` | Local OHLCV/tick history (WO48/WO50); separate from the results lake |
 | **Metadata** | PostgreSQL | Strategies, versions, backtest configs/runs, optimization studies/trials, ingestion run records |
 | **Runtime** | Redis | Job progress (JSON, 24h TTL), cache, locks |
 
@@ -184,7 +185,8 @@ Completed runs from `POST /api/v1/strategy-search` store relative paths in `stra
 * **Core Runtime:** Python `>=3.12`
 * **API Framework:** FastAPI, Uvicorn (ASGI web server), CORS Middleware
 * **Numerical Stack:** Pandas, NumPy (Vectorized market-data calculations)
-* **Broker & Data Clients:** MetaTrader 5 (MT5 Python package), Yahoo Finance (`yfinance`)
+* **Broker & Data Clients:** MetaTrader 5 (MT5 Python package); local Parquet market store for offline/Linux dev
+* **Optimization & Analytics:** Optuna, Numba (tick kernel), PyArrow (Parquet I/O)
 * **Serialization & Validation:** Pydantic `v2` (Declarative typesafe schemas)
 * **Metadata Storage:** PostgreSQL, SQLAlchemy 2.x, Alembic
 * **Runtime State:** Redis (job progress, cache, locks, Dramatiq broker)
@@ -205,16 +207,20 @@ q_backend/
 ├── docker-compose.yml    # Local Postgres + Redis
 ├── pyproject.toml        # Hatchling build configuration & dependency definitions
 ├── uv.lock               # Deterministic dependency lockfile
+├── configs/              # Example optimization YAML configs
 ├── scripts/              # Standalone utility & validation scripts
 │   └── backtests/        # High-performance backtesting runners
 │       └── run_ccm_backtest.py
 ├── src/
 │   └── q_backend/        # Core packages
-│       ├── api/          # FastAPI routes & async job managers (backtest, optimize, …)
-│       ├── backtesting/  # Engine, Position Sizers, Performance Registry & Strategies
+│       ├── api/          # FastAPI app assembly, routers, schemas, job dispatch
+│       │   ├── routers/  # Per-domain route modules (market, backtest, optimize, …)
+│       │   ├── schemas/  # Request/response Pydantic models
+│       │   └── *_jobs.py # Async job managers (backtest, optimize, walk-forward, …)
+│       ├── backtesting/  # Candle/tick engines, genome DSL, strategies, sizers
 │       ├── cli/          # CLI entry points (`worker`, `q-optimize`)
-│       ├── market_data/  # MT5 service wrappers & data pipelines
-│       ├── optimization/ # Optuna runner, study storage, walk-forward, discovery
+│       ├── market_data/  # MT5/local providers, tick cache, local store
+│       ├── optimization/ # Optuna runner, walk-forward, genetic search, discovery
 │       ├── tasks/        # Dramatiq broker, actors, fan-in, worker context
 │       └── storage/      # Settings, Postgres models, Redis helpers, Parquet lake
 │           ├── settings.py
@@ -222,6 +228,7 @@ q_backend/
 │           ├── db/       # SQLAlchemy models, engine, repositories
 │           └── redis/    # Job progress helpers
 └── tests/
+    ├── api/              # HTTP router & persistence integration tests
     ├── backtesting/
     ├── optimization/
     ├── market_data/
@@ -233,9 +240,10 @@ q_backend/
 ## ⚡ Quickstart & Setup
 
 ### Prerequisites
-1. **Windows OS:** MetaTrader 5 local terminal only runs on Windows environments.
-2. **MetaTrader 5 Terminal installed:** Download from your broker or [MetaQuotes](https://www.metatrader5.com/).
-3. **`uv` Package Manager:** Install `uv` if you haven't already:
+1. **Python 3.12+** and **`uv`** (see install below).
+2. **Windows + MetaTrader 5** for live broker data, tick ingestion, and storage ingest jobs. On **Linux/macOS**, the API and worker boot with an MT5 stub; use `data_source=local` and the Parquet market store for offline backtesting (copy `data/market/` from a Windows ingest machine).
+3. **MetaTrader 5 Terminal** (Windows only): Download from your broker or [MetaQuotes](https://www.metatrader5.com/).
+4. **`uv` Package Manager:** Install `uv` if you haven't already:
    ```powershell
    powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
    ```
@@ -255,8 +263,13 @@ MT5_PATH="C:/Program Files/MetaTrader 5/terminal64.exe"
 Q_DATABASE_URL=postgresql+psycopg://q:q@localhost:5432/q
 Q_REDIS_URL=redis://localhost:6380/0
 Q_DATA_LAKE_ROOT=data/lake
+Q_MARKET_DATA_ROOT=data/market
 Q_TICK_CACHE_DIR=data/tick_cache
+Q_RUNTIME_CONFIG_PATH=data/runtime_config.json
+Q_WORKER_PROCESSES=14
 ```
+
+Optional paths above default under `data/` when unset. `Q_WORKER_PROCESSES` defaults to **28** in code (`Settings.worker_processes`); the example value `14` suits a 16-core machine.
 
 ### 2. Install Dependencies
 ```bash
@@ -268,6 +281,7 @@ Start Postgres and Redis:
 ```bash
 docker compose up -d
 ```
+For a fully containerized API + worker stack (no live MT5), use `docker compose --profile containerized up --build`.
 Apply database migrations:
 ```bash
 uv run alembic upgrade head
@@ -291,7 +305,7 @@ The interactive API Swagger docs will be immediately accessible at [http://local
 
 ### API layout
 
-`q_backend.api.main` is a thin assembly module: it creates the FastAPI app, registers
+`q_backend.api.main` is the assembly module: it creates the FastAPI app, registers
 CORS middleware, wires the lifespan, and `include_router`s per-domain routers from
 `q_backend.api.routers/`. Request/response models live in `q_backend.api.schemas/`.
 Shared providers (the app-wide `market_data_service` singleton, database session
@@ -299,10 +313,19 @@ dependency, and cross-domain MT5 helpers) live in `q_backend.api.dependencies`.
 Domain logic stays in the existing packages (`market_data/`, `backtesting/`,
 `optimization/`, etc.) or in `api/services/` when API-specific.
 
-Later decomposition work (WO57–WO60) migrates remaining routes out of `main.py` into
-`api/routers/<domain>.py` following the conventions documented in
-`api/routers/__init__.py`. The market domain (WO57) lives in `routers/market.py`,
-`schemas/market.py`, and `market_data/api_service.py`.
+| Domain | Router | Schemas | Service / jobs |
+|--------|--------|---------|----------------|
+| System | `routers/system.py` | `schemas/system.py` | `market_data/`, `storage/health` |
+| Strategies | `routers/strategies.py` | (registry models) | `backtesting/strategy_registry.py` |
+| Market | `routers/market.py` | `schemas/market.py` | `market_data/api_service.py` |
+| Backtest | `routers/backtest.py` | `schemas/backtest.py` | `backtesting/run_service.py`, `api/backtest_jobs.py` |
+| Optimization | `routers/optimization.py` | `schemas/optimization.py` | `api/optimization_jobs.py` |
+| Walk-forward | `routers/walkforward.py` | `schemas/walkforward.py` | `api/walkforward_jobs.py` |
+| Strategy search | `routers/strategy_search.py` | `schemas/strategy_search.py` | `api/strategy_search_jobs.py` |
+| Storage | `routers/storage.py` | `schemas/storage.py` | `api/storage_jobs.py` |
+| News | `routers/news.py` | `schemas/news.py` | `api/services/news.py` (injectable RSS fetch) |
+
+After WO60, `main.py` is assembly-only: it wires routers and CORS and defines no business routes directly. Conventions for new routers are documented in `api/routers/__init__.py`.
 
 For full-stack local development with the Quant desktop app, run the worker pool as well (step 6). Without it, async jobs stay queued and never complete.
 
@@ -322,7 +345,7 @@ The pool is the single CPU budget shared by every job: a job fans its work out i
 many small messages (per Optuna trial batch, per walk-forward window, per discovery
 candidate, per backtest) that drain into the fixed pool, so running several jobs at
 once shares the cores fairly instead of oversubscribing the machine. Size it with
-`Q_WORKER_PROCESSES` in `.env` (default **14**, leaving headroom on a 16-core box).
+`Q_WORKER_PROCESSES` in `.env` (code default **28**; tune down on smaller machines — `.env.example` shows `14` for a 16-core box).
 
 > Each worker process opens its own MetaTrader 5 connection on boot. The API and the
 > worker must both be running for jobs to make progress — the API enqueues and serves
@@ -349,13 +372,21 @@ To run it:
 ### System Telemetry
 * **`GET /`**
   * *Description:* Verify backend online status and check current MT5 connectivity.
+  * *Response:* `{"status": "online", "service": "QuantLauncher Backend API", "mt5_connected": <bool>}`
 * **`GET /api/v1/system/health`**
-  * *Description:* Advanced system diagnostic dashboard info. Includes database (PostgreSQL) and cache/jobs (Redis) storage statuses.
-  * *Response:* `{"status": "healthy", "backendVersion": "0.1.0", "dataLakeStatus": "online", "lastSyncAt": "2026-06-09...", "storageStatus": {"postgres": {"status": "ok"}, "redis": {"status": "ok"}}}`
+  * *Description:* Advanced system diagnostic dashboard info. Includes database (PostgreSQL) and cache/jobs (Redis) storage statuses, active market-data provider, and local store inventory.
+  * *Response:* `{"status": "healthy"|"degraded", "backendVersion": "0.1.0", "dataLakeStatus": "online"|"offline", "lastSyncAt": "<ISO8601>", "storageStatus": {"postgres": {"status": "ok"}, "redis": {"status": "ok"}}, "mt5_available": <bool>, "active_provider": "mt5"|"local", "market_data_root": "<path>", "market_data_inventory_count": <int>}`
+* **`GET /api/v1/system/data-source`**
+  * *Description:* Read the persisted market-data routing setting (`auto` | `mt5` | `local`) plus live provider status.
+* **`PUT /api/v1/system/data-source`**
+  * *Description:* Update the market-data routing setting. Body: `{"source": "auto"|"mt5"|"local"}`.
 
 ### B3 Asset Directory & Realtime
 * **`GET /api/v1/market/instruments`**
-  * *Description:* Retrieves B3/Bovespa core instrument master definitions (`PETR4`, `VALE3`, `ITUB4`, `WIN$`, `WDO$`).
+  * *Description:* Default B3 instrument master definitions (`PETR4`, `VALE3`, `ITUB4`, `WIN$`, `WDO$`) plus symbols present in the local Parquet store.
+* **`GET /api/v1/market/symbols/search`**
+  * *Description:* Search stored local market data and, when MT5 is available, the terminal symbol list.
+  * *Parameters:* `q` (required query string).
 * **`GET /api/v1/market/snapshot/{symbol}`**
   * *Description:* Obtains a real-time quote snapshot directly from the active terminal.
   * *Response fields:* `symbol`, `last`, `changePct`, `volume` (legacy), plus `bid`, `ask`, `spread`, `changeAbs`, `dayOpen`, `dayHigh`, `dayLow`, `prevClose`, `digits`, `tickTime`.
@@ -371,7 +402,10 @@ To run it:
   * *Description:* Curated contract specification fields for charting and order sizing.
   * *Response fields:* `symbol`, `description`, `exchange`, `currencyBase`, `currencyProfit`, `digits`, `point`, `tickSize`, `tickValue`, `contractSize`, `volumeMin`, `volumeMax`, `volumeStep`, `spreadFloating`.
 * **`GET /api/v1/market/ohlcv/{symbol}`**
-  * *Description:* Fetches the historical daily OHLCV rates (past 30 sessions) for frontend charting.
+  * *Description:* Historical OHLCV bars for charting from the active provider (local store or MT5).
+  * *Parameters:* `timeframe` (default `D1`), `count` (default 500, max 5000), optional `start`/`end` (ISO-8601 range; both required when used).
+* **`GET /api/v1/market/ohlcv/{symbol}/available-range`**
+  * *Description:* Earliest and latest bar timestamps available for a symbol/timeframe, plus `bar_count`.
 
 ### Fine-Grained Historical Market Data Queries
 * **`GET /api/v1/market-data/symbol/{symbol}`**
@@ -392,7 +426,7 @@ To run it:
 * **`GET /api/v1/strategies`**
   * *Description:* Returns registered strategy metadata and typed parameter schemas for dynamic UI forms and optimization bounds.
   * *Response:* `{"strategies": [{"name": "MACrossover", "label": "MA Crossover", "description": "...", "params": [{"name": "short_period", "type": "int", "default": 50, ...}]}]}`
-  * *Built-in strategies:* `MACrossover`, `RSIMeanReversion`, `BollingerReversion`, `MACD`, `DonchianBreakout`, `VMA` (Lai & Lau 2006 variable MA), `FMA` (fixed holding-period MA), `TRB` (close-based trading-range breakout), `TSMOM` (time-series momentum SIGN rule, MOP 2012).
+  * *Built-in strategies:* `MACrossover`, `RSIMeanReversion`, `BollingerReversion`, `MACD`, `DonchianBreakout`, `VMA`, `FMA`, `TRB`, `TSMOM`, `GatevPairs`, `HurstTrendBlend` (candle); `TickMaBreakout` (tick); `CompositeStrategy` (genome interpreter for genetic search).
 * **`POST /api/v1/backtest`**
   * *Description:* Dispatch an async backtest to the Dramatiq worker pool (preferred for the desktop app). Poll status and fetch the full chart payload when complete.
   * *Request body:* Same fields as `BacktestJobRequest` (symbol, timeframe, strategy, `engine`, etc.).
@@ -444,6 +478,10 @@ To run it:
   * *Description:* Paginated list of persisted optimization studies, newest first.
   * *Parameters:* `limit` (default 50), `offset` (default 0).
   * *Response:* `{"items": [{"study_id": "3f9a...", "name": "WIN$ MA sweep", "status": "done", "best_value": 1.83, "n_trials": 100, "completed_trials": 100, "created_at": "2026-06-09T12:00:00Z"}], "total": 7, "limit": 50, "offset": 0}`
+* **`DELETE /api/v1/optimizations/{study_id}`**
+  * *Description:* Delete a persisted optimization study (`204`).
+* **`POST /api/v1/optimizations/bulk-delete`**
+  * *Description:* Delete multiple optimization studies by id list.
 
 #### Parallel optimization
 
@@ -495,6 +533,22 @@ Worker count is resolved by `q_backend.optimization.parallel.resolve_worker_coun
   * *Description:* Delete run metadata and lake artifacts (`204`).
 * **`GET /api/v1/strategy-search/{run_id}/candidates/{candidate_id}/artifacts/equity`**
   * *Description:* Stitched OOS equity for one candidate (`{"run_id", "candidate_id", "points": [{"time", "equity"}, ...]}`).
+
+### Local market storage
+* **`GET /api/v1/storage/inventory`**
+  * *Description:* List OHLCV/tick series in the local Parquet store with row counts and byte sizes.
+* **`POST /api/v1/storage/ingest`**
+  * *Description:* Queue MT5 → local ingest for `kind: "bars" | "ticks"` (503 when MT5 is unavailable).
+* **`GET /api/v1/storage/ingest/{job_id}`**
+  * *Description:* Poll ingest job status and per-series results.
+* **`DELETE /api/v1/storage/{symbol}/{timeframe}`**
+  * *Description:* Delete a stored OHLCV series (`204`).
+
+### News (RSS)
+* **`GET /api/v1/news`**
+  * *Description:* Latest finance headlines aggregated from Valor Econômico and CNBC RSS feeds (top 25, deduplicated).
+* **`GET /api/v1/news/{article_id}`**
+  * *Description:* Full article body for one feed item. `article_id` is a URL-safe base64 encoding of the source link.
 
 ---
 

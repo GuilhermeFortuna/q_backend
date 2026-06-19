@@ -8,11 +8,11 @@ from unittest.mock import patch
 import pytest
 
 from q_backend.api import storage_jobs
-from q_backend.api.main import (
+from q_backend.api.dependencies import market_data_service
+from q_backend.api.routers.storage import (
     delete_storage_series,
     get_storage_ingest_status,
     get_storage_inventory,
-    market_data_service,
     start_storage_ingest,
 )
 from q_backend.api.storage_jobs import IngestJobRequest
@@ -74,7 +74,8 @@ def test_start_ingest_rejects_unknown_timeframe(market_root):
                     timeframes=["BADTF"],
                     start=datetime(2024, 1, 1),
                     end=datetime(2024, 6, 1),
-                )
+                ),
+                mds=market_data_service,
             )
     assert exc_info.value.status_code == 422
 
@@ -88,7 +89,8 @@ def test_start_ingest_requires_mt5(market_root):
                     timeframes=["D1"],
                     start=datetime(2024, 1, 1),
                     end=datetime(2024, 6, 1),
-                )
+                ),
+                mds=market_data_service,
             )
     assert exc_info.value.status_code == 503
 
@@ -125,7 +127,8 @@ def test_ingest_job_completes_with_faked_mt5(market_root, monkeypatch):
                     timeframes=["D1", "H1"],
                     start=datetime(2024, 1, 1),
                     end=datetime(2024, 6, 1),
-                )
+                ),
+                mds=market_data_service,
             )["job_id"]
 
     status = get_storage_ingest_status(job_id)
@@ -169,7 +172,8 @@ def test_ingest_job_isolates_timeframe_failures(market_root, monkeypatch):
                     timeframes=["D1", "H1"],
                     start=datetime(2024, 1, 1),
                     end=datetime(2024, 6, 1),
-                )
+                ),
+                mds=market_data_service,
             )["job_id"]
 
     status = get_storage_ingest_status(job_id)
@@ -237,7 +241,8 @@ def test_tick_ingest_job_completes_with_faked_mt5(market_root, monkeypatch):
                     start=datetime(2024, 3, 1),
                     end=datetime(2024, 4, 15),
                     kind="ticks",
-                )
+                ),
+                mds=market_data_service,
             )["job_id"]
 
     status = get_storage_ingest_status(job_id)

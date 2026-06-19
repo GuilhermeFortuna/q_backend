@@ -16,8 +16,7 @@ from sqlalchemy.pool import StaticPool
 from unittest.mock import patch
 
 from q_backend.api import optimization_jobs
-from q_backend.api.main import (
-    BulkDeleteOptimizationsRequest,
+from q_backend.api.routers.optimization import (
     bulk_delete_optimizations,
     cancel_optimization,
     delete_optimization,
@@ -25,6 +24,7 @@ from q_backend.api.main import (
     get_optimization_status,
     list_optimizations,
 )
+from q_backend.api.schemas.common import BulkDeleteOptimizationsRequest
 from q_backend.optimization.models import OptimizationConfig
 from q_backend.storage.db.base import Base
 from q_backend.storage.db.repositories import create_optimization_study, get_optimization_study

@@ -19,7 +19,7 @@ from sqlalchemy.pool import StaticPool
 from unittest.mock import patch
 
 from q_backend.api import strategy_search_jobs
-from q_backend.api.main import (
+from q_backend.api.routers.strategy_search import (
     cancel_strategy_search,
     delete_strategy_search,
     get_strategy_search_results,
@@ -343,7 +343,7 @@ def test_strategy_search_migration_revision_chain():
 
 
 def test_strategy_search_status_response_preserves_trial_logs():
-    from q_backend.api.main import StrategySearchStatusResponse
+    from q_backend.api.schemas.strategy_search import StrategySearchStatusResponse
 
     sample_log = (
         "[I 2026-06-15 07:37:19,667] Candidate genome-001 - Window 0 - "

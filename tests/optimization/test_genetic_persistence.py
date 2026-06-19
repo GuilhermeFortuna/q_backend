@@ -17,7 +17,7 @@ from sqlalchemy.pool import StaticPool
 import q_backend.backtesting.strategies  # noqa: F401 — register CompositeStrategy
 
 from q_backend.api import strategy_search_jobs
-from q_backend.api.main import (
+from q_backend.api.routers.strategy_search import (
     get_strategy_search_candidate_genome,
     get_strategy_search_results,
     get_strategy_search_status,

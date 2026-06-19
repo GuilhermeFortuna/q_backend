@@ -17,7 +17,7 @@ from sqlalchemy.pool import StaticPool
 from unittest.mock import patch
 
 from q_backend.api import walkforward_jobs
-from q_backend.api.main import (
+from q_backend.api.routers.walkforward import (
     delete_walkforward,
     get_walkforward_equity_artifact,
     get_walkforward_results,

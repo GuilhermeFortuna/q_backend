@@ -9,9 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from q_backend.api.main import (
-    BacktestRequest,
-    BulkDeleteBacktestsRequest,
+from q_backend.api.routers.backtest import (
     bulk_delete_backtests,
     delete_backtest,
     get_backtest,
@@ -19,6 +17,8 @@ from q_backend.api.main import (
     get_backtest_trades_artifact,
     run_backtest,
 )
+from q_backend.api.schemas.backtest import BacktestRequest
+from q_backend.api.schemas.common import BulkDeleteBacktestsRequest
 from q_backend.market_data.models import OHLCV
 from q_backend.storage.db.base import Base
 from q_backend.storage.db.models import BacktestRun
@@ -122,10 +122,10 @@ def test_run_backtest_writes_lake_artifacts_and_sets_lake_paths(
 
     with (
         patch(
-            "q_backend.api.main.market_data_service.get_ohlcv",
+            "q_backend.backtesting.run_service.market_data_service.get_ohlcv",
             return_value=sample_ohlcv,
         ),
-        patch("q_backend.api.main.session_scope", api_session_scope),
+        patch("q_backend.backtesting.run_service.session_scope", api_session_scope),
     ):
         run_payload = run_backtest(BacktestRequest.model_validate(request_body))
 
@@ -166,12 +166,12 @@ def test_run_backtest_succeeds_when_lake_write_fails(
 
     with (
         patch(
-            "q_backend.api.main.market_data_service.get_ohlcv",
+            "q_backend.backtesting.run_service.market_data_service.get_ohlcv",
             return_value=sample_ohlcv,
         ),
-        patch("q_backend.api.main.session_scope", api_session_scope),
+        patch("q_backend.backtesting.run_service.session_scope", api_session_scope),
         patch(
-            "q_backend.api.main.write_backtest_artifacts",
+            "q_backend.backtesting.run_service.write_backtest_artifacts",
             side_effect=OSError("disk full"),
         ),
     ):
@@ -215,10 +215,10 @@ def test_artifact_endpoints_return_404_when_files_deleted(
 
     with (
         patch(
-            "q_backend.api.main.market_data_service.get_ohlcv",
+            "q_backend.backtesting.run_service.market_data_service.get_ohlcv",
             return_value=sample_ohlcv,
         ),
-        patch("q_backend.api.main.session_scope", api_session_scope),
+        patch("q_backend.backtesting.run_service.session_scope", api_session_scope),
     ):
         run_payload = run_backtest(BacktestRequest.model_validate(request_body))
 
@@ -248,10 +248,10 @@ def test_delete_backtest_removes_lake_artifacts(
 
     with (
         patch(
-            "q_backend.api.main.market_data_service.get_ohlcv",
+            "q_backend.backtesting.run_service.market_data_service.get_ohlcv",
             return_value=sample_ohlcv,
         ),
-        patch("q_backend.api.main.session_scope", api_session_scope),
+        patch("q_backend.backtesting.run_service.session_scope", api_session_scope),
     ):
         run_payload = run_backtest(BacktestRequest.model_validate(request_body))
 
@@ -279,10 +279,10 @@ def test_bulk_delete_backtests_removes_lake_artifacts(
 
     with (
         patch(
-            "q_backend.api.main.market_data_service.get_ohlcv",
+            "q_backend.backtesting.run_service.market_data_service.get_ohlcv",
             return_value=sample_ohlcv,
         ),
-        patch("q_backend.api.main.session_scope", api_session_scope),
+        patch("q_backend.backtesting.run_service.session_scope", api_session_scope),
     ):
         run_payload = run_backtest(BacktestRequest.model_validate(request_body))
 

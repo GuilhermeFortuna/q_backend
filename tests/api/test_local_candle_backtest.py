@@ -7,7 +7,8 @@ from unittest.mock import patch
 
 import pytest
 
-from q_backend.api.main import BacktestRequest, run_backtest
+from q_backend.api.routers.backtest import run_backtest
+from q_backend.api.schemas.backtest import BacktestRequest
 from q_backend.market_data import local_store
 from q_backend.market_data.models import OHLCV
 from q_backend.storage.runtime_config import set_data_source
@@ -52,7 +53,7 @@ def test_candle_backtest_local_mode_without_mt5(local_market):
     )
 
     with patch(
-        "q_backend.api.main.market_data_service.mt5_client.get_ohlcv",
+        "q_backend.api.dependencies.market_data_service.mt5_client.get_ohlcv",
         side_effect=AssertionError("MT5 must not be called in local mode"),
     ):
         response = run_backtest(request)

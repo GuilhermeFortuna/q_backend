@@ -9,12 +9,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from q_backend.api.main import (
-    BacktestRequest,
+from q_backend.api.routers.backtest import (
     get_backtest,
     list_backtests,
     run_backtest,
 )
+from q_backend.api.schemas.backtest import BacktestRequest
 from q_backend.storage.db.base import Base
 
 
@@ -108,10 +108,10 @@ def test_tick_backtest_returns_metrics_trades_bars_and_run_id(
 
     with (
         patch(
-            "q_backend.api.main.market_data_service.get_ticks_columnar",
+            "q_backend.backtesting.run_service.market_data_service.get_ticks_columnar",
             return_value=_sample_columnar(),
         ),
-        patch("q_backend.api.main.session_scope", api_session_scope),
+        patch("q_backend.backtesting.run_service.session_scope", api_session_scope),
     ):
         payload = run_backtest(BacktestRequest.model_validate(request_body))
 
@@ -154,7 +154,7 @@ def test_tick_backtest_no_ticks_returns_404():
     )
 
     with patch(
-        "q_backend.api.main.market_data_service.get_ticks_columnar",
+        "q_backend.backtesting.run_service.market_data_service.get_ticks_columnar",
         return_value={
             "time_msc": np.array([], dtype=np.int64),
             "bid": np.array([], dtype=np.float64),
@@ -182,7 +182,7 @@ def test_tick_backtest_mt5_offline_returns_503():
     )
 
     with patch(
-        "q_backend.api.main.market_data_service.get_ticks_columnar",
+        "q_backend.backtesting.run_service.market_data_service.get_ticks_columnar",
         side_effect=ConnectionError("MetaTrader 5 terminal is offline."),
     ):
         with pytest.raises(HTTPException) as exc:

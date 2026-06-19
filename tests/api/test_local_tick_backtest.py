@@ -9,7 +9,8 @@ import numpy as np
 import pytest
 from fastapi import HTTPException
 
-from q_backend.api.main import BacktestRequest, run_backtest
+from q_backend.api.routers.backtest import run_backtest
+from q_backend.api.schemas.backtest import BacktestRequest
 from q_backend.market_data import local_store
 from q_backend.market_data.clients.metatrader import _naive_local_to_time_msc
 from q_backend.storage.runtime_config import set_data_source
@@ -63,7 +64,7 @@ def test_tick_backtest_local_mode_without_mt5(local_tick_market):
     )
 
     with patch(
-        "q_backend.api.main.market_data_service.mt5_client.get_ticks_columnar",
+        "q_backend.api.dependencies.market_data_service.mt5_client.get_ticks_columnar",
         side_effect=AssertionError("MT5 must not be called in local mode"),
     ):
         response = run_backtest(request)

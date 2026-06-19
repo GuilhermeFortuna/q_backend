@@ -7,18 +7,19 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from q_backend.api.main import (
-    BacktestRequest,
-    BacktestRunPatchRequest,
-    BulkDeleteBacktestsRequest,
-    BulkDeleteOptimizationsRequest,
+from q_backend.api.routers.optimization import bulk_delete_optimizations
+from q_backend.api.routers.backtest import (
     bulk_delete_backtests,
-    bulk_delete_optimizations,
     delete_backtest,
     get_backtest,
     list_backtests,
     patch_backtest,
     run_backtest,
+)
+from q_backend.api.schemas.backtest import BacktestRequest, BacktestRunPatchRequest
+from q_backend.api.schemas.common import (
+    BulkDeleteBacktestsRequest,
+    BulkDeleteOptimizationsRequest,
 )
 from q_backend.market_data.models import OHLCV
 from q_backend.storage.db.base import Base
@@ -112,10 +113,10 @@ def test_run_backtest_persists_and_appears_in_history(
 
     with (
         patch(
-            "q_backend.api.main.market_data_service.get_ohlcv",
+            "q_backend.backtesting.run_service.market_data_service.get_ohlcv",
             return_value=sample_ohlcv,
         ),
-        patch("q_backend.api.main.session_scope", api_session_scope),
+        patch("q_backend.backtesting.run_service.session_scope", api_session_scope),
     ):
         run_payload = run_backtest(BacktestRequest.model_validate(request_body))
 
@@ -156,11 +157,11 @@ def test_run_backtest_graceful_degradation_when_persistence_unavailable(
 
     with (
         patch(
-            "q_backend.api.main.market_data_service.get_ohlcv",
+            "q_backend.backtesting.run_service.market_data_service.get_ohlcv",
             return_value=sample_ohlcv,
         ),
         patch(
-            "q_backend.api.main.session_scope",
+            "q_backend.backtesting.run_service.session_scope",
             side_effect=Exception("database unavailable"),
         ),
     ):
@@ -187,10 +188,10 @@ def test_delete_backtest_removes_run_from_history(
 
     with (
         patch(
-            "q_backend.api.main.market_data_service.get_ohlcv",
+            "q_backend.backtesting.run_service.market_data_service.get_ohlcv",
             return_value=sample_ohlcv,
         ),
-        patch("q_backend.api.main.session_scope", api_session_scope),
+        patch("q_backend.backtesting.run_service.session_scope", api_session_scope),
     ):
         run_payload = run_backtest(BacktestRequest.model_validate(request_body))
 
@@ -220,10 +221,10 @@ def test_list_backtests_filters_sort_and_patch_save(
 
     with (
         patch(
-            "q_backend.api.main.market_data_service.get_ohlcv",
+            "q_backend.backtesting.run_service.market_data_service.get_ohlcv",
             return_value=sample_ohlcv,
         ),
-        patch("q_backend.api.main.session_scope", api_session_scope),
+        patch("q_backend.backtesting.run_service.session_scope", api_session_scope),
     ):
         run_payload = run_backtest(BacktestRequest.model_validate(request_body))
 
@@ -266,10 +267,10 @@ def test_bulk_delete_backtests(api_db_session, api_session_scope, sample_ohlcv):
 
     with (
         patch(
-            "q_backend.api.main.market_data_service.get_ohlcv",
+            "q_backend.backtesting.run_service.market_data_service.get_ohlcv",
             return_value=sample_ohlcv,
         ),
-        patch("q_backend.api.main.session_scope", api_session_scope),
+        patch("q_backend.backtesting.run_service.session_scope", api_session_scope),
     ):
         run_payload = run_backtest(BacktestRequest.model_validate(request_body))
 
@@ -304,10 +305,10 @@ def test_run_backtest_reuses_existing_history_entry_for_identical_config(
 
     with (
         patch(
-            "q_backend.api.main.market_data_service.get_ohlcv",
+            "q_backend.backtesting.run_service.market_data_service.get_ohlcv",
             return_value=sample_ohlcv,
         ),
-        patch("q_backend.api.main.session_scope", api_session_scope),
+        patch("q_backend.backtesting.run_service.session_scope", api_session_scope),
     ):
         first_payload = run_backtest(request)
         second_payload = run_backtest(request)
@@ -336,10 +337,10 @@ def test_run_backtest_creates_separate_history_for_different_config(
 
     with (
         patch(
-            "q_backend.api.main.market_data_service.get_ohlcv",
+            "q_backend.backtesting.run_service.market_data_service.get_ohlcv",
             return_value=sample_ohlcv,
         ),
-        patch("q_backend.api.main.session_scope", api_session_scope),
+        patch("q_backend.backtesting.run_service.session_scope", api_session_scope),
     ):
         first_payload = run_backtest(BacktestRequest.model_validate(base_request))
         second_payload = run_backtest(
