@@ -359,6 +359,8 @@ class OptimizationStatusResponse(BaseModel):
     workers: int = 1
     backtest_config: Optional[Dict[str, Any]] = None
     optimization_config: Optional[Dict[str, Any]] = None
+    trials: Optional[List[Dict[str, Any]]] = None
+    best_trial: Optional[Dict[str, Any]] = None
 
 
 class OptimizationResultsResponse(BaseModel):

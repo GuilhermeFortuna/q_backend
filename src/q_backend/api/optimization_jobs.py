@@ -355,17 +355,50 @@ def status_payload_from_db(study_id: str) -> dict[str, Any] | None:
         optimization_config.get("backtest") if optimization_config is not None else None
     )
 
+    serialized_trials = [
+        _serialize_db_trial(trial.metrics, trial)
+        for trial in sorted(study.trials, key=lambda item: item.trial_number)
+    ]
+
+    best_value = snapshot.get("best_value")
+    best_params = snapshot.get("best_params", {})
+    best_trial = None
+
+    if serialized_trials:
+        completed_trials = [
+            t for t in serialized_trials
+            if t.get("state") == "COMPLETE" and t.get("values")
+        ]
+        if completed_trials:
+            is_minimize = False
+            if optimization_config:
+                mode = optimization_config.get("objective", {}).get("mode")
+                if mode == "minimize_drawdown":
+                    is_minimize = True
+            
+            if is_minimize:
+                best_t = min(completed_trials, key=lambda t: t["values"][0])
+            else:
+                best_t = max(completed_trials, key=lambda t: t["values"][0])
+            
+            if best_value is None:
+                best_value = best_t["values"][0]
+                best_params = best_t["params"]
+            best_trial = best_t
+
     return {
         "study_id": study_id,
         "status": study.status,
         "completed_trials": _count_completed_trials(study.trials),
         "n_trials": n_trials,
-        "best_value": snapshot.get("best_value"),
-        "best_params": snapshot.get("best_params", {}),
+        "best_value": best_value,
+        "best_params": best_params,
+        "best_trial": best_trial,
         "error": snapshot.get("error"),
         "workers": snapshot.get("workers", 1),
         "backtest_config": backtest_config,
         "optimization_config": optimization_config,
+        "trials": serialized_trials,
     }
 
 
