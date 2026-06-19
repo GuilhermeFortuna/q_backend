@@ -3,6 +3,10 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from typing import List, Optional, Dict, Any, Literal
+import base64
+import urllib.request
+import xml.etree.ElementTree as ET
+import email.utils
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -49,6 +53,7 @@ from q_backend.api import walkforward_jobs
 from q_backend.api.storage_jobs import IngestJobRequest
 from q_backend.api.backtest_jobs import BacktestJobRequest
 from q_backend.market_data import local_store
+from q_backend.market_data.routing import resolve_ohlcv_source
 from q_backend.api.walkforward_jobs import WalkForwardRequest
 from q_backend.optimization.strategy_search import StrategySearchConfig
 from q_backend.storage.lake import (
@@ -97,6 +102,17 @@ class StorageServiceStatus(BaseModel):
 class StorageStatusResponse(BaseModel):
     postgres: StorageServiceStatus
     redis: StorageServiceStatus
+
+
+class NewsArticleResponse(BaseModel):
+    id: str
+    title: str
+    source: str
+    publishedAt: str
+    summary: str
+    content: str
+    videoUrl: Optional[str] = None
+    imageUrl: Optional[str] = None
 
 
 class SystemHealthResponse(BaseModel):
@@ -1075,111 +1091,154 @@ def update_data_source_setting(body: DataSourceUpdateRequest):
     return _data_source_payload()
 
 
+_DEFAULT_B3_INSTRUMENTS: list[dict[str, str]] = [
+    {
+        "symbol": "PETR4",
+        "name": "PETROBRAS PN N2",
+        "exchange": "BOVESPA",
+        "assetClass": "equity",
+    },
+    {
+        "symbol": "VALE3",
+        "name": "VALE ON NM",
+        "exchange": "BOVESPA",
+        "assetClass": "equity",
+    },
+    {
+        "symbol": "ITUB4",
+        "name": "ITAU UNIBANCO PN N1",
+        "exchange": "BOVESPA",
+        "assetClass": "equity",
+    },
+    {
+        "symbol": "WIN$",
+        "name": "IBOVESPA MINI",
+        "exchange": "BMF",
+        "assetClass": "future",
+    },
+    {
+        "symbol": "WDO$",
+        "name": "DOLAR MINI",
+        "exchange": "BMF",
+        "assetClass": "future",
+    },
+]
+
+
+def _infer_asset_class(symbol_name: str, path: str) -> str:
+    if "BMF" in path or "@" in symbol_name or "$" in symbol_name:
+        return "future"
+    if "FX" in path or "Forex" in path:
+        return "fx"
+    return "equity"
+
+
+def _raw_symbol_to_instrument(raw: Dict[str, Any]) -> dict:
+    path = raw.get("path", "") or ""
+    path_parts = path.split("\\")
+    exchange = path_parts[0] if path_parts else "LOCAL"
+    symbol_name = raw.get("name", "")
+    return {
+        "symbol": symbol_name,
+        "name": raw.get("description") or symbol_name,
+        "exchange": exchange,
+        "assetClass": _infer_asset_class(symbol_name, path),
+    }
+
+
+def _merge_instruments_by_symbol(*groups: list[dict]) -> list[dict]:
+    merged: dict[str, dict] = {}
+    for group in groups:
+        for item in group:
+            merged.setdefault(item["symbol"], item)
+    return list(merged.values())
+
+
+def _stored_instruments() -> list[dict]:
+    return [
+        _raw_symbol_to_instrument(entry) for entry in local_store.stored_symbols()
+    ]
+
+
+def _search_instrument_sources(query: str) -> list[dict]:
+    needle = query.strip()
+    if not needle:
+        return []
+
+    source = get_data_source()
+    mt5_up = market_data_service.mt5_available()
+    if not mt5_up and source == "mt5":
+        raise HTTPException(
+            status_code=503, detail="MetaTrader 5 terminal is offline."
+        )
+
+    merged: dict[str, dict] = {}
+
+    def add_hits(raw_symbols: list[dict[str, Any]]) -> None:
+        for raw in raw_symbols:
+            instrument = _raw_symbol_to_instrument(raw)
+            merged.setdefault(instrument["symbol"], instrument)
+
+    try:
+        add_hits(market_data_service._local_client.search_symbols(needle))
+    except Exception as exc:
+        logger.error("Error searching local storage for query '%s': %s", needle, exc)
+
+    if mt5_up and source != "local":
+        try:
+            add_hits(market_data_service.mt5_client.search_symbols(needle))
+        except Exception as exc:
+            logger.error("Error searching MT5 for query '%s': %s", needle, exc)
+
+    return list(merged.values())[:50]
+
+
 @app.get("/api/v1/market/instruments", response_model=List[InstrumentResponse])
 def get_market_instruments():
     """
-    Retrieve available B3/Bovespa assets from local MT5 environment.
+    Retrieve tradable instruments: default B3 assets plus symbols stored locally.
     """
-    b3_symbols = [
-        {
-            "symbol": "PETR4",
-            "name": "PETROBRAS PN N2",
-            "exchange": "BOVESPA",
-            "assetClass": "equity",
-        },
-        {
-            "symbol": "VALE3",
-            "name": "VALE ON NM",
-            "exchange": "BOVESPA",
-            "assetClass": "equity",
-        },
-        {
-            "symbol": "ITUB4",
-            "name": "ITAU UNIBANCO PN N1",
-            "exchange": "BOVESPA",
-            "assetClass": "equity",
-        },
-        {
-            "symbol": "WIN$",
-            "name": "IBOVESPA MINI",
-            "exchange": "BMF",
-            "assetClass": "future",
-        },
-        {
-            "symbol": "WDO$",
-            "name": "DOLAR MINI",
-            "exchange": "BMF",
-            "assetClass": "future",
-        },
-    ]
+    instruments = _merge_instruments_by_symbol(
+        _DEFAULT_B3_INSTRUMENTS,
+        _stored_instruments(),
+    )
 
-    connected = market_data_service.mt5_available()
-    if not connected:
-        logger.warning("MT5 not connected, returning cached asset definitions.")
-        return b3_symbols
+    if not market_data_service.mt5_available():
+        logger.warning(
+            "MT5 not connected; returning default and stored instrument definitions."
+        )
+        return instruments
 
     mt5 = mt5_client_module.mt5
     if mt5 is None:
-        return b3_symbols
+        return instruments
 
-    active_symbols = []
-    for item in b3_symbols:
-        # Pre-select in MT5 window to ensure ticks are loaded
-        if mt5.symbol_select(item["symbol"], True):
-            active_symbols.append(item)
-        else:
-            logger.warning(f"Symbol '{item['symbol']}' could not be selected in MT5.")
-            active_symbols.append(item)  # Fallback to return anyway
+    for item in _DEFAULT_B3_INSTRUMENTS:
+        if not mt5.symbol_select(item["symbol"], True):
+            logger.warning(
+                "Symbol '%s' could not be selected in MT5.", item["symbol"]
+            )
 
-    return active_symbols
+    return instruments
 
 
 @app.get("/api/v1/market/symbols/search", response_model=List[InstrumentResponse])
 def search_symbols(
-    q: str = Query(..., description="Query to search symbols in MetaTrader 5")
+    q: str = Query(..., description="Query to search stored and MT5 symbols")
 ):
     """
-    Search for symbols available in the MT5 terminal matching a query.
+    Search stored local market data and, when available, the MT5 terminal.
     """
     if not q.strip():
         return []
 
-    if not market_data_service.mt5_available():
-        if get_data_source() == "mt5":
-            raise HTTPException(
-                status_code=503, detail="MetaTrader 5 terminal is offline."
-            )
-        return []
-
     try:
-        raw_symbols = market_data_service.search_symbols(q.strip())
-        results = []
-        for s in raw_symbols[:50]:  # Limit to 50 results
-            # Parse exchange from path
-            path = s.get("path", "")
-            path_parts = path.split("\\")
-            exchange = path_parts[0] if path_parts else "BOVESPA"
-
-            # Determine asset class
-            asset_class = "equity"
-            symbol_name = s.get("name", "")
-            if "BMF" in path or "@" in symbol_name or "$" in symbol_name:
-                asset_class = "future"
-            elif "FX" in path or "Forex" in path:
-                asset_class = "fx"
-
-            results.append(
-                {
-                    "symbol": symbol_name,
-                    "name": s.get("description") or symbol_name,
-                    "exchange": exchange,
-                    "assetClass": asset_class,
-                }
-            )
-        return results
-    except Exception as e:
-        logger.error(f"Error searching symbols for query '{q}': {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return _search_instrument_sources(q)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Error searching symbols for query '%s': %s", q, exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 def _utc_iso_seconds(dt: datetime) -> str:
@@ -1486,6 +1545,112 @@ def _normalize_market_timeframe(timeframe: str) -> str:
     return mapping.get(timeframe.upper(), "D1")
 
 
+def _fetch_ohlcv_rows(
+    symbol: str,
+    timeframe: str,
+    *,
+    count: int,
+    start: Optional[datetime],
+    end: Optional[datetime],
+) -> list:
+    mt5_timeframe = _normalize_market_timeframe(timeframe)
+    ohlcv_source = resolve_ohlcv_source(market_data_service, symbol, mt5_timeframe)
+
+    if (start is None) ^ (end is None):
+        raise HTTPException(
+            status_code=400,
+            detail="Both start and end must be provided for date-range queries.",
+        )
+
+    if start is not None and end is not None:
+        start = _to_naive_local(start)
+        end = _to_naive_local(end)
+        if start >= end:
+            raise HTTPException(
+                status_code=400,
+                detail="Start datetime must be before end datetime.",
+            )
+        client = (
+            market_data_service._local_client
+            if ohlcv_source == "local"
+            else market_data_service.mt5_client
+        )
+        try:
+            return client.get_ohlcv(symbol, mt5_timeframe, start, end)
+        except ValueError as ve:
+            raise HTTPException(status_code=400, detail=str(ve)) from ve
+        except ConnectionError as ce:
+            raise HTTPException(status_code=503, detail=str(ce)) from ce
+
+    if ohlcv_source == "local":
+        available = local_store.available_range(symbol, mt5_timeframe)
+        if available is None:
+            return []
+        bars = market_data_service._local_client.get_ohlcv(
+            symbol, mt5_timeframe, available.start, available.end
+        )
+        return bars[-count:] if len(bars) > count else bars
+
+    if not market_data_service.mt5_available():
+        if get_data_source() == "mt5":
+            raise HTTPException(
+                status_code=503, detail="MetaTrader 5 terminal is offline."
+            )
+        raise HTTPException(
+            status_code=404,
+            detail=f"No OHLCV data found for symbol '{symbol}' (local data provider).",
+        )
+
+    mt5 = mt5_client_module.mt5
+    if mt5 is None:
+        raise HTTPException(
+            status_code=503, detail="MetaTrader 5 terminal is offline."
+        )
+
+    if not mt5.symbol_select(symbol, True):
+        raise HTTPException(
+            status_code=404, detail=f"Symbol '{symbol}' not found on MetaTrader 5."
+        )
+
+    timeframe_map = {
+        "M1": mt5_client_module._mt5_timeframe("M1"),
+        "M5": mt5_client_module._mt5_timeframe("M5"),
+        "M15": mt5_client_module._mt5_timeframe("M15"),
+        "M30": mt5_client_module._mt5_timeframe("M30"),
+        "H1": mt5_client_module._mt5_timeframe("H1"),
+        "H4": mt5_client_module._mt5_timeframe("H4"),
+        "D1": mt5_client_module._mt5_timeframe("D1"),
+    }
+
+    mt5_tf = timeframe_map.get(mt5_timeframe, mt5_client_module._mt5_timeframe("D1"))
+    rates = mt5.copy_rates_from_pos(symbol, mt5_tf, 0, count)
+    if rates is None or len(rates) == 0:
+        return []
+    return list(rates)
+
+
+def _fetch_ohlcv_available_range(symbol: str, timeframe: str):
+    mt5_timeframe = _normalize_market_timeframe(timeframe)
+    ohlcv_source = resolve_ohlcv_source(market_data_service, symbol, mt5_timeframe)
+
+    if ohlcv_source == "local":
+        return local_store.available_range(symbol, mt5_timeframe)
+
+    if not market_data_service.is_available():
+        raise HTTPException(
+            status_code=503, detail="Market data provider is unavailable."
+        )
+
+    try:
+        return market_data_service.mt5_client.get_available_ohlcv_range(
+            symbol, mt5_timeframe
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve)) from ve
+    except ConnectionError as ce:
+        raise HTTPException(status_code=503, detail=str(ce)) from ce
+
+
 def _ohlcv_to_bar_response(row) -> dict:
     """Convert OHLCV model or MT5 rate row to frontend bar shape."""
     if hasattr(row, "time"):
@@ -1494,7 +1659,11 @@ def _ohlcv_to_bar_response(row) -> dict:
             timestamp_dt = datetime.fromisoformat(
                 str(timestamp_dt).replace("Z", "+00:00")
             )
-        volume = row.real_volume if row.real_volume > 0 else row.tick_volume
+        volume = (
+            row.real_volume
+            if row.real_volume is not None and row.real_volume > 0
+            else row.tick_volume
+        )
         return {
             "timestamp": mt5_datetime_to_utc_iso(timestamp_dt),
             "open": float(row.open),
@@ -1535,106 +1704,28 @@ def get_market_ohlcv(
     ),
 ):
     """
-    Retrieve historical OHLCV data for a B3 asset.
+    Retrieve historical OHLCV data for a symbol from local storage or MT5.
     Returns the most recent `count` bars by default, or a date range when start/end are provided.
     """
     symbol = symbol.upper()
-    mt5_timeframe = _normalize_market_timeframe(timeframe)
 
-    if not market_data_service.mt5_available():
-        if get_data_source() == "mt5":
-            raise HTTPException(
-                status_code=503, detail="MetaTrader 5 terminal is offline."
-            )
-        if start is not None and end is not None:
-            start = _to_naive_local(start)
-            end = _to_naive_local(end)
-            if start >= end:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Start datetime must be before end datetime.",
-                )
-            try:
-                ohlcv_data = market_data_service.get_ohlcv(
-                    symbol, mt5_timeframe, start, end
-                )
-            except ValueError as ve:
-                raise HTTPException(status_code=400, detail=str(ve)) from ve
-            except ConnectionError as ce:
-                raise HTTPException(status_code=503, detail=str(ce)) from ce
-            if not ohlcv_data:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"No OHLCV data found for symbol '{symbol}'.",
-                )
-            return [_ohlcv_to_bar_response(row) for row in ohlcv_data]
+    try:
+        ohlcv_data = _fetch_ohlcv_rows(
+            symbol, timeframe, count=count, start=start, end=end
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Error fetching OHLCV for %s: %s", symbol, exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    if not ohlcv_data:
         raise HTTPException(
             status_code=404,
-            detail=f"No OHLCV data found for symbol '{symbol}' (local data provider).",
+            detail=f"No OHLCV data found for symbol '{symbol}'.",
         )
 
-    mt5 = mt5_client_module.mt5
-    if mt5 is None:
-        raise HTTPException(
-            status_code=503, detail="MetaTrader 5 terminal is offline."
-        )
-
-    if not mt5.symbol_select(symbol, True):
-        raise HTTPException(
-            status_code=404, detail=f"Symbol '{symbol}' not found on MetaTrader 5."
-        )
-
-    if (start is None) ^ (end is None):
-        raise HTTPException(
-            status_code=400,
-            detail="Both start and end must be provided for date-range queries.",
-        )
-    if start is not None and end is not None:
-        start = _to_naive_local(start)
-        end = _to_naive_local(end)
-    if start is not None and end is not None and start >= end:
-        raise HTTPException(
-            status_code=400, detail="Start datetime must be before end datetime."
-        )
-
-    if start is not None and end is not None:
-        try:
-            ohlcv_data = market_data_service.get_ohlcv(
-                symbol, mt5_timeframe, start, end
-            )
-        except ValueError as ve:
-            raise HTTPException(status_code=400, detail=str(ve))
-        except ConnectionError as ce:
-            raise HTTPException(status_code=503, detail=str(ce))
-        except Exception as e:
-            logger.error(f"Error fetching OHLCV range for {symbol}: {str(e)}")
-            raise HTTPException(status_code=500, detail=str(e))
-
-        if not ohlcv_data:
-            raise HTTPException(
-                status_code=404, detail=f"No OHLCV data found for symbol '{symbol}'."
-            )
-
-        return [_ohlcv_to_bar_response(row) for row in ohlcv_data]
-
-    timeframe_map = {
-        "M1": mt5_client_module._mt5_timeframe("M1"),
-        "M5": mt5_client_module._mt5_timeframe("M5"),
-        "M15": mt5_client_module._mt5_timeframe("M15"),
-        "M30": mt5_client_module._mt5_timeframe("M30"),
-        "H1": mt5_client_module._mt5_timeframe("H1"),
-        "H4": mt5_client_module._mt5_timeframe("H4"),
-        "D1": mt5_client_module._mt5_timeframe("D1"),
-    }
-
-    mt5_tf = timeframe_map.get(mt5_timeframe, mt5_client_module._mt5_timeframe("D1"))
-    rates = mt5.copy_rates_from_pos(symbol, mt5_tf, 0, count)
-    if rates is None or len(rates) == 0:
-        raise HTTPException(
-            status_code=404, detail=f"No OHLCV data found for symbol '{symbol}'."
-        )
-
-    return [_ohlcv_to_bar_response(row) for row in rates]
+    return [_ohlcv_to_bar_response(row) for row in ohlcv_data]
 
 
 @app.get(
@@ -1648,32 +1739,26 @@ def get_market_ohlcv_available_range(
     ),
 ):
     """
-    Returns the earliest and latest OHLCV bar timestamps available in MT5 for a symbol.
+    Returns the earliest and latest OHLCV bar timestamps available for a symbol.
     """
     symbol = symbol.upper()
-    mt5_timeframe = _normalize_market_timeframe(timeframe)
-
-    if not market_data_service.is_available():
-        raise HTTPException(
-            status_code=503, detail="Market data provider is unavailable."
-        )
 
     try:
-        available_range = market_data_service.get_available_ohlcv_range(
-            symbol, mt5_timeframe
-        )
-    except ValueError as ve:
-        raise HTTPException(status_code=400, detail=str(ve))
-    except ConnectionError as ce:
-        raise HTTPException(status_code=503, detail=str(ce))
-    except Exception as e:
-        logger.error(f"Error probing OHLCV history for {symbol}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        available_range = _fetch_ohlcv_available_range(symbol, timeframe)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Error probing OHLCV history for %s: %s", symbol, exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     if available_range is None:
+        mt5_timeframe = _normalize_market_timeframe(timeframe)
         raise HTTPException(
             status_code=404,
-            detail=f"No OHLCV history found for symbol '{symbol}' on timeframe '{mt5_timeframe}'.",
+            detail=(
+                f"No OHLCV history found for symbol '{symbol}' "
+                f"on timeframe '{mt5_timeframe}'."
+            ),
         )
 
     return {
@@ -2478,6 +2563,212 @@ def get_strategy_search_candidate_genome(run_id: str, candidate_id: str):
         "run_id": run_id,
         "candidate_id": candidate_id,
         "genome": genome,
+    }
+
+
+@app.get("/api/v1/news", response_model=List[NewsArticleResponse])
+def get_news_articles():
+    articles = []
+    seen_urls = set()
+    
+    feeds = [
+        {"url": "https://valor.globo.com/rss/valor/financas/", "source": "Valor Finanças"},
+        {"url": "https://valor.globo.com/rss/valor/empresas/", "source": "Valor Empresas"},
+        {"url": "https://valor.globo.com/rss/valor/agronegocios/", "source": "Valor Agro"},
+        {"url": "https://www.cnbc.com/id/100003114/device/rss/rss.html", "source": "CNBC"}
+    ]
+    
+    for feed in feeds:
+        try:
+            req = urllib.request.Request(
+                feed["url"],
+                headers={"User-Agent": "Mozilla/5.0"}
+            )
+            with urllib.request.urlopen(req, timeout=3) as response:
+                xml_data = response.read()
+                
+            root = ET.fromstring(xml_data)
+            items = root.findall(".//item")
+            
+            for item in items:
+                title = item.find("title").text if item.find("title") is not None else ""
+                link = item.find("link").text if item.find("link") is not None else ""
+                description = item.find("description").text if item.find("description") is not None else ""
+                pub_date_str = item.find("pubDate").text if item.find("pubDate") is not None else ""
+                
+                if not title or not link or link in seen_urls:
+                    continue
+                    
+                seen_urls.add(link)
+                
+                # Extract image from description
+                image_url = None
+                img_match = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', description)
+                if img_match:
+                    image_url = img_match.group(1)
+                    
+                # Clean description of HTML tags
+                clean_description = re.sub(r'<img[^>]+>', '', description)
+                clean_description = re.sub(r'<br\s*/?>', '', clean_description).strip()
+                
+                # Parse RFC 822 pubDate to ISO 8601 format
+                try:
+                    dt = email.utils.parsedate_to_datetime(pub_date_str)
+                    pub_date_iso = dt.isoformat()
+                except Exception:
+                    pub_date_iso = datetime.now(timezone.utc).isoformat()
+                    
+                # Encode URL as a safe base64 ID
+                article_id = base64.urlsafe_b64encode(link.encode("utf-8")).decode("utf-8")
+                
+                articles.append({
+                    "id": article_id,
+                    "title": title,
+                    "source": feed["source"],
+                    "publishedAt": pub_date_iso,
+                    "summary": clean_description,
+                    "content": clean_description,
+                    "imageUrl": image_url,
+                })
+        except Exception as e:
+            logger.error(f"Failed to fetch news from feed {feed['url']}: {e}")
+            
+    # Sort descending by publishedAt and take the top 25 articles
+    articles.sort(key=lambda x: x["publishedAt"], reverse=True)
+    return articles[:25]
+
+
+@app.get("/api/v1/news/{article_id}", response_model=NewsArticleResponse)
+def get_news_article(article_id: str):
+    # Attempt to decode the base64 ID to get the URL
+    try:
+        url = base64.urlsafe_b64decode(article_id.encode("utf-8")).decode("utf-8")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid article ID format.") from exc
+        
+    is_valor = "valor.globo.com" in url
+    source_name = "Valor Econômico" if is_valor else "CNBC"
+    
+    # Try to fetch RSS metadata
+    title = ""
+    description = ""
+    pub_date_iso = datetime.now(timezone.utc).isoformat()
+    image_url = None
+    
+    feeds = [
+        {"url": "https://valor.globo.com/rss/valor/financas/"},
+        {"url": "https://valor.globo.com/rss/valor/empresas/"},
+        {"url": "https://valor.globo.com/rss/valor/agronegocios/"},
+        {"url": "https://www.cnbc.com/id/100003114/device/rss/rss.html"}
+    ]
+    
+    for feed in feeds:
+        try:
+            req = urllib.request.Request(
+                feed["url"],
+                headers={"User-Agent": "Mozilla/5.0"}
+            )
+            with urllib.request.urlopen(req, timeout=4) as response:
+                xml_data = response.read()
+                
+            root = ET.fromstring(xml_data)
+            items = root.findall(".//item")
+            found = False
+            for item in items:
+                link = item.find("link").text if item.find("link") is not None else ""
+                if link == url:
+                    title = item.find("title").text if item.find("title") is not None else ""
+                    description = item.find("description").text if item.find("description") is not None else ""
+                    pub_date_str = item.find("pubDate").text if item.find("pubDate") is not None else ""
+                    
+                    # Extract image from description
+                    img_match = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', description)
+                    if img_match:
+                        image_url = img_match.group(1)
+                        
+                    # Clean description
+                    description = re.sub(r'<img[^>]+>', '', description)
+                    description = re.sub(r'<br\s*/?>', '', description).strip()
+                    
+                    try:
+                        dt = email.utils.parsedate_to_datetime(pub_date_str)
+                        pub_date_iso = dt.isoformat()
+                    except Exception:
+                        pass
+                    found = True
+                    break
+            if found:
+                break
+        except Exception as e:
+            logger.error(f"Error checking RSS metadata during detail fetch: {e}")
+            
+    # Scrape the full article body
+    content = ""
+    try:
+        req_art = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req_art, timeout=6) as response:
+            html = response.read().decode("utf-8")
+            
+        import re
+        
+        # 1. First try parsing using Valor class if it is a Valor link
+        if is_valor:
+            paragraphs = re.findall(r"<p[^>]*content-text__container[^>]*>(.*?)</p>", html, re.DOTALL)
+            clean_paragraphs = []
+            for p in paragraphs:
+                p_clean = re.sub(r"<[^>]+>", "", p).strip()
+                p_clean = p_clean.replace("&nbsp;", " ").replace("&amp;", "&").replace("&quot;", '"').replace("&#39;", "'").replace("&apos;", "'")
+                if len(p_clean) > 40:
+                    clean_paragraphs.append(p_clean)
+            if clean_paragraphs:
+                content = "\n\n".join(clean_paragraphs)
+                
+        # 2. If it is not Valor or if Valor parsing yielded nothing, parse all <p> tags
+        if not content:
+            paragraphs = re.findall(r"<p[^>]*>(.*?)</p>", html, re.DOTALL)
+            clean_paragraphs = []
+            bad_words = ["livestream", "sign in", "create free account", "watch live", "privacy policy", "terms of service", "all rights reserved", "cnbc.com", "subscribe to", "inscreva-se", "todos os direitos reservados", "leia mais"]
+            
+            for p in paragraphs:
+                p_clean = re.sub(r"<[^>]+>", "", p).strip()
+                p_clean = p_clean.replace("&nbsp;", " ").replace("&amp;", "&").replace("&quot;", '"').replace("&#39;", "'").replace("&apos;", "'")
+                
+                if len(p_clean) > 85 and not any(bw in p_clean.lower() for bw in bad_words) and not any(x in p_clean for x in ["var ", "window.", "document.", "function()", "adsbygoogle"]):
+                    clean_paragraphs.append(p_clean)
+            if clean_paragraphs:
+                content = "\n\n".join(clean_paragraphs)
+                
+        # Fallback search for og:image in scraped html
+        if not image_url:
+            og_img = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', html)
+            if og_img:
+                image_url = og_img.group(1)
+            else:
+                tw_img = re.search(r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\']+)["\']', html)
+                if tw_img:
+                    image_url = tw_img.group(1)
+                
+        if not title:
+            title_match = re.search(r"<title>(.*?)</title>", html, re.IGNORECASE)
+            if title_match:
+                title = title_match.group(1).replace(" - CNBC", "").replace(" | Valor Econômico", "").strip()
+    except Exception as e:
+        logger.error(f"Failed to scrape article content for {url}: {e}")
+        
+    # Fallback if scraping failed or returned nothing
+    if not content:
+        content = description if description else "Unable to fetch article body. Please read the full article on the publisher website."
+    if not title:
+        title = "News Article"
+        
+    return {
+        "id": article_id,
+        "title": title,
+        "source": source_name,
+        "publishedAt": pub_date_iso,
+        "summary": description if description else title,
+        "content": content,
+        "imageUrl": image_url,
     }
 
 

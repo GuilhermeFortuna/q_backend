@@ -12,6 +12,7 @@ from q_backend.market_data.clients.metatrader import (
     OhlcvAvailableRange,
 )
 from q_backend.market_data.models import OHLCV, Tick
+from q_backend.market_data.routing import resolve_ohlcv_source
 from q_backend.storage.runtime_config import get_data_source
 
 logger = logging.getLogger(__name__)
@@ -88,10 +89,9 @@ class MarketDataService:
             # The terminal may still be disconnected — let the MT5 call surface that
             # as a ConnectionError rather than silently serving local data.
             return self.mt5_client
-        # auto: prefer MT5 wherever this platform can run it, so a transient terminal
-        # outage surfaces as an error from the MT5 call instead of a quiet fall back to
-        # (possibly empty) local data. Use local only when MT5 cannot run here at all.
-        if self.mt5_client.is_supported():
+        # auto: use MT5 only when the terminal is actually connected; otherwise
+        # serve from local parquet (Linux / Docker / offline Windows setups).
+        if self.mt5_client.is_supported() and self.mt5_available():
             return self.mt5_client
         return self._local_client
 
@@ -103,7 +103,9 @@ class MarketDataService:
             return "local"
         if source == "mt5":
             return "mt5"
-        return "mt5" if self.mt5_client.is_supported() else "local"
+        if self.mt5_client.is_supported() and self.mt5_available():
+            return "mt5"
+        return "local"
 
     def mt5_available(self) -> bool:
         return self.mt5_client.is_available()
@@ -140,18 +142,34 @@ class MarketDataService:
         logger.info("Shutting down market data clients...")
         self.mt5_client.disconnect()
 
+    def _resolve_ohlcv_provider(self, symbol: str, timeframe: str):
+        source = resolve_ohlcv_source(self, symbol, timeframe)
+        if source == "local":
+            return self._local_client
+        if not self.mt5_client.is_supported():
+            raise ConnectionError(
+                "data_source is 'mt5' but MetaTrader5 is not installed on this "
+                "platform. Install the Windows MetaTrader5 package or switch to "
+                "'auto'/'local'."
+            )
+        return self.mt5_client
+
     def get_symbol_info(self, symbol: str) -> Optional[dict]:
         return self._resolve_provider().get_symbol_info(symbol)
 
     def get_ohlcv(
         self, symbol: str, timeframe: str, start: datetime, end: datetime
     ) -> List[OHLCV]:
-        return self._resolve_provider().get_ohlcv(symbol, timeframe, start, end)
+        return self._resolve_ohlcv_provider(symbol, timeframe).get_ohlcv(
+            symbol, timeframe, start, end
+        )
 
     def get_available_ohlcv_range(
         self, symbol: str, timeframe: str
     ) -> Optional[OhlcvAvailableRange]:
-        return self._resolve_provider().get_available_ohlcv_range(symbol, timeframe)
+        return self._resolve_ohlcv_provider(symbol, timeframe).get_available_ohlcv_range(
+            symbol, timeframe
+        )
 
     def get_ticks(self, symbol: str, start: datetime, end: datetime) -> List[Tick]:
         return self._resolve_provider().get_ticks(symbol, start, end)
