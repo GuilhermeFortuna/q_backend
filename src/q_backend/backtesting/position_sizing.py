@@ -136,6 +136,10 @@ class FixedQuantitySizer(PositionSizer):
         if self.scale_by_signal_strength:
             qty *= getattr(signal, "strength", 1.0)
 
+        qty = float(math.floor(qty))
+        if qty <= 0.0:
+            return None
+
         return Order(
             id=str(uuid.uuid4()),
             symbol=signal.symbol,
