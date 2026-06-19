@@ -42,6 +42,10 @@ _STUB_ERROR = (
     "MetaTrader5 is unavailable in Docker (Windows-only). Run the backend natively for live MT5 data.",
 )
 
+# Linux dev installs a no-op stub package with the same import name as the real
+# Windows wheel. Market routing must treat this as "MT5 not supported".
+IS_STUB = True
+
 
 def initialize(**_kwargs: Any) -> bool:
     return False

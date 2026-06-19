@@ -108,6 +108,12 @@ class MarketDataService:
     def mt5_available(self) -> bool:
         return self.mt5_client.is_available()
 
+    def mt5_connected(self) -> bool:
+        """Whether MT5 is connected right now (does not attempt reconnect)."""
+        if not self.mt5_client.is_supported():
+            return False
+        return self.mt5_client._is_initialized
+
     def is_available(self) -> bool:
         try:
             self._resolve_provider()

@@ -35,7 +35,7 @@ def test_system_health_includes_storage_status():
 
 
 def test_storage_failure_does_not_change_top_level_health():
-    with patch.object(market_data_service, "mt5_available", return_value=True):
+    with patch.object(market_data_service, "mt5_connected", return_value=True):
         try:
             with patch(
                 "q_backend.api.main.storage_status",

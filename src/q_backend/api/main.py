@@ -608,7 +608,7 @@ def _require_mt5_live() -> None:
 def _data_source_payload() -> dict:
     return {
         "source": get_data_source(),
-        "mt5_available": market_data_service.mt5_available(),
+        "mt5_available": market_data_service.mt5_connected(),
         "active_provider": market_data_service.active_provider(),
     }
 
@@ -888,7 +888,7 @@ def read_root():
     return {
         "status": "online",
         "service": "QuantLauncher Backend API",
-        "mt5_connected": market_data_service.mt5_available(),
+        "mt5_connected": market_data_service.mt5_connected(),
     }
 
 
@@ -991,7 +991,7 @@ def get_system_health():
     """
     Exposes platform health telemetry.
     """
-    mt5_up = market_data_service.mt5_available()
+    mt5_up = market_data_service.mt5_connected()
     return {
         "status": "healthy" if mt5_up else "degraded",
         "backendVersion": "0.1.0",
@@ -2495,4 +2495,10 @@ def run_dev():
         except Exception:
             port = 8000
 
-    uvicorn.run("q_backend.api.main:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run(
+        "q_backend.api.main:app",
+        host="0.0.0.0",
+        port=port,
+        reload=True,
+        reload_excludes=["data", ".venv", "**/__pycache__"],
+    )
