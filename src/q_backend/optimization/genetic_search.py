@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import random
 from collections.abc import Callable
 from typing import Any
@@ -30,6 +31,7 @@ from q_backend.optimization.models import SearchSpaceConfig
 from q_backend.optimization.strategy_search import (
     CandidateProvider,
     CandidateResult,
+    GateConfig,
     GeneticFinalizeSummary,
     GeneticSearchConfig,
     SearchCandidate,
@@ -41,21 +43,120 @@ from q_backend.optimization.strategy_search import (
     evaluate_candidate,
 )
 
+_NO_RESULT_PROGRESS_BONUS = 0.5
+_EFFICIENCY_LOG_CAP = 2.0
+
+
+def _complexity_penalty(genome: Genome, genetic: GeneticSearchConfig) -> float:
+    return (
+        genetic.complexity_lambda * genome_node_count(genome)
+        + genetic.complexity_mu * genome_param_count(genome)
+    )
+
+
+def _efficiency_gate_penalty(
+    efficiency: float | None,
+    gates: GateConfig,
+    genetic: GeneticSearchConfig,
+) -> float:
+    target = (gates.efficiency_low + gates.efficiency_high) / 2.0
+    if efficiency is None or target <= 0:
+        return genetic.gate_penalty_efficiency
+    ratio = max(efficiency, 1e-6) / target
+    return genetic.gate_penalty_efficiency * min(
+        abs(math.log(ratio)),
+        _EFFICIENCY_LOG_CAP,
+    )
+
+
+def _soft_gate_penalty(
+    result: CandidateResult,
+    gates: GateConfig,
+    genetic: GeneticSearchConfig,
+) -> tuple[float, dict[str, float]]:
+    breakdown: dict[str, float] = {}
+    total = 0.0
+
+    if "few_oos_trades" in result.gate_flags:
+        oos_trades = int((result.oos_metrics or {}).get("total_trades", 0))
+        if gates.min_oos_trades > 0:
+            shortfall = (gates.min_oos_trades - oos_trades) / gates.min_oos_trades
+            ratio = max(0.0, min(1.0, shortfall))
+        else:
+            ratio = 0.0
+        penalty = genetic.gate_penalty_trades * ratio
+        breakdown["few_oos_trades"] = penalty
+        total += penalty
+
+    if "few_windows" in result.gate_flags:
+        missing = max(0, gates.min_completed_windows - result.completed_windows)
+        if gates.min_completed_windows > 0:
+            ratio = missing / gates.min_completed_windows
+        else:
+            ratio = 0.0
+        penalty = genetic.gate_penalty_windows * ratio
+        breakdown["few_windows"] = penalty
+        total += penalty
+
+    for flag in ("low_efficiency", "suspicious_efficiency"):
+        if flag in result.gate_flags:
+            penalty = _efficiency_gate_penalty(result.efficiency, gates, genetic)
+            breakdown[flag] = penalty
+            total += penalty
+
+    return total, breakdown
+
+
+def candidate_fitness_details(
+    result: CandidateResult,
+    genome: Genome,
+    genetic: GeneticSearchConfig,
+    gates: GateConfig | None = None,
+) -> tuple[float, dict[str, Any]]:
+    """Graded selection fitness and a soft-penalty breakdown for metadata."""
+    gates = gates or GateConfig()
+    complexity_penalty = _complexity_penalty(genome, genetic)
+    breakdown: dict[str, Any] = {"complexity_penalty": complexity_penalty}
+
+    if result.status in {"error", "unsupported"}:
+        breakdown["band"] = "error"
+        return genetic.error_floor, breakdown
+
+    oos_trades = int((result.oos_metrics or {}).get("total_trades", 0))
+    if result.status == "no_result" or (
+        result.status == "completed" and oos_trades == 0
+    ):
+        progress = result.completed_windows / max(result.window_count, 1)
+        progress_bonus = _NO_RESULT_PROGRESS_BONUS * progress
+        breakdown["band"] = "no_result"
+        breakdown["progress_bonus"] = progress_bonus
+        return genetic.no_result_floor + progress_bonus, breakdown
+
+    if result.status != "completed" or result.robustness_score is None:
+        breakdown["band"] = "error"
+        return genetic.error_floor, breakdown
+
+    base = result.robustness_score - complexity_penalty
+    breakdown["robustness_score"] = result.robustness_score
+    breakdown["band"] = "passed" if result.passed_gates else "failed_gates"
+
+    if result.passed_gates:
+        return base, breakdown
+
+    gate_penalty, gate_breakdown = _soft_gate_penalty(result, gates, genetic)
+    breakdown["gate_penalties"] = gate_breakdown
+    breakdown["gate_penalty_total"] = gate_penalty
+    return base - gate_penalty, breakdown
+
 
 def candidate_fitness(
     result: CandidateResult,
     genome: Genome,
     genetic: GeneticSearchConfig,
+    gates: GateConfig | None = None,
 ) -> float:
-    if result.status != "completed" or not result.passed_gates:
-        return float("-inf")
-    if result.robustness_score is None:
-        return float("-inf")
-    penalty = (
-        genetic.complexity_lambda * genome_node_count(genome)
-        + genetic.complexity_mu * genome_param_count(genome)
-    )
-    return result.robustness_score - penalty
+    fitness, _breakdown = candidate_fitness_details(result, genome, genetic, gates)
+    return fitness
 
 
 def _search_space_for_genome(
@@ -111,6 +212,7 @@ class GeneticCandidateProvider:
         )
         self._genome_by_id = {genome.genome_id: genome for genome in self._population}
         self._champion: Genome | None = None
+        self._champion_fitness = float("-inf")
         self._best_fitness = float("-inf")
         self.initial_population = [clone_genome(genome) for genome in self._population]
 
@@ -166,20 +268,25 @@ class GeneticCandidateProvider:
             genome = self._genome_by_id.get(result.candidate_id)
             if genome is None:
                 continue
-            fitness = candidate_fitness(result, genome, self._genetic)
+            fitness = candidate_fitness(
+                result,
+                genome,
+                self._genetic,
+                gates=self._search.gates,
+            )
             scored.append((fitness, genome, result))
             if fitness > self._best_fitness:
                 self._best_fitness = fitness
+            if (
+                result.status == "completed"
+                and result.passed_gates
+                and fitness > self._champion_fitness
+            ):
+                self._champion_fitness = fitness
                 self._champion = clone_genome(genome)
 
         scored.sort(key=lambda item: item[0], reverse=True)
-        reproducers = [
-            (fitness, genome)
-            for fitness, genome, _result in scored
-            if fitness > float("-inf")
-        ]
-        if not reproducers:
-            reproducers = [(float("-inf"), genome) for genome in self._population]
+        reproducers = [(fitness, genome) for fitness, genome, _result in scored]
 
         next_population: list[Genome] = []
         elite_ids: set[str] = set()
@@ -263,13 +370,6 @@ def _config_for_walkforward(config: StrategySearchConfig) -> StrategySearchConfi
         return config
     backtest = backtest_config_for_walkforward(config.backtest, config.lockbox)
     return config.model_copy(update={"backtest": backtest})
-
-
-def _complexity_penalty(genome: Genome, genetic: GeneticSearchConfig) -> float:
-    return (
-        genetic.complexity_lambda * genome_node_count(genome)
-        + genetic.complexity_mu * genome_param_count(genome)
-    )
 
 
 def _daily_returns_from_equity(equity: pd.Series | None) -> list[float]:
@@ -359,6 +459,12 @@ class GeneticStrategySearchOrchestrator:
                 generation_results.append(result)
                 genome = self.provider._genome_by_id.get(result.candidate_id)
                 if genome is not None:
+                    selection_fitness, fitness_breakdown = candidate_fitness_details(
+                        result,
+                        genome,
+                        genetic,
+                        gates=self.config.gates,
+                    )
                     self._candidate_metadata[result.candidate_id] = {
                         "generation": self.provider.generation,
                         "genome": genome.model_dump(),
@@ -366,6 +472,8 @@ class GeneticStrategySearchOrchestrator:
                         "complexity_penalty": _complexity_penalty(
                             genome, genetic
                         ),
+                        "selection_fitness": selection_fitness,
+                        "fitness_breakdown": fitness_breakdown,
                     }
 
                 if progress_callback is not None:

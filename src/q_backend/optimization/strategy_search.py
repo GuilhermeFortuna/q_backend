@@ -84,6 +84,12 @@ class GeneticSearchConfig(BaseModel):
     max_depth: int = Field(default=12, ge=3)
     complexity_lambda: float = 0.001
     complexity_mu: float = 0.0005
+    # Selection-signal shaping (does not change gates or the reported leaderboard).
+    gate_penalty_efficiency: float = 0.5
+    gate_penalty_trades: float = 0.5
+    gate_penalty_windows: float = 0.5
+    no_result_floor: float = -2.0
+    error_floor: float = -4.0
 
     @model_validator(mode="after")
     def validate_elite_count(self) -> GeneticSearchConfig:
