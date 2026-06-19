@@ -383,8 +383,17 @@ class MetaTraderClient:
 
         self._run_locked(_disconnect)
 
+    def is_supported(self) -> bool:
+        """Whether this platform can run MT5 at all (the package is importable).
+
+        This is the Windows-vs-Linux distinction and does not touch the terminal.
+        Use this to decide *which* provider to route to; use ``is_available`` only
+        to report live terminal connectivity.
+        """
+        return MT5_IMPORTABLE and mt5 is not None
+
     def is_available(self) -> bool:
-        if not MT5_IMPORTABLE or mt5 is None:
+        if not self.is_supported():
             return False
         try:
             return self.connect()

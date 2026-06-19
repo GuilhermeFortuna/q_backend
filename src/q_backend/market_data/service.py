@@ -76,23 +76,34 @@ class MarketDataService:
 
     def _resolve_provider(self):
         source = get_data_source()
-        if source == "mt5":
-            if not self.mt5_client.is_available():
-                raise ConnectionError(
-                    "data_source is 'mt5' but MetaTrader 5 is not available. "
-                    "Install MetaTrader5, start the terminal, or switch to 'auto'/'local'."
-                )
-            return self.mt5_client
         if source == "local":
             return self._local_client
-        # auto
-        if self.mt5_client.is_available():
+        if source == "mt5":
+            if not self.mt5_client.is_supported():
+                raise ConnectionError(
+                    "data_source is 'mt5' but MetaTrader5 is not installed on this "
+                    "platform. Install the Windows MetaTrader5 package or switch to "
+                    "'auto'/'local'."
+                )
+            # The terminal may still be disconnected — let the MT5 call surface that
+            # as a ConnectionError rather than silently serving local data.
+            return self.mt5_client
+        # auto: prefer MT5 wherever this platform can run it, so a transient terminal
+        # outage surfaces as an error from the MT5 call instead of a quiet fall back to
+        # (possibly empty) local data. Use local only when MT5 cannot run here at all.
+        if self.mt5_client.is_supported():
             return self.mt5_client
         return self._local_client
 
     def active_provider(self) -> Literal["mt5", "local"]:
-        provider = self._resolve_provider()
-        return "mt5" if provider is self.mt5_client else "local"
+        # Mirror _resolve_provider's intent without raising (callers like the
+        # data-source endpoint must not 500 on an explicit-'mt5' misconfig).
+        source = get_data_source()
+        if source == "local":
+            return "local"
+        if source == "mt5":
+            return "mt5"
+        return "mt5" if self.mt5_client.is_supported() else "local"
 
     def mt5_available(self) -> bool:
         return self.mt5_client.is_available()

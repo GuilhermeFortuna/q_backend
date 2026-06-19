@@ -46,26 +46,36 @@ def test_resolve_provider_respects_runtime_config(tmp_path, monkeypatch):
     monkeypatch.setenv("Q_RUNTIME_CONFIG_PATH", str(config_path))
 
     service = MarketDataService()
-    monkeypatch.setattr(metatrader, "MT5_IMPORTABLE", False)
-    monkeypatch.setattr(service.mt5_client, "is_available", lambda: False)
+
+    # Platform cannot run MT5 (e.g. Linux): auto and local both resolve to local,
+    # and an explicit 'mt5' selection errors.
+    monkeypatch.setattr(service.mt5_client, "is_supported", lambda: False)
 
     runtime_config.set_data_source("local")
     assert service.active_provider() == "local"
+    assert service._resolve_provider() is service._local_client
 
     runtime_config.set_data_source("auto")
     assert service.active_provider() == "local"
+    assert service._resolve_provider() is service._local_client
 
-    monkeypatch.setattr(service.mt5_client, "is_available", lambda: True)
-    runtime_config.set_data_source("auto")
-    assert service.active_provider() == "mt5"
-
-    runtime_config.set_data_source("mt5")
-    assert service.active_provider() == "mt5"
-
-    monkeypatch.setattr(service.mt5_client, "is_available", lambda: False)
     runtime_config.set_data_source("mt5")
     with pytest.raises(ConnectionError, match="data_source is 'mt5'"):
         service._resolve_provider()
+
+    # Platform supports MT5 (e.g. Windows) but the terminal is momentarily
+    # disconnected: auto and mt5 must still resolve to MT5 — the outage surfaces
+    # from the MT5 call, never a silent fall back to local.
+    monkeypatch.setattr(service.mt5_client, "is_supported", lambda: True)
+    monkeypatch.setattr(service.mt5_client, "is_available", lambda: False)
+
+    runtime_config.set_data_source("auto")
+    assert service.active_provider() == "mt5"
+    assert service._resolve_provider() is service.mt5_client
+
+    runtime_config.set_data_source("mt5")
+    assert service.active_provider() == "mt5"
+    assert service._resolve_provider() is service.mt5_client
 
 
 def test_data_source_endpoints_round_trip(runtime_config_file):
