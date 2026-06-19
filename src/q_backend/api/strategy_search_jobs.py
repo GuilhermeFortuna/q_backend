@@ -15,6 +15,7 @@ from typing import Any, Literal, Optional
 
 import pandas as pd
 
+from q_backend.backtesting.genome.activity import genome_signal_activity
 from q_backend.backtesting.genome.operators import genome_node_count
 from q_backend.backtesting.genome.schema import Genome
 from q_backend.optimization.backtest_runner import BacktestRunner, DefaultBacktestRunner
@@ -538,6 +539,28 @@ def _candidate_runner(request: StrategySearchConfig) -> DefaultBacktestRunner:
     )
 
 
+def _genetic_probe_frame(request: StrategySearchConfig) -> pd.DataFrame | None:
+    """Load the run's OHLCV once for gen-0 viability seeding, mutation repair, and
+    the pre-screen. Returns ``None`` when both viability knobs are disabled so the
+    staged path stays a no-op when the operator turns the feature off."""
+    genetic = request.genetic
+    if genetic is None:
+        return None
+    if genetic.min_seed_signals <= 0 and genetic.prescreen_min_signals <= 0:
+        return None
+    backtest = request.backtest
+    try:
+        return load_ohlcv_frame(
+            backtest.symbol, backtest.timeframe, backtest.start, backtest.end
+        )
+    except Exception:  # noqa: BLE001 - viability is best-effort; never block a run
+        logger.warning(
+            "Genetic probe frame load failed for %s; trade-viability disabled",
+            backtest.symbol,
+        )
+        return None
+
+
 def _progress_job(
     run_id: str,
     db_run_id: Optional[uuid.UUID],
@@ -749,7 +772,9 @@ def dispatch_genetic_discovery(
         started_at=_now(),
     )
 
-    provider = GeneticCandidateProvider(request.genetic, request)
+    provider = GeneticCandidateProvider(
+        request.genetic, request, probe_df=_genetic_probe_frame(request)
+    )
     _dispatch_generation(run_id, db_run_id_hex, config_json, provider, generation=0)
 
 
@@ -763,6 +788,8 @@ def _dispatch_generation(
     """Stash the generation's population and fan each genome out to a worker."""
     request = StrategySearchConfig.model_validate_json(config_json)
     db_run_id = uuid.UUID(db_run_id_hex) if db_run_id_hex else None
+    genetic = request.genetic
+    assert genetic is not None
     population = provider.population
     # The stashed state's population *is* this generation — candidate workers read
     # their genome from it by index, and the finalizer reloads it to breed the next.
@@ -770,7 +797,49 @@ def _dispatch_generation(
     # Each generation reuses the run-scoped fan-in counter and partial-staging hash,
     # cleared between generations so a generation's barrier counts only its own work.
     clear_partials(run_id)
-    init_counter(run_id, len(population))
+
+    # Pre-screen: a genome with no in-sample signals can never score, so synthesize its
+    # no_result here and skip the (expensive) walk-forward actor entirely. The probe
+    # reuses the frame the provider already loaded for seeding/repair — no extra load.
+    probe = getattr(provider, "_probe_df", None)
+    alive_indices: list[int] = []
+    for index, genome in enumerate(population):
+        if (
+            probe is not None
+            and genetic.prescreen_min_signals > 0
+            and not genome_signal_activity(
+                genome,
+                probe,
+                min_signals=genetic.prescreen_min_signals,
+                max_depth=genetic.max_depth,
+                max_node_count=genetic.max_nodes,
+            ).is_tradeable
+        ):
+            dead = CandidateResult(
+                candidate_id=genome.genome_id,
+                strategy="CompositeStrategy",
+                status="no_result",
+                error="pre-screen: no in-sample signals",
+            )
+            stash_partial(run_id, index, candidate_result_to_dict(dead))
+            genetic_staging.set_candidate_meta(
+                run_id,
+                {
+                    genome.genome_id: {
+                        "generation": generation,
+                        "genome": genome.model_dump(),
+                        "genome_node_count": genome_node_count(genome),
+                        "complexity_penalty": _complexity_penalty(genome, genetic),
+                    }
+                },
+            )
+        else:
+            alive_indices.append(index)
+
+    # The counter must be set before any actor is sent (an actor can finish and
+    # decrement before this function returns), so it counts only the dispatched
+    # (alive) candidates; pre-screened genomes already have their partials staged.
+    init_counter(run_id, len(alive_indices))
 
     # Surface the generation bar immediately — before any candidate finishes — so the
     # UI shows "Generation N / G" and a non-zero baseline instead of sitting blank.
@@ -784,10 +853,15 @@ def _dispatch_generation(
 
     from q_backend.tasks import actors
 
-    for index in range(len(population)):
+    for index in alive_indices:
         actors.evaluate_genetic_candidate.send(
             run_id, db_run_id_hex, config_json, generation, index
         )
+
+    # Whole generation pre-screened out: no actor will trip the fan-in barrier, so
+    # breed/finalize now from the synthesized partials instead of hanging forever.
+    if not alive_indices:
+        finalize_generation(run_id, db_run_id_hex, config_json, generation)
 
 
 def run_genetic_candidate(
@@ -882,8 +956,11 @@ def finalize_generation(
 
     # Reload the provider state stashed at dispatch (population == this generation),
     # so result→genome mapping and breeding are deterministic regardless of which
-    # worker is last and the arbitrary order partials come back in.
-    provider = GeneticCandidateProvider(genetic, request)
+    # worker is last and the arbitrary order partials come back in. The probe frame
+    # re-enables mutation repair when breeding the next generation in ``report()``.
+    provider = GeneticCandidateProvider(
+        genetic, request, probe_df=_genetic_probe_frame(request)
+    )
     provider.load_state(genetic_staging.get_provider_state(run_id))
 
     results_by_id = {
