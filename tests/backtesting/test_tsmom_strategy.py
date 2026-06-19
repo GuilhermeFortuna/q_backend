@@ -286,6 +286,39 @@ class TestSizerSignalStrengthScaling:
         order = sizer.size_signal(sig, 100.0, 10000.0, current_data=row)
         assert order.quantity == 500.0
 
+    def test_sizers_output_strictly_integers(self):
+        from q_backend.backtesting.position_sizing import (
+            FixedQuantitySizer,
+            FixedSafetyMarginSizer,
+            InverseVolatilitySizer,
+        )
+        from q_backend.backtesting.models import Signal, SignalAction
+
+        sig = Signal(symbol="TEST", action=SignalAction.BUY, strength=0.33)
+
+        # 1. FixedQuantitySizer
+        fq = FixedQuantitySizer(quantity=10.0, scale_by_signal_strength=True)
+        order_fq = fq.size_signal(sig, 100.0, 1000.0)
+        assert order_fq is not None
+        assert order_fq.quantity == 3.0
+        assert order_fq.quantity.is_integer()
+
+        # 2. FixedSafetyMarginSizer
+        fsm = FixedSafetyMarginSizer(safety_margin_per_contract=3000.0, scale_by_signal_strength=True)
+        assert fsm.size_signal(sig, 100.0, 10000.0) is None
+        order_fsm = fsm.size_signal(sig, 100.0, 30000.0)
+        assert order_fsm is not None
+        assert order_fsm.quantity == 3.0
+        assert order_fsm.quantity.is_integer()
+
+        # 3. InverseVolatilitySizer
+        iv = InverseVolatilitySizer(target_volatility_pct=10.0, point_value=1.0, scale_by_signal_strength=True)
+        row = pd.Series({"volatility": 0.01})
+        order_iv = iv.size_signal(sig, 100.0, 10000.0, current_data=row)
+        assert order_iv is not None
+        assert order_iv.quantity == 330.0
+        assert order_iv.quantity.is_integer()
+
 
 class TestTSMOMTrendRuleIntegration:
     def test_trend_rule_backtest_run(self):
