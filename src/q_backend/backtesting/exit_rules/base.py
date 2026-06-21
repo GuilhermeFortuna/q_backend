@@ -15,6 +15,7 @@ class ExitRule(ABC):
     label: str
     description: str
     enable_param: str
+    enable_value: float | int
 
     @abstractmethod
     def param_specs(self) -> list[StrategyParamSpec]:

@@ -16,6 +16,7 @@ class BreakevenStopRule(ExitRule):
     label = "Break-even Stop"
     description = "Arm a stop at entry plus a small offset once gain reaches a trigger threshold."
     enable_param = "breakeven_trigger_pct"
+    enable_value = 0.02
 
     def param_specs(self) -> list[StrategyParamSpec]:
         return [

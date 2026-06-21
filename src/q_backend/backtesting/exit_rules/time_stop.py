@@ -15,6 +15,7 @@ class TimeStopRule(ExitRule):
     label = "Time Stop"
     description = "Close the position after a maximum number of bars in trade."
     enable_param = "max_bars_in_trade"
+    enable_value = 50
 
     def param_specs(self) -> list[StrategyParamSpec]:
         return [

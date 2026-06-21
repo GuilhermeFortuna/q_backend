@@ -136,6 +136,7 @@ def test_exit_rules_catalog_endpoint():
     chandelier = next(item for item in response["exit_rules"] if item.id == "chandelier")
     assert chandelier.label == "Chandelier Exit"
     assert chandelier.enable_param == "chandelier_atr_mult"
+    assert chandelier.enable_value == 3.0
     assert chandelier.param_names == ["chandelier_atr_mult"]
     assert chandelier.required_param_names == ["atr_period"]
 

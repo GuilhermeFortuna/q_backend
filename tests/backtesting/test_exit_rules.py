@@ -537,6 +537,31 @@ def test_list_exit_rules_metadata_resolves_to_param_specs():
         assert all(name in spec_names for name in info.required_param_names)
         assert "atr_period" not in info.param_names
         assert info.enable_param == rule.enable_param
+        assert info.enable_value == rule.enable_value
+
+
+def test_enable_value_within_spec_bounds_and_enables_rule():
+    spec_by_name = {spec.name: spec for spec in all_param_specs()}
+    rules_by_id = {rule.id: rule for rule in EXIT_RULES}
+
+    for info in list_exit_rules():
+        rule = rules_by_id[info.id]
+        enable_spec = spec_by_name[info.enable_param]
+        value = info.enable_value
+
+        assert enable_spec.min is not None
+        assert enable_spec.max is not None
+        assert enable_spec.min <= value <= enable_spec.max
+        if enable_spec.type == "int":
+            assert isinstance(value, int)
+            assert value == int(value)
+
+        params = {spec.name: spec.default for spec in all_param_specs()}
+        params[info.enable_param] = value
+        assert rule.is_enabled(params)
+        exit_strat = ExitStrategy(**{info.enable_param: value})
+        enabled_ids = [r.id for r in exit_strat._rules]
+        assert info.id in enabled_ids
 
 
 def test_enable_param_toggles_matching_rule():

@@ -106,6 +106,7 @@ class ParabolicSarStopRule(ExitRule):
     label = "Parabolic SAR Trailing Stop"
     description = "Textbook Wilder parabolic SAR trailing stop updated each bar in rule state."
     enable_param = "psar_af_start"
+    enable_value = 0.02
 
     def param_specs(self) -> list[StrategyParamSpec]:
         return [

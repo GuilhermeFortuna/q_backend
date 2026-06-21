@@ -16,6 +16,7 @@ class ChandelierExitRule(ExitRule):
     label = "Chandelier Exit"
     description = "Trailing stop at peak high minus an ATR multiple."
     enable_param = "chandelier_atr_mult"
+    enable_value = 3.0
 
     def required_param_names(self) -> list[str]:
         return ["atr_period"]

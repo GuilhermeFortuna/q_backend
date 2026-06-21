@@ -449,7 +449,8 @@ To run it:
   * *Built-in strategies:* `MACrossover`, `RSIMeanReversion`, `BollingerReversion`, `MACD`, `DonchianBreakout`, `VMA`, `FMA`, `TRB`, `TSMOM`, `GatevPairs`, `HurstTrendBlend` (candle); `TickMaBreakout` (tick); `CompositeStrategy` (genome interpreter for genetic search).
 * **`GET /api/v1/exit-rules`**
   * *Description:* Structured exit-rule catalog for the Strategy workbench toggle cards and presets. Additive to `/strategies`; the flat per-strategy `params` list is unchanged.
-  * *Response:* `{"exit_rules": [{"id": "chandelier", "label": "Chandelier Exit", "exit_group": "trailing", "description": "...", "enable_param": "chandelier_atr_mult", "param_names": ["chandelier_atr_mult"], "required_param_names": ["atr_period"]}, ...], "shared_exit_params": ["atr_period"], "exit_presets": [{"id": "atr_stop_chandelier", "label": "...", "description": "...", "parameters": {...}}, ...]}`
+  * *Response:* `{"exit_rules": [{"id": "chandelier", "label": "Chandelier Exit", "exit_group": "trailing", "description": "...", "enable_param": "chandelier_atr_mult", "enable_value": 3.0, "param_names": ["chandelier_atr_mult"], "required_param_names": ["atr_period"]}, ...], "shared_exit_params": ["atr_period"], "exit_presets": [{"id": "atr_stop_chandelier", "label": "...", "description": "...", "parameters": {...}}, ...]}`
+  * *`enable_value`:* Recommended value applied when an exit is toggled on in the Strategy workbench (aligned with preset values). Additive metadata only — backtest behavior is unchanged.
 * **`POST /api/v1/backtest`**
   * *Description:* Dispatch an async backtest to the Dramatiq worker pool (preferred for the desktop app). Poll status and fetch the full chart payload when complete.
   * *Request body:* Same fields as `BacktestJobRequest` (symbol, timeframe, strategy, `engine`, etc.).

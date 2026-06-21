@@ -51,6 +51,7 @@ class ExitRuleInfo(BaseModel):
     description: str
     exit_group: ExitGroup
     enable_param: str
+    enable_value: float | int
     param_names: list[str]
     required_param_names: list[str]
 

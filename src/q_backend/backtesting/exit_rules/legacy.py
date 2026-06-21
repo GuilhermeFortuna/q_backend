@@ -26,6 +26,7 @@ class FixedStopLossRule(ExitRule):
     label = "Fixed Stop Loss"
     description = "Exit when price moves against the position by a fixed percentage from entry."
     enable_param = "stop_loss_pct"
+    enable_value = 0.02
 
     def param_specs(self) -> list[StrategyParamSpec]:
         return [
@@ -69,6 +70,7 @@ class AtrStopLossRule(ExitRule):
     label = "ATR Stop Loss"
     description = "Exit when price breaches entry minus or plus an ATR multiple."
     enable_param = "stop_loss_atr"
+    enable_value = 2.0
 
     def required_param_names(self) -> list[str]:
         return ["atr_period"]
@@ -138,6 +140,7 @@ class FixedTakeProfitRule(ExitRule):
     label = "Fixed Take Profit"
     description = "Exit when price reaches a fixed percentage gain from entry."
     enable_param = "take_profit_pct"
+    enable_value = 0.05
 
     def param_specs(self) -> list[StrategyParamSpec]:
         return [
@@ -181,6 +184,7 @@ class AtrTakeProfitRule(ExitRule):
     label = "ATR Take Profit"
     description = "Exit when price reaches entry plus or minus an ATR multiple in profit."
     enable_param = "take_profit_atr"
+    enable_value = 3.0
 
     def required_param_names(self) -> list[str]:
         return ["atr_period"]
@@ -239,6 +243,7 @@ class TrailingStopRule(ExitRule):
     label = "Percent Trailing Stop"
     description = "Exit when price retraces a fixed percentage from the in-trade peak or trough."
     enable_param = "trailing_stop_pct"
+    enable_value = 0.02
 
     def param_specs(self) -> list[StrategyParamSpec]:
         return [

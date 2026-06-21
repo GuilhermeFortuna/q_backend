@@ -16,6 +16,7 @@ class DonchianChannelStopRule(ExitRule):
     label = "Donchian Channel Stop"
     description = "Exit when price crosses the opposite N-bar Donchian extreme."
     enable_param = "donchian_exit_period"
+    enable_value = 20
 
     def param_specs(self) -> list[StrategyParamSpec]:
         return [

@@ -18,6 +18,7 @@ class ProfitTargetRatchetRule(ExitRule):
         "Arms a trailing profit floor once price reaches entry plus or minus an ATR multiple."
     )
     enable_param = "target_ratchet_atr"
+    enable_value = 2.0
 
     def required_param_names(self) -> list[str]:
         return ["atr_period"]

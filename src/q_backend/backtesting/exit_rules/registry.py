@@ -44,6 +44,7 @@ def list_exit_rules() -> list[ExitRuleInfo]:
             description=rule.description,
             exit_group=rule.exit_group,  # type: ignore[arg-type]
             enable_param=rule.enable_param,
+            enable_value=rule.enable_value,
             param_names=rule.param_names(),
             required_param_names=rule.required_param_names(),
         )
