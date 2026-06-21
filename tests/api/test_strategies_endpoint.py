@@ -42,7 +42,7 @@ def test_list_strategies_macrossover_schema():
     assert short_period.type == "int"
     assert short_period.default == 50
     assert short_period.min == 2
-    assert short_period.max == 400
+    assert short_period.max == 100
 
     short_ma_type = next(spec for spec in ma.params if spec.name == "short_ma_type")
     assert short_ma_type.type == "categorical"
