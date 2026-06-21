@@ -23,6 +23,9 @@ def _bar_prices(data: pd.Series) -> tuple[float, float, float]:
 class FixedStopLossRule(ExitRule):
     id = "fixed_sl"
     exit_group = "stop_loss"
+    label = "Fixed Stop Loss"
+    description = "Exit when price moves against the position by a fixed percentage from entry."
+    enable_param = "stop_loss_pct"
 
     def param_specs(self) -> list[StrategyParamSpec]:
         return [
@@ -63,6 +66,12 @@ class FixedStopLossRule(ExitRule):
 class AtrStopLossRule(ExitRule):
     id = "atr_sl"
     exit_group = "stop_loss"
+    label = "ATR Stop Loss"
+    description = "Exit when price breaches entry minus or plus an ATR multiple."
+    enable_param = "stop_loss_atr"
+
+    def required_param_names(self) -> list[str]:
+        return ["atr_period"]
 
     def param_specs(self) -> list[StrategyParamSpec]:
         return [
@@ -86,7 +95,7 @@ class AtrStopLossRule(ExitRule):
                 max=100,
                 step=1,
                 hint="Period for ATR calculation used by ATR exits.",
-                exit_group="stop_loss",
+                exit_group="general",
             ),
         ]
 
@@ -126,6 +135,9 @@ class AtrStopLossRule(ExitRule):
 class FixedTakeProfitRule(ExitRule):
     id = "fixed_tp"
     exit_group = "target"
+    label = "Fixed Take Profit"
+    description = "Exit when price reaches a fixed percentage gain from entry."
+    enable_param = "take_profit_pct"
 
     def param_specs(self) -> list[StrategyParamSpec]:
         return [
@@ -166,6 +178,12 @@ class FixedTakeProfitRule(ExitRule):
 class AtrTakeProfitRule(ExitRule):
     id = "atr_tp"
     exit_group = "target"
+    label = "ATR Take Profit"
+    description = "Exit when price reaches entry plus or minus an ATR multiple in profit."
+    enable_param = "take_profit_atr"
+
+    def required_param_names(self) -> list[str]:
+        return ["atr_period"]
 
     def param_specs(self) -> list[StrategyParamSpec]:
         return [
@@ -218,6 +236,9 @@ class AtrTakeProfitRule(ExitRule):
 class TrailingStopRule(ExitRule):
     id = "trailing"
     exit_group = "trailing"
+    label = "Percent Trailing Stop"
+    description = "Exit when price retraces a fixed percentage from the in-trade peak or trough."
+    enable_param = "trailing_stop_pct"
 
     def param_specs(self) -> list[StrategyParamSpec]:
         return [

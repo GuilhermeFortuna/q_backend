@@ -9,8 +9,11 @@ from q_backend.backtesting.exit_rules.registry import (
     EXIT_RULES,
     all_param_specs,
     enabled_rules,
+    list_exit_rules,
     required_columns,
+    shared_exit_params,
 )
+from q_backend.backtesting.exit_rules.presets import EXIT_PRESETS
 from q_backend.backtesting.engine import BacktestEngine, ParallelMode
 from q_backend.backtesting.strategy import TradingStrategy
 from q_backend.backtesting.position_sizing import FixedQuantitySizer
@@ -270,6 +273,52 @@ def test_breakeven_short_mirror():
     assert _run_bars(exit_strat, trade, bars) == 2
 
 
+def test_parabolic_sar_long_clamps_sar_below_prior_lows():
+    from q_backend.backtesting.exit_rules.parabolic_sar import update_psar_long
+
+    state: dict = {}
+    update_psar_long(state, 105.0, 98.0, 0.02, 0.02, 0.2, 100.0)
+    assert state["sar"] == 98.0
+
+    prior_low = state["prior_low"]
+    naive_sar = state["sar"] + state["af"] * (state["ep"] - state["sar"])
+
+    update_psar_long(state, 106.0, 99.0, 0.02, 0.02, 0.2, 100.0)
+    assert naive_sar > prior_low
+    assert state["sar"] <= prior_low
+
+
+def test_parabolic_sar_short_clamps_sar_above_prior_highs():
+    from q_backend.backtesting.exit_rules.parabolic_sar import update_psar_short
+
+    state: dict = {}
+    update_psar_short(state, 102.0, 95.0, 0.02, 0.02, 0.2, 100.0)
+    assert state["sar"] == 102.0
+
+    update_psar_short(state, 101.0, 94.0, 0.02, 0.02, 0.2, 100.0)
+    assert state["sar"] >= 102.0
+
+
+def test_parabolic_sar_long_reversal_bars_stay_physical():
+    from q_backend.backtesting.exit_rules.parabolic_sar import update_psar_long
+
+    state: dict = {}
+    bars = [(108.0, 100.0), (102.0, 96.0), (104.0, 98.0)]
+    prior_lows: list[float] = []
+    for high, low in bars:
+        update_psar_long(state, high, low, 0.02, 0.02, 0.2, 100.0)
+        if len(prior_lows) >= 1:
+            assert state["sar"] <= prior_lows[-1]
+        if len(prior_lows) >= 2:
+            assert state["sar"] <= prior_lows[-2]
+        prior_lows.append(low)
+
+
+def test_atr_period_grouped_as_general():
+    specs = {spec.name: spec for spec in all_param_specs()}
+    assert specs["atr_period"].exit_group == "general"
+
+
 def test_parabolic_sar_long_hand_computed_series():
     from q_backend.backtesting.exit_rules.parabolic_sar import update_psar_long
 
@@ -467,3 +516,81 @@ def test_wo63_rules_disabled_parity_with_legacy():
         }
     )
     assert with_defaults == legacy
+
+
+def _toggle_value_for_param(param_name: str) -> float | int:
+    spec = next(item for item in all_param_specs() if item.name == param_name)
+    return 1 if spec.type == "int" else 0.01
+
+
+def test_list_exit_rules_metadata_resolves_to_param_specs():
+    spec_names = {spec.name for spec in all_param_specs()}
+    rules_by_id = {rule.id: rule for rule in EXIT_RULES}
+
+    for info in list_exit_rules():
+        rule = rules_by_id[info.id]
+        assert info.label
+        assert info.description
+        assert info.enable_param in spec_names
+        assert info.enable_param in info.param_names
+        assert all(name in spec_names for name in info.param_names)
+        assert all(name in spec_names for name in info.required_param_names)
+        assert "atr_period" not in info.param_names
+        assert info.enable_param == rule.enable_param
+
+
+def test_enable_param_toggles_matching_rule():
+    rules_by_id = {rule.id: rule for rule in EXIT_RULES}
+    defaults = {spec.name: spec.default for spec in all_param_specs()}
+
+    for info in list_exit_rules():
+        params = dict(defaults)
+        params[info.enable_param] = _toggle_value_for_param(info.enable_param)
+        assert rules_by_id[info.id].is_enabled(params)
+
+
+def test_shared_exit_params_lists_general_specs():
+    assert shared_exit_params() == ["atr_period"]
+
+
+def test_list_exit_rules_stable_group_order():
+    ids = [info.id for info in list_exit_rules()]
+    assert ids == [
+        "fixed_sl",
+        "atr_sl",
+        "breakeven",
+        "trailing",
+        "chandelier",
+        "psar",
+        "donchian_stop",
+        "fixed_tp",
+        "atr_tp",
+        "profit_target_ratchet",
+        "time_stop",
+    ]
+
+
+PRESET_ENABLED_RULES: dict[str, list[str]] = {
+    "atr_stop_chandelier": ["atr_sl", "chandelier"],
+    "breakeven_time_stop": ["breakeven", "time_stop"],
+    "fixed_pct_bracket": ["fixed_sl", "fixed_tp"],
+    "parabolic_sar_trail": ["psar"],
+    "donchian_channel_trail": ["donchian_stop"],
+    "ratchet_target_atr_stop": ["profit_target_ratchet", "atr_sl"],
+}
+
+
+def test_exit_presets_are_valid_and_enable_intended_rules():
+    spec_names = {spec.name for spec in all_param_specs()}
+    seen_ids: set[str] = set()
+
+    for preset in EXIT_PRESETS:
+        assert preset.id not in seen_ids
+        seen_ids.add(preset.id)
+        assert preset.label
+        assert preset.description
+        assert all(key in spec_names for key in preset.parameters)
+
+        exit_strat = ExitStrategy(preset.parameters)
+        enabled_ids = sorted(rule.id for rule in exit_strat._rules)
+        assert enabled_ids == sorted(PRESET_ENABLED_RULES[preset.id])

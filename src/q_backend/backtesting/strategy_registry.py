@@ -13,7 +13,7 @@ StrategyCategory = Literal["trend", "mean_reversion", "breakout", "momentum", "o
 StrategyBase = Union[TradingStrategy, TickStrategy]
 
 
-ExitGroup = Literal["stop_loss", "trailing", "target", "time"]
+ExitGroup = Literal["stop_loss", "trailing", "target", "time", "general"]
 
 
 class StrategyParamSpec(BaseModel):
@@ -43,6 +43,29 @@ class StrategyInfo(BaseModel):
 
 class StrategiesResponse(BaseModel):
     strategies: list[StrategyInfo]
+
+
+class ExitRuleInfo(BaseModel):
+    id: str
+    label: str
+    description: str
+    exit_group: ExitGroup
+    enable_param: str
+    param_names: list[str]
+    required_param_names: list[str]
+
+
+class ExitPreset(BaseModel):
+    id: str
+    label: str
+    description: str
+    parameters: dict[str, float | int]
+
+
+class ExitRuleCatalogResponse(BaseModel):
+    exit_rules: list[ExitRuleInfo]
+    shared_exit_params: list[str]
+    exit_presets: list[ExitPreset]
 
 
 @dataclass(frozen=True)

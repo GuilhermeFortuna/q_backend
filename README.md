@@ -83,17 +83,18 @@ A separate intrabar engine for MT5 tick arrays (alongside the candle `BacktestEn
 Candle strategies share a flat exit-parameter dict (fixed % SL/TP, ATR SL/TP, trailing %, etc.) merged into every registered candle strategy by `register_strategy`. Exits are no longer a monolithic class hard-wired in three places — they are **composable modules** behind an `ExitRule` protocol:
 
 * **`ExitRule`** — each rule declares `param_specs()`, `is_enabled(params)`, optional `required_columns(params)`, optional `on_bar()` (per-trade state), and `should_exit()`. Rules emit full-position `CLOSE` signals only.
-* **`exit_rules/registry.py`** — single source of truth: `EXIT_RULES`, `all_param_specs()`, `enabled_rules(params)`, `required_columns(params)`. `get_exit_strategy_params()`, `factory.build_strategy`, and the engine all read from here.
+* **`exit_rules/registry.py`** — single source of truth: `EXIT_RULES`, `all_param_specs()`, `enabled_rules(params)`, `required_columns(params)`, `list_exit_rules()`, `shared_exit_params()`. `get_exit_strategy_params()`, `factory.build_strategy`, and the engine all read from here.
+* **`exit_rules/presets.py`** — hand-curated `EXIT_PRESETS` catalog for one-click workbench combos.
 * **`ExitStrategy(params)`** — coordinator that resolves enabled rules from the flat dict, owns per-trade state (`dict[trade_id → dict[rule_id → state]]`), runs `on_bar` then `should_exit` in registry order (first trigger wins), and prunes stale trade state each bar.
 * **Engine column prep** — `_run_single_chunk` asks `exit_strategy.required_columns()` and vectorizes any missing columns via a column-name→compute-fn map (`atr_{period}` → `compute_atr`; `donchian_high_{period}` / `donchian_low_{period}` → `compute_donchian_channels`). No exit param names are hard-coded outside the registry.
 * **Adding a new exit** — implement one `ExitRule` module and append it to `EXIT_RULES`; optional scalar params default to `0`/disabled so saved strategies, the optimizer, and genomes need no migration.
 
 Legacy fixed/ATR/trailing behaviors live in `exit_rules/legacy.py` with byte-identical trigger math to the pre-refactor monolith. Specialized stop/trailing rules (WO62+):
 
-* **Chandelier** (`chandelier.py`, `exit_group=trailing`) — `chandelier_atr_mult`: trailing stop at peak high − mult×ATR (mirror for shorts); reuses `atr_period`.
+* **Chandelier** (`chandelier.py`, `exit_group=trailing`) — `chandelier_atr_mult`: trailing stop at peak high − mult×ATR (mirror for shorts); reuses shared `atr_period` (`exit_group=general`).
 * **Break-even** (`breakeven.py`, `exit_group=stop_loss`) — `breakeven_trigger_pct` arms once gain ≥ trigger; stop snaps to entry ± `breakeven_offset_pct`.
-* **Parabolic SAR** (`parabolic_sar.py`, `exit_group=trailing`) — `psar_af_start` (0 disables), `psar_af_step`, `psar_af_max`: per-trade Wilder SAR trailing stop updated each bar in rule state.
-* **Profit-target ratchet** (`profit_target_ratchet.py`, `exit_group=target`) — `target_ratchet_atr`: arms a trailing profit floor once price reaches entry ± ATR multiple; ratchet rises/falls with new extremes (reuses `atr_period`).
+* **Parabolic SAR** (`parabolic_sar.py`, `exit_group=trailing`) — `psar_af_start` (0 disables), `psar_af_step`, `psar_af_max`: textbook Wilder SAR per trade — seeded from entry/first-bar extremes, advanced each bar, and clamped so SAR never penetrates the prior two bars' range.
+* **Profit-target ratchet** (`profit_target_ratchet.py`, `exit_group=target`) — `target_ratchet_atr`: arms a trailing profit floor once price reaches entry ± ATR multiple; ratchet rises/falls with new extremes (reuses shared `atr_period`).
 * **Time stop** (`time_stop.py`, `exit_group=time`) — `max_bars_in_trade`: closes after N bars in trade via a per-trade bar counter in rule state.
 * **Donchian channel stop** (`donchian_stop.py`, `exit_group=trailing`) — `donchian_exit_period`: exits on cross of the opposite N-bar Donchian extreme; columns declared via `required_columns` and precomputed by the engine map.
 
@@ -446,6 +447,9 @@ To run it:
   * *Description:* Returns registered strategy metadata and typed parameter schemas for dynamic UI forms and optimization bounds.
   * *Response:* `{"strategies": [{"name": "MACrossover", "label": "MA Crossover", "description": "...", "params": [{"name": "short_period", "type": "int", "default": 50, ...}]}]}`
   * *Built-in strategies:* `MACrossover`, `RSIMeanReversion`, `BollingerReversion`, `MACD`, `DonchianBreakout`, `VMA`, `FMA`, `TRB`, `TSMOM`, `GatevPairs`, `HurstTrendBlend` (candle); `TickMaBreakout` (tick); `CompositeStrategy` (genome interpreter for genetic search).
+* **`GET /api/v1/exit-rules`**
+  * *Description:* Structured exit-rule catalog for the Strategy workbench toggle cards and presets. Additive to `/strategies`; the flat per-strategy `params` list is unchanged.
+  * *Response:* `{"exit_rules": [{"id": "chandelier", "label": "Chandelier Exit", "exit_group": "trailing", "description": "...", "enable_param": "chandelier_atr_mult", "param_names": ["chandelier_atr_mult"], "required_param_names": ["atr_period"]}, ...], "shared_exit_params": ["atr_period"], "exit_presets": [{"id": "atr_stop_chandelier", "label": "...", "description": "...", "parameters": {...}}, ...]}`
 * **`POST /api/v1/backtest`**
   * *Description:* Dispatch an async backtest to the Dramatiq worker pool (preferred for the desktop app). Poll status and fetch the full chart payload when complete.
   * *Request body:* Same fields as `BacktestJobRequest` (symbol, timeframe, strategy, `engine`, etc.).

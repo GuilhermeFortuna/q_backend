@@ -10,6 +10,32 @@ from q_backend.backtesting.models import Trade
 from q_backend.backtesting.strategy_registry import StrategyParamSpec
 
 
+def _clamp_psar_long(
+    sar: float,
+    prior_low: float | None,
+    prior_prior_low: float | None,
+) -> float:
+    clamped = sar
+    if prior_low is not None:
+        clamped = min(clamped, prior_low)
+    if prior_prior_low is not None:
+        clamped = min(clamped, prior_prior_low)
+    return clamped
+
+
+def _clamp_psar_short(
+    sar: float,
+    prior_high: float | None,
+    prior_prior_high: float | None,
+) -> float:
+    clamped = sar
+    if prior_high is not None:
+        clamped = max(clamped, prior_high)
+    if prior_prior_high is not None:
+        clamped = max(clamped, prior_prior_high)
+    return clamped
+
+
 def update_psar_long(
     state: dict[str, Any],
     high: float,
@@ -20,15 +46,26 @@ def update_psar_long(
     entry_price: float,
 ) -> None:
     if "sar" not in state:
-        state["sar"] = entry_price
+        state["sar"] = min(entry_price, low)
         state["ep"] = max(entry_price, high)
         state["af"] = af_start
+        state["prior_low"] = low
+        state["prior_prior_low"] = None
         return
 
     state["sar"] = state["sar"] + state["af"] * (state["ep"] - state["sar"])
+    state["sar"] = _clamp_psar_long(
+        state["sar"],
+        state.get("prior_low"),
+        state.get("prior_prior_low"),
+    )
+
     if high > state["ep"]:
         state["ep"] = high
         state["af"] = min(state["af"] + af_step, af_max)
+
+    state["prior_prior_low"] = state.get("prior_low")
+    state["prior_low"] = low
 
 
 def update_psar_short(
@@ -41,20 +78,34 @@ def update_psar_short(
     entry_price: float,
 ) -> None:
     if "sar" not in state:
-        state["sar"] = entry_price
+        state["sar"] = max(entry_price, high)
         state["ep"] = min(entry_price, low)
         state["af"] = af_start
+        state["prior_high"] = high
+        state["prior_prior_high"] = None
         return
 
     state["sar"] = state["sar"] + state["af"] * (state["ep"] - state["sar"])
+    state["sar"] = _clamp_psar_short(
+        state["sar"],
+        state.get("prior_high"),
+        state.get("prior_prior_high"),
+    )
+
     if low < state["ep"]:
         state["ep"] = low
         state["af"] = min(state["af"] + af_step, af_max)
+
+    state["prior_prior_high"] = state.get("prior_high")
+    state["prior_high"] = high
 
 
 class ParabolicSarStopRule(ExitRule):
     id = "psar"
     exit_group = "trailing"
+    label = "Parabolic SAR Trailing Stop"
+    description = "Textbook Wilder parabolic SAR trailing stop updated each bar in rule state."
+    enable_param = "psar_af_start"
 
     def param_specs(self) -> list[StrategyParamSpec]:
         return [
