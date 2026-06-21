@@ -56,13 +56,14 @@ class BacktestEngine:
         trade_id: str,
         exit_time: datetime.datetime,
         exit_price: float,
+        exit_reason: Optional[str] = None,
     ) -> Optional[Trade]:
         trade = registry.trades.get(trade_id)
         if trade and trade.status != TradeStatus.CLOSED:
             trade.commission += side_cost(
                 self.costs, exit_price, trade.quantity, trade.point_value
             )
-        return registry.close_trade(trade_id, exit_time, exit_price)
+        return registry.close_trade(trade_id, exit_time, exit_price, exit_reason=exit_reason)
 
     def run(
         self,
@@ -218,7 +219,7 @@ class BacktestEngine:
                 open_trades = registry.get_open_trades()
                 for t in open_trades:
                     closed_trade = self._close_trade_with_costs(
-                        registry, t.id, timestamp, fill_price
+                        registry, t.id, timestamp, fill_price, exit_reason="END_OF_DAY"
                     )
                     if closed_trade and closed_trade.pnl is not None:
                         current_capital += closed_trade.pnl
@@ -235,7 +236,7 @@ class BacktestEngine:
                 ]
                 for t in open_trades:
                     closed_trade = self._close_trade_with_costs(
-                        registry, t.id, timestamp, fill_price
+                        registry, t.id, timestamp, fill_price, exit_reason=getattr(sig, "exit_reason", None) or "SIGNAL"
                     )
                     if closed_trade and closed_trade.pnl is not None:
                         current_capital += closed_trade.pnl
@@ -325,7 +326,7 @@ class BacktestEngine:
                 open_trades = registry.get_open_trades()
                 for t in open_trades:
                     closed_trade = self._close_trade_with_costs(
-                        registry, t.id, timestamp, close_price
+                        registry, t.id, timestamp, close_price, exit_reason="END_OF_DAY"
                     )
                     if closed_trade and closed_trade.pnl is not None:
                         current_capital += closed_trade.pnl
@@ -339,7 +340,7 @@ class BacktestEngine:
             final_price = final_row.get("close", 0.0)
 
             for t in registry.get_open_trades():
-                self._close_trade_with_costs(registry, t.id, final_time, final_price)
+                self._close_trade_with_costs(registry, t.id, final_time, final_price, exit_reason="FORCE_CLOSE")
 
         return registry
 

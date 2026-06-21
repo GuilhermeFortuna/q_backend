@@ -9,7 +9,7 @@ from q_backend.backtesting.models import OrderAction, Trade
 from q_backend.backtesting.position_sizing import PositionSizingConfig
 from q_backend.backtesting.registry import TradeRegistry
 from q_backend.backtesting.tick.kernel import simulate
-from q_backend.backtesting.tick.orders import kernel_sizing_params
+from q_backend.backtesting.tick.orders import ExitReason, kernel_sizing_params
 from q_backend.backtesting.tick.strategy import TickArrays, TickStrategy
 
 
@@ -74,10 +74,18 @@ def _events_to_registry(
             point_value=point_value,
         )
         registry.register_trade(trade)
+        
+        reason_code = int(_exit_reasons[i])
+        try:
+            exit_reason_str = ExitReason(reason_code).name
+        except ValueError:
+            exit_reason_str = "UNKNOWN"
+
         registry.close_trade(
             trade.id,
             _msc_to_datetime(int(time_msc[int(exit_idx[i])])),
             float(exit_prices[i]),
+            exit_reason=exit_reason_str,
         )
 
     return registry

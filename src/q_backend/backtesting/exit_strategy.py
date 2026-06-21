@@ -88,7 +88,7 @@ class ExitStrategy:
                 if not self._columns_ready(rule, current_data):
                     continue
                 if rule.should_exit(trade, current_data, state, self.params):
-                    signals.append(Signal(symbol=trade.symbol, action=SignalAction.CLOSE))
+                    signals.append(Signal(symbol=trade.symbol, action=SignalAction.CLOSE, exit_reason=rule.id))
                     break
 
         return signals

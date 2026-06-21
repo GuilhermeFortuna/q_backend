@@ -78,6 +78,9 @@ class Trade(BaseModel):
     point_value: float = Field(
         1.0, description="Multiplier representing value per point/contract size"
     )
+    exit_reason: Optional[str] = Field(
+        None, description="The reason or strategy that triggered the trade exit"
+    )
 
 
 class SignalAction(str, Enum):
@@ -105,4 +108,7 @@ class Signal(BaseModel):
     )
     created_at: datetime = Field(
         default_factory=_utcnow, description="When the signal was generated"
+    )
+    exit_reason: Optional[str] = Field(
+        None, description="Reason/strategy for exit signal"
     )

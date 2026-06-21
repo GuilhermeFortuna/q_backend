@@ -22,7 +22,7 @@ class TradeRegistry:
         self.trades[trade.id] = trade
 
     def close_trade(
-        self, trade_id: str, exit_time: datetime, exit_price: float
+        self, trade_id: str, exit_time: datetime, exit_price: float, exit_reason: Optional[str] = None
     ) -> Optional[Trade]:
         """
         Closes an open trade, calculates its PnL, and updates its status.
@@ -37,6 +37,7 @@ class TradeRegistry:
         trade.exit_time = exit_time
         trade.exit_price = exit_price
         trade.status = TradeStatus.CLOSED
+        trade.exit_reason = exit_reason
 
         # Calculate PnL
         # PnL = (Exit - Entry) * Quantity * Point Value for BUY
