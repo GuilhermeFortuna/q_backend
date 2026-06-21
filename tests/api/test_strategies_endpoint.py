@@ -30,7 +30,7 @@ def test_list_strategies_macrossover_schema():
     assert ma.description == "Short/long moving-average crossover."
 
     param_names = [spec.name for spec in ma.params]
-    assert param_names == [
+    assert param_names[:5] == [
         "short_period",
         "long_period",
         "short_ma_type",

@@ -131,6 +131,18 @@ class BacktestEngine:
         # 1. Compute indicators (vectorized, no lookahead bias)
         chunk = self.strategy.compute_indicators(chunk)
 
+        # Centrally calculate ATR if exit strategy uses it
+        if hasattr(self.strategy, "exit_strategy") and (
+            self.strategy.exit_strategy.stop_loss_atr > 0
+            or self.strategy.exit_strategy.take_profit_atr > 0
+        ):
+            atr_period = self.strategy.exit_strategy.atr_period
+            atr_col = f"atr_{atr_period}"
+            if atr_col not in chunk.columns:
+                if "high" in chunk.columns and "low" in chunk.columns and "close" in chunk.columns:
+                    from q_backend.backtesting.technical_indicators import compute_atr
+                    chunk[atr_col] = compute_atr(chunk["high"], chunk["low"], chunk["close"], atr_period)
+
         # Parse time boundaries if day trading is active
         if self.day_trade:
             try:
@@ -246,9 +258,19 @@ class BacktestEngine:
             if self.day_trade:
                 # We can check exits anytime before force-close time
                 if current_time < close_t and not is_last_bar_of_day:
-                    pending_exits = self.strategy.check_exit_conditions(
-                        current_data, registry.get_open_trades()
+                    if hasattr(self.strategy, "exit_strategy"):
+                        pending_exits = self.strategy.exit_strategy.check_exits(
+                            registry.get_open_trades(), current_data
+                        )
+                    else:
+                        pending_exits = []
+                    closed_symbols = {sig.symbol for sig in pending_exits}
+                    
+                    strategy_exits = self.strategy.check_exit_conditions(
+                        current_data, [t for t in registry.get_open_trades() if t.symbol not in closed_symbols]
                     )
+                    pending_exits.extend(strategy_exits)
+
                     # We only check entries within the entry window
                     if start_t <= current_time <= end_t:
                         pending_entries = self.strategy.check_entry_conditions(current_data)
@@ -258,9 +280,19 @@ class BacktestEngine:
                     pending_exits = []
                     pending_entries = []
             else:
-                pending_exits = self.strategy.check_exit_conditions(
-                    current_data, registry.get_open_trades()
+                if hasattr(self.strategy, "exit_strategy"):
+                    pending_exits = self.strategy.exit_strategy.check_exits(
+                        registry.get_open_trades(), current_data
+                    )
+                else:
+                    pending_exits = []
+                closed_symbols = {sig.symbol for sig in pending_exits}
+                
+                strategy_exits = self.strategy.check_exit_conditions(
+                    current_data, [t for t in registry.get_open_trades() if t.symbol not in closed_symbols]
                 )
+                pending_exits.extend(strategy_exits)
+                
                 pending_entries = self.strategy.check_entry_conditions(current_data)
 
             # E. Daily force-close at the end of the last bar of the day.

@@ -77,3 +77,18 @@ def compute_donchian_channels(
     upper = high.rolling(window=period).max().shift(1)
     lower = low.rolling(window=period).min().shift(1)
     return upper, lower
+
+
+def compute_atr(
+    high: pd.Series, low: pd.Series, close: pd.Series, period: int
+) -> pd.Series:
+    """
+    Computes Wilder's Average True Range (ATR) using Wilder's smoothing/exponential moving average.
+    """
+    prev_close = close.shift(1)
+    tr1 = high - low
+    tr2 = (high - prev_close).abs()
+    tr3 = (low - prev_close).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    return tr.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+

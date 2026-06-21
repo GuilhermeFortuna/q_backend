@@ -55,6 +55,15 @@ class TradingStrategy(ABC):
         Initialize strategy parameters.
         """
         self.parameters = kwargs
+        from q_backend.backtesting.exit_strategy import ExitStrategy
+        self.exit_strategy = ExitStrategy(
+            stop_loss_pct=float(kwargs.get("stop_loss_pct", 0.0)),
+            take_profit_pct=float(kwargs.get("take_profit_pct", 0.0)),
+            trailing_stop_pct=float(kwargs.get("trailing_stop_pct", 0.0)),
+            stop_loss_atr=float(kwargs.get("stop_loss_atr", 0.0)),
+            take_profit_atr=float(kwargs.get("take_profit_atr", 0.0)),
+            atr_period=int(kwargs.get("atr_period", 14)),
+        )
 
     @abstractmethod
     def compute_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
