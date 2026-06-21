@@ -131,17 +131,41 @@ class BacktestEngine:
         # 1. Compute indicators (vectorized, no lookahead bias)
         chunk = self.strategy.compute_indicators(chunk)
 
-        # Centrally calculate ATR if exit strategy uses it
-        if hasattr(self.strategy, "exit_strategy") and (
-            self.strategy.exit_strategy.stop_loss_atr > 0
-            or self.strategy.exit_strategy.take_profit_atr > 0
-        ):
-            atr_period = self.strategy.exit_strategy.atr_period
-            atr_col = f"atr_{atr_period}"
-            if atr_col not in chunk.columns:
-                if "high" in chunk.columns and "low" in chunk.columns and "close" in chunk.columns:
-                    from q_backend.backtesting.technical_indicators import compute_atr
-                    chunk[atr_col] = compute_atr(chunk["high"], chunk["low"], chunk["close"], atr_period)
+        if hasattr(self.strategy, "exit_strategy"):
+            from q_backend.backtesting.technical_indicators import (
+                compute_atr,
+                compute_donchian_channels,
+            )
+
+            donchian_periods: set[int] = set()
+            for col in self.strategy.exit_strategy.required_columns():
+                if col in chunk.columns:
+                    continue
+                if (
+                    col.startswith("atr_")
+                    and "high" in chunk.columns
+                    and "low" in chunk.columns
+                    and "close" in chunk.columns
+                ):
+                    period = int(col.split("_", 1)[1])
+                    chunk[col] = compute_atr(
+                        chunk["high"], chunk["low"], chunk["close"], period
+                    )
+                elif col.startswith("donchian_high_") or col.startswith("donchian_low_"):
+                    prefix = "donchian_high_" if col.startswith("donchian_high_") else "donchian_low_"
+                    donchian_periods.add(int(col.removeprefix(prefix)))
+
+            if donchian_periods and "high" in chunk.columns and "low" in chunk.columns:
+                for period in donchian_periods:
+                    high_col = f"donchian_high_{period}"
+                    low_col = f"donchian_low_{period}"
+                    if high_col in chunk.columns and low_col in chunk.columns:
+                        continue
+                    upper, lower = compute_donchian_channels(
+                        chunk["high"], chunk["low"], period
+                    )
+                    chunk[high_col] = upper
+                    chunk[low_col] = lower
 
         # Parse time boundaries if day trading is active
         if self.day_trade:

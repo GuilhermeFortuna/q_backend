@@ -78,6 +78,25 @@ A separate intrabar engine for MT5 tick arrays (alongside the candle `BacktestEn
 * **Vectorized Computations:** Employs precomputed Technical Indicators via vectorized pandas operations, preventing lookahead bias while maintaining massive throughput.
 * **Pluggable Strategy Registry:** Built-in candle strategies (`MACrossover`, `RSIMeanReversion`, `BollingerReversion`, `MACD`, `DonchianBreakout`, `VMA`, `FMA`, `TRB`, `TSMOM`, `GatevPairs`, `HurstTrendBlend`) plus tick strategies (`TickMaBreakout`) and the genome interpreter entry (`CompositeStrategy`) register parameter schemas consumed by the optimization engine and frontend forms via `GET /api/v1/strategies`. `VMA`/`FMA`/`TRB` implement the Lai & Lau (2006) price-vs-MA and close-based trading-range rules. `TSMOM` implements the Moskowitz–Ooi–Pedersen (2012) time-series momentum SIGN rule with bar-count rebalancing (Baltas & Kosowski 2017). `GatevPairs` implements Gatev–Goetzmann–Rouwenhorst (2006) distance-based pairs trading. `HurstTrendBlend` blends trend and mean-reversion regimes using a Hurst exponent filter.
 
+#### Composable exit-rule registry (`backtesting/exit_rules/`)
+
+Candle strategies share a flat exit-parameter dict (fixed % SL/TP, ATR SL/TP, trailing %, etc.) merged into every registered candle strategy by `register_strategy`. Exits are no longer a monolithic class hard-wired in three places — they are **composable modules** behind an `ExitRule` protocol:
+
+* **`ExitRule`** — each rule declares `param_specs()`, `is_enabled(params)`, optional `required_columns(params)`, optional `on_bar()` (per-trade state), and `should_exit()`. Rules emit full-position `CLOSE` signals only.
+* **`exit_rules/registry.py`** — single source of truth: `EXIT_RULES`, `all_param_specs()`, `enabled_rules(params)`, `required_columns(params)`. `get_exit_strategy_params()`, `factory.build_strategy`, and the engine all read from here.
+* **`ExitStrategy(params)`** — coordinator that resolves enabled rules from the flat dict, owns per-trade state (`dict[trade_id → dict[rule_id → state]]`), runs `on_bar` then `should_exit` in registry order (first trigger wins), and prunes stale trade state each bar.
+* **Engine column prep** — `_run_single_chunk` asks `exit_strategy.required_columns()` and vectorizes any missing columns via a column-name→compute-fn map (`atr_{period}` → `compute_atr`; `donchian_high_{period}` / `donchian_low_{period}` → `compute_donchian_channels`). No exit param names are hard-coded outside the registry.
+* **Adding a new exit** — implement one `ExitRule` module and append it to `EXIT_RULES`; optional scalar params default to `0`/disabled so saved strategies, the optimizer, and genomes need no migration.
+
+Legacy fixed/ATR/trailing behaviors live in `exit_rules/legacy.py` with byte-identical trigger math to the pre-refactor monolith. Specialized stop/trailing rules (WO62+):
+
+* **Chandelier** (`chandelier.py`, `exit_group=trailing`) — `chandelier_atr_mult`: trailing stop at peak high − mult×ATR (mirror for shorts); reuses `atr_period`.
+* **Break-even** (`breakeven.py`, `exit_group=stop_loss`) — `breakeven_trigger_pct` arms once gain ≥ trigger; stop snaps to entry ± `breakeven_offset_pct`.
+* **Parabolic SAR** (`parabolic_sar.py`, `exit_group=trailing`) — `psar_af_start` (0 disables), `psar_af_step`, `psar_af_max`: per-trade Wilder SAR trailing stop updated each bar in rule state.
+* **Profit-target ratchet** (`profit_target_ratchet.py`, `exit_group=target`) — `target_ratchet_atr`: arms a trailing profit floor once price reaches entry ± ATR multiple; ratchet rises/falls with new extremes (reuses `atr_period`).
+* **Time stop** (`time_stop.py`, `exit_group=time`) — `max_bars_in_trade`: closes after N bars in trade via a per-trade bar counter in rule state.
+* **Donchian channel stop** (`donchian_stop.py`, `exit_group=trailing`) — `donchian_exit_period`: exits on cross of the opposite N-bar Donchian extreme; columns declared via `required_columns` and precomputed by the engine map.
+
 #### Genome DSL / `CompositeStrategy`
 
 Genetic strategy search (WO39+) evolves **structure** in a JSON genome document while Optuna optimizes numeric knobs per genome via the existing walk-forward path. The interpreter lives under `q_backend/backtesting/genome/`:

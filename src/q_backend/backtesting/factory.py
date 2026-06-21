@@ -18,13 +18,7 @@ def build_strategy(name: str, params: dict[str, Any], symbol: str) -> TradingStr
     strategy.parameters.update(merged)
     
     from q_backend.backtesting.exit_strategy import ExitStrategy
-    strategy.exit_strategy = ExitStrategy(
-        stop_loss_pct=float(merged.get("stop_loss_pct", 0.0)),
-        take_profit_pct=float(merged.get("take_profit_pct", 0.0)),
-        trailing_stop_pct=float(merged.get("trailing_stop_pct", 0.0)),
-        stop_loss_atr=float(merged.get("stop_loss_atr", 0.0)),
-        take_profit_atr=float(merged.get("take_profit_atr", 0.0)),
-        atr_period=int(merged.get("atr_period", 14)),
-    )
+
+    strategy.exit_strategy = ExitStrategy(merged)
     
     return strategy

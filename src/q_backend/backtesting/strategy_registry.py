@@ -13,6 +13,9 @@ StrategyCategory = Literal["trend", "mean_reversion", "breakout", "momentum", "o
 StrategyBase = Union[TradingStrategy, TickStrategy]
 
 
+ExitGroup = Literal["stop_loss", "trailing", "target", "time"]
+
+
 class StrategyParamSpec(BaseModel):
     name: str
     label: str
@@ -23,6 +26,7 @@ class StrategyParamSpec(BaseModel):
     step: float | None = None
     choices: list[str] | None = None
     hint: str | None = None
+    exit_group: ExitGroup | None = None
 
 
 class StrategyInfo(BaseModel):
