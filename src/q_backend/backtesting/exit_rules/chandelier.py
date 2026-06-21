@@ -13,6 +13,12 @@ from q_backend.backtesting.strategy_registry import StrategyParamSpec
 class ChandelierExitRule(ExitRule):
     id = "chandelier"
     exit_group = "trailing"
+    label = "Chandelier Exit"
+    description = "Trailing stop at peak high minus an ATR multiple."
+    enable_param = "chandelier_atr_mult"
+
+    def required_param_names(self) -> list[str]:
+        return ["atr_period"]
 
     def param_specs(self) -> list[StrategyParamSpec]:
         return [

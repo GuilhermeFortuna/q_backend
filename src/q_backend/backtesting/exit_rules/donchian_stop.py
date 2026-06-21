@@ -13,6 +13,9 @@ from q_backend.backtesting.strategy_registry import StrategyParamSpec
 class DonchianChannelStopRule(ExitRule):
     id = "donchian_stop"
     exit_group = "trailing"
+    label = "Donchian Channel Stop"
+    description = "Exit when price crosses the opposite N-bar Donchian extreme."
+    enable_param = "donchian_exit_period"
 
     def param_specs(self) -> list[StrategyParamSpec]:
         return [

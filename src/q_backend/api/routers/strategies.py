@@ -3,11 +3,14 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from q_backend.backtesting.strategy_registry import (
+    ExitRuleCatalogResponse,
     StrategiesResponse,
     list_registered_strategies,
     _STRATEGY_REGISTRY,
     _CUSTOM_STRATEGIES,
 )
+from q_backend.backtesting.exit_rules.registry import list_exit_rules, shared_exit_params
+from q_backend.backtesting.exit_rules.presets import EXIT_PRESETS
 from q_backend.backtesting.custom_strategy_store import (
     load_custom_strategies,
     save_custom_strategies,
@@ -27,6 +30,16 @@ class CustomStrategySaveRequest(BaseModel):
 def list_strategies():
     """Return registered strategy metadata and parameter schemas."""
     return {"strategies": list_registered_strategies()}
+
+
+@router.get("/api/v1/exit-rules", response_model=ExitRuleCatalogResponse)
+def list_exit_rules_catalog():
+    """Return exit-rule metadata, shared indicator params, and named presets."""
+    return {
+        "exit_rules": list_exit_rules(),
+        "shared_exit_params": shared_exit_params(),
+        "exit_presets": EXIT_PRESETS,
+    }
 
 
 @router.get("/api/v1/strategies/custom")

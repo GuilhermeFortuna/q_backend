@@ -13,6 +13,14 @@ from q_backend.backtesting.strategy_registry import StrategyParamSpec
 class ProfitTargetRatchetRule(ExitRule):
     id = "profit_target_ratchet"
     exit_group = "target"
+    label = "Profit Target Ratchet"
+    description = (
+        "Arms a trailing profit floor once price reaches entry plus or minus an ATR multiple."
+    )
+    enable_param = "target_ratchet_atr"
+
+    def required_param_names(self) -> list[str]:
+        return ["atr_period"]
 
     def param_specs(self) -> list[StrategyParamSpec]:
         return [

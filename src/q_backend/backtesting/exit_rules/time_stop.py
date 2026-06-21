@@ -12,6 +12,9 @@ from q_backend.backtesting.strategy_registry import StrategyParamSpec
 class TimeStopRule(ExitRule):
     id = "time_stop"
     exit_group = "time"
+    label = "Time Stop"
+    description = "Close the position after a maximum number of bars in trade."
+    enable_param = "max_bars_in_trade"
 
     def param_specs(self) -> list[StrategyParamSpec]:
         return [

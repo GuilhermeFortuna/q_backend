@@ -13,6 +13,9 @@ from q_backend.backtesting.strategy_registry import StrategyParamSpec
 class BreakevenStopRule(ExitRule):
     id = "breakeven"
     exit_group = "stop_loss"
+    label = "Break-even Stop"
+    description = "Arm a stop at entry plus a small offset once gain reaches a trigger threshold."
+    enable_param = "breakeven_trigger_pct"
 
     def param_specs(self) -> list[StrategyParamSpec]:
         return [

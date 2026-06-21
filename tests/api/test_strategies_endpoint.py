@@ -1,4 +1,4 @@
-from q_backend.api.routers.strategies import list_strategies
+from q_backend.api.routers.strategies import list_exit_rules_catalog, list_strategies
 from q_backend.backtesting.strategy_registry import StrategyCategory
 
 
@@ -123,3 +123,38 @@ def test_list_strategies_macrossover_presentation_metadata():
 
     short_period = next(spec for spec in ma.params if spec.name == "short_period")
     assert short_period.hint
+
+
+def test_exit_rules_catalog_endpoint():
+    response = list_exit_rules_catalog()
+
+    assert set(response.keys()) == {"exit_rules", "shared_exit_params", "exit_presets"}
+    assert len(response["exit_rules"]) == 11
+    assert response["shared_exit_params"] == ["atr_period"]
+    assert len(response["exit_presets"]) == 6
+
+    chandelier = next(item for item in response["exit_rules"] if item.id == "chandelier")
+    assert chandelier.label == "Chandelier Exit"
+    assert chandelier.enable_param == "chandelier_atr_mult"
+    assert chandelier.param_names == ["chandelier_atr_mult"]
+    assert chandelier.required_param_names == ["atr_period"]
+
+    preset = next(item for item in response["exit_presets"] if item.id == "atr_stop_chandelier")
+    assert preset.parameters["stop_loss_atr"] == 2.0
+    assert preset.parameters["chandelier_atr_mult"] == 3.0
+
+
+def test_strategies_endpoint_unchanged_after_exit_rules_catalog():
+    response = list_strategies()
+    ma = next(item for item in response["strategies"] if item.name == "MACrossover")
+
+    assert ma.label == "MA Crossover"
+    assert [spec.name for spec in ma.params[:5]] == [
+        "short_period",
+        "long_period",
+        "short_ma_type",
+        "long_ma_type",
+        "threshold",
+    ]
+    assert any(spec.name == "stop_loss_pct" for spec in ma.params)
+    assert any(spec.name == "atr_period" for spec in ma.params)
