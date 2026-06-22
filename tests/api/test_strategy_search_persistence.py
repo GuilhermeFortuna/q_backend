@@ -32,7 +32,7 @@ from q_backend.optimization.models import (
     ObjectiveMode,
     StudyConfig,
 )
-from q_backend.optimization.strategy_search import GateConfig, StrategySearchConfig
+from q_backend.optimization.strategy_search import ExitPresetSearchConfig, GateConfig, StrategySearchConfig
 from q_backend.optimization.walkforward import WalkForwardConfig
 from q_backend.storage.db.base import Base
 from q_backend.storage.db.repositories import (
@@ -340,6 +340,167 @@ def test_strategy_search_migration_revision_chain():
     assert revision.down_revision == "20260611_0003"
     assert callable(revision.module.upgrade)
     assert callable(revision.module.downgrade)
+
+    exit_preset_revision = script.get_revision("20260621_0006")
+    assert exit_preset_revision is not None
+    assert exit_preset_revision.down_revision == "20260613_0005"
+
+    diagnostics_revision = script.get_revision("20260621_0007")
+    assert diagnostics_revision is not None
+    assert diagnostics_revision.down_revision == "20260621_0006"
+
+    exit_policy_revision = script.get_revision("20260622_0008")
+    assert exit_policy_revision is not None
+    assert exit_policy_revision.down_revision == "20260621_0007"
+
+
+def test_strategy_search_exit_quality_persists_and_rebuilds(
+    run_jobs_sync, api_db_session, api_session_scope, lake_root_path
+):
+    job = _start_persisted_job(api_session_scope, n_trials=2)
+
+    with patch("q_backend.api.strategy_search_jobs.session_scope", api_session_scope):
+        results = get_strategy_search_results(job.run_id)
+
+    for candidate in results["candidates"]:
+        if candidate["status"] != "completed":
+            continue
+        assert candidate.get("exit_quality") is not None
+        assert candidate["exit_quality"]["total_closed_trades"] >= 0
+        assert isinstance(candidate["exit_quality"].get("by_reason"), dict)
+
+    api_db_session.expire_all()
+    run = get_strategy_search_run(api_db_session, uuid.UUID(hex=job.run_id))
+    completed = [
+        item for item in run.candidates if item.status == "completed" and item.diagnostics
+    ]
+    assert completed, "expected at least one completed candidate with diagnostics"
+    persisted = completed[0]
+    assert persisted.diagnostics is not None
+    assert persisted.diagnostics.get("exit_quality") is not None
+
+    trades_path = (
+        lake_root_path
+        / "strategy_search"
+        / job.run_id
+        / "candidates"
+        / persisted.candidate_id
+        / "oos_trades.parquet"
+    )
+    assert trades_path.is_file()
+
+
+def test_strategy_search_old_candidate_without_exit_quality_serializes(
+    api_db_session, api_session_scope
+):
+    from q_backend.storage.db.repositories import create_strategy_search_candidate
+
+    with api_session_scope() as session:
+        run = create_strategy_search_run(
+            session,
+            name="legacy",
+            config=_request().model_dump(mode="json"),
+            status="completed",
+        )
+        create_strategy_search_candidate(
+            session,
+            run_id=run.id,
+            candidate_id="MACrossover",
+            strategy="MACrossover",
+            status="completed",
+            rank=1,
+            objective_value=100.0,
+            robustness_score=100.0,
+            passed_gates=True,
+        )
+        run_id = run.id.hex
+
+    with patch("q_backend.api.strategy_search_jobs.session_scope", api_session_scope):
+        results = get_strategy_search_results(run_id)
+
+    candidate = results["candidates"][0]
+    assert candidate["candidate_id"] == "MACrossover"
+    assert candidate.get("diagnostics") is None
+    assert candidate.get("exit_quality") is None
+
+
+def test_strategy_search_old_candidate_without_exit_policy_metadata_serializes(
+    api_db_session, api_session_scope
+):
+    from q_backend.storage.db.repositories import create_strategy_search_candidate
+
+    with api_session_scope() as session:
+        run = create_strategy_search_run(
+            session,
+            name="legacy-genetic",
+            config=_request().model_dump(mode="json"),
+            status="completed",
+        )
+        create_strategy_search_candidate(
+            session,
+            run_id=run.id,
+            candidate_id="genome-legacy",
+            strategy="CompositeStrategy",
+            status="completed",
+            rank=1,
+            objective_value=100.0,
+            robustness_score=100.0,
+            passed_gates=True,
+            generation=0,
+        )
+        run_id = run.id.hex
+
+    with patch("q_backend.api.strategy_search_jobs.session_scope", api_session_scope):
+        results = get_strategy_search_results(run_id)
+
+    candidate = results["candidates"][0]
+    assert candidate["candidate_id"] == "genome-legacy"
+    assert candidate.get("exit_policy_id") is None
+    assert candidate.get("exit_policy_label") is None
+    assert candidate.get("last_exit_mutation_op") is None
+
+
+def test_strategy_search_exit_preset_metadata_persists(
+    run_jobs_sync, api_db_session, api_session_scope
+):
+    request = _request(n_trials=2, strategies=["MACrossover"]).model_copy(
+        update={
+            "exit_presets": ExitPresetSearchConfig(
+                enabled=True,
+                preset_ids=["fixed_pct_bracket"],
+                include_baseline=False,
+            )
+        }
+    )
+    with patch("q_backend.api.strategy_search_jobs.session_scope", api_session_scope):
+        job = strategy_search_jobs.start_job(request)
+        results = get_strategy_search_results(job.run_id)
+
+    assert len(results["candidates"]) == 1
+    candidate = results["candidates"][0]
+    assert candidate["candidate_id"] == "MACrossover__exit_fixed_pct_bracket"
+    assert candidate["exit_preset_id"] == "fixed_pct_bracket"
+    assert candidate["exit_preset_label"] == "Fixed % bracket"
+    assert candidate["exit_param_names"] == ["stop_loss_pct", "take_profit_pct"]
+
+    api_db_session.expire_all()
+    run = get_strategy_search_run(api_db_session, uuid.UUID(hex=job.run_id))
+    persisted = run.candidates[0]
+    assert persisted.exit_preset_id == "fixed_pct_bracket"
+    assert persisted.exit_param_names == ["stop_loss_pct", "take_profit_pct"]
+
+
+def test_strategy_search_results_without_exit_metadata(
+    run_jobs_sync, api_session_scope
+):
+    job = _start_persisted_job(api_session_scope, n_trials=2)
+    with patch("q_backend.api.strategy_search_jobs.session_scope", api_session_scope):
+        results = get_strategy_search_results(job.run_id)
+
+    for candidate in results["candidates"]:
+        assert "exit_preset_id" not in candidate or candidate.get("exit_preset_id") is None
+        assert "exit_preset_label" not in candidate or candidate.get("exit_preset_label") is None
+        assert "exit_param_names" not in candidate or candidate.get("exit_param_names") is None
 
 
 def test_strategy_search_status_response_preserves_trial_logs():

@@ -16,14 +16,30 @@ import pytest
 
 from q_backend.api import strategy_search_jobs as sj
 from q_backend.backtesting.genome.activity import ActivityStats
+from q_backend.backtesting.genome.exit_rule_policy import (
+    attach_exit_rule_policy,
+    preset_by_id,
+)
 from q_backend.optimization.genetic_search import GeneticCandidateProvider
 from q_backend.optimization.models import ObjectiveConfig, ObjectiveMode, StudyConfig
 from q_backend.optimization.strategy_search import (
+    CandidateResult,
     GateConfig,
     GeneticSearchConfig,
     StrategySearchConfig,
 )
 from q_backend.optimization.walkforward import WalkForwardConfig
+
+EXPECTED_EXIT_POLICY_META = {
+    "exit_policy_id": "atr_stop_chandelier",
+    "exit_policy_label": "ATR stop + Chandelier trail",
+    "exit_param_names": [
+        "exit_atr_period",
+        "exit_chandelier_atr_mult",
+        "exit_stop_loss_atr",
+    ],
+    "last_exit_mutation_op": "swap_exit_policy",
+}
 
 
 def _genetic_request(*, population_size: int) -> StrategySearchConfig:
@@ -56,11 +72,12 @@ def _genetic_request(*, population_size: int) -> StrategySearchConfig:
     )
 
 
-def _capture_dispatch(monkeypatch, provider, *, dead_ids):
+def _capture_dispatch(monkeypatch, provider, *, dead_ids, capture_meta=False):
     """Stub every side effect of ``_dispatch_generation`` and return the captures."""
     captured: dict[str, object] = {"counter": None, "finalized": False}
     stashed: list[int] = []
     sent: list[int] = []
+    stashed_meta: list[dict[str, dict]] = []
 
     def fake_activity(genome, df, *, min_signals, **_kwargs):
         firing = 0 if genome.genome_id in dead_ids else 5
@@ -88,12 +105,27 @@ def _capture_dispatch(monkeypatch, provider, *, dead_ids):
         lambda *a, **k: captured.__setitem__("finalized", True),
     )
     monkeypatch.setattr(sj.genetic_staging, "set_provider_state", lambda *a, **k: None)
-    monkeypatch.setattr(sj.genetic_staging, "set_candidate_meta", lambda *a, **k: None)
+    if capture_meta:
+        monkeypatch.setattr(
+            sj.genetic_staging,
+            "set_candidate_meta",
+            lambda run_id, meta: stashed_meta.append(meta),
+        )
+    else:
+        monkeypatch.setattr(sj.genetic_staging, "set_candidate_meta", lambda *a, **k: None)
     monkeypatch.setattr(actors_module, "evaluate_genetic_candidate", _FakeActor)
 
     # A non-empty probe frame switches the pre-screen branch on.
     provider._probe_df = pd.DataFrame({"close": [1.0, 2.0, 3.0]})
-    return captured, stashed, sent
+    return captured, stashed, sent, stashed_meta
+
+
+def _genome_with_exit_policy(provider: GeneticCandidateProvider, index: int = 0):
+    preset = preset_by_id("atr_stop_chandelier")
+    genome = attach_exit_rule_policy(provider._population[index], preset)
+    genome.metadata["last_exit_mutation_op"] = "swap_exit_policy"
+    provider._population[index] = genome
+    return genome
 
 
 def test_dispatch_prescreens_dead_genomes(monkeypatch):
@@ -102,7 +134,7 @@ def test_dispatch_prescreens_dead_genomes(monkeypatch):
     population = provider.population
     dead_ids = {population[0].genome_id, population[2].genome_id}
 
-    captured, stashed, sent = _capture_dispatch(monkeypatch, provider, dead_ids=dead_ids)
+    captured, stashed, sent, _meta = _capture_dispatch(monkeypatch, provider, dead_ids=dead_ids)
 
     sj._dispatch_generation(
         "run-1", "", request.model_dump_json(), provider, generation=0
@@ -123,7 +155,7 @@ def test_dispatch_all_dead_generation_finalizes(monkeypatch):
     provider = GeneticCandidateProvider(request.genetic, request)
     dead_ids = {genome.genome_id for genome in provider.population}
 
-    captured, stashed, sent = _capture_dispatch(monkeypatch, provider, dead_ids=dead_ids)
+    captured, stashed, sent, _meta = _capture_dispatch(monkeypatch, provider, dead_ids=dead_ids)
 
     sj._dispatch_generation(
         "run-2", "", request.model_dump_json(), provider, generation=0
@@ -135,3 +167,64 @@ def test_dispatch_all_dead_generation_finalizes(monkeypatch):
     assert sent == []
     assert captured["counter"] == 0
     assert captured["finalized"] is True
+
+
+def test_dispatch_prescreen_stashes_exit_policy_metadata(monkeypatch):
+    request = _genetic_request(population_size=10)
+    provider = GeneticCandidateProvider(request.genetic, request)
+    genome = _genome_with_exit_policy(provider, index=0)
+    dead_ids = {genome.genome_id}
+
+    _captured, _stashed, _sent, stashed_meta = _capture_dispatch(
+        monkeypatch, provider, dead_ids=dead_ids, capture_meta=True
+    )
+
+    sj._dispatch_generation(
+        "run-exit-meta", "", request.model_dump_json(), provider, generation=0
+    )
+
+    assert len(stashed_meta) == 1
+    meta = stashed_meta[0][genome.genome_id]
+    for key, value in EXPECTED_EXIT_POLICY_META.items():
+        assert meta[key] == value
+
+
+def test_run_genetic_candidate_stashes_exit_policy_metadata(monkeypatch):
+    request = _genetic_request(population_size=10)
+    provider = GeneticCandidateProvider(request.genetic, request)
+    genome = _genome_with_exit_policy(provider, index=1)
+    stashed_meta: list[dict[str, dict]] = []
+
+    monkeypatch.setattr(
+        sj.genetic_staging,
+        "get_generation_genome",
+        lambda run_id, index: genome.model_dump(),
+    )
+    monkeypatch.setattr(sj, "is_cancelled", lambda run_id: False)
+    monkeypatch.setattr(
+        sj,
+        "evaluate_candidate",
+        lambda *args, **kwargs: CandidateResult(
+            candidate_id=genome.genome_id,
+            strategy="CompositeStrategy",
+            status="no_result",
+            error="stub",
+        ),
+    )
+    monkeypatch.setattr(sj, "stash_partial", lambda *a, **k: None)
+    monkeypatch.setattr(
+        sj.genetic_staging,
+        "set_candidate_meta",
+        lambda run_id, meta: stashed_meta.append(meta),
+    )
+    monkeypatch.setattr(sj, "decrement", lambda run_id: 1)
+    monkeypatch.setattr(sj, "_persist_genetic_progress", lambda *a, **k: None)
+
+    sj.run_genetic_candidate(
+        "run-worker-meta", "", request.model_dump_json(), generation=0, candidate_index=1
+    )
+
+    assert len(stashed_meta) == 1
+    meta = stashed_meta[0][genome.genome_id]
+    for key, value in EXPECTED_EXIT_POLICY_META.items():
+        assert meta[key] == value

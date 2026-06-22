@@ -50,6 +50,14 @@ class StrategySearchCandidateResponse(BaseModel):
     genome_node_count: Optional[int] = None
     dsr: Optional[float] = None
     complexity_penalty: Optional[float] = None
+    exit_preset_id: Optional[str] = None
+    exit_preset_label: Optional[str] = None
+    exit_param_names: Optional[List[str]] = None
+    exit_policy_id: Optional[str] = None
+    exit_policy_label: Optional[str] = None
+    last_exit_mutation_op: Optional[str] = None
+    exit_quality: Optional[Dict[str, Any]] = None
+    diagnostics: Optional[Dict[str, Any]] = None
 
 
 class StrategySearchResultsResponse(BaseModel):

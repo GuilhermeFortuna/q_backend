@@ -10,6 +10,7 @@ from typing import Any
 import pandas as pd
 
 from q_backend.backtesting.genome.activity import genome_signal_activity
+from q_backend.backtesting.genome.exit_rule_policy import exit_policy_metadata_for_genome
 from q_backend.backtesting.genome.operators import (
     DEFAULT_MUTATION_OPERATOR_WEIGHTS,
     adapt_mutation_rate,
@@ -258,6 +259,9 @@ class GeneticCandidateProvider:
             ohlcv=probe_df,
             min_seed_signals=genetic_config.min_seed_signals,
             repair_max_attempts=genetic_config.repair_max_attempts,
+            seed_exit_policies=genetic_config.seed_exit_policies,
+            exit_policy_preset_ids=genetic_config.exit_policy_preset_ids,
+            exit_policy_seed_fraction=genetic_config.exit_policy_seed_fraction,
         )
         self._genome_by_id = {genome.genome_id: genome for genome in self._population}
         self._champion: Genome | None = None
@@ -487,6 +491,7 @@ class GeneticCandidateProvider:
                     min_signals=self._genetic.min_seed_signals,
                     repair_max_attempts=self._genetic.repair_max_attempts,
                     operator_weights=operator_weights,
+                    exit_policy_preset_ids=self._genetic.exit_policy_preset_ids,
                 )
             return clone_genome(
                 child,
@@ -593,6 +598,9 @@ class GeneticStrategySearchOrchestrator:
             "selection_fitness": selection_fitness,
             "fitness_breakdown": fitness_breakdown,
         }
+        policy_meta = exit_policy_metadata_for_genome(genome)
+        if policy_meta:
+            self._candidate_metadata[result.candidate_id].update(policy_meta)
 
     def _evaluate_generation_serial(
         self,

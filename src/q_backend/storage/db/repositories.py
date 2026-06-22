@@ -639,6 +639,13 @@ def create_strategy_search_candidate(
     genome_node_count: Optional[int] = None,
     dsr: Optional[float] = None,
     complexity_penalty: Optional[float] = None,
+    exit_preset_id: Optional[str] = None,
+    exit_preset_label: Optional[str] = None,
+    exit_policy_id: Optional[str] = None,
+    exit_policy_label: Optional[str] = None,
+    last_exit_mutation_op: Optional[str] = None,
+    exit_param_names: Optional[list[str]] = None,
+    diagnostics: Optional[dict[str, Any]] = None,
 ) -> StrategySearchCandidate:
     candidate = StrategySearchCandidate(
         run_id=run_id,
@@ -661,6 +668,13 @@ def create_strategy_search_candidate(
         genome_node_count=genome_node_count,
         dsr=dsr,
         complexity_penalty=complexity_penalty,
+        exit_preset_id=exit_preset_id,
+        exit_preset_label=exit_preset_label,
+        exit_policy_id=exit_policy_id,
+        exit_policy_label=exit_policy_label,
+        last_exit_mutation_op=last_exit_mutation_op,
+        exit_param_names=exit_param_names,
+        diagnostics=diagnostics,
     )
     session.add(candidate)
     session.flush()

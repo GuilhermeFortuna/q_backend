@@ -92,6 +92,8 @@ def candidate_result_to_dict(candidate: CandidateResult) -> dict[str, Any]:
         "window_count": candidate.window_count,
         "completed_windows": candidate.completed_windows,
         "oos_equity_curve": _series_to_obj(candidate.oos_equity_curve),
+        "oos_trades": [trade.model_dump(mode="json") for trade in candidate.oos_trades],
+        "diagnostics": candidate.diagnostics,
         "error": candidate.error,
     }
 
@@ -113,5 +115,7 @@ def candidate_result_from_dict(payload: dict[str, Any]) -> CandidateResult:
         window_count=payload.get("window_count", 0),
         completed_windows=payload.get("completed_windows", 0),
         oos_equity_curve=_obj_to_series(payload.get("oos_equity_curve")),
+        oos_trades=[Trade.model_validate(t) for t in payload.get("oos_trades", [])],
+        diagnostics=payload.get("diagnostics"),
         error=payload.get("error"),
     )

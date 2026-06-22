@@ -8,6 +8,14 @@ from typing import Any
 
 import pandas as pd
 
+from q_backend.backtesting.genome.exit_rule_policy import (
+    attach_exit_rule_policy,
+    build_single_stop_exit_policy,
+    drop_exit_rule_policy,
+    get_exit_rule_policy,
+    genome_exit_param_ref,
+    selected_exit_policy_presets,
+)
 from q_backend.backtesting.genome.activity import (
     genome_signal_activity,
     repair_genome,
@@ -36,6 +44,13 @@ CMP_KINDS = sorted(kind for kind in NODE_SPECS if kind.startswith("cmp."))
 EXIT_BOOL_KINDS = ("exit.opposite_signal",)
 SOURCE_KIND = "source.close"
 
+EXIT_MUTATION_OPERATORS = (
+    "swap_exit_policy",
+    "add_exit_stop",
+    "replace_exit_with_preset",
+    "drop_exit_policy",
+    "nudge_exit_param_ref",
+)
 MUTATION_OPERATORS = (
     "rewire",
     "swap_indicator",
@@ -43,7 +58,7 @@ MUTATION_OPERATORS = (
     "swap_exit",
     "add_node",
     "remove_node",
-)
+) + EXIT_MUTATION_OPERATORS
 DEFAULT_MUTATION_OPERATOR_WEIGHTS: dict[str, float] = {
     op: 1.0 for op in MUTATION_OPERATORS
 }
@@ -503,6 +518,71 @@ def _light_mutate_params(
     return _validate_or_raise(mutated, max_nodes=max_nodes, max_depth=max_depth)
 
 
+def _entry_refs(genome: Genome) -> tuple[str, str]:
+    return genome.entry_long.ref, genome.entry_short.ref
+
+
+def _mutate_swap_exit_policy(
+    rng: random.Random,
+    genome: Genome,
+    *,
+    preset_ids: list[str] | None,
+) -> Genome:
+    presets = selected_exit_policy_presets(preset_ids)
+    if not presets:
+        return clone_genome(genome)
+    child = clone_genome(genome)
+    current = get_exit_rule_policy(child)
+    current_id = current.get("preset_id") if current else None
+    choices = [preset for preset in presets if preset.id != current_id] or presets
+    return attach_exit_rule_policy(child, rng.choice(choices))
+
+
+def _mutate_add_exit_stop(rng: random.Random, genome: Genome) -> Genome:
+    if get_exit_rule_policy(genome) is not None:
+        return clone_genome(genome)
+    child = clone_genome(genome)
+    policy = build_single_stop_exit_policy(atr=rng.random() < 0.5)
+    metadata = dict(child.metadata or {})
+    metadata["exit_rule_policy"] = policy
+    child.metadata = metadata
+    return child
+
+
+def _mutate_replace_exit_with_preset(
+    rng: random.Random,
+    genome: Genome,
+    *,
+    preset_ids: list[str] | None,
+) -> Genome:
+    presets = selected_exit_policy_presets(preset_ids)
+    if not presets:
+        return clone_genome(genome)
+    return attach_exit_rule_policy(clone_genome(genome), rng.choice(presets))
+
+
+def _mutate_drop_exit_policy(genome: Genome) -> Genome:
+    if get_exit_rule_policy(genome) is None:
+        return clone_genome(genome)
+    return drop_exit_rule_policy(genome)
+
+
+def _mutate_nudge_exit_param_ref(rng: random.Random, genome: Genome) -> Genome:
+    policy = get_exit_rule_policy(genome)
+    if policy is None:
+        return clone_genome(genome)
+    child = clone_genome(genome)
+    params = dict(policy.get("params") or {})
+    if not params:
+        return child
+    exit_name = rng.choice(sorted(params.keys()))
+    params[exit_name] = {"param": genome_exit_param_ref(exit_name)}
+    metadata = dict(child.metadata or {})
+    metadata["exit_rule_policy"] = {**policy, "params": params}
+    child.metadata = metadata
+    return child
+
+
 def mutate_genome(
     rng: random.Random,
     genome: Genome,
@@ -513,9 +593,11 @@ def mutate_genome(
     min_signals: int = 0,
     repair_max_attempts: int = 8,
     operator_weights: dict[str, float] | None = None,
+    exit_policy_preset_ids: list[str] | None = None,
 ) -> Genome:
     weights = operator_weights or DEFAULT_MUTATION_OPERATOR_WEIGHTS
     op = _weighted_choice(rng, MUTATION_OPERATORS, weights)
+    before_entries = _entry_refs(genome)
     if op == "rewire":
         mutated = _mutate_rewire(rng, genome, max_nodes=max_nodes, max_depth=max_depth)
     elif op == "swap_indicator":
@@ -534,11 +616,28 @@ def mutate_genome(
         mutated = _mutate_swap_exit(rng, genome, max_nodes=max_nodes, max_depth=max_depth)
     elif op == "add_node":
         mutated = _mutate_add_node(rng, genome, max_nodes=max_nodes, max_depth=max_depth)
-    else:
+    elif op == "remove_node":
         mutated = _mutate_remove_node(rng, genome, max_nodes=max_nodes, max_depth=max_depth)
+    elif op == "swap_exit_policy":
+        mutated = _mutate_swap_exit_policy(
+            rng, genome, preset_ids=exit_policy_preset_ids
+        )
+    elif op == "add_exit_stop":
+        mutated = _mutate_add_exit_stop(rng, genome)
+    elif op == "replace_exit_with_preset":
+        mutated = _mutate_replace_exit_with_preset(
+            rng, genome, preset_ids=exit_policy_preset_ids
+        )
+    elif op == "drop_exit_policy":
+        mutated = _mutate_drop_exit_policy(genome)
+    else:
+        mutated = _mutate_nudge_exit_param_ref(rng, genome)
 
     metadata = dict(mutated.metadata)
     metadata["last_mutation_op"] = op
+    if op in EXIT_MUTATION_OPERATORS:
+        metadata["last_exit_mutation_op"] = op
+        assert _entry_refs(mutated) == before_entries
     mutated.metadata = metadata
     return mutated
 
@@ -1138,6 +1237,30 @@ def _draw_tradeable_random_genome(
     )
 
 
+def _seed_exit_policy_variants(
+    rng: random.Random,
+    population: list[Genome],
+    *,
+    seed_exit_policies: bool,
+    exit_policy_preset_ids: list[str] | None,
+    exit_policy_seed_fraction: float,
+) -> None:
+    if not seed_exit_policies or exit_policy_seed_fraction <= 0:
+        return
+    presets = selected_exit_policy_presets(exit_policy_preset_ids)
+    if not presets:
+        return
+    seed_count = max(1, int(round(len(population) * exit_policy_seed_fraction)))
+    seed_count = min(seed_count, len(population))
+    indices = rng.sample(range(len(population)), seed_count)
+    for index in indices:
+        preset = presets[index % len(presets)]
+        population[index] = attach_exit_rule_policy(
+            clone_genome(population[index]),
+            preset,
+        )
+
+
 def build_initial_population(
     rng: random.Random,
     *,
@@ -1147,6 +1270,9 @@ def build_initial_population(
     ohlcv: pd.DataFrame | None = None,
     min_seed_signals: int = 0,
     repair_max_attempts: int = 8,
+    seed_exit_policies: bool = False,
+    exit_policy_preset_ids: list[str] | None = None,
+    exit_policy_seed_fraction: float = 0.25,
 ) -> list[Genome]:
     population: list[Genome] = []
     registry_templates = list(REGISTRY_GENOME_FIXTURES.values())
@@ -1207,6 +1333,13 @@ def build_initial_population(
             )
         population.append(genome)
 
+    _seed_exit_policy_variants(
+        rng,
+        population,
+        seed_exit_policies=seed_exit_policies,
+        exit_policy_preset_ids=exit_policy_preset_ids,
+        exit_policy_seed_fraction=exit_policy_seed_fraction,
+    )
     return population
 
 

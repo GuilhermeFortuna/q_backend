@@ -15,6 +15,12 @@ from q_backend.backtesting.genome.node_specs import (
     parse_input_ref,
     port_output_type,
 )
+from q_backend.backtesting.genome.exit_rule_policy import (
+    get_exit_rule_policy,
+    preset_by_id,
+    preset_exit_param_names,
+    selected_exit_policy_presets,
+)
 from q_backend.backtesting.genome.param_bounds import GENOME_PARAM_BOUNDS
 from q_backend.backtesting.genome.schema import Genome, GenomeNode
 
@@ -152,6 +158,44 @@ def validate_genome(
             )
 
     _validate_signal_refs(genome, nodes_by_id)
+    _validate_exit_rule_policy(genome)
+
+
+def _validate_exit_rule_policy(genome: Genome) -> None:
+    policy = get_exit_rule_policy(genome)
+    if policy is None:
+        return
+
+    preset_id = policy.get("preset_id")
+    if not isinstance(preset_id, str) or not preset_id:
+        raise GenomeValidationError("exit_rule_policy.preset_id must be a non-empty string.")
+
+    known_preset_ids = {preset.id for preset in selected_exit_policy_presets(None)}
+    known_preset_ids.update({"fixed_stop_only", "atr_stop_only"})
+    if preset_id not in known_preset_ids:
+        raise GenomeValidationError(
+            f"exit_rule_policy preset_id '{preset_id}' is not a supported exit preset."
+        )
+
+    params = policy.get("params")
+    if not isinstance(params, dict) or not params:
+        raise GenomeValidationError("exit_rule_policy.params must be a non-empty object.")
+
+    for exit_name, binding in params.items():
+        if not _is_param_ref(binding):
+            continue
+        param_key = str(binding["param"])
+        if param_key not in GENOME_PARAM_BOUNDS:
+            raise GenomeValidationError(
+                f"exit_rule_policy param ref '{param_key}' is not in GENOME_PARAM_BOUNDS."
+            )
+        if preset_id not in {"fixed_stop_only", "atr_stop_only"}:
+            preset = preset_by_id(preset_id)
+            allowed = set(preset_exit_param_names(preset))
+            if exit_name not in allowed:
+                raise GenomeValidationError(
+                    f"exit_rule_policy param '{exit_name}' is not part of preset '{preset_id}'."
+                )
 
 
 def _assert_acyclic(nodes_by_id: dict[str, GenomeNode]) -> None:
@@ -262,4 +306,9 @@ def collect_genome_param_keys(genome: Genome) -> set[str]:
     keys: set[str] = set()
     for node in genome.nodes:
         keys.update(_literal_param_keys(node.params))
+    policy = get_exit_rule_policy(genome)
+    if policy is not None:
+        for value in policy.get("params", {}).values():
+            if _is_param_ref(value):
+                keys.add(str(value["param"]))
     return keys

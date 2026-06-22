@@ -290,6 +290,17 @@ class StrategySearchCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     genome_node_count: Mapped[Optional[int]] = mapped_column(nullable=True)
     dsr: Mapped[Optional[float]] = mapped_column(nullable=True)
     complexity_penalty: Mapped[Optional[float]] = mapped_column(nullable=True)
+    exit_preset_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    exit_preset_label: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    exit_policy_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    exit_policy_label: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    last_exit_mutation_op: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    exit_param_names: Mapped[Optional[list[str]]] = mapped_column(
+        PortableJSON, nullable=True
+    )
+    diagnostics: Mapped[Optional[dict[str, Any]]] = mapped_column(
+        PortableJSON, nullable=True
+    )
 
     run: Mapped["StrategySearchRun"] = relationship(back_populates="candidates")
 

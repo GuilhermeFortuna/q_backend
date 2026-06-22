@@ -16,8 +16,11 @@ from typing import Any, Literal, Optional
 import pandas as pd
 
 from q_backend.backtesting.genome.activity import genome_signal_activity
+from q_backend.backtesting.genome.exit_rule_policy import exit_policy_metadata_for_genome
 from q_backend.backtesting.genome.operators import genome_node_count
 from q_backend.backtesting.genome.schema import Genome
+from q_backend.backtesting.models import Trade
+from q_backend.optimization.exit_quality import summarize_exit_quality
 from q_backend.optimization.backtest_runner import BacktestRunner, DefaultBacktestRunner
 from q_backend.optimization.genetic_search import (
     GeneticCandidateProvider,
@@ -30,6 +33,7 @@ from q_backend.optimization.lockbox import compute_lockbox_bounds
 from q_backend.optimization.strategy_search import (
     CandidateProvider,
     CandidateResult,
+    GeneticSearchConfig,
     RegistryCandidateProvider,
     SearchProgress,
     StrategySearchConfig,
@@ -256,6 +260,63 @@ def _build_result_summary(result: StrategySearchResult) -> dict[str, Any]:
     return summary
 
 
+def _build_candidate_trades_dataframes(
+    candidates: list[CandidateResult],
+) -> dict[str, pd.DataFrame]:
+    trades: dict[str, pd.DataFrame] = {}
+    for candidate in candidates:
+        if not candidate.oos_trades:
+            continue
+        trades[candidate.candidate_id] = pd.DataFrame(
+            [trade.model_dump(mode="json") for trade in candidate.oos_trades]
+        )
+    return trades
+
+
+def _exit_quality_from_diagnostics(diagnostics: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not diagnostics:
+        return None
+    exit_quality = diagnostics.get("exit_quality")
+    return exit_quality if isinstance(exit_quality, dict) else None
+
+
+def _attach_exit_quality_fields(
+    payload: dict[str, Any],
+    *,
+    diagnostics: dict[str, Any] | None,
+    run_id: str | None = None,
+    candidate_id: str | None = None,
+    bars: pd.DataFrame | None = None,
+) -> None:
+    exit_quality = _exit_quality_from_diagnostics(diagnostics)
+    if exit_quality is None and run_id is not None and candidate_id is not None:
+        exit_quality = _rebuild_exit_quality_from_lake(
+            run_id, candidate_id, bars=bars
+        )
+    if exit_quality is not None:
+        payload["exit_quality"] = exit_quality
+    if diagnostics:
+        payload["diagnostics"] = diagnostics
+
+
+def _rebuild_exit_quality_from_lake(
+    run_id: str,
+    candidate_id: str,
+    *,
+    bars: pd.DataFrame | None = None,
+) -> dict[str, Any] | None:
+    try:
+        trades_df = read_strategy_search_candidate_artifact(
+            run_id, candidate_id, "oos_trades"
+        )
+    except FileNotFoundError:
+        return None
+    if trades_df.empty:
+        return None
+    trades = [Trade.model_validate(record) for record in trades_df.to_dict("records")]
+    return summarize_exit_quality(trades, bars=bars)
+
+
 def _build_leaderboard_dataframe(
     candidates: list[CandidateResult],
     *,
@@ -285,6 +346,9 @@ def _build_leaderboard_dataframe(
                 "genome_node_count": meta.get("genome_node_count"),
                 "dsr": meta.get("dsr"),
                 "complexity_penalty": meta.get("complexity_penalty"),
+                "exit_preset_id": meta.get("exit_preset_id"),
+                "exit_preset_label": meta.get("exit_preset_label"),
+                "exit_param_names_json": json.dumps(meta.get("exit_param_names") or []),
             }
         )
     return pd.DataFrame(rows)
@@ -340,6 +404,9 @@ def _write_lake_artifacts(
                 result.candidates, candidate_metadata=metadata
             ),
             _build_candidate_equity_dataframes(result.candidates),
+            candidate_trades=_build_candidate_trades_dataframes(
+                _candidates_for_persistence(result)
+            ),
             generation_leaderboards=generation_leaderboards,
             candidate_genomes=candidate_genomes or None,
             lockbox_equity=lockbox_equity,
@@ -386,6 +453,13 @@ def _persist_run_finish(job: StrategySearchJob, terminal_status: JobStatus) -> N
                         genome_node_count=meta.get("genome_node_count"),
                         dsr=meta.get("dsr"),
                         complexity_penalty=meta.get("complexity_penalty"),
+                        exit_preset_id=meta.get("exit_preset_id"),
+                        exit_preset_label=meta.get("exit_preset_label"),
+                        exit_policy_id=meta.get("exit_policy_id"),
+                        exit_policy_label=meta.get("exit_policy_label"),
+                        last_exit_mutation_op=meta.get("last_exit_mutation_op"),
+                        exit_param_names=meta.get("exit_param_names"),
+                        diagnostics=candidate.diagnostics,
                     )
             update_strategy_search_run(
                 session,
@@ -539,6 +613,13 @@ def _candidate_runner(request: StrategySearchConfig) -> DefaultBacktestRunner:
     )
 
 
+def _candidate_ohlcv(request: StrategySearchConfig) -> pd.DataFrame:
+    backtest = request.backtest
+    return load_ohlcv_frame(
+        backtest.symbol, backtest.timeframe, backtest.start, backtest.end
+    )
+
+
 def _genetic_probe_frame(request: StrategySearchConfig) -> pd.DataFrame | None:
     """Load the run's OHLCV once for gen-0 viability seeding, mutation repair, and
     the pre-screen. Returns ``None`` when both viability knobs are disabled so the
@@ -559,6 +640,24 @@ def _genetic_probe_frame(request: StrategySearchConfig) -> pd.DataFrame | None:
             backtest.symbol,
         )
         return None
+
+
+def _genetic_staged_metadata(
+    genome: Genome,
+    *,
+    generation: int,
+    genetic: GeneticSearchConfig,
+) -> dict[str, Any]:
+    meta: dict[str, Any] = {
+        "generation": generation,
+        "genome": genome.model_dump(),
+        "genome_node_count": genome_node_count(genome),
+        "complexity_penalty": _complexity_penalty(genome, genetic),
+    }
+    policy_meta = exit_policy_metadata_for_genome(genome)
+    if policy_meta:
+        meta.update(policy_meta)
+    return meta
 
 
 def _progress_job(
@@ -659,7 +758,11 @@ def run_candidate(
     if not is_cancelled(run_id):
         try:
             result = evaluate_candidate(
-                candidate, request, _candidate_runner(request), run_id=run_id
+                candidate,
+                request,
+                _candidate_runner(request),
+                ohlcv=_candidate_ohlcv(request),
+                run_id=run_id,
             )
         except Exception as exc:  # noqa: BLE001 - isolate a single candidate failure
             logger.exception(
@@ -825,12 +928,11 @@ def _dispatch_generation(
             genetic_staging.set_candidate_meta(
                 run_id,
                 {
-                    genome.genome_id: {
-                        "generation": generation,
-                        "genome": genome.model_dump(),
-                        "genome_node_count": genome_node_count(genome),
-                        "complexity_penalty": _complexity_penalty(genome, genetic),
-                    }
+                    genome.genome_id: _genetic_staged_metadata(
+                        genome,
+                        generation=generation,
+                        genetic=genetic,
+                    )
                 },
             )
         else:
@@ -906,6 +1008,7 @@ def run_genetic_candidate(
                 candidate,
                 _config_for_walkforward(request),
                 _candidate_runner(request),
+                ohlcv=_candidate_ohlcv(request),
                 progress_callback=on_window,
                 should_stop=lambda: is_cancelled(run_id),
                 run_id=run_id,
@@ -924,12 +1027,11 @@ def run_genetic_candidate(
         genetic_staging.set_candidate_meta(
             run_id,
             {
-                genome.genome_id: {
-                    "generation": generation,
-                    "genome": genome.model_dump(),
-                    "genome_node_count": genome_node_count(genome),
-                    "complexity_penalty": _complexity_penalty(genome, genetic),
-                }
+                genome.genome_id: _genetic_staged_metadata(
+                    genome,
+                    generation=generation,
+                    genetic=genetic,
+                )
             },
         )
 
@@ -1055,10 +1157,13 @@ def finalize_discovery(run_id: str, db_run_id_hex: str, config_json: str) -> Non
         results = [candidate_result_from_dict(p) for p in load_partials(run_id)]
         ranked = _rank_results(results)
         best = ranked[0] if ranked and ranked[0].rank == 1 else None
+        provider = RegistryCandidateProvider(request)
+        provider_metadata = provider.candidate_metadata()
         job.result = StrategySearchResult(
             candidates=ranked,
             objective_mode=request.objective.mode,
             best=best,
+            candidate_metadata=provider_metadata or None,
         )
         job.total_candidates = len(ranked)
         job.lake_paths = _write_lake_artifacts(run_id, job.result)
@@ -1136,6 +1241,22 @@ def _serialize_candidate(
             payload["dsr"] = metadata["dsr"]
         if metadata.get("complexity_penalty") is not None:
             payload["complexity_penalty"] = metadata["complexity_penalty"]
+        if metadata.get("exit_preset_id") is not None:
+            payload["exit_preset_id"] = metadata["exit_preset_id"]
+        if metadata.get("exit_preset_label") is not None:
+            payload["exit_preset_label"] = metadata["exit_preset_label"]
+        if metadata.get("exit_param_names") is not None:
+            payload["exit_param_names"] = metadata["exit_param_names"]
+        if metadata.get("exit_policy_id") is not None:
+            payload["exit_policy_id"] = metadata["exit_policy_id"]
+        if metadata.get("exit_policy_label") is not None:
+            payload["exit_policy_label"] = metadata["exit_policy_label"]
+        if metadata.get("last_exit_mutation_op") is not None:
+            payload["last_exit_mutation_op"] = metadata["last_exit_mutation_op"]
+    _attach_exit_quality_fields(
+        payload,
+        diagnostics=candidate.diagnostics,
+    )
     return payload
 
 
@@ -1182,7 +1303,7 @@ def results_payload(job: StrategySearchJob) -> Optional[dict[str, Any]]:
     }
 
 
-def _serialize_db_candidate(candidate) -> dict[str, Any]:
+def _serialize_db_candidate(candidate, *, run_id: str | None = None) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "candidate_id": candidate.candidate_id,
         "strategy": candidate.strategy,
@@ -1210,6 +1331,24 @@ def _serialize_db_candidate(candidate) -> dict[str, Any]:
         payload["dsr"] = candidate.dsr
     if candidate.complexity_penalty is not None:
         payload["complexity_penalty"] = candidate.complexity_penalty
+    if candidate.exit_preset_id is not None:
+        payload["exit_preset_id"] = candidate.exit_preset_id
+    if candidate.exit_preset_label is not None:
+        payload["exit_preset_label"] = candidate.exit_preset_label
+    if candidate.exit_param_names is not None:
+        payload["exit_param_names"] = candidate.exit_param_names
+    if candidate.exit_policy_id is not None:
+        payload["exit_policy_id"] = candidate.exit_policy_id
+    if candidate.exit_policy_label is not None:
+        payload["exit_policy_label"] = candidate.exit_policy_label
+    if candidate.last_exit_mutation_op is not None:
+        payload["last_exit_mutation_op"] = candidate.last_exit_mutation_op
+    _attach_exit_quality_fields(
+        payload,
+        diagnostics=candidate.diagnostics,
+        run_id=run_id,
+        candidate_id=candidate.candidate_id,
+    )
     return payload
 
 
@@ -1336,7 +1475,9 @@ def results_payload_from_db(run_id: str) -> Optional[dict[str, Any]]:
     candidates = sorted(
         run.candidates, key=lambda item: (item.rank or 10_000, item.candidate_id)
     )
-    serialized = [_serialize_db_candidate(candidate) for candidate in candidates]
+    serialized = [
+        _serialize_db_candidate(candidate, run_id=run_id) for candidate in candidates
+    ]
     best = next((item for item in serialized if item.get("rank") == 1), None)
 
     return {

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from q_backend.backtesting.genome.exit_rule_policy import exit_policy_enable_param_names
 from q_backend.backtesting.genome.param_bounds import GENOME_PARAM_BOUNDS
 from q_backend.backtesting.genome.schema import Genome
 from q_backend.backtesting.genome.validate import collect_genome_param_keys
@@ -37,6 +38,21 @@ def _search_param_from_spec(spec: StrategyParamSpec) -> SearchParam | None:
     return None
 
 
+def _force_enable_param_includes_off(param: SearchParam) -> SearchParam:
+    if isinstance(param, IntParam):
+        return IntParam(low=0, high=param.high, step=param.step)
+    if isinstance(param, FloatParam):
+        return FloatParam(low=0.0, high=param.high, step=param.step)
+    return param
+
+
+def _exit_runtime_name_for_genome_key(genome_key: str) -> str | None:
+    prefix = "exit_"
+    if not genome_key.startswith(prefix):
+        return None
+    return genome_key.removeprefix(prefix)
+
+
 def derive_genome_search_space(
     genome: Genome | dict[str, Any],
 ) -> tuple[SearchSpaceConfig, dict[str, Any]]:
@@ -49,6 +65,7 @@ def derive_genome_search_space(
     if isinstance(genome, dict):
         genome = Genome.model_validate(genome)
 
+    enable_runtime_names = exit_policy_enable_param_names(genome)
     strategy_params: dict[str, SearchParam] = {}
     fixed_params: dict[str, Any] = {}
 
@@ -56,6 +73,9 @@ def derive_genome_search_space(
         spec = GENOME_PARAM_BOUNDS[key]
         search_param = _search_param_from_spec(spec)
         if search_param is not None:
+            runtime_name = _exit_runtime_name_for_genome_key(key)
+            if runtime_name is not None and runtime_name in enable_runtime_names:
+                search_param = _force_enable_param_includes_off(search_param)
             strategy_params[key] = search_param
         else:
             fixed_params[key] = spec.default

@@ -24,9 +24,15 @@ from q_backend.backtesting.strategy_registry import (
     get_registered_strategy,
     list_registered_strategies,
 )
+from q_backend.backtesting.exit_rules.presets import EXIT_PRESETS
+from q_backend.backtesting.strategy_registry import ExitPreset
 from q_backend.optimization.auto_search_space import (
     auto_search_space,
     derive_strategy_search_space,
+)
+from q_backend.optimization.exit_preset_search_space import (
+    derive_exit_preset_search_space,
+    preset_exit_param_names,
 )
 from q_backend.optimization.backtest_runner import (
     BacktestRunConfig,
@@ -43,9 +49,12 @@ from q_backend.optimization.models import (
     StudyConfig,
 )
 from q_backend.optimization.objectives import resolve_objective
+from q_backend.backtesting.models import Trade
+from q_backend.optimization.exit_quality import score_exit_quality, summarize_exit_quality
 from q_backend.optimization.walkforward import (
     WalkForwardConfig,
     WalkForwardProgress,
+    WalkForwardResult,
     WalkForwardRunner,
     WalkForwardWindowResult,
 )
@@ -70,6 +79,19 @@ class LockboxConfig(BaseModel):
         if self.enabled and self.lockbox_pct is not None and self.lockbox_days is not None:
             raise ValueError("lockbox_pct and lockbox_days are mutually exclusive")
         return self
+
+
+class ExitPresetSearchConfig(BaseModel):
+    enabled: bool = False
+    preset_ids: list[str] | None = None
+    include_baseline: bool = True
+    pin_non_preset_exits_off: bool = True
+
+
+class ExitQualityScoringConfig(BaseModel):
+    enabled: bool = False
+    min_mfe_capture_ratio: float | None = None
+    max_profit_giveback_pct: float | None = None
 
 
 class GeneticSearchConfig(BaseModel):
@@ -98,6 +120,9 @@ class GeneticSearchConfig(BaseModel):
     mutation_rate_max: float = Field(default=0.50, ge=0.0, le=1.0)
     stagnation_patience: int = Field(default=2, ge=1)
     adaptive_operator_weights: bool = True
+    seed_exit_policies: bool = True
+    exit_policy_preset_ids: list[str] | None = None
+    exit_policy_seed_fraction: float = Field(default=0.25, ge=0.0, le=1.0)
 
     @model_validator(mode="after")
     def validate_elite_count(self) -> GeneticSearchConfig:
@@ -105,6 +130,17 @@ class GeneticSearchConfig(BaseModel):
             raise ValueError("elite_count must be less than population_size")
         if self.mutation_rate_min > self.mutation_rate_max:
             raise ValueError("mutation_rate_min must be <= mutation_rate_max")
+        if self.exit_policy_preset_ids is not None:
+            from q_backend.backtesting.exit_rules.presets import EXIT_PRESETS
+
+            known = {preset.id for preset in EXIT_PRESETS}
+            unknown = [
+                preset_id
+                for preset_id in self.exit_policy_preset_ids
+                if preset_id not in known
+            ]
+            if unknown:
+                raise ValueError(f"Unknown exit policy preset id(s): {', '.join(unknown)}")
         return self
 
 
@@ -118,6 +154,10 @@ class StrategySearchConfig(BaseModel):
     gates: GateConfig = Field(default_factory=GateConfig)
     genetic: GeneticSearchConfig | None = None
     lockbox: LockboxConfig = Field(default_factory=LockboxConfig)
+    exit_presets: ExitPresetSearchConfig = Field(default_factory=ExitPresetSearchConfig)
+    exit_quality_scoring: ExitQualityScoringConfig = Field(
+        default_factory=ExitQualityScoringConfig
+    )
 
     @model_validator(mode="after")
     def reject_multi_objective(self) -> StrategySearchConfig:
@@ -127,6 +167,27 @@ class StrategySearchConfig(BaseModel):
                 "multi-objective ranking is not supported"
             )
         return self
+
+    @model_validator(mode="after")
+    def reject_exit_presets_with_genetic(self) -> StrategySearchConfig:
+        if self.genetic is not None and self.exit_presets.enabled:
+            raise ValueError(
+                "exit_presets is not supported with genetic search; "
+                "genetic exit-policy evolution is WO80"
+            )
+        if self.exit_presets.enabled and self.exit_presets.preset_ids is not None:
+            known = {preset.id for preset in EXIT_PRESETS}
+            unknown = [
+                preset_id
+                for preset_id in self.exit_presets.preset_ids
+                if preset_id not in known
+            ]
+            if unknown:
+                raise ValueError(f"Unknown exit preset id(s): {', '.join(unknown)}")
+        return self
+
+
+METADATA_FIXED_PARAM_KEYS = frozenset({"_exit_preset_id"})
 
 
 @dataclass(frozen=True)
@@ -154,6 +215,8 @@ class CandidateResult:
     window_count: int = 0
     completed_windows: int = 0
     oos_equity_curve: pd.Series | None = None
+    oos_trades: list[Trade] = field(default_factory=list)
+    diagnostics: dict[str, Any] | None = None
     error: str | None = None
 
 
@@ -210,35 +273,88 @@ class _FixedParamsBacktestRunner:
         return self.inner.run(replace(config, strategy_params=merged))
 
 
+def _selected_exit_presets(config: ExitPresetSearchConfig) -> list[ExitPreset]:
+    if config.preset_ids is None:
+        return list(EXIT_PRESETS)
+    by_id = {preset.id: preset for preset in EXIT_PRESETS}
+    return [by_id[preset_id] for preset_id in config.preset_ids]
+
+
 class RegistryCandidateProvider:
     """Yield one ``SearchCandidate`` per selected candle strategy via WO30."""
 
     def __init__(self, config: StrategySearchConfig) -> None:
         self._config = config
         self._unsupported_names: list[str] = []
+        self._candidate_metadata: dict[str, dict[str, Any]] = {}
 
     def candidates(self) -> Iterable[SearchCandidate]:
+        exit_cfg = self._config.exit_presets
+        presets = _selected_exit_presets(exit_cfg) if exit_cfg.enabled else []
+
         for info in self._selected_infos():
             if info.engine == "tick":
                 self._unsupported_names.append(info.name)
                 continue
-            search_space = auto_search_space(
-                info.name,
-                include_risk=self._config.include_risk_search,
-            )
-            _, fixed_params = derive_strategy_search_space(info.name)
-            yield SearchCandidate(
-                candidate_id=info.name,
-                strategy=info.name,
-                search_space=search_space,
-                fixed_params=fixed_params,
-            )
+
+            if not exit_cfg.enabled:
+                yield self._baseline_candidate(info)
+                continue
+
+            if exit_cfg.include_baseline:
+                yield self._baseline_candidate(info)
+
+            for preset in presets:
+                yield self._exit_preset_candidate(info, preset)
+
+    def candidate_metadata(self) -> dict[str, dict[str, Any]]:
+        if self._config.exit_presets.enabled and not self._candidate_metadata:
+            list(self.candidates())
+        return dict(self._candidate_metadata)
 
     def unsupported_names(self) -> list[str]:
         return list(self._unsupported_names)
 
     def report(self, results: list[CandidateResult]) -> None:
         return None
+
+    def _baseline_candidate(self, info: StrategyInfo) -> SearchCandidate:
+        search_space = auto_search_space(
+            info.name,
+            include_risk=self._config.include_risk_search,
+        )
+        _, fixed_params = derive_strategy_search_space(info.name)
+        return SearchCandidate(
+            candidate_id=info.name,
+            strategy=info.name,
+            search_space=search_space,
+            fixed_params=fixed_params,
+        )
+
+    def _exit_preset_candidate(
+        self, info: StrategyInfo, preset: ExitPreset
+    ) -> SearchCandidate:
+        exit_cfg = self._config.exit_presets
+        candidate_id = f"{info.name}__exit_{preset.id}"
+        search_space, fixed_params = derive_exit_preset_search_space(
+            info.name,
+            preset,
+            include_risk=self._config.include_risk_search,
+            pin_non_preset_exits_off=exit_cfg.pin_non_preset_exits_off,
+        )
+        fixed_params = {**fixed_params, "_exit_preset_id": preset.id}
+        exit_param_names = preset_exit_param_names(preset)
+        self._candidate_metadata[candidate_id] = {
+            "exit_preset_id": preset.id,
+            "exit_preset_label": preset.label,
+            "exit_param_names": exit_param_names,
+        }
+        return SearchCandidate(
+            candidate_id=candidate_id,
+            strategy=info.name,
+            search_space=search_space,
+            fixed_params=fixed_params,
+        )
 
     def _selected_infos(self) -> list[StrategyInfo]:
         if self._config.strategies is None:
@@ -249,15 +365,24 @@ class RegistryCandidateProvider:
         return infos
 
 
+def _strategy_fixed_params(fixed_params: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in fixed_params.items()
+        if key not in METADATA_FIXED_PARAM_KEYS
+    }
+
+
 def _runner_for_candidate(
     backtest_runner: BacktestRunner,
     fixed_params: dict[str, Any],
 ) -> BacktestRunner:
-    if not fixed_params:
+    strategy_params = _strategy_fixed_params(fixed_params)
+    if not strategy_params:
         return backtest_runner
     return _FixedParamsBacktestRunner(
         inner=backtest_runner,
-        fixed_strategy_params=fixed_params,
+        fixed_strategy_params=strategy_params,
     )
 
 
@@ -357,6 +482,40 @@ def _apply_gates(
         if is_suspicious:
             flags.append("suspicious_efficiency")
     return flags, len(flags) == 0
+
+
+def _collect_oos_trades(wf_result: WalkForwardResult) -> list[Trade]:
+    return [
+        trade
+        for window in wf_result.windows
+        if window.status == "completed"
+        for trade in window.oos_trades
+    ]
+
+
+def _attach_exit_quality_diagnostics(
+    result: CandidateResult,
+    *,
+    oos_trades: list[Trade],
+    bars: pd.DataFrame | None,
+    scoring: ExitQualityScoringConfig,
+) -> None:
+    if not oos_trades:
+        return
+
+    exit_quality = summarize_exit_quality(oos_trades, bars=bars)
+    diagnostics: dict[str, Any] = {"exit_quality": exit_quality}
+
+    if scoring.enabled:
+        soft_score = score_exit_quality(
+            exit_quality,
+            min_mfe_capture_ratio=scoring.min_mfe_capture_ratio,
+            max_profit_giveback_pct=scoring.max_profit_giveback_pct,
+        )
+        if soft_score is not None:
+            diagnostics["exit_quality_score"] = soft_score
+
+    result.diagnostics = diagnostics
 
 
 def _unsupported_result(strategy_name: str) -> CandidateResult:
@@ -460,6 +619,15 @@ def evaluate_candidate(
     base.gate_flags = gate_flags
     base.passed_gates = passed
     base.status = "completed"
+
+    oos_trades = _collect_oos_trades(wf_result)
+    base.oos_trades = oos_trades
+    _attach_exit_quality_diagnostics(
+        base,
+        oos_trades=oos_trades,
+        bars=ohlcv,
+        scoring=config.exit_quality_scoring,
+    )
     return base
 
 
@@ -590,8 +758,14 @@ class StrategySearchRunner:
         provider.report(results)
         ranked = _rank_results(results)
         best = ranked[0] if ranked and ranked[0].rank == 1 else None
+        metadata: dict[str, dict[str, Any]] | None = None
+        if isinstance(provider, RegistryCandidateProvider):
+            provider_metadata = provider.candidate_metadata()
+            if provider_metadata:
+                metadata = provider_metadata
         return StrategySearchResult(
             candidates=ranked,
             objective_mode=self.config.objective.mode,
             best=best,
+            candidate_metadata=metadata,
         )

@@ -210,6 +210,61 @@ def test_registry_sweep_backward_compatible_summary(
     assert "lockbox" not in results["search_config"]
 
 
+def test_genetic_exit_policy_metadata_persists_and_reloads(
+    run_jobs_sync, api_db_session, api_session_scope, lake_root_path
+):
+    base = _genetic_request(n_trials=2)
+    request = base.model_copy(
+        update={
+            "genetic": base.genetic.model_copy(
+                update={
+                    "population_size": 10,
+                    "generations": 2,
+                    "exit_policy_seed_fraction": 1.0,
+                    "exit_policy_preset_ids": ["atr_stop_chandelier"],
+                }
+            )
+        }
+    )
+
+    with patch("q_backend.api.strategy_search_jobs.session_scope", api_session_scope):
+        job = strategy_search_jobs.start_job(request)
+        live_results = get_strategy_search_results(job.run_id)
+
+    with_policy = [
+        candidate
+        for candidate in live_results["candidates"]
+        if candidate.get("exit_policy_id") == "atr_stop_chandelier"
+    ]
+    assert with_policy, "expected at least one seeded exit-policy candidate"
+    live = with_policy[0]
+    assert live["exit_policy_label"] == "ATR stop + Chandelier trail"
+    assert live["exit_param_names"]
+
+    api_db_session.expire_all()
+    run = get_strategy_search_run(api_db_session, uuid.UUID(hex=job.run_id))
+    persisted = next(
+        candidate
+        for candidate in run.candidates
+        if candidate.candidate_id == live["candidate_id"]
+    )
+    assert persisted.exit_policy_id == "atr_stop_chandelier"
+    assert persisted.exit_policy_label == "ATR stop + Chandelier trail"
+    assert persisted.exit_param_names == live["exit_param_names"]
+
+    with patch("q_backend.api.strategy_search_jobs.session_scope", api_session_scope):
+        reloaded = get_strategy_search_results(job.run_id)
+
+    reloaded_candidate = next(
+        candidate
+        for candidate in reloaded["candidates"]
+        if candidate["candidate_id"] == live["candidate_id"]
+    )
+    assert reloaded_candidate["exit_policy_id"] == live["exit_policy_id"]
+    assert reloaded_candidate["exit_policy_label"] == live["exit_policy_label"]
+    assert reloaded_candidate["exit_param_names"] == live["exit_param_names"]
+
+
 def test_genetic_run_persists_metadata(
     run_jobs_sync, api_db_session, api_session_scope, lake_root_path
 ):

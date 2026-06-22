@@ -7,7 +7,12 @@ from typing import Any, List
 import numpy as np
 import pandas as pd
 
+from q_backend.backtesting.exit_strategy import ExitStrategy
 from q_backend.backtesting.genome.compile import ExecutionPlan, compile_genome
+from q_backend.backtesting.genome.exit_rule_policy import (
+    get_exit_rule_policy,
+    resolve_exit_params_from_policy,
+)
 from q_backend.backtesting.genome.schema import Genome
 from q_backend.backtesting.models import Signal, SignalAction, Trade
 from q_backend.backtesting.moving_averages import compute_ma, normalize_ma_type
@@ -88,12 +93,24 @@ class CompositeStrategy(TradingStrategy):
         self.genome = genome
         self.trial_params = dict(params or {})
         self.symbol = symbol
+        self._exit_rule_policy = get_exit_rule_policy(genome)
         self._plan: ExecutionPlan | None = None
         self._timestamp_to_bar: pd.Series | None = None
         self._series_cache: dict[str, dict[str, pd.Series]] = {}
         self._last_data_len: int | None = None
         self._compiled_params_key: tuple[tuple[str, Any], ...] | None = None
         super().__init__(genome=genome.model_dump(), params=self.trial_params, symbol=symbol, **kwargs)
+        self._refresh_exit_strategy()
+
+    def _refresh_exit_strategy(self) -> None:
+        if self._exit_rule_policy is None:
+            self.exit_strategy = ExitStrategy(self.trial_params)
+            return
+        runtime_params = resolve_exit_params_from_policy(
+            self._exit_rule_policy,
+            self.trial_params,
+        )
+        self.exit_strategy = ExitStrategy(runtime_params)
 
     @property
     def plan(self) -> ExecutionPlan:
@@ -107,6 +124,7 @@ class CompositeStrategy(TradingStrategy):
         if params_key != self._compiled_params_key:
             self._plan = None
             self._compiled_params_key = params_key
+            self._refresh_exit_strategy()
 
         data_len = len(df)
         if data_len != self._last_data_len:

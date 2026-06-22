@@ -105,7 +105,26 @@ Genetic strategy search (WO39+) evolves **structure** in a JSON genome document 
 * **`Genome` schema** — versioned DAG of typed nodes (`source.*`, `ind.*`, `cmp.*`, `logic.*`, `exit.*`) with `entry_long` / `entry_short` / `exit_long` / `exit_short` signal refs.
 * **`CompositeStrategy`** — single registry entry (`"CompositeStrategy"`). Each candidate passes its genome in `fixed_params["genome"]`; trial params merge into the genome before interpretation.
 * **Causal by construction** — only backward-looking indicators and `shift(1)` event detection; `transform.shift.bars` is hard-locked to `1`. Covered by `test_strategy_causality.py` (default MA-crossover genome) and `test_composite_genome_causality.py` (seeded random valid genomes).
-* **`derive_genome_search_space(genome)`** — returns WO30-shaped `SearchSpaceConfig` + `fixed_params` from `GENOME_PARAM_BOUNDS`.
+* **`derive_genome_search_space(genome)`** — returns WO30-shaped `SearchSpaceConfig` + `fixed_params` from `GENOME_PARAM_BOUNDS`, including `exit_*` param refs when a genome carries an exit-rule policy (WO80).
+
+Exit-rule policies (WO80) attach composable catalog exits to a genome via `metadata.exit_rule_policy`:
+
+```json
+{
+  "metadata": {
+    "exit_rule_policy": {
+      "preset_id": "atr_stop_chandelier",
+      "params": {
+        "stop_loss_atr": { "param": "exit_stop_loss_atr" },
+        "atr_period": { "param": "exit_atr_period" },
+        "chandelier_atr_mult": { "param": "exit_chandelier_atr_mult" }
+      }
+    }
+  }
+}
+```
+
+`CompositeStrategy` hydrates `ExitStrategy` from the merged trial params (enable/magnitude ranges include `0`). Exit-rule exits run through the engine's standard `exit_strategy.check_exits` path before genome signal exits. This differs from WO79 registry preset expansion, which clones whole strategy candidates for Discovery sweep.
 
 Full grammar and design rationale: [`docs/design/genetic-strategy-search.md`](../q_frontend/docs/design/genetic-strategy-search.md) (§2–§3).
 
@@ -120,6 +139,7 @@ WO39 adds evolution on top of the genome interpreter without changing WO31's eva
 * **Trade-viability (WO53)** — generation and repair bias toward genomes that fire in-sample (`genome_signal_activity`); a cheap pre-screen skips walk-forward for genomes with no entry signals (`prescreen_min_signals`, default `1`; set `0` to disable).
 * **Parallel evaluation (WO54)** — one generation's genomes evaluate concurrently via `ProcessPoolExecutor` (`max_workers` on `GeneticSearchConfig`; `1` or unset single-core keeps the serial path). OHLCV is shipped once per worker process; walk-forward window parallelism is forced to `1` inside workers so candidate fan-out owns the CPU budget. Evolution (`provider.report`) stays single-threaded and deterministic. Defaults: `population_size=48`, `generations=12`.
 * **Stronger operators (WO55)** — crossover exchanges whole compatible sub-DAGs (cut → splice → re-id → orphan prune), with single-node swap as fallback. Mutation rate adapts between `mutation_rate_min` / `mutation_rate_max` from a **structural** stagnation signal (node-kind fingerprints, no extra backtests); mutation operator weights nudge toward ops that recently improved fitness (`adaptive_operator_weights`). This is *variation* diversity and complements WO46's *selection* diversity (OOS-return decorrelation for a low-correlation book).
+* **Exit-policy evolution (WO80)** — `GeneticSearchConfig` can seed a fraction of the initial population with curated exit presets (`seed_exit_policies`, `exit_policy_preset_ids`, `exit_policy_seed_fraction`). Exit-only mutation operators (`swap_exit_policy`, `add_exit_stop`, `replace_exit_with_preset`, `drop_exit_policy`, `nudge_exit_param_ref`) alter `metadata.exit_rule_policy` while preserving `entry_long` / `entry_short`. Candidate metadata includes `exit_policy_id`, `exit_policy_label`, `exit_param_names`, and `last_exit_mutation_op`. These fields are persisted on `strategy_search_candidates` and returned in live and DB-reloaded result payloads (WO83).
 * **Job seam** — `select_search_orchestrator(config, backtest_runner)` returns the genetic orchestrator when `StrategySearchConfig.genetic` is set, else the existing `StrategySearchRunner`.
 
 See design doc §4–§5.3 for operator details and initial population mix (50% mutated registry fixtures / 50% random valid DAGs).
@@ -142,6 +162,40 @@ High DSR and a passing lock-box are **screening signals, not proof** of live edg
 
   clamped to `[min_contracts, max_contracts]`. `target_volatility_pct` is annualized (e.g. `10.0` = 10%). Yang–Zhang and close-to-close estimators live in `technical_indicators.py`.
 * **Strategy search (`optimization/strategy_search.py`):** Automatic discovery sweep — for each registered candle strategy, derive an Optuna search space from the registry (WO30), optimize in-sample per walk-forward window, stitch out-of-sample equity, and rank candidates on OOS performance (never in-sample). Walk-forward **gates** flag weak results (too few windows/trades, low IS/OOS efficiency, suspiciously high efficiency). The `CandidateProvider` protocol is the extension seam: `RegistryCandidateProvider` sweeps built-in strategies; `GeneticCandidateProvider` (WO39) evolves composite genomes via `select_search_orchestrator` when `config.genetic` is set. Both reuse the same `evaluate_candidate` path.
+
+  **Exit-preset expansion (WO79, registry sweep only):** optional `exit_presets` on `StrategySearchConfig`:
+
+  ```json
+  {
+    "enabled": false,
+    "preset_ids": null,
+    "include_baseline": true,
+    "pin_non_preset_exits_off": true
+  }
+  ```
+
+  When `exit_presets.enabled` is true, each selected candle strategy expands into one candidate per backend exit preset (plus the baseline strategy when `include_baseline` is true). Candidate ids follow `{StrategyName}__exit_{preset_id}` (e.g. `MACrossover__exit_fixed_pct_bracket`). Preset-owned exit params are searched with enable ranges whose `low` includes `0`, so the optimizer can explore entry-only and entry-plus-exit within the same candidate — exits are **search candidates, not forced on**. Non-preset applicable exit enable params are pinned to `0` when `pin_non_preset_exits_off` is true. With `enabled: false` (default), behavior is byte-compatible with the pre-WO79 registry sweep. `exit_presets` is rejected when `genetic` is set (WO80).
+
+  **Exit-quality diagnostics (WO81):** completed candidates include optional `exit_quality` on the API payload (also stored in Postgres `diagnostics` JSON). Summaries are computed from stitched **OOS trades only** during `evaluate_candidate`:
+
+  ```json
+  {
+    "exit_quality": {
+      "total_closed_trades": 42,
+      "by_reason": {
+        "fixed_sl": {"trades": 12, "total_pnl": -4200.0, "win_rate": 0.0}
+      },
+      "holding_period": {"median_bars": 8, "p90_bars": 32},
+      "path_quality": {
+        "avg_mfe_capture_ratio": 0.47,
+        "avg_profit_giveback": 310.0,
+        "avg_mae": -180.0
+      }
+    }
+  }
+  ```
+
+  Trade-only metrics (`by_reason`, timestamp-based `holding_period`) are always computed when closed OOS trades exist. Bar-path metrics (`median_bars`/`p90_bars`, `path_quality`) require OHLCV during evaluation or lake `oos_trades` on rebuild. **Ranking is unchanged by default**; optional `exit_quality_scoring` (`enabled: false`) adds soft diagnostic scores only.
 
 * **Advanced Analytics Suite (`TradeRegistry`):** Aggregates execution history and computes comprehensive mathematical metrics:
   * Win Rate, Expectancy, and Profit Factor.
@@ -542,7 +596,7 @@ Worker count is resolved by `q_backend.optimization.parallel.resolve_worker_coun
 ### Strategy search (Discovery)
 * **`POST /api/v1/strategy-search`**
   * *Description:* Launch an asynchronous strategy search (sweep registered candle strategies → optimize → walk-forward validate → OOS-ranked leaderboard).
-  * *Request body:* WO31 `StrategySearchConfig` JSON (`backtest`, `objective`, `walkforward`, `study`, optional `strategies`, `include_risk_search`, `gates`).
+  * *Request body:* WO31 `StrategySearchConfig` JSON (`backtest`, `objective`, `walkforward`, `study`, optional `strategies`, `include_risk_search`, `gates`, optional `exit_presets`).
   * *Response:* `{"run_id": "<32-char hex>", "status": "pending"}`
   * *Errors:* `422` for multi-objective mode, date range too short for `min_windows`, or other validation failures.
 * **`GET /api/v1/strategy-search/{run_id}`**

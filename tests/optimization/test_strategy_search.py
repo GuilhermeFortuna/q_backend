@@ -6,6 +6,7 @@ import pytest
 
 import q_backend.backtesting.strategies  # noqa: F401
 from q_backend.backtesting.strategy_registry import list_registered_strategies
+from q_backend.backtesting.exit_rules.presets import EXIT_PRESETS
 from q_backend.optimization.auto_search_space import derive_strategy_search_space
 from q_backend.optimization.backtest_runner import (
     BacktestRunConfig,
@@ -23,12 +24,16 @@ from q_backend.optimization.models import (
 )
 from q_backend.optimization.strategy_search import (
     CandidateResult,
+    ExitPresetSearchConfig,
     GateConfig,
+    METADATA_FIXED_PARAM_KEYS,
     RegistryCandidateProvider,
     SearchCandidate,
     StrategySearchConfig,
     StrategySearchRunner,
     _rank_results,
+    _runner_for_candidate,
+    evaluate_candidate,
 )
 from q_backend.optimization.walkforward import WalkForwardConfig
 
@@ -196,6 +201,216 @@ def test_registry_provider_respects_explicit_subset():
     names = [candidate.strategy for candidate in provider.candidates()]
     assert names == ["MACrossover", "DonchianBreakout"]
     assert provider.unsupported_names() == ["TickMaBreakout"]
+
+
+def test_registry_provider_default_config_yields_baseline_ids_only():
+    config = _search_config(
+        start=_dt(2024, 1, 1),
+        end=_dt(2024, 6, 1),
+        strategies=["MACrossover", "VMA"],
+    )
+    provider = RegistryCandidateProvider(config)
+    ids = [candidate.candidate_id for candidate in provider.candidates()]
+    assert ids == ["MACrossover", "VMA"]
+    assert provider.candidate_metadata() == {}
+
+
+def test_registry_provider_exit_presets_expand_candidates():
+    config = _search_config(
+        start=_dt(2024, 1, 1),
+        end=_dt(2024, 6, 1),
+        strategies=["MACrossover"],
+    ).model_copy(
+        update={
+            "exit_presets": ExitPresetSearchConfig(
+                enabled=True,
+                preset_ids=["fixed_pct_bracket", "atr_stop_chandelier"],
+                include_baseline=True,
+            )
+        }
+    )
+    provider = RegistryCandidateProvider(config)
+    ids = [candidate.candidate_id for candidate in provider.candidates()]
+    assert ids == [
+        "MACrossover",
+        "MACrossover__exit_fixed_pct_bracket",
+        "MACrossover__exit_atr_stop_chandelier",
+    ]
+    metadata = provider.candidate_metadata()
+    assert metadata["MACrossover__exit_fixed_pct_bracket"]["exit_preset_id"] == "fixed_pct_bracket"
+    assert metadata["MACrossover__exit_atr_stop_chandelier"]["exit_preset_label"] == (
+        "ATR stop + Chandelier trail"
+    )
+
+
+def test_registry_provider_exit_presets_without_baseline():
+    config = _search_config(
+        start=_dt(2024, 1, 1),
+        end=_dt(2024, 6, 1),
+        strategies=["MACrossover"],
+    ).model_copy(
+        update={
+            "exit_presets": ExitPresetSearchConfig(
+                enabled=True,
+                preset_ids=["fixed_pct_bracket"],
+                include_baseline=False,
+            )
+        }
+    )
+    provider = RegistryCandidateProvider(config)
+    ids = [candidate.candidate_id for candidate in provider.candidates()]
+    assert ids == ["MACrossover__exit_fixed_pct_bracket"]
+
+
+def test_exit_presets_rejected_with_genetic_search():
+    start = _dt(2024, 1, 1)
+    end = _dt(2024, 6, 1)
+    with pytest.raises(ValueError, match="exit_presets is not supported with genetic"):
+        StrategySearchConfig(
+            backtest={
+                "symbol": "TEST",
+                "timeframe": "D1",
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "initial_capital": 10_000.0,
+                "point_value": 1.0,
+                "strategy": "MACrossover",
+            },
+            objective=ObjectiveConfig(mode=ObjectiveMode.MAXIMIZE_NET_PROFIT),
+            walkforward=WalkForwardConfig(train_days=30, test_days=15, mode="rolling"),
+            study=StudyConfig(name="genetic", n_trials=1),
+            genetic={"population_size": 12, "generations": 3, "elite_count": 2},
+            exit_presets=ExitPresetSearchConfig(enabled=True),
+        )
+
+
+def test_runner_strips_exit_preset_metadata_from_fixed_params():
+    inner = MagicMock()
+    inner.run.return_value = BacktestRunResult(metrics={"total_trades": 1, "net_profit": 1.0})
+    runner = _runner_for_candidate(
+        inner,
+        {"short_period": 5, "_exit_preset_id": "fixed_pct_bracket"},
+    )
+    runner.run(
+        BacktestRunConfig(
+            symbol="TEST",
+            timeframe="D1",
+            start=_dt(2024, 1, 1),
+            end=_dt(2024, 2, 1),
+            initial_capital=10_000.0,
+            point_value=1.0,
+            strategy="MACrossover",
+            strategy_params={"long_period": 20},
+            position_sizing=None,
+        )
+    )
+    call_config = inner.run.call_args[0][0]
+    assert "_exit_preset_id" not in call_config.strategy_params
+    assert call_config.strategy_params["short_period"] == 5
+    assert call_config.strategy_params["long_period"] == 20
+    assert METADATA_FIXED_PARAM_KEYS == frozenset({"_exit_preset_id"})
+
+
+def test_evaluate_candidate_smoke_merges_exit_preset_params():
+    start = _dt(2024, 1, 1)
+    end = _dt(2024, 4, 30)
+    full_df = _make_intraday_ohlcv(start, 120)
+
+    captured_params: list[dict] = []
+
+    class CaptureParamsRunner:
+        def run(self, config: BacktestRunConfig) -> BacktestRunResult:
+            captured_params.append(dict(config.strategy_params))
+            return DefaultBacktestRunner(
+                data_provider=lambda cfg: full_df.loc[cfg.start : cfg.end]
+            ).run(config)
+
+    config = _search_config(
+        start=start,
+        end=end,
+        strategies=["MACrossover"],
+        n_trials=1,
+    ).model_copy(
+        update={
+            "exit_presets": ExitPresetSearchConfig(
+                enabled=True,
+                preset_ids=["fixed_pct_bracket"],
+                include_baseline=False,
+            )
+        }
+    )
+    provider = RegistryCandidateProvider(config)
+    candidate = next(provider.candidates())
+    assert candidate.candidate_id == "MACrossover__exit_fixed_pct_bracket"
+    assert candidate.fixed_params["_exit_preset_id"] == "fixed_pct_bracket"
+
+    result = evaluate_candidate(
+        candidate,
+        config,
+        CaptureParamsRunner(),
+        ohlcv=full_df,
+    )
+    assert result.status in {"completed", "no_result", "error"}
+    assert captured_params
+    assert "_exit_preset_id" not in captured_params[0]
+
+
+def test_strategy_search_result_includes_exit_preset_metadata():
+    start = _dt(2024, 1, 1)
+    end = _dt(2024, 4, 30)
+    full_df = _make_intraday_ohlcv(start, 120)
+    runner = DefaultBacktestRunner(data_provider=lambda cfg: full_df.loc[cfg.start : cfg.end])
+    config = _search_config(
+        start=start,
+        end=end,
+        strategies=["MACrossover"],
+        n_trials=1,
+    ).model_copy(
+        update={
+            "exit_presets": ExitPresetSearchConfig(
+                enabled=True,
+                preset_ids=["fixed_pct_bracket"],
+                include_baseline=False,
+            )
+        }
+    )
+    provider = RegistryCandidateProvider(config)
+    result = StrategySearchRunner(config, runner, provider=provider).run()
+    assert result.candidate_metadata is not None
+    assert "MACrossover__exit_fixed_pct_bracket" in result.candidate_metadata
+
+
+def test_registry_provider_exit_presets_tick_strategy_unsupported():
+    config = _search_config(
+        start=_dt(2024, 1, 1),
+        end=_dt(2024, 6, 1),
+        strategies=["TickMaBreakout"],
+    ).model_copy(
+        update={"exit_presets": ExitPresetSearchConfig(enabled=True)}
+    )
+    provider = RegistryCandidateProvider(config)
+    assert list(provider.candidates()) == []
+    assert provider.unsupported_names() == ["TickMaBreakout"]
+
+
+def test_registry_provider_all_presets_when_preset_ids_none():
+    config = _search_config(
+        start=_dt(2024, 1, 1),
+        end=_dt(2024, 6, 1),
+        strategies=["MACrossover"],
+    ).model_copy(
+        update={
+            "exit_presets": ExitPresetSearchConfig(
+                enabled=True,
+                preset_ids=None,
+                include_baseline=False,
+            )
+        }
+    )
+    provider = RegistryCandidateProvider(config)
+    ids = [candidate.candidate_id for candidate in provider.candidates()]
+    assert len(ids) == len(EXIT_PRESETS)
+    assert all(candidate_id.startswith("MACrossover__exit_") for candidate_id in ids)
 
 
 def test_strategy_search_end_to_end_ranks_by_oos_robustness():
@@ -373,6 +588,72 @@ def test_rank_results_orders_passing_before_gated_and_trailing():
     assert ranked[0].rank == 1
     assert ranked[1].rank == 2
     assert all(candidate.rank is None for candidate in ranked[2:])
+
+
+def test_rank_results_order_unchanged_with_exit_quality_diagnostics():
+    passing_high = CandidateResult(
+        candidate_id="a",
+        strategy="a",
+        status="completed",
+        passed_gates=True,
+        objective_value=100.0,
+        robustness_score=100.0,
+        diagnostics={
+            "exit_quality": {
+                "total_closed_trades": 10,
+                "by_reason": {"signal": {"trades": 10, "total_pnl": 500.0, "win_rate": 0.6}},
+            }
+        },
+    )
+    passing_low = CandidateResult(
+        candidate_id="b",
+        strategy="b",
+        status="completed",
+        passed_gates=True,
+        objective_value=50.0,
+        robustness_score=50.0,
+        diagnostics={
+            "exit_quality": {
+                "total_closed_trades": 5,
+                "by_reason": {"fixed_sl": {"trades": 5, "total_pnl": -100.0, "win_rate": 0.0}},
+            }
+        },
+    )
+
+    ranked = _rank_results([passing_low, passing_high])
+
+    assert [candidate.candidate_id for candidate in ranked] == ["a", "b"]
+
+
+def test_evaluate_candidate_attaches_oos_exit_quality():
+    start = _dt(2024, 1, 1)
+    end = _dt(2024, 4, 30)
+    full_df = _make_intraday_ohlcv(start, 120)
+    runner = DefaultBacktestRunner(
+        data_provider=lambda cfg: full_df.loc[cfg.start : cfg.end]
+    )
+    config = _search_config(
+        start=start,
+        end=end,
+        strategies=["MACrossover"],
+        n_trials=2,
+    )
+    candidate = next(NarrowCandidateProvider(["MACrossover"]).candidates())
+
+    result = evaluate_candidate(
+        candidate,
+        config,
+        runner,
+        ohlcv=full_df,
+    )
+
+    assert result.status == "completed"
+    assert result.diagnostics is not None
+    exit_quality = result.diagnostics.get("exit_quality")
+    assert exit_quality is not None
+    assert exit_quality["total_closed_trades"] > 0
+    assert isinstance(exit_quality.get("by_reason"), dict)
+    assert len(result.oos_trades) == exit_quality["total_closed_trades"]
 
 
 def test_should_stop_after_first_candidate():
