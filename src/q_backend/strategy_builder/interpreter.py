@@ -26,6 +26,7 @@ def interpret_strategy_request(
     *,
     provider: StrategyInterpreterProvider,
     capabilities: CapabilityRegistry | None = None,
+    model: str | None = None,
 ) -> AiStrategyResponse:
     registry = capabilities or build_capability_registry()
     if request.capabilities_version != registry.schema_version:
@@ -37,11 +38,15 @@ def interpret_strategy_request(
 
     system_prompt = build_system_prompt(registry)
     user_prompt = build_user_prompt(request)
+    interpret_kwargs: dict[str, str] = {}
+    if model is not None:
+        interpret_kwargs["model"] = model
     raw = provider.interpret(
         request,
         registry,
         system_prompt=system_prompt,
         user_prompt=user_prompt,
+        **interpret_kwargs,
     )
     parsed = parse_ai_interpreter_response(raw.content)
 

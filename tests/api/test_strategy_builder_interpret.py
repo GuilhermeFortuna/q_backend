@@ -69,8 +69,8 @@ class FakeInterpreterProvider:
     base_url: str = "http://fake.local/v1"
     calls: int = 0
 
-    def interpret(self, request, capabilities, *, system_prompt, user_prompt):
-        del request, capabilities, system_prompt, user_prompt
+    def interpret(self, request, capabilities, *, system_prompt, user_prompt, **kwargs):
+        del request, capabilities, system_prompt, user_prompt, kwargs
         self.calls += 1
         return RawAiResponse(
             content=self.content,
@@ -100,7 +100,8 @@ def ai_enabled_settings(monkeypatch):
     monkeypatch.setenv("Q_AI_STRATEGY_ENABLED", "true")
     monkeypatch.setenv("Q_AI_STRATEGY_PROVIDER", "openai_compatible")
     monkeypatch.setenv("Q_AI_STRATEGY_BASE_URL", "http://localhost:11434/v1")
-    monkeypatch.setenv("Q_AI_STRATEGY_MODEL", "qwen2.5-coder:14b")
+    monkeypatch.setenv("Q_AI_STRATEGY_MODEL", "test-model-a")
+    monkeypatch.setenv("Q_AI_STRATEGY_MODELS", "test-model-a:Model A,test-model-b:Model B")
     monkeypatch.setenv("Q_AI_STRATEGY_API_KEY", "")
     monkeypatch.setenv("Q_AI_STRATEGY_TIMEOUT_SECONDS", "60")
     get_settings.cache_clear()
@@ -245,7 +246,7 @@ def test_provider_selection_uses_configured_provider_model_and_base_url(ai_enabl
 
     mock_provider_cls.assert_called_once_with(
         base_url="http://localhost:11434/v1",
-        model="qwen2.5-coder:14b",
+        model="test-model-a",
         api_key="",
         timeout_seconds=60,
         max_output_tokens=settings.ai_strategy_max_output_tokens,
@@ -321,3 +322,65 @@ def test_invalid_model_spec_returns_validation_without_compilation():
     assert response.validation.valid is False
     assert response.compiled_strategy is None
     assert any(error.code == "unsupported_timeframe" for error in response.validation.errors)
+
+
+def test_interpret_request_model_override_is_passed_to_provider(ai_enabled_settings):
+    provider = FakeInterpreterProvider(content=json.dumps(_ai_response_payload()))
+    captured: dict[str, str | None] = {"model": None}
+
+    def _capture_interpret(*args, **kwargs):
+        captured["model"] = kwargs.get("model")
+        return FakeInterpreterProvider.interpret(provider, *args, **kwargs)
+
+    provider.interpret = _capture_interpret  # type: ignore[method-assign]
+
+    with patch(
+        "q_backend.api.routers.strategy_builder.build_strategy_interpreter_provider",
+        return_value=provider,
+    ):
+        interpret_strategy_builder_request(
+            StrategyInterpretRequest(
+                message="Create an EMA strategy.",
+                model="test-model-b",
+            )
+        )
+
+    assert captured["model"] == "test-model-b"
+
+
+def test_interpret_unknown_model_returns_misconfigured(ai_enabled_settings):
+    with pytest.raises(HTTPException) as exc_info:
+        interpret_strategy_builder_request(
+            StrategyInterpretRequest(
+                message="Create an EMA strategy.",
+                model="not-allowed",
+            )
+        )
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail["status"] == "ai_misconfigured"
+
+
+def test_openai_compatible_provider_list_models_parses_response():
+    provider = OpenAICompatibleInterpreterProvider(
+        base_url="http://localhost:1234/v1",
+        model="gemma-4-e4b-it",
+    )
+    payload = json.dumps({"data": [{"id": "gemma-4-e4b-it"}, {"id": "qwythos-9b"}]})
+
+    class _FakeResponse:
+        def __init__(self, body: str) -> None:
+            self._body = body
+
+        def read(self) -> bytes:
+            return self._body.encode("utf-8")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            del args
+            return False
+
+    with patch("urllib.request.urlopen", return_value=_FakeResponse(payload)):
+        assert provider.list_models() == ["gemma-4-e4b-it", "qwythos-9b"]

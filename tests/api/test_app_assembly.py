@@ -16,6 +16,7 @@ FULL_ROUTE_INVENTORY: list[tuple[str, str]] = [
     ("PUT", "/api/v1/system/data-source"),
     ("GET", "/api/v1/strategies"),
     ("GET", "/api/v1/strategy-builder/capabilities"),
+    ("GET", "/api/v1/strategy-builder/models"),
     ("POST", "/api/v1/strategy-builder/validate"),
     ("POST", "/api/v1/strategy-builder/compile"),
     ("POST", "/api/v1/strategy-builder/interpret"),

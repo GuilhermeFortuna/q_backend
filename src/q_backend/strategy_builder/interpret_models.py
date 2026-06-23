@@ -18,6 +18,7 @@ class ConversationMessage(BaseModel):
 
 class StrategyInterpretRequest(BaseModel):
     message: str = Field(min_length=1)
+    model: str | None = None
     conversation: list[ConversationMessage] = Field(default_factory=list)
     current_spec: dict[str, Any] | None = None
     capabilities_version: str = CAPABILITIES_SCHEMA_VERSION
@@ -44,6 +45,18 @@ class AiStrategyServiceErrorResponse(BaseModel):
     ]
     message: str
     detail: str | None = None
+
+
+class AiModelOption(BaseModel):
+    id: str
+    label: str
+    available: bool = False
+
+
+class AiStrategyModelsResponse(BaseModel):
+    provider: str
+    default_model: str
+    models: list[AiModelOption] = Field(default_factory=list)
 
 
 class ParsedAiInterpreterPayload(BaseModel):

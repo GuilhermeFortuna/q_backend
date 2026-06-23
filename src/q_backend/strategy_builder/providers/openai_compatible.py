@@ -40,6 +40,44 @@ class OpenAICompatibleInterpreterProvider:
         self.timeout_seconds = timeout_seconds
         self.max_output_tokens = max_output_tokens
 
+    def _request_headers(self) -> dict[str, str]:
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
+
+    def list_models(self) -> list[str]:
+        url = f"{self.base_url}/models"
+        http_request = urllib.request.Request(
+            url,
+            headers=self._request_headers(),
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(
+                http_request,
+                timeout=self.timeout_seconds,
+            ) as response:
+                raw = response.read().decode("utf-8")
+        except (urllib.error.HTTPError, TimeoutError, urllib.error.URLError) as exc:
+            logger.info("AI provider model listing unavailable: %s", exc)
+            return []
+
+        try:
+            decoded = json.loads(raw)
+            data = decoded["data"]
+            model_ids: list[str] = []
+            for entry in data:
+                if isinstance(entry, dict) and isinstance(entry.get("id"), str):
+                    model_ids.append(entry["id"])
+            return model_ids
+        except (KeyError, TypeError, json.JSONDecodeError) as exc:
+            logger.info("AI provider returned an unexpected models response: %s", exc)
+            return []
+
     def interpret(
         self,
         request: StrategyInterpretRequest,
@@ -47,15 +85,16 @@ class OpenAICompatibleInterpreterProvider:
         *,
         system_prompt: str,
         user_prompt: str,
+        model: str | None = None,
     ) -> RawAiResponse:
         del capabilities
-        del request
+        selected_model = model or self.model
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
         payload: dict[str, Any] = {
-            "model": self.model,
+            "model": selected_model,
             "messages": messages,
             "temperature": 0.2,
         }
@@ -64,12 +103,7 @@ class OpenAICompatibleInterpreterProvider:
 
         url = f"{self.base_url}/chat/completions"
         body = json.dumps(payload).encode("utf-8")
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+        headers = self._request_headers()
 
         http_request = urllib.request.Request(url, data=body, headers=headers, method="POST")
         try:
@@ -83,7 +117,7 @@ class OpenAICompatibleInterpreterProvider:
             logger.warning(
                 "AI provider HTTP error status=%s model=%s",
                 exc.code,
-                self.model,
+                selected_model,
             )
             raise ProviderRequestError(
                 "AI provider request failed.",
@@ -115,6 +149,6 @@ class OpenAICompatibleInterpreterProvider:
 
         return RawAiResponse(
             content=content,
-            model=self.model,
+            model=selected_model,
             provider=self.provider_name,
         )
