@@ -138,6 +138,9 @@ register_strategy(
             min=2,
             max=400,
             step=1,
+            search_min=10,
+            search_max=50,
+            search_step=10,
             hint="Longer = smoother MA and fewer flips; shorter = more responsive, more whipsaws.",
         ),
         StrategyParamSpec(
@@ -148,6 +151,9 @@ register_strategy(
             min=0.0,
             max=5.0,
             step=0.01,
+            search_min=0.0,
+            search_max=1.0,
+            search_step=0.25,
             hint="Wider band = fewer entries, filters small oscillations around the MA.",
         ),
         StrategyParamSpec(

@@ -300,6 +300,9 @@ register_strategy(
             min=10,
             max=1000,
             step=1,
+            search_min=126,
+            search_max=378,
+            search_step=126,
             hint="Length of the pair formation/parameter-estimation window (typically 12 months).",
         ),
         StrategyParamSpec(
@@ -310,6 +313,9 @@ register_strategy(
             min=5,
             max=1000,
             step=1,
+            search_min=63,
+            search_max=189,
+            search_step=63,
             hint="Length of the trading window (typically 6 months).",
         ),
         StrategyParamSpec(
@@ -320,6 +326,9 @@ register_strategy(
             min=0.5,
             max=5.0,
             step=0.1,
+            search_min=1.5,
+            search_max=3.0,
+            search_step=0.5,
             hint="Standard deviation multiplier to trigger entry (typically 2.0).",
         ),
         StrategyParamSpec(
@@ -330,6 +339,9 @@ register_strategy(
             min=2,
             max=400,
             step=1,
+            search_min=21,
+            search_max=126,
+            search_step=21,
             hint="Lookback window to compute the volatility of the spread.",
         ),
         StrategyParamSpec(

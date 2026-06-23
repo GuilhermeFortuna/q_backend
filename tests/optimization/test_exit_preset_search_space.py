@@ -2,15 +2,18 @@ import optuna
 import pytest
 
 import q_backend.backtesting.strategies  # noqa: F401
+from q_backend.backtesting.exit_rules.registry import all_param_specs, list_exit_rules
 from q_backend.backtesting.exit_rules.presets import EXIT_PRESETS
-from q_backend.backtesting.exit_rules.registry import list_exit_rules
 from q_backend.backtesting.strategy_registry import get_registered_strategy, list_registered_strategies
-from q_backend.optimization.auto_search_space import derive_strategy_search_space
+from q_backend.optimization.auto_search_space import (
+    _search_param_from_spec,
+    derive_strategy_search_space,
+)
 from q_backend.optimization.exit_preset_search_space import (
     derive_exit_preset_search_space,
     preset_exit_param_names,
 )
-from q_backend.optimization.models import FloatParam, IntParam
+from q_backend.optimization.models import FloatParam, IntParam, LogFloatParam
 from q_backend.optimization.search_space import suggest_params
 
 
@@ -32,9 +35,28 @@ def test_fixed_bracket_preset_searches_stop_and_take_profit_with_low_zero():
     assert isinstance(take, FloatParam)
     assert stop.low == 0.0
     assert take.low == 0.0
+    assert stop.high == 0.05
+    assert take.high == 0.10
     assert "stop_loss_pct" not in fixed_params
     assert "take_profit_pct" not in fixed_params
 
+
+def test_fixed_bracket_magnitude_uses_log_bounds_before_enable_injection():
+    preset = _preset("fixed_pct_bracket")
+    search_space, _fixed = derive_exit_preset_search_space(
+        "MACrossover",
+        preset,
+        include_risk=False,
+    )
+    # Enable injection converts LogFloatParam → FloatParam with low=0.
+    stop = search_space.strategy_params["stop_loss_pct"]
+    assert isinstance(stop, FloatParam)
+    assert stop.low == 0.0
+    assert stop.high == 0.05
+
+    sl_spec = next(s for s in all_param_specs() if s.name == "stop_loss_pct")
+    raw = _search_param_from_spec(sl_spec)
+    assert isinstance(raw, LogFloatParam)
 
 def test_atr_chandelier_preset_searches_atr_period_and_rule_params():
     preset = _preset("atr_stop_chandelier")

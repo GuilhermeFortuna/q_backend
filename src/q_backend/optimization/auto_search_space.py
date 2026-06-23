@@ -1,13 +1,15 @@
 """Derive Optuna search spaces from strategy registry parameter specs.
 
-Each registered strategy declares its parameters with optional bounds
-(``min``/``max``/``step``/``choices``). This module is the bridge to
-``SearchSpaceConfig``: bounded params become searchable dimensions; params
-without usable bounds are pinned to their registry defaults via
-``fixed_params`` (WO31 merges those into every trial).
+Each registered strategy declares editor bounds (``min``/``max``/``step``) for the
+manual parameter form and optional optimizer-only bounds (``search_min``/``search_max``/
+``search_step``/``search_scale``). This module is the single chokepoint that maps
+specs to ``SearchSpaceConfig``: bounded searchable params become Optuna dimensions;
+params with ``searchable=False`` or without usable bounds are pinned to registry
+defaults via ``fixed_params`` (WO31 merges those into every trial).
 
-``LogFloatParam`` is not inferred from registry metadata today — floats map
-to ``FloatParam`` only. A future registry hint could enable log-scale search.
+When ``search_scale`` is ``"log"`` on a float param with a positive effective low,
+the dimension becomes ``LogFloatParam`` (continuous log-uniform sampling; ``search_step``
+is ignored).
 """
 
 from __future__ import annotations
@@ -28,16 +30,32 @@ from q_backend.optimization.models import (
 )
 
 
+def _effective_search_bounds(
+    spec: StrategyParamSpec,
+) -> tuple[float | None, float | None, float | None]:
+    lo = spec.search_min if spec.search_min is not None else spec.min
+    hi = spec.search_max if spec.search_max is not None else spec.max
+    st = spec.search_step if spec.search_step is not None else spec.step
+    return lo, hi, st
+
+
 def _search_param_from_spec(spec: StrategyParamSpec) -> SearchParam | None:
+    if not spec.searchable:
+        return None
+
+    lo, hi, st = _effective_search_bounds(spec)
+
     if spec.type == "int":
-        if spec.min is not None and spec.max is not None and spec.min < spec.max:
-            step = int(spec.step) if spec.step else 1
-            return IntParam(low=int(spec.min), high=int(spec.max), step=step)
+        if lo is not None and hi is not None and lo < hi:
+            step = int(st) if st else 1
+            return IntParam(low=int(lo), high=int(hi), step=step)
         return None
 
     if spec.type == "float":
-        if spec.min is not None and spec.max is not None and spec.min < spec.max:
-            return FloatParam(low=spec.min, high=spec.max, step=spec.step)
+        if lo is not None and hi is not None and lo < hi:
+            if spec.search_scale == "log" and lo > 0:
+                return LogFloatParam(low=lo, high=hi)
+            return FloatParam(low=lo, high=hi, step=st)
         return None
 
     if spec.type == "categorical":

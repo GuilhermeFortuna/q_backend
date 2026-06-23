@@ -229,6 +229,9 @@ register_strategy(
             min=5,
             max=1000,
             step=1,
+            search_min=21,
+            search_max=63,
+            search_step=21,
             hint="Shortest trend lookback horizon (typically 1 month).",
         ),
         StrategyParamSpec(
@@ -239,6 +242,9 @@ register_strategy(
             min=5,
             max=1000,
             step=1,
+            search_min=63,
+            search_max=189,
+            search_step=63,
             hint="Medium trend lookback horizon (typically 3 months).",
         ),
         StrategyParamSpec(
@@ -249,6 +255,9 @@ register_strategy(
             min=5,
             max=1000,
             step=1,
+            search_min=126,
+            search_max=378,
+            search_step=126,
             hint="Longest trend lookback horizon (typically 12 months).",
         ),
         StrategyParamSpec(
@@ -259,6 +268,9 @@ register_strategy(
             min=1,
             max=252,
             step=1,
+            search_min=21,
+            search_max=63,
+            search_step=21,
             hint="Frequency to rebalance/size positions (typically 21 bars for monthly).",
         ),
         StrategyParamSpec(
@@ -269,6 +281,9 @@ register_strategy(
             min=2,
             max=400,
             step=1,
+            search_min=21,
+            search_max=126,
+            search_step=21,
             hint="Lookback window for the volatility estimator.",
         ),
         StrategyParamSpec(
@@ -287,6 +302,7 @@ register_strategy(
             min=0.0,
             max=20.0,
             step=0.01,
+            searchable=False,
             hint="Annual risk-free interest rate (e.g., 0.05 for 5%) to subtract for excess returns.",
         ),
         StrategyParamSpec(
@@ -297,6 +313,7 @@ register_strategy(
             min=0,
             max=252,
             step=1,
+            searchable=False,
             hint="Lags signals by N bars to evaluate robustness (e.g., monthly lag).",
         ),
         StrategyParamSpec(

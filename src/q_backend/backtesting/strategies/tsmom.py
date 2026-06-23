@@ -270,6 +270,9 @@ register_strategy(
             min=20,
             max=1000,
             step=1,
+            search_min=63,
+            search_max=252,
+            search_step=63,
             hint="Longer lookback = smoother momentum signal, slower regime shifts; shorter = faster flips.",
         ),
         StrategyParamSpec(
@@ -280,6 +283,9 @@ register_strategy(
             min=1,
             max=252,
             step=1,
+            search_min=21,
+            search_max=63,
+            search_step=21,
             hint="More frequent = quicker response to sign changes, more turnover; less = stickier positions.",
         ),
         StrategyParamSpec(
@@ -290,6 +296,9 @@ register_strategy(
             min=2,
             max=400,
             step=1,
+            search_min=21,
+            search_max=126,
+            search_step=21,
             hint="Shorter = more reactive vol estimate; longer = smoother, less responsive to recent spikes.",
         ),
         StrategyParamSpec(
@@ -316,6 +325,9 @@ register_strategy(
             min=0.1,
             max=10.0,
             step=0.1,
+            search_min=1.0,
+            search_max=3.0,
+            search_step=0.5,
             hint="Caps the maximum absolute value of the t-statistic for exposure scaling.",
         ),
         StrategyParamSpec(
@@ -326,6 +338,9 @@ register_strategy(
             min=0,
             max=100,
             step=1,
+            search_min=0,
+            search_max=8,
+            search_step=2,
             hint="Number of lags used in Newey-West standard error calculation.",
         ),
         StrategyParamSpec(

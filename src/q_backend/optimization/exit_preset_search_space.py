@@ -23,6 +23,7 @@ from q_backend.optimization.auto_search_space import (
 from q_backend.optimization.models import (
     FloatParam,
     IntParam,
+    LogFloatParam,
     SearchParam,
     SearchSpaceConfig,
 )
@@ -64,6 +65,8 @@ def _force_enable_param_includes_off(param: SearchParam) -> SearchParam:
         return IntParam(low=0, high=param.high, step=param.step)
     if isinstance(param, FloatParam):
         return FloatParam(low=0.0, high=param.high, step=param.step)
+    if isinstance(param, LogFloatParam):
+        return FloatParam(low=0.0, high=param.high, step=None)
     return param
 
 

@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from q_backend.backtesting.exit_rules.presets import EXIT_PRESETS
 from q_backend.backtesting.exit_rules.registry import all_param_specs, list_exit_rules
 from q_backend.backtesting.genome.param_bounds import GENOME_PARAM_BOUNDS
 from q_backend.backtesting.genome.schema import Genome
-from q_backend.backtesting.strategy_registry import ExitPreset, ExitRuleInfo
+from q_backend.backtesting.strategy_registry import (
+    ExitPreset,
+    ExitRuleInfo,
+    StrategyParamSpec,
+)
 
 
 EXIT_RULE_POLICY_METADATA_KEY = "exit_rule_policy"
@@ -191,6 +196,43 @@ def exit_policy_metadata_for_genome(genome: Genome) -> dict[str, Any] | None:
     return metadata
 
 
+def _round_to_sig(value: float, sig: int = 1) -> float:
+    """Round ``value`` to ``sig`` significant figures (keeps synthesized steps clean)."""
+    if value == 0:
+        return 0.0
+    digits = sig - 1 - math.floor(math.log10(abs(value)))
+    return round(value, digits)
+
+
+def _genome_exit_bounds(
+    spec: StrategyParamSpec, *, is_enable: bool
+) -> tuple[float, float | None, float | None]:
+    """Translate a curated exit spec into ``(min, max, step)`` for ``GENOME_PARAM_BOUNDS``.
+
+    WO87 Task 6: discovery samples exit magnitudes from these bounds via the genome
+    search space, which reads only ``min``/``max``/``step`` (it ignores ``search_*``).
+    So the curated optimizer bounds must be baked in here. Enable params keep ``min=0``
+    so the GA can switch the family off. The genome sampler has no log mode, so a
+    ``log`` scale is approximated by a coarse linear step targeting ~12 grid points.
+    """
+    search_max = spec.search_max if spec.search_max is not None else spec.max
+    search_min = spec.search_min if spec.search_min is not None else spec.min
+
+    if is_enable:
+        low: float = 0.0 if spec.type == "float" else 0
+    else:
+        low = search_min if search_min is not None else (spec.min or 0.0)
+
+    if spec.search_step is not None:
+        step: float | None = spec.search_step
+    elif spec.search_scale == "log" and search_min is not None and search_max is not None:
+        step = _round_to_sig((search_max - search_min) / 12.0, sig=1)
+    else:
+        step = spec.step
+
+    return low, search_max, step
+
+
 def register_exit_param_bounds() -> None:
     """Populate ``GENOME_PARAM_BOUNDS`` with ``exit_*`` keys from the exit catalog."""
     enable_params = {info.enable_param for info in list_exit_rules()}
@@ -198,15 +240,21 @@ def register_exit_param_bounds() -> None:
         key = genome_exit_param_ref(spec.name)
         if key in GENOME_PARAM_BOUNDS:
             continue
-        min_val = spec.min
-        max_val = spec.max
-        if spec.name in enable_params:
-            min_val = 0.0 if spec.type == "float" else 0
+        is_enable = spec.name in enable_params
+        min_val, max_val, step_val = _genome_exit_bounds(spec, is_enable=is_enable)
         GENOME_PARAM_BOUNDS[key] = spec.model_copy(
             update={
                 "name": key,
                 "min": min_val,
-                "default": 0 if spec.name in enable_params else spec.default,
+                "max": max_val,
+                "step": step_val,
+                "default": 0 if is_enable else spec.default,
+                # search_* are baked into min/max/step above; clear them so the genome
+                # path (which reads only min/max/step) can't double-apply.
+                "search_min": None,
+                "search_max": None,
+                "search_step": None,
+                "search_scale": None,
             }
         )
 

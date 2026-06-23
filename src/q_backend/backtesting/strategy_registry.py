@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Literal, Type, Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from q_backend.backtesting.strategy import TradingStrategy
 from q_backend.backtesting.tick.strategy import TickStrategy
@@ -27,6 +27,32 @@ class StrategyParamSpec(BaseModel):
     choices: list[str] | None = None
     hint: str | None = None
     exit_group: ExitGroup | None = None
+    search_min: float | None = None
+    search_max: float | None = None
+    search_step: float | None = None
+    search_scale: Literal["linear", "log"] | None = None
+    searchable: bool = True
+
+    @model_validator(mode="after")
+    def validate_search_bounds(self) -> StrategyParamSpec:
+        if self.search_min is not None and self.search_max is not None:
+            if self.search_min >= self.search_max:
+                raise ValueError(
+                    f"search_min must be < search_max for param '{self.name}'"
+                )
+        if self.search_scale == "log":
+            if self.type != "float":
+                raise ValueError(
+                    f"search_scale='log' only valid for float params: '{self.name}'"
+                )
+            effective_low = (
+                self.search_min if self.search_min is not None else self.min
+            )
+            if effective_low is None or effective_low <= 0:
+                raise ValueError(
+                    f"search_scale='log' requires positive effective low for '{self.name}'"
+                )
+        return self
 
 
 class StrategyInfo(BaseModel):
