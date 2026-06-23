@@ -1,6 +1,8 @@
 from typing import Any, Optional
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from q_backend.backtesting.ai_strategy_metadata import AiStrategyMetadata
 
 from q_backend.backtesting.strategy_registry import (
     ExitRuleCatalogResponse,
@@ -24,6 +26,7 @@ class CustomStrategySaveRequest(BaseModel):
     base_strategy: str
     description: Optional[str] = ""
     parameters: dict[str, Any]
+    ai_metadata: AiStrategyMetadata | None = None
 
 
 @router.get("/api/v1/strategies", response_model=StrategiesResponse)
@@ -72,18 +75,21 @@ def save_custom_strategy(req: CustomStrategySaveRequest):
             item["base_strategy"] = req.base_strategy
             item["description"] = req.description
             item["parameters"] = req.parameters
+            if req.ai_metadata is not None:
+                item["ai_metadata"] = req.ai_metadata.model_dump(mode="json")
             updated = True
             break
 
     if not updated:
-        customs.append(
-            {
-                "name": req.name,
-                "base_strategy": req.base_strategy,
-                "description": req.description,
-                "parameters": req.parameters,
-            }
-        )
+        record: dict[str, Any] = {
+            "name": req.name,
+            "base_strategy": req.base_strategy,
+            "description": req.description,
+            "parameters": req.parameters,
+        }
+        if req.ai_metadata is not None:
+            record["ai_metadata"] = req.ai_metadata.model_dump(mode="json")
+        customs.append(record)
 
     save_custom_strategies(customs)
     return {"status": "success", "message": f"Strategy '{req.name}' saved successfully."}
