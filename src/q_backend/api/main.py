@@ -10,6 +10,7 @@ from q_backend.api.routers import news as news_router
 from q_backend.api.routers import optimization as optimization_router
 from q_backend.api.routers import storage as storage_router
 from q_backend.api.routers import strategies as strategies_router
+from q_backend.api.routers import strategy_builder as strategy_builder_router
 from q_backend.api.routers import strategy_search as strategy_search_router
 from q_backend.api.routers import system as system_router
 from q_backend.api.routers import walkforward as walkforward_router
@@ -35,6 +36,7 @@ app.add_middleware(
 
 app.include_router(system_router.router)
 app.include_router(strategies_router.router)
+app.include_router(strategy_builder_router.router)
 app.include_router(market_router.router)
 app.include_router(backtest_router.router)
 app.include_router(optimization_router.router)

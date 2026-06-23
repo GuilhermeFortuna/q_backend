@@ -17,6 +17,13 @@ class Settings(BaseSettings):
     # dev machine's 32 hardware threads, leaving headroom for the API process, the
     # MT5 data thread, and the OS. Override with Q_WORKER_PROCESSES in .env.
     worker_processes: int = 28
+    ai_strategy_enabled: bool = False
+    ai_strategy_provider: str = "openai_compatible"
+    ai_strategy_base_url: str = "http://localhost:11434/v1"
+    ai_strategy_model: str = "qwen2.5-coder:14b"
+    ai_strategy_api_key: str = ""
+    ai_strategy_timeout_seconds: int = 60
+    ai_strategy_max_output_tokens: int = 4096
 
 
 @lru_cache
