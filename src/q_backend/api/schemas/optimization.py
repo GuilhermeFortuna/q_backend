@@ -35,6 +35,47 @@ class OptimizationResultsResponse(BaseModel):
     failures: List[Dict[str, Any]]
 
 
+class ParamImportanceEntry(BaseModel):
+    param: str
+    importance: float
+
+
+class ParallelCoordinateRow(BaseModel):
+    number: int
+    params: Dict[str, Any]
+    values: List[float]
+
+
+class ParallelCoordinatePayload(BaseModel):
+    params: List[str]
+    objectives: List[str]
+    rows: List[ParallelCoordinateRow]
+    rows_capped: Optional[bool] = None
+
+
+class ParetoPoint(BaseModel):
+    number: int
+    values: List[float]
+    params: Dict[str, Any]
+
+
+class ParetoFrontPayload(BaseModel):
+    is_multi_objective: bool
+    objectives: List[str]
+    points: List[ParetoPoint]
+
+
+class OptimizationAnalyticsResponse(BaseModel):
+    study_id: str
+    status: str
+    is_multi_objective: bool
+    n_complete_trials: int
+    objective_labels: List[str]
+    param_importances: Optional[Dict[str, List[ParamImportanceEntry]]] = None
+    parallel_coordinate: ParallelCoordinatePayload
+    pareto_front: ParetoFrontPayload
+
+
 class OptimizationStudyListItem(BaseModel):
     study_id: str
     name: str

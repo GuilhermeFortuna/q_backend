@@ -27,7 +27,12 @@ from q_backend.optimization import (
 )
 from q_backend.optimization.models import StorageConfig
 from q_backend.optimization.parallel import resolve_worker_count
-from q_backend.optimization.storage import load_or_create_study
+from q_backend.optimization.analytics import (
+    compute_study_analytics,
+    empty_analytics_datasets,
+    objective_labels,
+)
+from q_backend.optimization.storage import load_existing_study, load_or_create_study
 from q_backend.optimization.tick_backtest_runner import resolve_tick_flags
 from q_backend.tasks.cpu import fan_out_count
 from q_backend.tasks.data import load_ohlcv_frame, prime_ohlcv_cache
@@ -59,6 +64,8 @@ from q_backend.storage.redis.progress import (
 logger = logging.getLogger(__name__)
 
 JobStatus = Literal["pending", "running", "done", "error", "cancelled"]
+
+TERMINAL_JOB_STATUSES = frozenset({"done", "cancelled", "error"})
 
 STATUS_PAYLOAD_KEYS = frozenset(
     {
@@ -852,6 +859,140 @@ def results_payload_from_db(study_id: str) -> Optional[dict[str, Any]]:
         "pareto_trials": pareto_trials,
         "failures": snapshot.get("failures", []),
     }
+
+
+def _analytics_envelope(
+    *,
+    study_id: str,
+    status: str,
+    config: OptimizationConfig,
+    datasets: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "study_id": study_id,
+        "status": status,
+        "is_multi_objective": config.is_multi_objective(),
+        "n_complete_trials": datasets["n_complete_trials"],
+        "objective_labels": objective_labels(config),
+        "param_importances": datasets["param_importances"],
+        "parallel_coordinate": datasets["parallel_coordinate"],
+        "pareto_front": datasets["pareto_front"],
+    }
+
+
+def _optuna_reload_configs(
+    study_id: str,
+    config: OptimizationConfig,
+) -> list[OptimizationConfig]:
+    candidates = [config]
+    distributed = _distributed_config(config, study_id)
+    if (
+        distributed.study.name != config.study.name
+        or distributed.study.storage != config.study.storage
+    ):
+        candidates.append(distributed)
+    return candidates
+
+
+def _load_study_for_analytics(
+    config: OptimizationConfig,
+    *,
+    study_id: str,
+) -> optuna.Study | None:
+    for candidate in _optuna_reload_configs(study_id, config):
+        try:
+            study = load_existing_study(candidate)
+        except Exception as exc:
+            logger.warning(
+                "Failed to load optuna study for analytics %s: %s", study_id, exc
+            )
+            continue
+        if study is not None:
+            return study
+    return None
+
+
+def analytics_payload(job: OptimizationJob) -> Optional[dict[str, Any]]:
+    study = job.result.study if job.result is not None else None
+    if study is None:
+        # Read-only load only — never create a study here (guardrail). If it
+        # can't be loaded yet, degrade to empty datasets rather than 500.
+        study = _load_study_for_analytics(job.config, study_id=job.study_id)
+    if study is None:
+        datasets = empty_analytics_datasets(job.config)
+        return _analytics_envelope(
+            study_id=job.study_id,
+            status=job.status,
+            config=job.config,
+            datasets=datasets,
+        )
+
+    is_running = job.status not in TERMINAL_JOB_STATUSES
+    datasets = compute_study_analytics(
+        study,
+        job.config,
+        is_running=is_running,
+        study_id=job.study_id,
+    )
+    return _analytics_envelope(
+        study_id=job.study_id,
+        status=job.status,
+        config=job.config,
+        datasets=datasets,
+    )
+
+
+def analytics_payload_from_db(study_id: str) -> Optional[dict[str, Any]]:
+    try:
+        study_uuid = _parse_study_uuid(study_id)
+    except ValueError:
+        return None
+
+    try:
+        with session_scope() as session:
+            study = get_optimization_study(session, study_uuid)
+    except Exception as exc:
+        logger.warning(
+            "Failed to load optimization study %s from DB: %s", study_id, exc
+        )
+        return None
+
+    if study is None:
+        return None
+
+    config = study.config or {}
+    config_for_validation = {
+        key: value for key, value in config.items() if key != "persisted_snapshot"
+    }
+    try:
+        opt_config = OptimizationConfig.model_validate(config_for_validation)
+    except Exception:
+        logger.warning("Invalid optimization config stored for study %s", study_id)
+        return None
+
+    optuna_study = _load_study_for_analytics(opt_config, study_id=study_id)
+    if optuna_study is None:
+        datasets = empty_analytics_datasets(opt_config)
+        return _analytics_envelope(
+            study_id=study_id,
+            status=study.status,
+            config=opt_config,
+            datasets=datasets,
+        )
+
+    is_running = study.status not in TERMINAL_JOB_STATUSES
+    datasets = compute_study_analytics(
+        optuna_study,
+        opt_config,
+        is_running=is_running,
+        study_id=study_id,
+    )
+    return _analytics_envelope(
+        study_id=study_id,
+        status=study.status,
+        config=opt_config,
+        datasets=datasets,
+    )
 
 
 def study_list_item_from_db(study) -> dict[str, Any]:

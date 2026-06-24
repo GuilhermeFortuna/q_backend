@@ -9,6 +9,7 @@ from q_backend.api.deps import get_session
 from q_backend.api.dependencies import get_market_data_service
 from q_backend.api.schemas.common import BulkDeleteOptimizationsRequest, BulkDeleteResponse
 from q_backend.api.schemas.optimization import (
+    OptimizationAnalyticsResponse,
     OptimizationResultsResponse,
     OptimizationStartResponse,
     OptimizationStatusResponse,
@@ -86,6 +87,24 @@ def get_optimization_results(study_id: str):
                     f"(status: {persisted_status})."
                 ),
             )
+        raise HTTPException(status_code=404, detail=f"Study '{study_id}' not found.")
+    return payload
+
+
+@router.get(
+    "/api/v1/optimize/{study_id}/analytics",
+    response_model=OptimizationAnalyticsResponse,
+)
+def get_optimization_analytics(study_id: str):
+    """Return state-aware optimization analytics for chart rendering."""
+    job = optimization_jobs.get_job(study_id)
+    if job is not None:
+        payload = optimization_jobs.analytics_payload(job)
+        if payload is not None:
+            return payload
+
+    payload = optimization_jobs.analytics_payload_from_db(study_id)
+    if payload is None:
         raise HTTPException(status_code=404, detail=f"Study '{study_id}' not found.")
     return payload
 

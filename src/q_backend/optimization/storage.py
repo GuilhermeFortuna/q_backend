@@ -62,6 +62,18 @@ def create_storage(config: StorageConfig) -> BaseStorage:
     raise ValueError(f"Unknown storage type: {config.type}")
 
 
+def load_existing_study(config: OptimizationConfig) -> optuna.Study | None:
+    """Load an Optuna study without creating one if it does not exist."""
+    storage = create_storage(config.study.storage)
+    try:
+        return optuna.load_study(
+            study_name=config.study.name,
+            storage=storage,
+        )
+    except KeyError:
+        return None
+
+
 def load_or_create_study(
     config: OptimizationConfig,
     *,
