@@ -38,7 +38,10 @@ def _warmup_bars_for_params(strategy_params: dict[str, Any]) -> int:
         for key, value in strategy_params.items()
         if isinstance(value, (int, float))
         and not isinstance(value, bool)
-        and any(fragment in key.lower() for fragment in _WARMUP_PARAM_KEYS)
+        and any(
+            fragment in key.split("__", 1)[-1].lower()
+            for fragment in _WARMUP_PARAM_KEYS
+        )
     ]
     longest = max(lookbacks, default=0)
     return longest * _WARMUP_MULTIPLIER
@@ -187,6 +190,7 @@ class WalkForwardRunner:
         end: datetime,
         strategy_params: dict[str, Any],
         risk_params: dict[str, Any],
+        manager_params: dict[str, Any] | None = None,
     ) -> BacktestRunConfig:
         backtest = self.config.backtest
         position_sizing = build_position_sizing_config(risk_params)
@@ -200,6 +204,11 @@ class WalkForwardRunner:
             strategy=backtest.strategy,
             strategy_params=strategy_params,
             position_sizing=position_sizing,
+            entries=backtest.entries,
+            entry_manager=backtest.entry_manager,
+            manager_params=manager_params,
+            exit_params=backtest.exit_params,
+            fixed_params=self.config.fixed_params,
             # Warm indicators with the bars right before this (out-of-sample) window —
             # in rolling mode that is the tail of the training data, so it adds no
             # look-ahead. Without it a long-period strategy can't trade a short OOS
@@ -325,6 +334,7 @@ class WalkForwardRunner:
         best_trial = opt_result.best_trial
         strategy_params = best_trial.user_attrs.get("strategy_params", {})
         risk_params = best_trial.user_attrs.get("risk_params", {})
+        manager_params = best_trial.user_attrs.get("manager_params", {})
         is_metrics = best_trial.user_attrs.get("metrics", {})
         is_objective = float(
             resolve_objective(is_metrics, self.config.objective.mode)
@@ -342,6 +352,7 @@ class WalkForwardRunner:
             end=window.test_end,
             strategy_params=strategy_params,
             risk_params=risk_params,
+            manager_params=manager_params,
         )
         oos_result = backtest_runner.run(oos_config)
         oos_trades = oos_result.trades or []
@@ -357,6 +368,7 @@ class WalkForwardRunner:
                 best_params={
                     "strategy_params": strategy_params,
                     "risk_params": risk_params,
+                    "manager_params": manager_params,
                     **opt_result.best_params,
                 },
                 is_metrics=is_metrics,

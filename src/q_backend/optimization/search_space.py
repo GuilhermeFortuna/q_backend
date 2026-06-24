@@ -2,6 +2,7 @@ from typing import Any
 
 import optuna
 
+from q_backend.backtesting.entry_models import EntryInstance, EntryManagerConfig
 from q_backend.backtesting.position_sizing import (
     FixedQuantityPositionSizing,
     FixedSafetyMarginPositionSizing,
@@ -37,6 +38,7 @@ def _suggest_param(
 def suggest_params(trial: optuna.Trial, search_space: SearchSpaceConfig) -> TrialParams:
     strategy_params: dict[str, Any] = {}
     risk_params: dict[str, Any] = {}
+    manager_params: dict[str, Any] = {}
 
     for key, spec in search_space.strategy_params.items():
         strategy_params[key] = _suggest_param(trial, f"strategy__{key}", spec)
@@ -44,7 +46,50 @@ def suggest_params(trial: optuna.Trial, search_space: SearchSpaceConfig) -> Tria
     for key, spec in search_space.risk_params.items():
         risk_params[key] = _suggest_param(trial, f"risk__{key}", spec)
 
-    return TrialParams(strategy_params=strategy_params, risk_params=risk_params)
+    for key, spec in search_space.manager_params.items():
+        manager_params[key] = _suggest_param(trial, f"manager__{key}", spec)
+
+    return TrialParams(
+        strategy_params=strategy_params,
+        risk_params=risk_params,
+        manager_params=manager_params,
+    )
+
+
+def entries_from_trial_params(
+    strategy_params: dict[str, Any],
+    entries_template: list[EntryInstance],
+    *,
+    fixed_strategy_params: dict[str, Any] | None = None,
+) -> list[EntryInstance]:
+    merged = {**(fixed_strategy_params or {}), **strategy_params}
+    instances: list[EntryInstance] = []
+
+    for index, template in enumerate(entries_template):
+        slot_id = f"e{index}"
+        prefix = f"{slot_id}__"
+        params = dict(template.params)
+        for key, value in merged.items():
+            if key.startswith(prefix):
+                params[key[len(prefix) :]] = value
+        instances.append(EntryInstance(strategy=template.strategy, params=params))
+
+    return instances
+
+
+def manager_params_from_trial(
+    manager_params: dict[str, Any],
+    manager_template: EntryManagerConfig,
+    *,
+    fixed_params: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    resolved = dict(manager_template.params)
+    if fixed_params:
+        for key, value in fixed_params.items():
+            if key.startswith("manager__"):
+                resolved[key[len("manager__") :]] = value
+    resolved.update(manager_params)
+    return resolved
 
 
 def build_position_sizing_config(

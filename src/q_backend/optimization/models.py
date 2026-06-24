@@ -4,6 +4,7 @@ from typing import Annotated, Any, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, model_validator
 
+from q_backend.backtesting.entry_models import EntryInstance, EntryManagerConfig
 from q_backend.backtesting.engine import ParallelMode
 from q_backend.backtesting.costs import TransactionCostConfig
 from q_backend.market_data.clients.metatrader import _to_naive_local
@@ -51,6 +52,7 @@ SearchParam = Annotated[
 class SearchSpaceConfig(BaseModel):
     strategy_params: dict[str, SearchParam] = Field(default_factory=dict)
     risk_params: dict[str, SearchParam] = Field(default_factory=dict)
+    manager_params: dict[str, SearchParam] = Field(default_factory=dict)
 
 
 class StorageConfig(BaseModel):
@@ -95,6 +97,9 @@ class BacktestConfig(BaseModel):
     initial_capital: float = Field(default=100_000.0, gt=0)
     point_value: float = Field(default=1.0, gt=0)
     strategy: str = "MACrossover"
+    entries: list[EntryInstance] | None = None
+    entry_manager: EntryManagerConfig = Field(default_factory=EntryManagerConfig)
+    exit_params: dict[str, Any] = Field(default_factory=dict)
     costs: Optional[TransactionCostConfig] = None
     parallel_mode: ParallelMode = ParallelMode.SEQUENTIAL
     day_trade: bool = False
@@ -121,6 +126,7 @@ class OptimizationConfig(BaseModel):
     objective: ObjectiveConfig
     backtest: BacktestConfig
     search_space: SearchSpaceConfig
+    fixed_params: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_study_direction(self):
@@ -152,3 +158,4 @@ class OptimizationConfig(BaseModel):
 class TrialParams(BaseModel):
     strategy_params: dict[str, Any] = Field(default_factory=dict)
     risk_params: dict[str, Any] = Field(default_factory=dict)
+    manager_params: dict[str, Any] = Field(default_factory=dict)

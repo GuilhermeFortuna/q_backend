@@ -5,9 +5,10 @@ from typing import Any, Literal, Optional, Protocol
 
 import pandas as pd
 
+from q_backend.backtesting.entry_models import EntryInstance, EntryManagerConfig
 from q_backend.backtesting.engine import BacktestEngine, ParallelMode
 from q_backend.backtesting.models import Trade
-from q_backend.backtesting.factory import build_strategy
+from q_backend.backtesting.factory import build_composite_entry, build_strategy
 from q_backend.backtesting.position_sizing import (
     PositionSizingConfig,
     build_position_sizer,
@@ -15,6 +16,10 @@ from q_backend.backtesting.position_sizing import (
 from q_backend.backtesting.costs import TransactionCostConfig
 from q_backend.market_data.clients.metatrader import _to_naive_local
 from q_backend.optimization.metrics import build_equity_curve, compute_extended_metrics
+from q_backend.optimization.search_space import (
+    entries_from_trial_params,
+    manager_params_from_trial,
+)
 
 
 @dataclass
@@ -28,6 +33,11 @@ class BacktestRunConfig:
     strategy: str
     strategy_params: dict[str, Any]
     position_sizing: PositionSizingConfig | None
+    entries: list[EntryInstance] | None = None
+    entry_manager: EntryManagerConfig | None = None
+    manager_params: dict[str, Any] | None = None
+    exit_params: dict[str, Any] | None = None
+    fixed_params: dict[str, Any] | None = None
     # Bars of indicator warm-up to prepend before ``start``. They are fed to the
     # strategy so indicators are valid at ``start`` but produce no trades (the engine
     # starts flat at ``start``). Only honored when the data is served from an in-memory
@@ -186,9 +196,36 @@ class DefaultBacktestRunner:
 
     def run(self, config: BacktestRunConfig) -> BacktestRunResult:
         df = self._fetch_data(config)
-        strategy = build_strategy(
-            config.strategy, config.strategy_params, config.symbol
-        )
+        if config.entries is not None:
+            manager_template = config.entry_manager or EntryManagerConfig()
+            merged_strategy_params = {
+                **(config.fixed_params or {}),
+                **config.strategy_params,
+            }
+            merged_manager_params = manager_params_from_trial(
+                config.manager_params or {},
+                manager_template,
+                fixed_params=config.fixed_params,
+            )
+            rebuilt_entries = entries_from_trial_params(
+                merged_strategy_params,
+                config.entries,
+                fixed_strategy_params=config.fixed_params,
+            )
+            strategy = build_composite_entry(
+                [
+                    {"strategy": entry.strategy, "params": entry.params}
+                    for entry in rebuilt_entries
+                ],
+                manager_template.kind,
+                merged_manager_params,
+                config.exit_params or {},
+                config.symbol,
+            )
+        else:
+            strategy = build_strategy(
+                config.strategy, config.strategy_params, config.symbol
+            )
         sizer = build_position_sizer(
             config.position_sizing, point_value=config.point_value
         )

@@ -118,6 +118,11 @@ class OptimizationRunner:
             strategy=backtest.strategy,
             strategy_params=trial_params.strategy_params,
             position_sizing=position_sizing,
+            entries=backtest.entries,
+            entry_manager=backtest.entry_manager,
+            manager_params=trial_params.manager_params,
+            exit_params=backtest.exit_params,
+            fixed_params=self.config.fixed_params,
             costs=backtest.costs,
             parallel_mode=backtest.parallel_mode,
             day_trade=backtest.day_trade,
@@ -131,7 +136,11 @@ class OptimizationRunner:
 
     def _objective(self, trial: optuna.Trial) -> float | tuple[float, ...]:
         trial_params = suggest_params(trial, self.config.search_space)
-        validate_trial_params(trial_params, self.config.backtest.strategy)
+        validate_trial_params(
+            trial_params,
+            self.config.backtest.strategy,
+            entries=self.config.backtest.entries,
+        )
 
         backtest_config = self._build_backtest_config(trial_params)
 
@@ -167,6 +176,7 @@ class OptimizationRunner:
         trial.set_user_attr("metrics", result.metrics)
         trial.set_user_attr("strategy_params", trial_params.strategy_params)
         trial.set_user_attr("risk_params", trial_params.risk_params)
+        trial.set_user_attr("manager_params", trial_params.manager_params)
         for key, value in result.trial_user_attrs.items():
             trial.set_user_attr(key, value)
 
@@ -228,6 +238,7 @@ class OptimizationRunner:
         trial.set_user_attr("metrics", worker_result["metrics"])
         trial.set_user_attr("strategy_params", trial_params.strategy_params)
         trial.set_user_attr("risk_params", trial_params.risk_params)
+        trial.set_user_attr("manager_params", trial_params.manager_params)
         for key, value in worker_result["trial_user_attrs"].items():
             trial.set_user_attr(key, value)
 
@@ -298,7 +309,9 @@ class OptimizationRunner:
                     trial_params = suggest_params(trial, self.config.search_space)
                     try:
                         validate_trial_params(
-                            trial_params, self.config.backtest.strategy
+                            trial_params,
+                            self.config.backtest.strategy,
+                            entries=self.config.backtest.entries,
                         )
                     except optuna.TrialPruned as exc:
                         self._tell_validation_pruned(
