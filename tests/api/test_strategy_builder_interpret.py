@@ -101,7 +101,7 @@ def ai_enabled_settings(monkeypatch):
     monkeypatch.setenv("Q_AI_STRATEGY_PROVIDER", "openai_compatible")
     monkeypatch.setenv("Q_AI_STRATEGY_BASE_URL", "http://localhost:11434/v1")
     monkeypatch.setenv("Q_AI_STRATEGY_MODEL", "test-model-a")
-    monkeypatch.setenv("Q_AI_STRATEGY_MODELS", "test-model-a:Model A,test-model-b:Model B")
+    monkeypatch.setenv("Q_AI_STRATEGY_MODELS", "test-model-a|Model A,test-model-b|Model B")
     monkeypatch.setenv("Q_AI_STRATEGY_API_KEY", "")
     monkeypatch.setenv("Q_AI_STRATEGY_TIMEOUT_SECONDS", "60")
     get_settings.cache_clear()

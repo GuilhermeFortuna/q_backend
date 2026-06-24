@@ -21,7 +21,8 @@ class Settings(BaseSettings):
     ai_strategy_provider: str = "openai_compatible"
     ai_strategy_base_url: str = "http://localhost:11434/v1"
     ai_strategy_model: str = "qwen2.5-coder:14b"
-    # Comma-separated allowlist: "model_id:Label,model_id2:Label2"
+    # Comma-separated allowlist: "model_id|Label,model_id2|Label2". The "|"
+    # delimiter avoids colliding with the colon in Ollama "name:tag" model ids.
     ai_strategy_models: str = ""
     ai_strategy_api_key: str = ""
     ai_strategy_timeout_seconds: int = 60

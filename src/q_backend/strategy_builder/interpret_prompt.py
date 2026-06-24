@@ -9,10 +9,54 @@ from q_backend.strategy_builder.interpret_models import StrategyInterpretRequest
 from q_backend.strategy_builder.spec_models import SCHEMA_VERSION as STRATEGY_SPEC_VERSION
 
 
+# Optimizer-only metadata on parameter specs. The NL interpreter builds a spec
+# from the capability vocabulary; these search ranges only matter to the
+# optimizer, so they are stripped from the prompt copy of the registry.
+_OPTIMIZER_ONLY_PARAM_KEYS: tuple[str, ...] = (
+    "search_min",
+    "search_max",
+    "search_step",
+    "search_scale",
+    "searchable",
+)
+
+
+def _strip_keys(obj: object, keys: tuple[str, ...]) -> None:
+    """Recursively delete the given keys from every nested dict, in place."""
+    if isinstance(obj, dict):
+        for key in keys:
+            obj.pop(key, None)
+        for value in obj.values():
+            _strip_keys(value, keys)
+    elif isinstance(obj, list):
+        for item in obj:
+            _strip_keys(item, keys)
+
+
+def _slim_registry_for_prompt(capabilities: CapabilityRegistry) -> dict:
+    """Produce a token-lean view of the registry for embedding in the system prompt.
+
+    The full registry (used by /capabilities and validation) is ~34k tokens, which
+    overflows modest local-model context windows. The bulk is the per-strategy
+    ``params`` lists — reference detail the interpreter does not need, since it
+    builds specs from the genome/exit vocabulary, not from template parameters.
+    We keep the strategy catalog (name/label/description/thesis) but drop those
+    params, and strip optimizer-only search metadata everywhere.
+    """
+    data = capabilities.model_dump(mode="json")
+    for strategy in data.get("strategies", []):
+        strategy.pop("params", None)
+    _strip_keys(data, _OPTIMIZER_ONLY_PARAM_KEYS)
+    return data
+
+
 def build_system_prompt(capabilities: CapabilityRegistry) -> str:
+    # Serialize a slimmed, compact registry: the full document is ~34k tokens and
+    # overflows modest local-model context windows. Slimming + compaction keeps the
+    # interpreter's vocabulary while fitting the prompt into a usable context.
     registry_json = json.dumps(
-        capabilities.model_dump(mode="json"),
-        indent=2,
+        _slim_registry_for_prompt(capabilities),
+        separators=(",", ":"),
         sort_keys=True,
     )
     return f"""You are Q's strategy builder assistant. Convert user requests into a structured trading strategy specification.

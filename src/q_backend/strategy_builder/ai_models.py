@@ -17,12 +17,15 @@ class CuratedModelOption:
 def parse_ai_strategy_models(raw: str) -> list[CuratedModelOption]:
     options: list[CuratedModelOption] = []
     seen: set[str] = set()
+    # Entries are "model_id|Label" pairs. The "|" delimiter (rather than ":") is
+    # deliberate: Ollama model ids embed a colon in their "name:tag" form (e.g.
+    # "gemma4-e4b:latest"), so a ":" separator would split the id itself.
     for entry in raw.split(","):
         token = entry.strip()
         if not token:
             continue
-        if ":" in token:
-            model_id, label = token.split(":", 1)
+        if "|" in token:
+            model_id, label = token.split("|", 1)
             model_id = model_id.strip()
             label = label.strip() or model_id
         else:
