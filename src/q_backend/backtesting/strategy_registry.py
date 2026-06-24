@@ -82,6 +82,18 @@ class ExitRuleInfo(BaseModel):
     required_param_names: list[str]
 
 
+class SignalManagerInfo(BaseModel):
+    id: str
+    label: str
+    description: str
+    param_names: list[str]
+    params: list[StrategyParamSpec] = []
+
+
+class SignalManagerCatalogResponse(BaseModel):
+    managers: list[SignalManagerInfo]
+
+
 class ExitPreset(BaseModel):
     id: str
     label: str
