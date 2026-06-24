@@ -1,11 +1,25 @@
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from q_backend.api.schemas.market import OhlcvBarResponse
 from q_backend.backtesting.costs import TransactionCostConfig
+from q_backend.backtesting.entry_models import EntryInstance, EntryManagerConfig
 from q_backend.backtesting.position_sizing import PositionSizingConfig
+
+
+# Re-exported for API consumers importing from this module.
+__all__ = [
+    "EntryInstance",
+    "EntryManagerConfig",
+    "BacktestRequest",
+    "ChartIndicatorSeries",
+    "BacktestResponse",
+    "BacktestStartResponse",
+    "BacktestStatusResponse",
+    "BacktestRunListItem",
+]
 
 
 class BacktestRequest(BaseModel):
@@ -17,6 +31,9 @@ class BacktestRequest(BaseModel):
     point_value: float = 1.0
     strategy: str = "MACrossover"
     strategy_params: Dict[str, Any] = {}
+    entries: Optional[List[EntryInstance]] = None
+    entry_manager: EntryManagerConfig = Field(default_factory=EntryManagerConfig)
+    exit_params: Dict[str, Any] = {}
     position_sizing: Optional[PositionSizingConfig] = None
     costs: Optional[TransactionCostConfig] = None
     engine: Literal["candle", "tick"] = "candle"

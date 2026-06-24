@@ -26,6 +26,11 @@ router = APIRouter(tags=["backtest"])
 @router.post("/api/v1/backtest", response_model=BacktestStartResponse)
 def start_backtest(request: BacktestJobRequest):
     """Dispatch a backtest to the worker pool and return its run id for polling."""
+    if request.engine == "tick" and request.entries is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Multi-entry backtests are only supported for the candle engine.",
+        )
     run_id = backtest_jobs.start_job(request)
     return {"run_id": run_id, "status": "running"}
 

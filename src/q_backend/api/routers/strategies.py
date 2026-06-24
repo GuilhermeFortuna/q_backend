@@ -6,6 +6,7 @@ from q_backend.backtesting.ai_strategy_metadata import AiStrategyMetadata
 
 from q_backend.backtesting.strategy_registry import (
     ExitRuleCatalogResponse,
+    SignalManagerCatalogResponse,
     StrategiesResponse,
     list_registered_strategies,
     _STRATEGY_REGISTRY,
@@ -13,6 +14,7 @@ from q_backend.backtesting.strategy_registry import (
 )
 from q_backend.backtesting.exit_rules.registry import list_exit_rules, shared_exit_params
 from q_backend.backtesting.exit_rules.presets import EXIT_PRESETS
+from q_backend.backtesting.signal_managers.registry import list_signal_managers
 from q_backend.backtesting.custom_strategy_store import (
     load_custom_strategies,
     save_custom_strategies,
@@ -43,6 +45,12 @@ def list_exit_rules_catalog():
         "shared_exit_params": shared_exit_params(),
         "exit_presets": EXIT_PRESETS,
     }
+
+
+@router.get("/api/v1/signal-managers", response_model=SignalManagerCatalogResponse)
+def list_signal_managers_catalog():
+    """Return signal-manager metadata and parameter schemas."""
+    return {"managers": list_signal_managers()}
 
 
 @router.get("/api/v1/strategies/custom")

@@ -10,15 +10,19 @@ and the lake — no execution happens in the API process.
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Optional
 
 import pandas as pd
-from pydantic import BaseModel
 
+from q_backend.api.schemas.backtest import BacktestRequest
 from q_backend.backtesting.chart_data import serialize_chart_data
 from q_backend.backtesting.costs import TransactionCostConfig
 from q_backend.backtesting.engine import BacktestEngine, ParallelMode
-from q_backend.backtesting.factory import build_strategy
+from q_backend.backtesting.entry_config import (
+    format_entry_strategy_label,
+    normalize_entries,
+)
+from q_backend.backtesting.factory import build_composite_entry
 from q_backend.backtesting.position_sizing import (
     FixedQuantityPositionSizing,
     PositionSizingConfig,
@@ -55,25 +59,14 @@ logger = logging.getLogger(__name__)
 
 PROGRESS_NAMESPACE = "backtest"
 
+BacktestJobRequest = BacktestRequest
 
-class BacktestJobRequest(BaseModel):
-    symbol: str
-    timeframe: str = "D1"
-    start: Optional[datetime] = None
-    end: Optional[datetime] = None
-    initial_capital: float = 100000.0
-    point_value: float = 1.0
-    strategy: str = "MACrossover"
-    strategy_params: Dict[str, Any] = {}
-    position_sizing: Optional[PositionSizingConfig] = None
-    costs: Optional[TransactionCostConfig] = None
-    engine: Literal["candle", "tick"] = "candle"
-    display_timeframe: str = "M1"
-    tick_flags: Optional[str] = None
-    day_trade: bool = False
-    day_trade_start_time: str = "09:00"
-    day_trade_end_time: str = "16:00"
-    day_trade_close_time: str = "17:00"
+
+def _strategy_persist_name(request: BacktestJobRequest) -> str:
+    entries, manager, _exit_params = normalize_entries(request)
+    if request.entries is not None:
+        return format_entry_strategy_label(entries, manager)
+    return request.strategy
 
 
 def _now() -> datetime:
@@ -105,7 +98,7 @@ def _persist_run_start(request: BacktestJobRequest) -> str:
     persisted_timeframe = config.get("timeframe", request.timeframe)
     now = _now()
     with session_scope() as session:
-        get_or_create_strategy(session, name=request.strategy)
+        get_or_create_strategy(session, name=_strategy_persist_name(request))
         existing = find_backtest_run_by_config(session, config)
         if existing is not None:
             update_backtest_run(
@@ -165,7 +158,17 @@ def _execute_candle(
     df.set_index("time", inplace=True)
     df.index = pd.to_datetime(df.index, format="ISO8601")
 
-    strategy = build_strategy(request.strategy, request.strategy_params, request.symbol)
+    entries, manager, exit_params = normalize_entries(request)
+    strategy = build_composite_entry(
+        [
+            {"strategy": entry.strategy, "params": entry.params}
+            for entry in entries
+        ],
+        manager.kind,
+        manager.params,
+        exit_params,
+        request.symbol,
+    )
     chart_data = serialize_chart_data(strategy.compute_indicators(df.copy()), strategy)
 
     sizer = build_position_sizer(

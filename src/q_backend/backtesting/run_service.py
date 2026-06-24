@@ -31,10 +31,26 @@ from q_backend.storage.lake import delete_backtest_artifacts, read_backtest_arti
 logger = logging.getLogger(__name__)
 
 
+def _strategy_display_name(config: Dict[str, Any]) -> str:
+    entries = config.get("entries")
+    if entries:
+        from q_backend.api.schemas.backtest import EntryInstance, EntryManagerConfig
+        from q_backend.backtesting.entry_config import format_entry_strategy_label
+
+        entry_instances = [
+            EntryInstance.model_validate(entry) for entry in entries
+        ]
+        manager = EntryManagerConfig.model_validate(
+            config.get("entry_manager", {"kind": "or", "params": {}})
+        )
+        return format_entry_strategy_label(entry_instances, manager)
+    return config.get("strategy", "")
+
+
 def backtest_run_fields(config: Dict[str, Any]) -> tuple[str, str, str]:
     return (
         config.get("symbol", ""),
-        config.get("strategy", ""),
+        _strategy_display_name(config),
         config.get("timeframe", "D1"),
     )
 
