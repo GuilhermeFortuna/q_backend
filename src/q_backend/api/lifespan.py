@@ -8,6 +8,8 @@ from q_backend.api import optimization_jobs
 from q_backend.api import strategy_search_jobs
 from q_backend.api import walkforward_jobs
 from q_backend.api.dependencies import market_data_service
+from q_backend.features.sync import sync_registry_to_db
+from q_backend.storage.db.engine import session_scope
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +33,15 @@ async def lifespan(app: FastAPI):
     walkforward_jobs.reconcile_orphaned_runs()
     strategy_search_jobs.reconcile_orphaned_runs()
     backtest_jobs.reconcile_orphaned_runs()
+    # Seed the Feature Store from the in-code FeatureSpec registry (WO130 sync).
+    # Idempotent and one-way: refreshes recipe metadata but never downgrades a
+    # human-promoted status, so it is safe to run on every boot.
+    try:
+        with session_scope() as session:
+            sync_registry_to_db(session)
+        logger.info("Feature registry synced to DB on startup.")
+    except Exception:
+        logger.exception("Feature registry sync failed on startup.")
     yield
     # Shutdown: Disconnect from MetaTrader 5
     logger.info("Shutting down API, disconnecting from MetaTrader 5...")
