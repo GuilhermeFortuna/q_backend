@@ -63,6 +63,15 @@ NODE_SPECS: dict[str, NodeSpec] = {
         {"out": "oscillator"},
         frozenset({"period"}),
     ),
+    "ind.atr": NodeSpec(
+        "ind.atr",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "oscillator"},
+        frozenset({"period"}),
+    ),
     "ind.macd": NodeSpec(
         "ind.macd",
         1,

@@ -25,6 +25,7 @@ from q_backend.backtesting.strategies.lai_lau_common import (
 from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy, resolve_symbol
 from q_backend.backtesting.strategy_registry import register_strategy
 from q_backend.backtesting.technical_indicators import (
+    compute_atr,
     compute_bollinger_bands,
     compute_donchian_channels,
     compute_macd,
@@ -202,6 +203,10 @@ class CompositeStrategy(TradingStrategy):
         elif kind == "ind.rsi":
             source = self._binding_series(df, compiled, 0)
             df[cols["out"]] = compute_rsi(source, int(params["period"]))
+        elif kind == "ind.atr":
+            df[cols["out"]] = compute_atr(
+                df["high"], df["low"], df["close"], int(params["period"])
+            )
         elif kind == "ind.macd":
             source = self._binding_series(df, compiled, 0)
             macd_line, signal_line, histogram = compute_macd(

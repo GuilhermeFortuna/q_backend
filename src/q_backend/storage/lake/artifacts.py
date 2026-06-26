@@ -1,6 +1,7 @@
 import json
 import logging
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -293,3 +294,73 @@ def delete_strategy_search_artifacts(run_id: str) -> None:
     if run_dir.is_dir():
         shutil.rmtree(run_dir)
         logger.info("Deleted strategy search lake artifacts for run %s", run_id)
+
+
+@dataclass(frozen=True)
+class StoredFeatureMatrix:
+    frame: pd.DataFrame
+    manifest: dict[str, Any]
+
+
+def _feature_matrix_dir(matrix_id: str) -> Path:
+    return lake_root() / "features" / matrix_id
+
+
+def feature_matrix_exists(matrix_id: str) -> bool:
+    matrix_dir = _feature_matrix_dir(matrix_id)
+    return (matrix_dir / "matrix.parquet").is_file() and (
+        matrix_dir / "manifest.json"
+    ).is_file()
+
+
+def _frame_to_parquet(frame: pd.DataFrame) -> pd.DataFrame:
+    if frame.empty:
+        return pd.DataFrame(columns=["time", *sorted(frame.columns)])
+    out = frame.copy()
+    out.insert(0, "time", out.index)
+    return out.reset_index(drop=True)
+
+
+def _frame_from_parquet(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty or "time" not in df.columns:
+        return pd.DataFrame()
+    feature_cols = [col for col in df.columns if col != "time"]
+    frame = df.set_index("time")
+    frame.index = pd.to_datetime(frame.index)
+    return frame[feature_cols].sort_index()
+
+
+def write_feature_matrix(
+    matrix_id: str,
+    frame: pd.DataFrame,
+    manifest: dict[str, Any],
+) -> dict[str, str]:
+    matrix_dir = _feature_matrix_dir(matrix_id)
+    matrix_dir.mkdir(parents=True, exist_ok=True)
+
+    ordered = frame.sort_index()
+    if not ordered.empty:
+        ordered = ordered[sorted(ordered.columns)]
+    _frame_to_parquet(ordered).to_parquet(matrix_dir / "matrix.parquet", index=False)
+    (matrix_dir / "manifest.json").write_text(
+        json.dumps(manifest, sort_keys=True), encoding="utf-8"
+    )
+
+    return {
+        "matrix": f"features/{matrix_id}/matrix.parquet",
+        "manifest": f"features/{matrix_id}/manifest.json",
+    }
+
+
+def read_feature_matrix(matrix_id: str) -> StoredFeatureMatrix:
+    matrix_dir = _feature_matrix_dir(matrix_id)
+    matrix_path = matrix_dir / "matrix.parquet"
+    manifest_path = matrix_dir / "manifest.json"
+    if not matrix_path.is_file() or not manifest_path.is_file():
+        raise FileNotFoundError(
+            f"Feature matrix artifacts not found for matrix '{matrix_id}'."
+        )
+
+    frame = _frame_from_parquet(pd.read_parquet(matrix_path))
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    return StoredFeatureMatrix(frame=frame, manifest=manifest)

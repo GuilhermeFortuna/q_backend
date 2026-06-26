@@ -35,6 +35,12 @@ class DatasetType(str, Enum):
     TICKS = "ticks"
 
 
+class FeatureStatus(str, Enum):
+    EXPERIMENTAL = "experimental"
+    CANDIDATE = "candidate"
+    PRODUCTION = "production"
+
+
 class Strategy(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "strategies"
 
@@ -310,6 +316,128 @@ class StrategySearchCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "candidate_id",
             name="uq_strategy_search_candidates_run_candidate",
         ),
+    )
+
+
+class FeatureDefinition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "feature_definitions"
+
+    name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    category: Mapped[str] = mapped_column(String(64), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    usage_count: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+
+    versions: Mapped[list["FeatureVersion"]] = relationship(
+        back_populates="definition",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("name", name="uq_feature_definitions_name"),
+        Index("ix_feature_definitions_category", "category"),
+    )
+
+
+class FeatureVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "feature_versions"
+
+    definition_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("feature_definitions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    version: Mapped[int] = mapped_column(nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=FeatureStatus.EXPERIMENTAL.value,
+        server_default=FeatureStatus.EXPERIMENTAL.value,
+    )
+    node_kind: Mapped[str] = mapped_column(String(128), nullable=False)
+    param_keys: Mapped[list[str]] = mapped_column(PortableJSON, nullable=False, default=list)
+    default_params: Mapped[dict[str, Any]] = mapped_column(
+        PortableJSON, nullable=False, default=dict
+    )
+    forward_window: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    leakage_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    provenance: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
+
+    definition: Mapped["FeatureDefinition"] = relationship(back_populates="versions")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "definition_id",
+            "version",
+            name="uq_feature_versions_definition_version",
+        ),
+    )
+
+
+class EvaluationRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "evaluation_runs"
+
+    symbol: Mapped[str] = mapped_column(String(64), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(16), nullable=False)
+    start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    target_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_horizon: Mapped[int] = mapped_column(nullable=False)
+    matrix_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=RunStatus.PENDING.value,
+    )
+    feature_count: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    result_summary: Mapped[Optional[dict[str, Any]]] = mapped_column(
+        PortableJSON, nullable=True
+    )
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    finished_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    scores: Mapped[list["FeatureScoreRow"]] = relationship(
+        back_populates="run",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        Index("ix_evaluation_runs_status", "status"),
+        Index("ix_evaluation_runs_created_at", "created_at"),
+    )
+
+
+class FeatureScoreRow(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "feature_score_rows"
+
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("evaluation_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    feature_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    feature_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    ic: Mapped[Optional[float]] = mapped_column(nullable=True)
+    rank_ic: Mapped[Optional[float]] = mapped_column(nullable=True)
+    mutual_info: Mapped[Optional[float]] = mapped_column(nullable=True)
+    stability: Mapped[Optional[float]] = mapped_column(nullable=True)
+    global_score: Mapped[Optional[float]] = mapped_column(nullable=True)
+    cluster_id: Mapped[int] = mapped_column(nullable=False)
+    is_representative: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    leakage_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    regime_ics: Mapped[dict[str, Any]] = mapped_column(
+        PortableJSON, nullable=False, default=dict
+    )
+
+    run: Mapped["EvaluationRun"] = relationship(back_populates="scores")
+
+    __table_args__ = (
+        UniqueConstraint("run_id", "feature_id", name="uq_feature_score_rows_run_feature"),
+        Index("ix_feature_score_rows_feature_name", "feature_name"),
     )
 
 

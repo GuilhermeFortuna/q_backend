@@ -9,6 +9,9 @@ from q_backend.storage.db.models import (
     BacktestConfig,
     BacktestRun,
     DataIngestionRun,
+    FeatureDefinition,
+    FeatureStatus,
+    FeatureVersion,
     OptimizationStudy,
     OptimizationTrial,
     RunStatus,
@@ -19,6 +22,8 @@ from q_backend.storage.db.models import (
     WalkForwardWindow,
     StrategySearchRun,
     StrategySearchCandidate,
+    EvaluationRun,
+    FeatureScoreRow,
 )
 
 
@@ -731,3 +736,333 @@ def get_strategy_search_candidate(
             StrategySearchCandidate.candidate_id == candidate_id,
         )
     ).scalar_one_or_none()
+
+
+_FEATURE_STATUS_RANK = {
+    FeatureStatus.EXPERIMENTAL.value: 0,
+    FeatureStatus.CANDIDATE.value: 1,
+    FeatureStatus.PRODUCTION.value: 2,
+}
+
+
+def _feature_status_rank(status: str) -> int:
+    return _FEATURE_STATUS_RANK.get(status, 0)
+
+
+def upsert_feature_definition(
+    session: Session,
+    *,
+    name: str,
+    category: str,
+    description: Optional[str] = None,
+) -> FeatureDefinition:
+    definition = session.execute(
+        select(FeatureDefinition).where(FeatureDefinition.name == name)
+    ).scalar_one_or_none()
+    if definition is None:
+        definition = FeatureDefinition(
+            name=name,
+            category=category,
+            description=description,
+            usage_count=0,
+        )
+        session.add(definition)
+    else:
+        definition.category = category
+        definition.description = description
+    session.flush()
+    return definition
+
+
+def upsert_feature_version(
+    session: Session,
+    *,
+    definition_id: uuid.UUID,
+    version: int,
+    status: str,
+    node_kind: str,
+    param_keys: list[str],
+    default_params: dict[str, Any],
+    forward_window: int,
+    leakage_status: str,
+    provenance: dict[str, Any],
+) -> FeatureVersion:
+    feature_version = session.execute(
+        select(FeatureVersion).where(
+            FeatureVersion.definition_id == definition_id,
+            FeatureVersion.version == version,
+        )
+    ).scalar_one_or_none()
+    if feature_version is None:
+        feature_version = FeatureVersion(
+            definition_id=definition_id,
+            version=version,
+            status=status,
+            node_kind=node_kind,
+            param_keys=param_keys,
+            default_params=default_params,
+            forward_window=forward_window,
+            leakage_status=leakage_status,
+            provenance=provenance,
+        )
+        session.add(feature_version)
+    else:
+        feature_version.node_kind = node_kind
+        feature_version.param_keys = param_keys
+        feature_version.default_params = default_params
+        feature_version.forward_window = forward_window
+        feature_version.leakage_status = leakage_status
+        feature_version.provenance = provenance
+        if _feature_status_rank(status) > _feature_status_rank(feature_version.status):
+            feature_version.status = status
+    session.flush()
+    return feature_version
+
+
+def get_feature_definition(
+    session: Session, name: str
+) -> Optional[FeatureDefinition]:
+    return session.execute(
+        select(FeatureDefinition)
+        .where(FeatureDefinition.name == name)
+        .options(selectinload(FeatureDefinition.versions))
+    ).scalar_one_or_none()
+
+
+def list_feature_definitions(
+    session: Session,
+    *,
+    category: Optional[str] = None,
+    status: Optional[str] = None,
+) -> list[FeatureDefinition]:
+    stmt = select(FeatureDefinition).options(
+        selectinload(FeatureDefinition.versions)
+    )
+    if category is not None:
+        stmt = stmt.where(FeatureDefinition.category == category)
+    if status is not None:
+        stmt = stmt.where(
+            FeatureDefinition.versions.any(FeatureVersion.status == status)
+        )
+    definitions = session.execute(
+        stmt.order_by(FeatureDefinition.name)
+    ).scalars().all()
+    return list(definitions)
+
+
+def set_feature_status(
+    session: Session,
+    *,
+    name: str,
+    version: int,
+    status: str,
+) -> FeatureVersion:
+    definition = session.execute(
+        select(FeatureDefinition).where(FeatureDefinition.name == name)
+    ).scalar_one_or_none()
+    if definition is None:
+        raise ValueError(f"FeatureDefinition '{name}' not found")
+    feature_version = session.execute(
+        select(FeatureVersion).where(
+            FeatureVersion.definition_id == definition.id,
+            FeatureVersion.version == version,
+        )
+    ).scalar_one_or_none()
+    if feature_version is None:
+        raise ValueError(f"FeatureVersion '{name}' v{version} not found")
+    feature_version.status = status
+    session.flush()
+    return feature_version
+
+
+def increment_feature_usage(
+    session: Session,
+    *,
+    name: str,
+    n: int = 1,
+) -> FeatureDefinition:
+    result = session.execute(
+        update(FeatureDefinition)
+        .where(FeatureDefinition.name == name)
+        .values(usage_count=FeatureDefinition.usage_count + n)
+    )
+    if not result.rowcount:
+        raise ValueError(f"FeatureDefinition '{name}' not found")
+    session.flush()
+    definition = session.execute(
+        select(FeatureDefinition).where(FeatureDefinition.name == name)
+    ).scalar_one()
+    return definition
+
+
+def create_evaluation_run(
+    session: Session,
+    *,
+    symbol: str,
+    timeframe: str,
+    start: datetime,
+    end: datetime,
+    target_name: str,
+    target_horizon: int,
+    matrix_id: str,
+    status: str = RunStatus.PENDING.value,
+    feature_count: int = 0,
+    result_summary: Optional[dict[str, Any]] = None,
+    error_message: Optional[str] = None,
+    started_at: Optional[datetime] = None,
+    finished_at: Optional[datetime] = None,
+) -> EvaluationRun:
+    run = EvaluationRun(
+        symbol=symbol,
+        timeframe=timeframe,
+        start=start,
+        end=end,
+        target_name=target_name,
+        target_horizon=target_horizon,
+        matrix_id=matrix_id,
+        status=status,
+        feature_count=feature_count,
+        result_summary=result_summary,
+        error_message=error_message,
+        started_at=started_at,
+        finished_at=finished_at,
+    )
+    session.add(run)
+    session.flush()
+    return run
+
+
+def update_evaluation_run(
+    session: Session,
+    run_id: uuid.UUID,
+    *,
+    status: Optional[str] = None,
+    matrix_id: Optional[str] = None,
+    feature_count: Optional[int] = None,
+    result_summary: Optional[dict[str, Any]] = None,
+    error_message: Optional[str] = None,
+    started_at: Optional[datetime] = None,
+    finished_at: Optional[datetime] = None,
+    clear_error_message: bool = False,
+) -> EvaluationRun:
+    run = session.get(EvaluationRun, run_id)
+    if run is None:
+        raise ValueError(f"EvaluationRun {run_id} not found")
+    if status is not None:
+        run.status = status
+    if matrix_id is not None:
+        run.matrix_id = matrix_id
+    if feature_count is not None:
+        run.feature_count = feature_count
+    if result_summary is not None:
+        run.result_summary = result_summary
+    if clear_error_message:
+        run.error_message = None
+    elif error_message is not None:
+        run.error_message = error_message
+    if started_at is not None:
+        run.started_at = started_at
+    if finished_at is not None:
+        run.finished_at = finished_at
+    session.flush()
+    return run
+
+
+def get_evaluation_run(
+    session: Session, run_id: uuid.UUID
+) -> Optional[EvaluationRun]:
+    return session.execute(
+        select(EvaluationRun)
+        .where(EvaluationRun.id == run_id)
+        .options(selectinload(EvaluationRun.scores))
+    ).scalar_one_or_none()
+
+
+def create_feature_score_row(
+    session: Session,
+    *,
+    run_id: uuid.UUID,
+    feature_id: str,
+    feature_name: str,
+    ic: Optional[float] = None,
+    rank_ic: Optional[float] = None,
+    mutual_info: Optional[float] = None,
+    stability: Optional[float] = None,
+    global_score: Optional[float] = None,
+    cluster_id: int,
+    is_representative: bool,
+    leakage_status: str,
+    regime_ics: Optional[dict[str, Any]] = None,
+) -> FeatureScoreRow:
+    row = FeatureScoreRow(
+        run_id=run_id,
+        feature_id=feature_id,
+        feature_name=feature_name,
+        ic=ic,
+        rank_ic=rank_ic,
+        mutual_info=mutual_info,
+        stability=stability,
+        global_score=global_score,
+        cluster_id=cluster_id,
+        is_representative=is_representative,
+        leakage_status=leakage_status,
+        regime_ics=regime_ics or {},
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def get_latest_global_scores(session: Session) -> dict[str, float]:
+    latest = (
+        select(
+            FeatureScoreRow.feature_name,
+            func.max(FeatureScoreRow.created_at).label("max_created"),
+        )
+        .group_by(FeatureScoreRow.feature_name)
+        .subquery()
+    )
+    rows = session.execute(
+        select(FeatureScoreRow.feature_name, FeatureScoreRow.global_score)
+        .join(
+            latest,
+            (FeatureScoreRow.feature_name == latest.c.feature_name)
+            & (FeatureScoreRow.created_at == latest.c.max_created),
+        )
+    ).all()
+    scores: dict[str, float] = {}
+    for name, value in rows:
+        if value is not None:
+            scores[name] = float(value)
+    return scores
+
+
+def get_feature_evaluation_history(
+    session: Session,
+    feature_name: str,
+    *,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    rows = session.execute(
+        select(FeatureScoreRow, EvaluationRun)
+        .join(EvaluationRun, FeatureScoreRow.run_id == EvaluationRun.id)
+        .where(FeatureScoreRow.feature_name == feature_name)
+        .order_by(
+            nulls_last(desc(EvaluationRun.finished_at)),
+            desc(EvaluationRun.created_at),
+        )
+        .limit(limit)
+    ).all()
+    history: list[dict[str, Any]] = []
+    for score_row, run in rows:
+        evaluated_at = run.finished_at or run.created_at
+        history.append(
+            {
+                "run_id": str(run.id),
+                "target": f"{run.target_name}:{run.target_horizon}",
+                "rank_ic": score_row.rank_ic,
+                "global_score": score_row.global_score,
+                "evaluated_at": evaluated_at.isoformat(),
+            }
+        )
+    return history
