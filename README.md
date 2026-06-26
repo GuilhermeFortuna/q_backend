@@ -252,9 +252,29 @@ Completed runs from `POST /api/v1/walkforward` store relative paths in `walkforw
 
 Completed runs from `POST /api/v1/strategy-search` store relative paths in `strategy_search_runs.lake_paths`. Per-candidate stitched OOS equity curves live in the lake; Postgres holds run metadata, per-candidate summary metrics, and the leaderboard summary.
 
----
+**Feature matrix artifact layout** (WO129):
 
-## 🛠 Tech Stack
+```
+{data_lake_root}/features/{matrix_id}/matrix.parquet
+{data_lake_root}/features/{matrix_id}/manifest.json
+```
+
+Feature matrices are cached by deterministic `matrix_id` (symbol, timeframe, date range, feature set, `ENGINE_VERSION`). Bump `ENGINE_VERSION` in `features/matrix.py` when compute semantics change.
+
+### 4. Feature Intelligence (`features`)
+
+Phase 1–2 platform for first-class features: registry, point-in-time computation, lake-cached matrices, Postgres-backed store, evaluation metrics, and scoring. Design rationale and work-order status: [`docs/design/feature-intelligence.md`](../q_frontend/docs/design/feature-intelligence.md).
+
+* **Registry (`features/registry.py`)** — code-defined feature catalog synced to Postgres on API startup (`sync_registry_to_db`, idempotent; never downgrades a human-promoted status).
+* **Compute (`features/compute.py`, `leakage.py`)** — named feature series on OHLCV bars with lookback trim and leakage checks.
+* **Targets (`features/targets.py`)** — label definitions (`fwd_return`, `fwd_log_return`, `fwd_vol_adj_return`, `fwd_direction`) with horizon expansion via `list_target_specs`.
+* **Matrix builder (`features/matrix.py`)** — builds aligned feature matrices, writes Parquet + provenance manifest to the lake.
+* **Evaluation (`features/evaluation.py`, `evaluation_service.py`)** — IC, Rank IC, MI, stability, regime robustness; persists `EvaluationRun` + `FeatureScoreRow` rows.
+* **Scoring (`features/scoring.py`)** — redundancy clustering, global feature score, recommended sets.
+* **Persistence** — `FeatureDefinition` / `FeatureVersion` tables (WO130); evaluation tables (WO135). Repositories in `storage/db/repositories.py`.
+
+Lifecycle statuses: `experimental` → `candidate` → `production` (per feature version).
+
 
 * **Core Runtime:** Python `>=3.12`
 * **API Framework:** FastAPI, Uvicorn (ASGI web server), CORS Middleware
@@ -293,6 +313,7 @@ q_backend/
 │       │   └── *_jobs.py # Async job managers (backtest, optimize, walk-forward, …)
 │       ├── backtesting/  # Candle/tick engines, genome DSL, strategies, sizers
 │       ├── cli/          # CLI entry points (`worker`, `q-optimize`)
+│       ├── features/     # Feature registry, compute, matrix, evaluation, scoring
 │       ├── market_data/  # MT5/local providers, tick cache, local store
 │       ├── optimization/ # Optuna runner, walk-forward, genetic search, discovery
 │       ├── tasks/        # Dramatiq broker, actors, fan-in, worker context
@@ -304,6 +325,7 @@ q_backend/
 └── tests/
     ├── api/              # HTTP router & persistence integration tests
     ├── backtesting/
+    ├── features/
     ├── optimization/
     ├── market_data/
     └── storage/          # Storage unit + integration tests
@@ -396,6 +418,7 @@ Domain logic stays in the existing packages (`market_data/`, `backtesting/`,
 | Optimization | `routers/optimization.py` | `schemas/optimization.py` | `api/optimization_jobs.py` |
 | Walk-forward | `routers/walkforward.py` | `schemas/walkforward.py` | `api/walkforward_jobs.py` |
 | Strategy search | `routers/strategy_search.py` | `schemas/strategy_search.py` | `api/strategy_search_jobs.py` |
+| Features | `routers/features.py` | `schemas/features.py` | `features/evaluation_service.py`, `features/sync.py` |
 | Storage | `routers/storage.py` | `schemas/storage.py` | `api/storage_jobs.py` |
 | News | `routers/news.py` | `schemas/news.py` | `api/services/news.py` (injectable RSS fetch) |
 
@@ -611,6 +634,29 @@ Worker count is resolved by `q_backend.optimization.parallel.resolve_worker_coun
   * *Description:* Delete run metadata and lake artifacts (`204`).
 * **`GET /api/v1/strategy-search/{run_id}/candidates/{candidate_id}/artifacts/equity`**
   * *Description:* Stitched OOS equity for one candidate (`{"run_id", "candidate_id", "points": [{"time", "equity"}, ...]}`).
+
+### Feature Store & evaluation (Research frontend)
+* **`GET /api/v1/features`**
+  * *Description:* Feature Store catalog list for the Research workspace.
+  * *Parameters:* optional `category`, `status` (`experimental` | `candidate` | `production`).
+  * *Response:* `{"features": [{"name", "category", "latest_version", "status", "usage_count", "score"}, ...]}`
+* **`GET /api/v1/features/{name}`**
+  * *Description:* Feature Passport — versions, provenance, evaluation history, and latest `global_score`.
+* **`POST /api/v1/features/{name}/{version}/status`**
+  * *Description:* Promote or demote a feature version's lifecycle status.
+  * *Request body:* `{"status": "experimental"|"candidate"|"production"}`
+  * *Response:* Updated Feature Passport.
+* **`GET /api/v1/features/leaderboard`**
+  * *Description:* Latest `global_score` per feature across evaluation runs.
+  * *Response:* `{"features": [{"feature_name", "global_score"}, ...]}`
+* **`POST /api/v1/feature-eval`**
+  * *Description:* Run feature matrix build → evaluate → score → persist (synchronous in the API process).
+  * *Request body:* `symbol`, `timeframe`, `start`, `end`, `target` (`name`, `horizon`), `features` (`name`, optional `version`, optional `params`).
+  * *Response:* `{"run_id": "<uuid>", "status": "completed"|"failed"|...}`
+* **`GET /api/v1/feature-eval/{run_id}`**
+  * *Description:* Evaluation run status plus `leaderboard`, `clusters`, and `heatmap` payloads.
+
+See [`docs/design/feature-intelligence.md`](../q_frontend/docs/design/feature-intelligence.md) for PIT/leakage contracts, target definitions, and scoring weights.
 
 ### Local market storage
 * **`GET /api/v1/storage/inventory`**
