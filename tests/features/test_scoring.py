@@ -78,6 +78,27 @@ def test_perfectly_correlated_features_share_one_cluster():
     assert pair_cluster.representative in {"feat.a", "feat.b"}
 
 
+def test_cluster_redundant_handles_naive_index_with_tzaware_valid_from():
+    # Regression: production matrices have a tz-naive UTC index (from read_ohlcv)
+    # while the manifest serializes valid_from with a trailing 'Z' (tz-aware).
+    # cluster_redundant must not raise "Cannot compare tz-naive and tz-aware".
+    n = 60
+    times = pd.date_range("2023-01-01", periods=n, freq="h")  # tz-naive
+    assert times.tz is None
+    base = np.linspace(0, 1, n)
+    frame = pd.DataFrame({"feat.a": base, "feat.b": base}, index=times)
+    matrix = FeatureMatrix(
+        matrix_id="test",
+        frame=frame,
+        manifest={"valid_from": times[10].isoformat() + "Z"},  # tz-aware string
+    )
+
+    clusters = cluster_redundant(matrix, threshold=0.9)
+
+    # Rows before valid_from are trimmed; perfectly correlated pair clusters.
+    assert any(c.feature_ids == ["feat.a", "feat.b"] for c in clusters)
+
+
 def test_recommended_set_never_contains_two_from_same_cluster():
     clusters = [
         RedundancyCluster(0, ["a", "b"], "a"),

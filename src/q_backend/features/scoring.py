@@ -47,8 +47,15 @@ def _trim_to_valid_from(frame: pd.DataFrame, manifest: dict[str, Any]) -> pd.Dat
     valid_from = manifest.get("valid_from")
     if valid_from is None or frame.empty:
         return frame
+    # `valid_from` is serialized with a trailing 'Z' (tz-aware UTC) while the
+    # matrix frame index is tz-naive UTC. Normalize both to naive UTC so the
+    # comparison never raises "Cannot compare tz-naive and tz-aware".
     cutoff = pd.Timestamp(valid_from)
+    if cutoff.tz is not None:
+        cutoff = cutoff.tz_convert("UTC").tz_localize(None)
     index = pd.to_datetime(frame.index)
+    if getattr(index, "tz", None) is not None:
+        index = index.tz_convert("UTC").tz_localize(None)
     return frame.loc[index >= cutoff]
 
 

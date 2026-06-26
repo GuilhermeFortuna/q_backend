@@ -313,12 +313,23 @@ def write_ohlcv(symbol: str, timeframe: str, bars: list[OHLCV]) -> dict[str, Any
     return entry
 
 
+def _to_naive_utc(ts: pd.Timestamp) -> pd.Timestamp:
+    """Drop tz info, normalizing to UTC, so bounds match the naive-UTC store."""
+    if ts.tz is not None:
+        return ts.tz_convert("UTC").tz_localize(None)
+    return ts
+
+
 def read_ohlcv(
     symbol: str, timeframe: str, start: datetime, end: datetime
 ) -> list[OHLCV]:
     tf = timeframe.upper()
-    start_ts = pd.Timestamp(start)
-    end_ts = pd.Timestamp(end)
+    # The stored `time` column is tz-naive UTC; callers may pass either tz-naive
+    # or tz-aware bounds (e.g. the Feature Lab sends ISO strings with an offset).
+    # Normalize tz-aware bounds to naive UTC so the comparison below never hits
+    # pandas' "Invalid comparison between tz-naive and tz-aware" TypeError.
+    start_ts = _to_naive_utc(pd.Timestamp(start))
+    end_ts = _to_naive_utc(pd.Timestamp(end))
     if start_ts > end_ts:
         return []
 
@@ -334,6 +345,8 @@ def read_ohlcv(
 
     combined = pd.concat(frames, ignore_index=True)
     combined["time"] = pd.to_datetime(combined["time"])
+    if getattr(combined["time"].dt, "tz", None) is not None:
+        combined["time"] = combined["time"].dt.tz_convert("UTC").dt.tz_localize(None)
     mask = (combined["time"] >= start_ts) & (combined["time"] <= end_ts)
     filtered = combined.loc[mask].sort_values("time")
     return _dataframe_to_bars(filtered)
