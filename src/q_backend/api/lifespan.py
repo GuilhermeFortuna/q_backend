@@ -10,6 +10,7 @@ from q_backend.api import walkforward_jobs
 from q_backend.api.dependencies import market_data_service
 from q_backend.features.evaluation_service import reconcile_orphaned_eval_runs
 from q_backend.features.sync import sync_registry_to_db
+from q_backend.neural.sync import sync_neural_models_to_db
 from q_backend.storage.db.engine import session_scope
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,12 @@ async def lifespan(app: FastAPI):
         logger.info("Feature registry synced to DB on startup.")
     except Exception:
         logger.exception("Feature registry sync failed on startup.")
+    try:
+        with session_scope() as session:
+            sync_neural_models_to_db(session)
+        logger.info("Neural model registry synced to DB on startup.")
+    except Exception:
+        logger.exception("Neural model registry sync failed on startup.")
     yield
     # Shutdown: Disconnect from MetaTrader 5
     logger.info("Shutting down API, disconnecting from MetaTrader 5...")

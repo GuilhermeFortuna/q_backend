@@ -18,6 +18,7 @@ from q_backend.features.matrix import (
     build_feature_matrix,
     compute_matrix_id,
 )
+from q_backend.features.registry import get_feature_spec
 from q_backend.features.scoring import (
     cluster_redundant,
     recommended_feature_set,
@@ -200,7 +201,27 @@ def _evaluate_into_run(
     feature_set: list[FeatureRequest],
 ) -> None:
     """Heavy lifting: build matrix, evaluate, score, persist; mark COMPLETED/FAILED."""
+
+    def _report_progress(stage: str, processed: int, total: int) -> None:
+        # Stream live progress into result_summary and commit so the polling
+        # GET (a separate session) sees it advance. Overwritten by the real
+        # summary on completion. Never let a progress write break the eval.
+        try:
+            update_evaluation_run(
+                session,
+                run.id,
+                result_summary={
+                    "stage": stage,
+                    "processed_features": processed,
+                    "total_features": total,
+                },
+            )
+            session.commit()
+        except Exception:  # noqa: BLE001 - progress is best-effort
+            session.rollback()
+
     try:
+        _report_progress("loading_data", 0, len(feature_set))
         matrix = build_feature_matrix(
             symbol, timeframe, start, end, feature_set
         )
@@ -216,7 +237,11 @@ def _evaluate_into_run(
             target_series,
             close=close,
             bars=bars_df,
+            progress_callback=lambda done, total: _report_progress(
+                "evaluating", done, total
+            ),
         )
+        _report_progress("scoring", len(feature_set), len(feature_set))
         clusters = cluster_redundant(matrix)
         scores = score_features(evaluations, clusters)
         recommended = recommended_feature_set(scores)
@@ -229,6 +254,10 @@ def _evaluate_into_run(
             evaluation = evaluation_by_id[feature_id]
             scored = score_by_id[feature_id]
             feature_name = names_by_id.get(feature_id, feature_id)
+            try:
+                evaluated_spec = get_feature_spec(feature_name)
+            except KeyError:
+                evaluated_spec = None
             create_feature_score_row(
                 session,
                 run_id=run.id,
@@ -244,7 +273,8 @@ def _evaluate_into_run(
                 leakage_status=evaluation.leakage_status,
                 regime_ics=_json_safe_regime(evaluation.regime_ics),
             )
-            increment_feature_usage(session, name=feature_name)
+            if evaluated_spec is None or evaluated_spec.source != "neural":
+                increment_feature_usage(session, name=feature_name)
 
         top_score = max(
             (item.global_score for item in scores),

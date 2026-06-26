@@ -9,21 +9,24 @@ from q_backend.storage.db.models import (
     BacktestConfig,
     BacktestRun,
     DataIngestionRun,
+    EvaluationRun,
     FeatureDefinition,
+    FeatureScoreRow,
     FeatureStatus,
     FeatureVersion,
+    NeuralModel,
+    NeuralModelStatus,
+    NeuralModelVersion,
     OptimizationStudy,
     OptimizationTrial,
     RunStatus,
     Strategy,
+    StrategySearchCandidate,
+    StrategySearchRun,
     StrategyVersion,
     TrialStatus,
     WalkForwardRun,
     WalkForwardWindow,
-    StrategySearchRun,
-    StrategySearchCandidate,
-    EvaluationRun,
-    FeatureScoreRow,
 )
 
 
@@ -1035,6 +1038,151 @@ def get_latest_global_scores(session: Session) -> dict[str, float]:
         if value is not None:
             scores[name] = float(value)
     return scores
+
+
+_NEURAL_MODEL_STATUS_RANK = {
+    NeuralModelStatus.TRAINED.value: 0,
+    NeuralModelStatus.CANDIDATE.value: 1,
+    NeuralModelStatus.PRODUCTION.value: 2,
+    NeuralModelStatus.ARCHIVED.value: 3,
+}
+
+
+def _neural_model_status_rank(status: str) -> int:
+    return _NEURAL_MODEL_STATUS_RANK.get(status, 0)
+
+
+def create_neural_model(
+    session: Session,
+    *,
+    model_key: str,
+    kind: str,
+    symbol: str,
+    timeframe: str,
+) -> NeuralModel:
+    model = session.execute(
+        select(NeuralModel).where(NeuralModel.model_key == model_key)
+    ).scalar_one_or_none()
+    if model is None:
+        model = NeuralModel(
+            model_key=model_key,
+            kind=kind,
+            symbol=symbol,
+            timeframe=timeframe,
+        )
+        session.add(model)
+    else:
+        model.kind = kind
+        model.symbol = symbol
+        model.timeframe = timeframe
+    session.flush()
+    return model
+
+
+def _next_neural_model_version(session: Session, model_id: uuid.UUID) -> int:
+    current = session.execute(
+        select(func.max(NeuralModelVersion.version)).where(
+            NeuralModelVersion.model_id == model_id
+        )
+    ).scalar_one_or_none()
+    return int(current or 0) + 1
+
+
+def create_neural_model_version(
+    session: Session,
+    *,
+    model_id: uuid.UUID,
+    model_hash: str,
+    version: int | None = None,
+    status: str = NeuralModelStatus.TRAINED.value,
+    train_start: datetime,
+    train_end: datetime,
+    n_latents: int,
+    input_features: list[str],
+    hyperparams: dict[str, Any],
+    val_metrics: dict[str, Any],
+    latent_names: list[str],
+    artifact_path: str,
+) -> NeuralModelVersion:
+    existing = session.execute(
+        select(NeuralModelVersion).where(NeuralModelVersion.model_hash == model_hash)
+    ).scalar_one_or_none()
+    if existing is not None:
+        existing.train_start = train_start
+        existing.train_end = train_end
+        existing.n_latents = n_latents
+        existing.input_features = input_features
+        existing.hyperparams = hyperparams
+        existing.val_metrics = val_metrics
+        existing.latent_names = latent_names
+        existing.artifact_path = artifact_path
+        if _neural_model_status_rank(status) > _neural_model_status_rank(existing.status):
+            existing.status = status
+        session.flush()
+        return existing
+
+    resolved_version = (
+        version
+        if version is not None
+        else _next_neural_model_version(session, model_id)
+    )
+    model_version = NeuralModelVersion(
+        model_id=model_id,
+        model_hash=model_hash,
+        version=resolved_version,
+        status=status,
+        train_start=train_start,
+        train_end=train_end,
+        n_latents=n_latents,
+        input_features=input_features,
+        hyperparams=hyperparams,
+        val_metrics=val_metrics,
+        latent_names=latent_names,
+        artifact_path=artifact_path,
+    )
+    session.add(model_version)
+    session.flush()
+    return model_version
+
+
+def get_neural_model_version(
+    session: Session, model_hash: str
+) -> Optional[NeuralModelVersion]:
+    return session.execute(
+        select(NeuralModelVersion)
+        .where(NeuralModelVersion.model_hash == model_hash)
+        .options(selectinload(NeuralModelVersion.model))
+    ).scalar_one_or_none()
+
+
+def list_neural_model_versions(
+    session: Session,
+    *,
+    status: Optional[str] = None,
+) -> list[NeuralModelVersion]:
+    stmt = select(NeuralModelVersion).options(selectinload(NeuralModelVersion.model))
+    if status is not None:
+        stmt = stmt.where(NeuralModelVersion.status == status)
+    versions = session.execute(
+        stmt.order_by(desc(NeuralModelVersion.created_at))
+    ).scalars().all()
+    return list(versions)
+
+
+def set_neural_model_status(
+    session: Session,
+    *,
+    model_hash: str,
+    status: str,
+) -> NeuralModelVersion:
+    model_version = session.execute(
+        select(NeuralModelVersion).where(NeuralModelVersion.model_hash == model_hash)
+    ).scalar_one_or_none()
+    if model_version is None:
+        raise ValueError(f"NeuralModelVersion with hash '{model_hash}' not found")
+    model_version.status = status
+    session.flush()
+    return model_version
 
 
 def get_feature_evaluation_history(

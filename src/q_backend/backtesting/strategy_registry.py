@@ -219,6 +219,7 @@ def load_and_register_custom_strategies() -> None:
 
 
 def get_registered_strategy(name: str) -> RegisteredStrategy:
+    import q_backend.backtesting.strategies  # noqa: F401
     load_and_register_custom_strategies()
     try:
         return _STRATEGY_REGISTRY[name]
@@ -227,6 +228,7 @@ def get_registered_strategy(name: str) -> RegisteredStrategy:
 
 
 def list_registered_strategies() -> list[StrategyInfo]:
+    import q_backend.backtesting.strategies  # noqa: F401
     load_and_register_custom_strategies()
     return sorted(
         (entry.info for entry in _STRATEGY_REGISTRY.values()),

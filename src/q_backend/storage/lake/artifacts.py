@@ -5,8 +5,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+import joblib
 import pandas as pd
 
+from q_backend.neural.encoder import EncoderConfig, NeuralEncoder
+from q_backend.neural.factory import load_encoder_from_artifact_payload
 from q_backend.storage.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -364,3 +367,123 @@ def read_feature_matrix(matrix_id: str) -> StoredFeatureMatrix:
     frame = _frame_from_parquet(pd.read_parquet(matrix_path))
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     return StoredFeatureMatrix(frame=frame, manifest=manifest)
+
+
+def _neural_model_dir(model_hash: str) -> Path:
+    return lake_root() / "neural_models" / model_hash
+
+
+def _neural_model_artifact_relative_path(model_hash: str) -> str:
+    return f"neural_models/{model_hash}/encoder.joblib"
+
+
+def neural_model_exists(model_hash: str) -> bool:
+    model_dir = _neural_model_dir(model_hash)
+    return (model_dir / "encoder.joblib").is_file() and (
+        model_dir / "manifest.json"
+    ).is_file()
+
+
+def write_neural_model(
+    model_hash: str,
+    encoder: NeuralEncoder,
+    *,
+    model_key: str | None = None,
+) -> dict[str, str]:
+    model_dir = _neural_model_dir(model_hash)
+    if model_dir.exists() and (model_dir / "encoder.joblib").is_file():
+        raise FileExistsError(
+            f"Neural model artifact already exists for hash '{model_hash}'."
+        )
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    payload = {
+        "kind": encoder.config.kind,
+        "config": encoder.config,
+        "state": encoder.dump_artifact_state(),
+        "model_id": encoder.model_id,
+        "latent_names": encoder.latent_names,
+        "val_metrics": encoder.val_metrics,
+    }
+    joblib.dump(payload, model_dir / "encoder.joblib")
+    manifest = {
+        "model_hash": model_hash,
+        "model_id": encoder.model_id,
+        "model_key": model_key,
+        "kind": encoder.config.kind,
+        "symbol": encoder.config.symbol,
+        "timeframe": encoder.config.timeframe.upper(),
+        "train_start": encoder.config.train_start.isoformat(),
+        "train_end": encoder.config.train_end.isoformat(),
+        "n_latents": encoder.config.n_latents,
+        "input_features": list(encoder.config.input_features),
+        "hyperparams": dict(encoder.config.hyperparams),
+        "val_metrics": encoder.val_metrics,
+        "latent_names": encoder.latent_names,
+    }
+    (model_dir / "manifest.json").write_text(
+        json.dumps(manifest, sort_keys=True), encoding="utf-8"
+    )
+
+    return {
+        "encoder": _neural_model_artifact_relative_path(model_hash),
+        "manifest": f"neural_models/{model_hash}/manifest.json",
+    }
+
+
+def read_neural_model(model_hash: str) -> NeuralEncoder:
+    model_dir = _neural_model_dir(model_hash)
+    artifact_path = model_dir / "encoder.joblib"
+    if not artifact_path.is_file():
+        raise FileNotFoundError(
+            f"Neural model artifact not found for hash '{model_hash}'."
+        )
+
+    payload = joblib.load(artifact_path)
+    if isinstance(payload, dict) and "state" in payload:
+        encoder = load_encoder_from_artifact_payload(payload)
+    else:
+        encoder = _load_legacy_pca_artifact(payload)
+
+    if encoder.model_id != model_hash:
+        raise ValueError(
+            f"Artifact model_id '{encoder.model_id}' does not match requested hash "
+            f"'{model_hash}'."
+        )
+    return encoder
+
+
+def _load_legacy_pca_artifact(payload: dict[str, Any]) -> NeuralEncoder:
+    """Load WO142 artifacts written before kind-dispatched state envelopes."""
+    from q_backend.neural.pca_encoder import PCAEncoder
+
+    config = payload["config"]
+    if not isinstance(config, EncoderConfig):
+        raise TypeError("Neural model artifact has invalid EncoderConfig payload")
+    state = {
+        "scaler": payload.get("scaler"),
+        "pca": payload.get("pca"),
+        "feature_columns": list(payload.get("feature_columns", [])),
+        "val_metrics": dict(payload.get("val_metrics", {})),
+    }
+    return PCAEncoder.load_from_artifact_state(config, state)
+
+
+def list_neural_model_hashes() -> list[str]:
+    root = lake_root() / "neural_models"
+    if not root.is_dir():
+        return []
+    hashes: list[str] = []
+    for entry in sorted(root.iterdir()):
+        if entry.is_dir() and neural_model_exists(entry.name):
+            hashes.append(entry.name)
+    return hashes
+
+
+def read_neural_model_manifest(model_hash: str) -> dict[str, Any]:
+    manifest_path = _neural_model_dir(model_hash) / "manifest.json"
+    if not manifest_path.is_file():
+        raise FileNotFoundError(
+            f"Neural model manifest not found for hash '{model_hash}'."
+        )
+    return json.loads(manifest_path.read_text(encoding="utf-8"))

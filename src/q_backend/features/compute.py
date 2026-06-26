@@ -1,12 +1,17 @@
-"""PIT-safe feature computation (WO128).
+"""PIT-safe feature computation (WO128, WO143).
 
 Dispatch mirrors ``composite_strategy._evaluate_node`` so feature series are
 bit-identical to genome ``compute_indicators`` output for the same primitive.
+Neural latents dispatch through a model-output cache (one ``transform`` per
+model + bar range) and are trimmed to OOS bars only.
 """
 
 from __future__ import annotations
 
+import hashlib
+from collections import OrderedDict
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 import numpy as np
@@ -22,8 +27,13 @@ from q_backend.backtesting.technical_indicators import (
     compute_rsi,
     compute_yang_zhang,
 )
-from q_backend.features.leakage import FORWARD_LOOKING_KINDS
-from q_backend.features.registry import FeatureSpec, feature_id, resolve_params
+from q_backend.features.leakage import (
+    FORWARD_LOOKING_KINDS,
+    assert_neural_oos_only,
+    neural_leakage_status,
+)
+from q_backend.features.registry import FeatureSpec, feature_id, get_feature_spec, resolve_params
+from q_backend.storage.lake.artifacts import read_neural_model
 
 _REQUIRED_BAR_COLUMNS = frozenset({"time", "open", "high", "low", "close", "volume"})
 
@@ -49,6 +59,10 @@ _FEATURE_OUTPUT_PORT: dict[str, str] = {
     "trend_blend_volatility": "volatility",
 }
 
+# In-process LRU: key ``(model_hash, bars_range_hash)`` → full latent frame.
+_MODEL_OUTPUT_CACHE: OrderedDict[tuple[str, str], pd.DataFrame] = OrderedDict()
+_MODEL_OUTPUT_CACHE_MAXSIZE = 32
+
 
 @dataclass(frozen=True)
 class FeatureSeries:
@@ -67,17 +81,53 @@ def _validate_bars(bars: pd.DataFrame) -> None:
         raise ValueError("bars must be time-sorted ascending")
 
 
+def _to_utc_timestamp(value: datetime | pd.Timestamp) -> pd.Timestamp:
+    ts = pd.Timestamp(value)
+    if ts.tzinfo is None:
+        return ts.tz_localize("UTC")
+    return ts.tz_convert("UTC")
+
+
+def _bars_range_hash(bars: pd.DataFrame) -> str:
+    """Content hash of bar count and time endpoints (model-output cache key component)."""
+    if bars.empty:
+        return "empty"
+    times = bars["time"]
+    payload = f"{len(bars)}|{times.iloc[0]}|{times.iloc[-1]}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def _cache_get(model_hash: str, bars: pd.DataFrame) -> pd.DataFrame | None:
+    key = (model_hash, _bars_range_hash(bars))
+    frame = _MODEL_OUTPUT_CACHE.get(key)
+    if frame is None:
+        return None
+    _MODEL_OUTPUT_CACHE.move_to_end(key)
+    return frame
+
+
+def _cache_put(model_hash: str, bars: pd.DataFrame, frame: pd.DataFrame) -> None:
+    key = (model_hash, _bars_range_hash(bars))
+    _MODEL_OUTPUT_CACHE[key] = frame
+    _MODEL_OUTPUT_CACHE.move_to_end(key)
+    while len(_MODEL_OUTPUT_CACHE) > _MODEL_OUTPUT_CACHE_MAXSIZE:
+        _MODEL_OUTPUT_CACHE.popitem(last=False)
+
+
+def clear_model_output_cache() -> None:
+    """Clear the in-process neural transform cache (test helper)."""
+    _MODEL_OUTPUT_CACHE.clear()
+
+
 def _warmup_bars(spec: FeatureSpec, params: dict[str, Any]) -> int:
     if spec.lookback_param is None:
         return 0
     return int(params[spec.lookback_param])
 
 
-def _output_port(feature_name: str) -> str:
-    try:
-        return _FEATURE_OUTPUT_PORT[feature_name]
-    except KeyError as exc:
-        raise KeyError(f"No output port mapping for feature '{feature_name}'.") from exc
+def _oos_warmup_bars(times: pd.Series, train_end: datetime) -> int:
+    train_end_ts = _to_utc_timestamp(train_end)
+    return int((times <= train_end_ts).sum())
 
 
 def _apply_warmup(series: pd.Series, warmup_bars: int) -> pd.Series:
@@ -86,6 +136,79 @@ def _apply_warmup(series: pd.Series, warmup_bars: int) -> pd.Series:
     trimmed = series.copy()
     trimmed.iloc[:warmup_bars] = np.nan
     return trimmed
+
+
+def _build_classical_input_window(
+    bars: pd.DataFrame, input_features: list[str]
+) -> pd.DataFrame:
+    """Standardized classical features consumed by the encoder."""
+    df = bars.sort_values("time").reset_index(drop=True)
+    columns: dict[str, np.ndarray] = {}
+    for feature_name in input_features:
+        spec = get_feature_spec(feature_name)
+        computed = compute_feature(df, spec, {})
+        columns[feature_name] = computed.series.to_numpy()
+    return pd.DataFrame(columns, index=df["time"])
+
+
+def _get_or_compute_latent_frame(model_hash: str, bars: pd.DataFrame) -> pd.DataFrame:
+    cached = _cache_get(model_hash, bars)
+    if cached is not None:
+        return cached
+
+    encoder = read_neural_model(model_hash)
+    input_window = _build_classical_input_window(
+        bars, list(encoder.config.input_features)
+    )
+    finite_mask = input_window.notna().all(axis=1)
+    latent_frame = pd.DataFrame(
+        np.nan,
+        index=input_window.index,
+        columns=encoder.latent_names,
+        dtype=float,
+    )
+    if finite_mask.any():
+        encoded = encoder.transform(input_window.loc[finite_mask])
+        latent_frame.loc[finite_mask, encoded.columns] = encoded.to_numpy()
+    _cache_put(model_hash, bars, latent_frame)
+    return latent_frame
+
+
+def _compute_neural(bars: pd.DataFrame, spec: FeatureSpec) -> FeatureSeries:
+    if spec.model_hash is None:
+        raise ValueError(f"Neural feature '{spec.name}' is missing model_hash.")
+
+    df = bars.sort_values("time").reset_index(drop=True)
+    encoder = read_neural_model(spec.model_hash)
+    train_end = encoder.config.train_end
+
+    latent_frame = _get_or_compute_latent_frame(spec.model_hash, df)
+    if spec.name not in latent_frame.columns:
+        raise KeyError(
+            f"Latent column '{spec.name}' not found for model '{spec.model_hash}'."
+        )
+
+    raw = latent_frame[spec.name].reset_index(drop=True)
+    warmup = _oos_warmup_bars(df["time"], train_end)
+    values = _apply_warmup(raw, warmup)
+    series = pd.Series(values.to_numpy(), index=df["time"], name=spec.name)
+
+    assert_neural_oos_only(series.reset_index(drop=True), df["time"], train_end)
+    leakage_status = neural_leakage_status(df["time"], series, train_end)
+
+    return FeatureSeries(
+        feature_id=feature_id(spec, {}),
+        series=series,
+        warmup_bars=warmup,
+        leakage_status=leakage_status,
+    )
+
+
+def _output_port(feature_name: str) -> str:
+    try:
+        return _FEATURE_OUTPUT_PORT[feature_name]
+    except KeyError as exc:
+        raise KeyError(f"No output port mapping for feature '{feature_name}'.") from exc
 
 
 def _compute_tsmom_outputs(
@@ -193,6 +316,9 @@ def compute_feature(
 ) -> FeatureSeries:
     """Compute a named feature as a causal bar→series mapping."""
     _validate_bars(bars)
+    if spec.source == "neural":
+        return _compute_neural(bars, spec)
+
     resolved = resolve_params(spec, params)
     df = bars.sort_values("time").reset_index(drop=True)
 

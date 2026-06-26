@@ -24,12 +24,14 @@ dependencies = [
     "yfinance>=1.3.0",
     "numba>=0.65.1",
     "pyarrow>=24.0.0",
+    "torch>=2.6.0",
 ]
 
 [project.scripts]
 dev = "q_backend.api.main:run_dev"
 worker = "q_backend.cli.worker:main"
 q-optimize = "q_backend.cli.q_optimize:main"
+q-train-encoder = "q_backend.cli.q_train_encoder:main"
 
 [dependency-groups]
 dev = [

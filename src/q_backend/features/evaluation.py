@@ -12,6 +12,7 @@ the fallback would be a deterministic binned-histogram estimator — see
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -302,12 +303,18 @@ def evaluate_matrix(
     regimes: int = 3,
     close: pd.Series | None = None,
     bars: pd.DataFrame | None = None,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> list[FeatureEvaluation]:
-    """Evaluate every feature column in a matrix against one target."""
+    """Evaluate every feature column in a matrix against one target.
+
+    ``progress_callback(done, total)`` is invoked after each feature is scored so
+    callers can surface live progress (the per-feature loop is ~all the runtime)."""
     results: list[FeatureEvaluation] = []
     target_name = str(target.name or "target")
+    feature_ids = sorted(matrix.frame.columns)
+    total = len(feature_ids)
 
-    for feature_id in sorted(matrix.frame.columns):
+    for index, feature_id in enumerate(feature_ids, start=1):
         series = matrix.frame[feature_id]
         series = series.rename(feature_id)
         manifest_entry = _manifest_entry_for_feature(matrix.manifest, feature_id)
@@ -333,4 +340,6 @@ def evaluate_matrix(
                 leakage_status=leakage_status,
             )
         )
+        if progress_callback is not None:
+            progress_callback(index, total)
     return results

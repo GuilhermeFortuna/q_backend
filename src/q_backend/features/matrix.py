@@ -189,7 +189,7 @@ def build_feature_matrix(
         feature_manifest_rows.append(
             {
                 "feature_id": fid,
-                "name": spec.name,
+                "name": request.name,
                 "version": spec.version,
                 "params": dict(sorted(params.items())),
                 "warmup_bars": computed.warmup_bars,

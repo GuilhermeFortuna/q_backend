@@ -17,12 +17,14 @@ EXPECTED_TABLES = {
     "feature_versions",
     "evaluation_runs",
     "feature_score_rows",
+    "neural_models",
+    "neural_model_versions",
 }
 
 FORBIDDEN_TABLE_NAMES = {"ohlcv", "ticks", "bars", "features", "tick", "candles"}
 
 
-def test_metadata_has_fifteen_tables():
+def test_metadata_has_seventeen_tables():
     table_names = set(Base.metadata.tables.keys())
     assert table_names == EXPECTED_TABLES
 

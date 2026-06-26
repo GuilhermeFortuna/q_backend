@@ -9,13 +9,17 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from q_backend.backtesting.genome.node_specs import NODE_SPECS, OutputType
 from q_backend.backtesting.genome.param_bounds import GENOME_PARAM_BOUNDS
 
+if TYPE_CHECKING:
+    from q_backend.storage.db.models import NeuralModelVersion
+
 FeatureCategory = str
 LeakageStatus = str
+FeatureSource = str
 
 
 @dataclass(frozen=True)
@@ -23,7 +27,7 @@ class FeatureSpec:
     name: str
     version: int
     category: FeatureCategory
-    node_kind: str
+    node_kind: str | None
     param_keys: frozenset[str]
     default_params: dict[str, Any]
     lookback_param: str | None
@@ -31,6 +35,9 @@ class FeatureSpec:
     output_type: OutputType
     leakage_status: LeakageStatus
     description: str
+    source: FeatureSource = "classical"
+    model_hash: str | None = None
+    latent_index: int | None = None
 
 
 def _default_param_value(key: str) -> Any:
@@ -77,6 +84,9 @@ def _make_spec(
         output_type=output_type,
         leakage_status="clean",
         description=description,
+        source="classical",
+        model_hash=None,
+        latent_index=None,
     )
 
 
@@ -235,9 +245,67 @@ def _build_feature_specs() -> dict[str, FeatureSpec]:
 FEATURE_SPECS: dict[str, FeatureSpec] = _build_feature_specs()
 
 
+def neural_catalog_key(latent_name: str, model_hash: str) -> str:
+    """Stable catalog key so latents from different models never collide."""
+    return f"{latent_name}@{model_hash[:8]}"
+
+
+def register_neural_model_features(version: NeuralModelVersion) -> list[str]:
+    """Register one neural ``FeatureSpec`` per latent on a trained model version."""
+    keys: list[str] = []
+    for index, latent_name in enumerate(version.latent_names, start=1):
+        key = neural_catalog_key(latent_name, version.model_hash)
+        FEATURE_SPECS[key] = FeatureSpec(
+            name=latent_name,
+            version=version.version,
+            category="neural",
+            node_kind=None,
+            param_keys=frozenset(),
+            default_params={},
+            lookback_param=None,
+            forward_window=0,
+            output_type="oscillator",
+            leakage_status="clean",
+            description=(
+                f"Neural latent {latent_name} from model {version.model_hash[:8]}."
+            ),
+            source="neural",
+            model_hash=version.model_hash,
+            latent_index=index,
+        )
+        keys.append(key)
+    return keys
+
+
+def unregister_neural_model_features(catalog_keys: list[str]) -> None:
+    """Remove neural catalog entries (test helper)."""
+    for key in catalog_keys:
+        FEATURE_SPECS.pop(key, None)
+
+
 def assert_catalog_consistent() -> None:
     """Validate param keys and the PIT forward-window contract for every catalog entry."""
-    for spec in FEATURE_SPECS.values():
+    for catalog_key, spec in FEATURE_SPECS.items():
+        if spec.source == "neural":
+            if not spec.model_hash:
+                raise AssertionError(
+                    f"Neural feature '{catalog_key}' is missing model_hash."
+                )
+            if spec.latent_index is None:
+                raise AssertionError(
+                    f"Neural feature '{catalog_key}' is missing latent_index."
+                )
+            if spec.forward_window != 0:
+                raise AssertionError(
+                    f"Neural feature '{catalog_key}' has forward_window="
+                    f"{spec.forward_window}; features must be causal."
+                )
+            if spec.node_kind is not None:
+                raise AssertionError(
+                    f"Neural feature '{catalog_key}' must have node_kind=None."
+                )
+            continue
+
         node = NODE_SPECS.get(spec.node_kind)
         if node is None:
             raise AssertionError(
@@ -288,7 +356,14 @@ def resolve_params(spec: FeatureSpec, overrides: dict[str, Any]) -> dict[str, An
 
 
 def feature_id(spec: FeatureSpec, params: dict[str, Any]) -> str:
-    payload = json.dumps(sorted(params.items()), separators=(",", ":"), sort_keys=True)
+    if spec.source == "neural":
+        identity = {
+            "model_hash": spec.model_hash,
+            "params": sorted(params.items()),
+        }
+        payload = json.dumps(identity, separators=(",", ":"), sort_keys=True)
+    else:
+        payload = json.dumps(sorted(params.items()), separators=(",", ":"), sort_keys=True)
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:8]
     return f"{spec.name}.v{spec.version}.{digest}"
 

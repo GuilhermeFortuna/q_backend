@@ -17,6 +17,10 @@ from q_backend.features.registry import (
 def test_assert_catalog_consistent_passes() -> None:
     assert_catalog_consistent()
     for spec in list_feature_specs():
+        # Neural specs have node_kind=None (their consistency is checked separately
+        # in assert_catalog_consistent); the NODE_SPECS mapping is classical-only.
+        if spec.source == "neural":
+            continue
         assert spec.param_keys == NODE_SPECS[spec.node_kind].allowed_param_keys
         assert spec.forward_window == 0
 

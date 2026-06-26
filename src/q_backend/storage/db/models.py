@@ -441,6 +441,73 @@ class FeatureScoreRow(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
 
+class NeuralModelStatus(str, Enum):
+    TRAINED = "trained"
+    CANDIDATE = "candidate"
+    PRODUCTION = "production"
+    ARCHIVED = "archived"
+
+
+class NeuralModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "neural_models"
+
+    model_key: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(64), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(16), nullable=False)
+
+    versions: Mapped[list["NeuralModelVersion"]] = relationship(
+        back_populates="model",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("model_key", name="uq_neural_models_model_key"),
+        Index("ix_neural_models_symbol_timeframe", "symbol", "timeframe"),
+    )
+
+
+class NeuralModelVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "neural_model_versions"
+
+    model_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("neural_models.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    model_hash: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    version: Mapped[int] = mapped_column(nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=NeuralModelStatus.TRAINED.value,
+        server_default=NeuralModelStatus.TRAINED.value,
+    )
+    train_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    train_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    n_latents: Mapped[int] = mapped_column(nullable=False)
+    input_features: Mapped[list] = mapped_column(PortableJSON, nullable=False, default=list)
+    hyperparams: Mapped[dict[str, Any]] = mapped_column(
+        PortableJSON, nullable=False, default=dict
+    )
+    val_metrics: Mapped[dict[str, Any]] = mapped_column(
+        PortableJSON, nullable=False, default=dict
+    )
+    latent_names: Mapped[list] = mapped_column(PortableJSON, nullable=False, default=list)
+    artifact_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+
+    model: Mapped["NeuralModel"] = relationship(back_populates="versions")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "model_id",
+            "version",
+            name="uq_neural_model_versions_model_version",
+        ),
+        Index("ix_neural_model_versions_status", "status"),
+        Index("ix_neural_model_versions_model_hash", "model_hash"),
+    )
+
+
 class DataIngestionRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "data_ingestion_runs"
 

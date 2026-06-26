@@ -1,14 +1,16 @@
-"""Leakage guard helpers for feature computation (WO128)."""
+"""Leakage guard helpers for feature computation (WO128, WO143)."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import pandas as pd
 
 if TYPE_CHECKING:
     from q_backend.features.compute import FeatureSeries
+    from q_backend.features.registry import FeatureSpec
 
 # v1: empty — documents the hook for forward-looking primitives.
 FORWARD_LOOKING_KINDS: frozenset[str] = frozenset()
@@ -21,11 +23,54 @@ class LeakageError(AssertionError):
     """Raised when a feature value at bar t changes after future bars are removed."""
 
 
+def _to_utc_timestamp(value: datetime | pd.Timestamp) -> pd.Timestamp:
+    ts = pd.Timestamp(value)
+    if ts.tzinfo is None:
+        return ts.tz_localize("UTC")
+    return ts.tz_convert("UTC")
+
+
+def neural_leakage_status(
+    times: pd.Series,
+    series: pd.Series,
+    train_end: datetime,
+) -> str:
+    """Neural latents are clean only when the request range is entirely OOS."""
+    train_end_ts = _to_utc_timestamp(train_end)
+    aligned_times = times.reset_index(drop=True)
+    aligned_series = series.reset_index(drop=True)
+    if (aligned_times <= train_end_ts).any():
+        return "suspect"
+    non_nan = aligned_series.notna()
+    if not non_nan.any():
+        return "suspect"
+    if (aligned_times[non_nan.to_numpy()] <= train_end_ts).any():
+        return "suspect"
+    return "clean"
+
+
+def assert_neural_oos_only(
+    series: pd.Series,
+    times: pd.Series,
+    train_end: datetime,
+) -> None:
+    """Fail if any non-NaN latent exists at or before ``train_end``."""
+    train_end_ts = _to_utc_timestamp(train_end)
+    leaked = series.notna() & (times <= train_end_ts)
+    if leaked.any():
+        first = int(leaked.to_numpy().nonzero()[0][0])
+        raise LeakageError(
+            f"Neural latent leak at index {first}: non-NaN value at or before train_end."
+        )
+
+
 def assert_causal(
     compute_fn: Callable[[pd.DataFrame], FeatureSeries],
     bars: pd.DataFrame,
     *,
     sample_indices: list[int],
+    spec: FeatureSpec | None = None,
+    train_end: datetime | None = None,
     rtol: float = _DEFAULT_RTOL,
     atol: float = _DEFAULT_ATOL,
 ) -> None:
@@ -49,6 +94,12 @@ def assert_causal(
             raise LeakageError(
                 f"Leakage at index {t}: full={full_val!r}, prefix={partial_val!r}"
             )
+
+    if spec is not None and spec.source == "neural":
+        if train_end is None:
+            raise ValueError("train_end is required for neural assert_causal checks")
+        times = bars.sort_values("time")["time"].reset_index(drop=True)
+        assert_neural_oos_only(full.series.reset_index(drop=True), times, train_end)
 
 
 def leaky_close_shift_feature(bars: pd.DataFrame) -> FeatureSeries:

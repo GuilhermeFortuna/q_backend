@@ -21,6 +21,8 @@ def sync_registry_to_db(session: Session) -> None:
     human-promoted version status.
     """
     for spec in list_feature_specs():
+        if spec.source == "neural":
+            continue
         definition = upsert_feature_definition(
             session,
             name=spec.name,

@@ -56,6 +56,24 @@ def synthetic_ohlcv():
     return _synthetic_ohlcv
 
 
+@pytest.fixture(autouse=True)
+def _restore_feature_catalog():
+    """Isolate the process-global feature catalog across tests.
+
+    ``register_neural_model_features`` mutates the module-global ``FEATURE_SPECS``;
+    snapshot it before each test and restore after, so a leaked neural spec can't
+    cascade into catalog-count/iteration assertions in later tests.
+    """
+    from q_backend.features.registry import FEATURE_SPECS
+
+    snapshot = dict(FEATURE_SPECS)
+    try:
+        yield
+    finally:
+        FEATURE_SPECS.clear()
+        FEATURE_SPECS.update(snapshot)
+
+
 @pytest.fixture
 def run_jobs_sync(monkeypatch, tmp_path):
     if fakeredis is None:  # pragma: no cover
