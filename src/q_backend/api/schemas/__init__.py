@@ -3,6 +3,13 @@ from q_backend.api.schemas.common import (
     BulkDeleteOptimizationsRequest,
     BulkDeleteResponse,
 )
+from q_backend.api.schemas.features import (
+    FeatureListItem,
+    FeatureListResponse,
+    FeaturePassportResponse,
+    FeatureStatusUpdateRequest,
+    FeatureVersionDetail,
+)
 from q_backend.api.schemas.market import (
     InstrumentInfoResponse,
     InstrumentResponse,
@@ -27,6 +34,11 @@ __all__ = [
     "BulkDeleteResponse",
     "DataSourceResponse",
     "DataSourceUpdateRequest",
+    "FeatureListItem",
+    "FeatureListResponse",
+    "FeaturePassportResponse",
+    "FeatureStatusUpdateRequest",
+    "FeatureVersionDetail",
     "InstrumentInfoResponse",
     "InstrumentResponse",
     "MarketSnapshotResponse",

@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from q_backend.api.lifespan import lifespan
 from q_backend.api.routers import backtest as backtest_router
+from q_backend.api.routers import features as features_router
 from q_backend.api.routers import market as market_router
 from q_backend.api.routers import news as news_router
 from q_backend.api.routers import optimization as optimization_router
@@ -42,6 +43,7 @@ app.include_router(backtest_router.router)
 app.include_router(optimization_router.router)
 app.include_router(walkforward_router.router)
 app.include_router(strategy_search_router.router)
+app.include_router(features_router.router)
 app.include_router(storage_router.router)
 app.include_router(news_router.router)
 
