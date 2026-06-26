@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import uuid
 from datetime import datetime, timezone
@@ -24,14 +25,39 @@ from q_backend.features.scoring import (
 )
 from q_backend.features.targets import TargetSpec, compute_target
 from q_backend.market_data.local_store import read_ohlcv
+from q_backend.storage.db.engine import session_scope
 from q_backend.storage.db.models import EvaluationRun, RunStatus
 from q_backend.storage.db.repositories import (
     create_evaluation_run,
     create_feature_score_row,
     get_evaluation_run,
     increment_feature_usage,
+    mark_active_runs_cancelled,
     update_evaluation_run,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def reconcile_orphaned_eval_runs() -> int:
+    """Cancel feature-eval runs left RUNNING by a previous process.
+
+    Background tasks don't survive a restart, so any run still flagged RUNNING in
+    the DB has no live worker and would otherwise make the client poll forever.
+    Call once on startup. Returns the number of rows reconciled."""
+    try:
+        with session_scope() as session:
+            count = mark_active_runs_cancelled(
+                session,
+                EvaluationRun,
+                error_message="Cancelled after backend restart (run was orphaned).",
+            )
+    except Exception as exc:  # noqa: BLE001 - startup reconcile must not crash boot
+        logger.warning("Failed to reconcile orphaned feature-eval runs: %s", exc)
+        return 0
+    if count:
+        logger.info("Reconciled %d orphaned feature-eval run(s) on startup.", count)
+    return count
 
 
 def _nullable_float(value: float | None) -> float | None:
@@ -59,7 +85,7 @@ def _feature_name_map(manifest: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def run_evaluation(
+def create_pending_evaluation_run(
     session: Session,
     *,
     symbol: str,
@@ -69,13 +95,16 @@ def run_evaluation(
     target: TargetSpec,
     feature_set: list[FeatureRequest],
 ) -> EvaluationRun:
-    """Build matrix, evaluate, score, and persist one evaluation run."""
+    """Persist a RUNNING evaluation run row without doing the heavy work.
+
+    Returns immediately so the API can hand back a ``run_id`` and let the
+    evaluation execute in the background (the frontend polls for results).
+    """
     if not feature_set:
         raise ValueError("feature_set must contain at least one FeatureRequest")
 
     matrix_id = compute_matrix_id(symbol, timeframe, start, end, feature_set)
-    started_at = datetime.now(timezone.utc)
-    run = create_evaluation_run(
+    return create_evaluation_run(
         session,
         symbol=symbol,
         timeframe=timeframe,
@@ -86,9 +115,91 @@ def run_evaluation(
         matrix_id=matrix_id,
         status=RunStatus.RUNNING.value,
         feature_count=len(feature_set),
-        started_at=started_at,
+        started_at=datetime.now(timezone.utc),
     )
 
+
+def execute_evaluation_run(
+    run_id: uuid.UUID,
+    *,
+    symbol: str,
+    timeframe: str,
+    start: datetime,
+    end: datetime,
+    target: TargetSpec,
+    feature_set: list[FeatureRequest],
+) -> None:
+    """Run the heavy evaluation for an already-created run, in its own session.
+
+    Background-task entry point: never raises (failures are recorded on the run
+    row as ``FAILED`` so the polling client sees the error)."""
+    with session_scope() as session:
+        run = get_evaluation_run(session, run_id)
+        if run is None:
+            return
+        try:
+            _evaluate_into_run(
+                session,
+                run,
+                symbol=symbol,
+                timeframe=timeframe,
+                start=start,
+                end=end,
+                target=target,
+                feature_set=feature_set,
+            )
+        except Exception:  # noqa: BLE001 - status persisted; background context
+            # _evaluate_into_run already marked the run FAILED with the message.
+            pass
+
+
+def run_evaluation(
+    session: Session,
+    *,
+    symbol: str,
+    timeframe: str,
+    start: datetime,
+    end: datetime,
+    target: TargetSpec,
+    feature_set: list[FeatureRequest],
+) -> EvaluationRun:
+    """Build matrix, evaluate, score, and persist one evaluation run (synchronous)."""
+    run = create_pending_evaluation_run(
+        session,
+        symbol=symbol,
+        timeframe=timeframe,
+        start=start,
+        end=end,
+        target=target,
+        feature_set=feature_set,
+    )
+    _evaluate_into_run(
+        session,
+        run,
+        symbol=symbol,
+        timeframe=timeframe,
+        start=start,
+        end=end,
+        target=target,
+        feature_set=feature_set,
+    )
+    persisted = get_evaluation_run(session, run.id)
+    assert persisted is not None
+    return persisted
+
+
+def _evaluate_into_run(
+    session: Session,
+    run: EvaluationRun,
+    *,
+    symbol: str,
+    timeframe: str,
+    start: datetime,
+    end: datetime,
+    target: TargetSpec,
+    feature_set: list[FeatureRequest],
+) -> None:
+    """Heavy lifting: build matrix, evaluate, score, persist; mark COMPLETED/FAILED."""
     try:
         matrix = build_feature_matrix(
             symbol, timeframe, start, end, feature_set
@@ -163,10 +274,6 @@ def run_evaluation(
             finished_at=datetime.now(timezone.utc),
         )
         raise
-
-    persisted = get_evaluation_run(session, run.id)
-    assert persisted is not None
-    return persisted
 
 
 def load_evaluation_run(

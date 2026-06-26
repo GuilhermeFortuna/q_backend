@@ -12,13 +12,21 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from contextlib import contextmanager
+
+from fastapi import BackgroundTasks
+
 from q_backend.api.routers.features import (
+    _resolve_target_spec,
     get_feature_evaluation,
     get_feature_passport,
     get_features_leaderboard,
     start_feature_evaluation,
 )
+import q_backend.api.routers.features as features_router
 from q_backend.api.schemas.features import FeatureEvalCreateRequest
+from q_backend.features.evaluation_service import run_evaluation
+from q_backend.features.matrix import FeatureRequest
 from q_backend.features.sync import sync_registry_to_db
 from q_backend.market_data.models import OHLCV
 from q_backend.storage.db.base import Base
@@ -143,14 +151,62 @@ def _eval_request(sample_market) -> FeatureEvalCreateRequest:
     )
 
 
+def _run_eval_sync(request: FeatureEvalCreateRequest, session: Session):
+    """Drive the evaluation pipeline synchronously (what the endpoint used to do
+    inline; it now runs in the background, so tests of the persistence pipeline
+    use the kept-synchronous run_evaluation)."""
+    target = _resolve_target_spec(request.target.name, request.target.horizon)
+    feature_set = [
+        FeatureRequest(item.name, item.version, dict(item.params))
+        for item in request.features
+    ]
+    return run_evaluation(
+        session,
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        start=request.start,
+        end=request.end,
+        target=target,
+        feature_set=feature_set,
+    )
+
+
+def test_start_feature_evaluation_is_nonblocking(
+    seeded_features: Session, sample_market, lake_root_path, monkeypatch
+) -> None:
+    # The endpoint must return immediately with a RUNNING run and defer the heavy
+    # work to a background task (avoids the client-side HTTP timeout).
+    @contextmanager
+    def _fake_scope():
+        yield seeded_features
+
+    monkeypatch.setattr(features_router, "session_scope", _fake_scope)
+    executed: list = []
+    monkeypatch.setattr(
+        features_router,
+        "execute_evaluation_run",
+        lambda run_id, **kwargs: executed.append((run_id, kwargs)),
+    )
+
+    background = BackgroundTasks()
+    started = start_feature_evaluation(_eval_request(sample_market), background)
+
+    assert started["status"] == "running"
+    assert started["run_id"]
+    # Heavy work was deferred, not run inline.
+    assert executed == []
+    assert len(background.tasks) == 1
+    # Running the scheduled task performs the evaluation.
+    background.tasks[0].func(*background.tasks[0].args, **background.tasks[0].kwargs)
+    assert len(executed) == 1
+
+
 def test_feature_eval_post_then_get_returns_leaderboard(
     seeded_features: Session, sample_market, lake_root_path
 ) -> None:
-    started = start_feature_evaluation(
-        _eval_request(sample_market), session=seeded_features
-    )
-    assert started["status"] == "completed"
-    run_id = started["run_id"]
+    run = _run_eval_sync(_eval_request(sample_market), seeded_features)
+    assert run.status == "completed"
+    run_id = str(run.id)
 
     payload = get_feature_evaluation(run_id, session=seeded_features)
     assert payload.run_id == run_id
@@ -172,9 +228,7 @@ def test_feature_eval_unknown_run_returns_404(seeded_features: Session) -> None:
 def test_features_leaderboard_returns_latest_scores(
     seeded_features: Session, sample_market, lake_root_path
 ) -> None:
-    start_feature_evaluation(
-        _eval_request(sample_market), session=seeded_features
-    )
+    _run_eval_sync(_eval_request(sample_market), seeded_features)
     leaderboard = get_features_leaderboard(session=seeded_features)
     assert leaderboard["features"]
     names = {item.feature_name for item in leaderboard["features"]}
@@ -187,9 +241,7 @@ def test_features_leaderboard_returns_latest_scores(
 def test_passport_backfills_score_and_history_after_eval(
     seeded_features: Session, sample_market, lake_root_path
 ) -> None:
-    start_feature_evaluation(
-        _eval_request(sample_market), session=seeded_features
-    )
+    _run_eval_sync(_eval_request(sample_market), seeded_features)
     passport = get_feature_passport("rsi", session=seeded_features)
     assert passport.score is not None
     assert passport.evaluation_history

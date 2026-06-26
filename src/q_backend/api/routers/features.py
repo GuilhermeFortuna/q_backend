@@ -1,7 +1,7 @@
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from q_backend.api.deps import get_session
@@ -21,9 +21,13 @@ from q_backend.api.schemas.features import (
     FeatureStatusUpdateRequest,
     FeatureVersionDetail,
 )
-from q_backend.features.evaluation_service import run_evaluation
+from q_backend.features.evaluation_service import (
+    create_pending_evaluation_run,
+    execute_evaluation_run,
+)
 from q_backend.features.matrix import FeatureRequest
 from q_backend.features.targets import list_target_specs
+from q_backend.storage.db.engine import session_scope
 from q_backend.storage.db.models import FeatureDefinition, FeatureStatus, FeatureVersion
 from q_backend.storage.db.repositories import (
     get_evaluation_run,
@@ -271,28 +275,48 @@ def update_feature_status(
 )
 def start_feature_evaluation(
     body: FeatureEvalCreateRequest,
-    session: Session = Depends(get_session),
+    background_tasks: BackgroundTasks,
 ):
-    """Run a feature evaluation and persist scores."""
+    """Kick off a feature evaluation and return its run id immediately.
+
+    The evaluation can take tens of seconds for large feature sets / windows, so
+    it runs in the background: the run row is created as RUNNING (in its own
+    committed transaction, so the background task reliably sees it) and the
+    client polls ``GET /api/v1/feature-eval/{run_id}`` for progress and results.
+    """
     try:
         target = _resolve_target_spec(body.target.name, body.target.horizon)
         feature_set = [
             FeatureRequest(item.name, item.version, dict(item.params))
             for item in body.features
         ]
-        run = run_evaluation(
-            session,
-            symbol=body.symbol,
-            timeframe=body.timeframe,
-            start=body.start,
-            end=body.end,
-            target=target,
-            feature_set=feature_set,
-        )
+        with session_scope() as session:
+            run = create_pending_evaluation_run(
+                session,
+                symbol=body.symbol,
+                timeframe=body.timeframe,
+                start=body.start,
+                end=body.end,
+                target=target,
+                feature_set=feature_set,
+            )
+            run_id = run.id
+            status = run.status
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    return {"run_id": str(run.id), "status": run.status}
+    background_tasks.add_task(
+        execute_evaluation_run,
+        run_id,
+        symbol=body.symbol,
+        timeframe=body.timeframe,
+        start=body.start,
+        end=body.end,
+        target=target,
+        feature_set=feature_set,
+    )
+
+    return {"run_id": str(run_id), "status": status}
 
 
 @router.get(

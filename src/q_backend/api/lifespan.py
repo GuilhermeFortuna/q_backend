@@ -8,6 +8,7 @@ from q_backend.api import optimization_jobs
 from q_backend.api import strategy_search_jobs
 from q_backend.api import walkforward_jobs
 from q_backend.api.dependencies import market_data_service
+from q_backend.features.evaluation_service import reconcile_orphaned_eval_runs
 from q_backend.features.sync import sync_registry_to_db
 from q_backend.storage.db.engine import session_scope
 
@@ -33,6 +34,7 @@ async def lifespan(app: FastAPI):
     walkforward_jobs.reconcile_orphaned_runs()
     strategy_search_jobs.reconcile_orphaned_runs()
     backtest_jobs.reconcile_orphaned_runs()
+    reconcile_orphaned_eval_runs()
     # Seed the Feature Store from the in-code FeatureSpec registry (WO130 sync).
     # Idempotent and one-way: refreshes recipe metadata but never downgrades a
     # human-promoted status, so it is safe to run on every boot.
