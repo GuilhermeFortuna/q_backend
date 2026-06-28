@@ -6,8 +6,16 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from datetime import datetime, timezone
+
 from q_backend.features.compute import compute_feature
-from q_backend.features.leakage import LeakageError, assert_causal, leaky_close_shift_feature
+from q_backend.features.leakage import (
+    LeakageError,
+    assert_causal,
+    assert_neural_oos_only,
+    leaky_close_shift_feature,
+    neural_leakage_status,
+)
 from q_backend.features.registry import get_feature_spec, list_feature_specs, resolve_params
 
 
@@ -56,3 +64,25 @@ def test_leaky_shift_only_affects_interior_bars() -> None:
     full = leaky_close_shift_feature(bars)
     assert pd.isna(full.series.iloc[-1])
     assert full.series.iloc[0] == pytest.approx(bars["close"].iloc[1])
+
+
+def _naive_times(n: int = 10) -> pd.Series:
+    """Bar times as the data lake delivers them: tz-naive ``datetime64``."""
+    return pd.Series(pd.date_range("2026-01-01", periods=n, freq="h"))
+
+
+def test_neural_leakage_status_handles_tz_naive_bar_times() -> None:
+    # The data lake yields tz-naive datetime64 while train_end is tz-aware UTC.
+    # Comparing the two directly raises "Invalid comparison" — the OOS gate path.
+    times = _naive_times()  # 2026-01-01 00:00..09:00, all strictly after train_end
+    series = pd.Series([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0])
+    train_end = datetime(2025, 12, 31, 23, 0, tzinfo=timezone.utc)
+    assert neural_leakage_status(times, series, train_end) == "clean"
+
+
+def test_assert_neural_oos_only_handles_tz_naive_bar_times() -> None:
+    times = _naive_times()
+    # All latents land strictly after train_end -> no leak, must not raise on dtype.
+    series = pd.Series([float("nan")] * 5 + [1.0, 2.0, 3.0, 4.0, 5.0])
+    train_end = datetime(2026, 1, 1, 4, 0, tzinfo=timezone.utc)
+    assert_neural_oos_only(series, times, train_end)

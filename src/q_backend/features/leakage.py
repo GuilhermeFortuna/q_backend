@@ -30,6 +30,19 @@ def _to_utc_timestamp(value: datetime | pd.Timestamp) -> pd.Timestamp:
     return ts.tz_convert("UTC")
 
 
+def to_utc_series(times: pd.Series) -> pd.Series:
+    """Normalize a datetime Series to tz-aware UTC for comparison with ``train_end``.
+
+    The data lake delivers tz-naive ``datetime64`` bar times, but ``train_end`` is
+    tz-aware UTC. Comparing the two directly raises ``Invalid comparison``; localize
+    naive series to UTC (and convert aware ones) so the comparison is well-defined.
+    """
+    converted = pd.to_datetime(times)
+    if converted.dt.tz is None:
+        return converted.dt.tz_localize("UTC")
+    return converted.dt.tz_convert("UTC")
+
+
 def neural_leakage_status(
     times: pd.Series,
     series: pd.Series,
@@ -37,7 +50,7 @@ def neural_leakage_status(
 ) -> str:
     """Neural latents are clean only when the request range is entirely OOS."""
     train_end_ts = _to_utc_timestamp(train_end)
-    aligned_times = times.reset_index(drop=True)
+    aligned_times = to_utc_series(times.reset_index(drop=True))
     aligned_series = series.reset_index(drop=True)
     if (aligned_times <= train_end_ts).any():
         return "suspect"
@@ -56,7 +69,7 @@ def assert_neural_oos_only(
 ) -> None:
     """Fail if any non-NaN latent exists at or before ``train_end``."""
     train_end_ts = _to_utc_timestamp(train_end)
-    leaked = series.notna() & (times <= train_end_ts)
+    leaked = series.notna() & (to_utc_series(times) <= train_end_ts)
     if leaked.any():
         first = int(leaked.to_numpy().nonzero()[0][0])
         raise LeakageError(

@@ -28,7 +28,11 @@ from q_backend.storage.db.repositories import get_neural_model_version
 
 _INPUT_FEATURES = ("rsi", "ma", "macd", "realized_vol")
 _N_BARS = 600
+# train_start/train_end are tz-aware UTC (as stored in the DB / encoder config), but
+# bar times are tz-naive — exactly how the data lake (local_store) delivers OHLCV.
+# This mismatch is what broke the gate in production; keep it here so the path is real.
 _INDEX = pd.date_range("2024-01-01", periods=_N_BARS, freq="h", tz="UTC")
+_BAR_INDEX = _INDEX.tz_localize(None)
 
 
 def _synthetic_bars() -> list[OHLCV]:
@@ -36,7 +40,7 @@ def _synthetic_bars() -> list[OHLCV]:
     close = 100.0 + 10.0 * np.sin(steps / 5.0) + 0.05 * steps
     return [
         OHLCV(
-            time=_INDEX[i].to_pydatetime(),
+            time=_BAR_INDEX[i].to_pydatetime(),
             open=float(close[i]),
             high=float(close[i] + 1.0),
             low=float(close[i] - 1.0),
@@ -83,8 +87,16 @@ def lake_root_path(tmp_path, monkeypatch):
 def stub_ohlcv(monkeypatch):
     bars = _synthetic_bars()
 
+    def _strip_tz(value) -> pd.Timestamp:
+        ts = pd.Timestamp(value)
+        return ts.tz_localize(None) if ts.tzinfo is not None else ts
+
     def _read_ohlcv(symbol, timeframe, start_dt, end_dt):
-        return [bar for bar in bars if start_dt <= bar.time <= end_dt]
+        # local_store returns tz-naive bar times; callers pass tz-aware bounds.
+        # Mirror its tz-robust filtering rather than comparing naive vs aware.
+        lo = _strip_tz(start_dt)
+        hi = _strip_tz(end_dt)
+        return [bar for bar in bars if lo <= pd.Timestamp(bar.time) <= hi]
 
     monkeypatch.setattr("q_backend.features.matrix.read_ohlcv", _read_ohlcv)
     monkeypatch.setattr("q_backend.neural.gate.read_ohlcv", _read_ohlcv)

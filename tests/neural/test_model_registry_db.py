@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
-from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import func, select
@@ -110,7 +109,13 @@ def test_list_neural_model_versions_filters_status(
     assert any(row.model_hash == version.model_hash for row in candidates)
 
 
-def test_neural_model_migration_revision_chain(tmp_path) -> None:
+def test_neural_model_migration_revision_chain() -> None:
+    # Verify the migration graph statically — matches the house pattern in
+    # ``test_feature_store_migration_revision_chain``. We deliberately do NOT call
+    # ``command.upgrade``/``downgrade`` here: alembic/env.py resolves the URL from
+    # ``get_settings().database_url`` (ignoring the alembic config), so executing a
+    # downgrade would run against the live Postgres dev DB and drop its neural tables.
+    # Actual DDL up/down is exercised by the integration env, not this unit test.
     alembic_cfg = Config("alembic.ini")
     script = ScriptDirectory.from_config(alembic_cfg)
 
@@ -122,10 +127,3 @@ def test_neural_model_migration_revision_chain(tmp_path) -> None:
     assert revision.down_revision == "20260626_0010"
     assert callable(revision.module.upgrade)
     assert callable(revision.module.downgrade)
-
-    # Exercise the up/down chain against a disposable sqlite file — never the
-    # configured database (a downgrade there would drop real neural tables).
-    db_path = tmp_path / "migration.db"
-    alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
-    command.upgrade(alembic_cfg, "head")
-    command.downgrade(alembic_cfg, "-1")

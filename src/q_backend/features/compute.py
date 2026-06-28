@@ -31,6 +31,7 @@ from q_backend.features.leakage import (
     FORWARD_LOOKING_KINDS,
     assert_neural_oos_only,
     neural_leakage_status,
+    to_utc_series,
 )
 from q_backend.features.registry import FeatureSpec, feature_id, get_feature_spec, resolve_params
 from q_backend.storage.lake.artifacts import read_neural_model
@@ -127,7 +128,7 @@ def _warmup_bars(spec: FeatureSpec, params: dict[str, Any]) -> int:
 
 def _oos_warmup_bars(times: pd.Series, train_end: datetime) -> int:
     train_end_ts = _to_utc_timestamp(train_end)
-    return int((times <= train_end_ts).sum())
+    return int((to_utc_series(times) <= train_end_ts).sum())
 
 
 def _apply_warmup(series: pd.Series, warmup_bars: int) -> pd.Series:
