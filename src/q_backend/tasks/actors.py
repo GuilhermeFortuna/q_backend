@@ -120,6 +120,16 @@ def run_backtest(run_id: str, request_json: str) -> None:
     backtest_jobs.run_backtest_job(run_id, request_json)
 
 
+# --- neural training (WO147) ----------------------------------------------------
+
+
+@dramatiq.actor(**_ACTOR_OPTS)
+def run_neural_training(job_id: str, request_json: str) -> None:
+    from q_backend.api import neural_jobs
+
+    neural_jobs.run_training_job(job_id, request_json)
+
+
 # --- storage ingest (WO48) ------------------------------------------------------
 
 

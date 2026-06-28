@@ -82,6 +82,7 @@ def run_jobs_sync(monkeypatch, tmp_path):
     fake = fakeredis.FakeRedis(decode_responses=True)
 
     from q_backend.api import backtest_jobs as bj
+    from q_backend.api import neural_jobs as nj
     from q_backend.api import optimization_jobs as oj
     from q_backend.api import strategy_search_jobs as sj
     from q_backend.api import walkforward_jobs as wj
@@ -166,5 +167,8 @@ def run_jobs_sync(monkeypatch, tmp_path):
         actors, "evaluate_genetic_candidate", _SyncActor(sj.run_genetic_candidate)
     )
     monkeypatch.setattr(actors, "run_backtest", _SyncActor(bj.run_backtest_job))
+    monkeypatch.setattr(
+        actors, "run_neural_training", _SyncActor(nj.run_training_job)
+    )
 
     return fake

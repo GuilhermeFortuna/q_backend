@@ -6,9 +6,11 @@ import argparse
 import sys
 from datetime import datetime, timezone
 
-from q_backend.features.matrix import FeatureRequest, build_feature_matrix
-from q_backend.neural.gate import evaluate_latents
-from q_backend.neural.training import default_train_encoder_config, train_encoder
+from q_backend.neural.training import default_train_encoder_config
+from q_backend.neural.training_pipeline import (
+    TrainEncoderEvaluateSpec,
+    run_train_encoder_pipeline,
+)
 from q_backend.storage.db.engine import session_scope
 
 _DEFAULT_INPUT_FEATURES: tuple[str, ...] = (
@@ -78,50 +80,36 @@ def main(argv: list[str] | None = None) -> int:
         model_key=args.model_key,
     )
 
-    def window_builder(symbol: str, timeframe: str, start: datetime, end: datetime):
-        requests = [
-            FeatureRequest(name=name, version=None, params={}) for name in args.features
-        ]
-        matrix = build_feature_matrix(
-            symbol,
-            timeframe,
-            start,
-            end,
-            requests,
-            use_cache=True,
+    evaluate = None
+    if args.evaluate is not None:
+        target_name, horizon_raw = args.evaluate
+        evaluate = TrainEncoderEvaluateSpec(
+            target=target_name,
+            horizon=int(horizon_raw),
         )
-        return matrix.frame
 
     with session_scope() as session:
-        version = train_encoder(
+        result = run_train_encoder_pipeline(
             session,
             config,
-            window_builder=window_builder,
+            input_features=tuple(args.features),
+            evaluate=evaluate,
         )
-        gate_result = None
-        if args.evaluate is not None:
-            target_name, horizon_raw = args.evaluate
-            gate_result = evaluate_latents(
-                session,
-                version,
-                target_name=target_name,
-                horizon=int(horizon_raw),
-            )
 
     output: dict[str, object] = {
-        "model_key": config.model_key,
-        "model_hash": version.model_hash,
-        "version": version.version,
-        "val_metrics": version.val_metrics,
-        "artifact_path": version.artifact_path,
+        "model_key": result.model_key,
+        "model_hash": result.model_hash,
+        "version": result.version,
+        "val_metrics": result.val_metrics,
+        "artifact_path": result.artifact_path,
     }
-    if gate_result is not None:
+    if result.gate is not None:
         output["gate"] = {
-            "baseline_ic": gate_result.baseline_ic,
-            "best_latent_ic": gate_result.best_latent_ic,
-            "n_latents_beating_baseline": gate_result.n_latents_beating_baseline,
-            "passed": gate_result.passed,
-            "evaluation_run_id": gate_result.evaluation_run_id,
+            "baseline_ic": result.gate.baseline_ic,
+            "best_latent_ic": result.gate.best_latent_ic,
+            "n_latents_beating_baseline": result.gate.n_latents_beating_baseline,
+            "passed": result.gate.passed,
+            "evaluation_run_id": result.gate.evaluation_run_id,
         }
     print(output)
     return 0
