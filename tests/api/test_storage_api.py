@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from unittest.mock import patch
 
+import numpy as np
 import pytest
 
 from q_backend.api import storage_jobs
@@ -15,9 +16,22 @@ from q_backend.api.routers.storage import (
     get_storage_inventory,
     start_storage_ingest,
 )
+from q_backend.api.schemas.storage import StorageInventoryResponse
 from q_backend.api.storage_jobs import IngestJobRequest
 from q_backend.market_data import local_store
 from q_backend.market_data.models import OHLCV
+
+
+def _ticks() -> dict[str, np.ndarray]:
+    base = int(datetime(2024, 3, 1).timestamp() * 1000)
+    return {
+        "time_msc": np.array([base, base + 1000], dtype=np.int64),
+        "bid": np.array([40.0, 40.1], dtype=np.float64),
+        "ask": np.array([40.2, 40.3], dtype=np.float64),
+        "last": np.array([40.1, 40.2], dtype=np.float64),
+        "volume": np.array([1, 2], dtype=np.float64),
+        "flags": np.array([0, 0], dtype=np.int64),
+    }
 
 
 def _bars() -> list[OHLCV]:
@@ -56,6 +70,23 @@ def test_inventory_lists_written_series(market_root):
     assert body["items"][0]["symbol"] == "PETR4"
     assert body["items"][0]["rows"] == 2
     assert body["items"][0]["kind"] == "bars"
+
+
+def test_inventory_with_ticks_matches_response_model(market_root):
+    """Regression: tick entries have no timeframe; the response model must accept
+    them so the HTTP endpoint serializes instead of returning 500."""
+    local_store.write_ohlcv("PETR4", "D1", _bars())
+    local_store.write_ticks("WDO$", _ticks())
+
+    body = get_storage_inventory()
+
+    # FastAPI validates the dict against this model on the way out over HTTP.
+    response = StorageInventoryResponse(**body)
+    kinds = {item.kind for item in response.items}
+    assert "ticks" in kinds
+    ticks_item = next(item for item in response.items if item.kind == "ticks")
+    assert ticks_item.symbol == "WDO$"
+    assert ticks_item.timeframe is None
 
 
 def test_delete_storage_series(market_root):

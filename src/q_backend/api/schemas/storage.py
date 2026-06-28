@@ -5,7 +5,9 @@ from pydantic import BaseModel
 
 class StorageInventoryItem(BaseModel):
     symbol: str
-    timeframe: str
+    kind: Literal["bars", "ticks"] = "bars"
+    # Ticks are not partitioned by timeframe, so the field is absent for them.
+    timeframe: Optional[str] = None
     start: str
     end: str
     rows: int
