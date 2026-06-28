@@ -76,7 +76,12 @@ class PCAEncoder:
 
         hyperparams = self._resolved_hyperparams()
         self._feature_columns = self._select_feature_columns(window)
-        raw = window[self._feature_columns].astype(float).to_numpy()
+        # Classical feature windows carry leading warm-up NaNs; sklearn PCA rejects
+        # NaN, so fit on complete rows only (chronological order preserved).
+        complete = window[self._feature_columns].astype(float).dropna(axis=0, how="any")
+        if complete.empty:
+            raise ValueError("Training window has no rows without missing feature values")
+        raw = complete.to_numpy()
 
         fit_values, val_values = self._split_fit_validation(
             raw,
@@ -127,16 +132,21 @@ class PCAEncoder:
             return pd.DataFrame(columns=self.latent_names, index=window.index)
 
         feature_columns = self._select_feature_columns(window)
-        scaled = self._scaler.transform(window[feature_columns].astype(float).to_numpy())
-        encoded = self._pca.transform(scaled)
+        features = window[feature_columns].astype(float)
+        # Rows with any missing feature (warm-up or gaps) can't be encoded — emit NaN
+        # latents for them and transform only the complete rows, preserving the index.
+        complete_mask = features.notna().all(axis=1).to_numpy()
+        latent_values = np.full((len(features), len(self.latent_names)), np.nan, dtype=float)
+        if complete_mask.any():
+            scaled = self._scaler.transform(features.to_numpy()[complete_mask])
+            encoded = self._pca.transform(scaled)
+            latent_values[complete_mask, : encoded.shape[1]] = encoded
 
         latent_frame = pd.DataFrame(
-            encoded,
+            latent_values,
             index=window.index,
-            columns=self.latent_names[: encoded.shape[1]],
+            columns=self.latent_names,
         )
-        for name in self.latent_names[encoded.shape[1] :]:
-            latent_frame[name] = np.nan
         return latent_frame[self.latent_names]
 
     def dump_artifact_state(self) -> dict[str, Any]:

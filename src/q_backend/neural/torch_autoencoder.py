@@ -255,7 +255,12 @@ class TorchAutoencoder:
         lookback = int(hyperparams["lookback"])
         self._lookback = lookback
         self._feature_columns = self._select_feature_columns(window)
-        raw = window[self._feature_columns].astype(float).to_numpy()
+        # Drop leading warm-up NaNs (and any gap rows) so the model never trains on
+        # NaN — which would silently produce NaN weights/latents, not an error.
+        complete = window[self._feature_columns].astype(float).dropna(axis=0, how="any")
+        if complete.empty:
+            raise ValueError("Training window has no rows without missing feature values")
+        raw = complete.to_numpy()
 
         fit_values, val_values = self._split_fit_validation(
             raw,
