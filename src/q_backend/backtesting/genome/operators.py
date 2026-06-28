@@ -175,13 +175,14 @@ def _choose_seeding(
 
 
 _CROSSOVER_TREND_KINDS = ("ind.ma", "ind.ema")
-_REVERSION_OSC_KINDS = (
-    "ind.rsi",
-    "ind.momentum",
-    "ind.macd",
-    "ind.atr",
-    "ind.realized_vol",
-)
+# Reversion entries fire on cross_above(oversold)/cross_below(overbought), and those
+# thresholds are hard-wired to the RSI 0–100 scale (see param_bounds: oversold 15–40,
+# overbought 60–85). Only a bounded, centered oscillator like RSI actually crosses those
+# bands. momentum (fractional return ~±0.1), macd (price-scale diff), atr and realized_vol
+# (positive volatility, never in 15–85) would build valid genomes that essentially never
+# trade — dead weight in the GA population. Keep this set to oscillators whose native scale
+# matches the oversold/overbought bands.
+_REVERSION_OSC_KINDS = ("ind.rsi",)
 _BREAKOUT_STYLES = ("donchian", "bollinger", "trb")
 _BREAKOUT_STYLE_KIND = {
     "donchian": "ind.donchian",
@@ -1077,7 +1078,7 @@ def _build_random_reversion(
             params={
                 key: _random_param_ref(rng, key) for key in sorted(osc_spec.allowed_param_keys)
             },
-            inputs=[close_id],
+            inputs=[close_id] if osc_spec.max_inputs > 0 else [],
         ),
         GenomeNode(
             id=buy_id,

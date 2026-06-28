@@ -422,3 +422,33 @@ def test_fixed_rate_when_min_equals_max():
             for candidate in provider.candidates()
         ]
     assert provider.effective_mutation_rate == pytest.approx(0.2)
+
+
+def test_reversion_osc_kinds_only_bounded_oscillators():
+    """Reversion uses RSI-calibrated oversold/overbought bands, so its oscillator set must
+    contain only bounded oscillators whose native scale matches those bands. Volatility and
+    price-scale indicators (atr, realized_vol, macd, momentum) never cross 15–85 and would
+    build genomes that never trade."""
+    from q_backend.backtesting.genome.operators import _REVERSION_OSC_KINDS
+
+    assert _REVERSION_OSC_KINDS == ("ind.rsi",)
+    scale_mismatched = {"ind.atr", "ind.realized_vol", "ind.macd", "ind.momentum"}
+    assert scale_mismatched.isdisjoint(_REVERSION_OSC_KINDS)
+
+
+def test_build_random_reversion_builds_valid_rsi_genome():
+    from q_backend.backtesting.genome.operators import _build_random_reversion
+    from q_backend.backtesting.genome.validate import validate_genome
+
+    rng = random.Random(42)
+    genome = _build_random_reversion(
+        rng,
+        genome_id="test-reversion-rsi",
+        generation=0,
+        max_nodes=24,
+        max_depth=12,
+    )
+    validate_genome(genome, max_depth=12, max_node_count=24)
+    osc_node = next(node for node in genome.nodes if node.kind.startswith("ind."))
+    assert osc_node.kind == "ind.rsi"
+

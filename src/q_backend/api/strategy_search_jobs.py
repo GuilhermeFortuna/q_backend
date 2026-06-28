@@ -514,7 +514,9 @@ def start_job(
     run_id, db_run_id = _persist_run_start(request)
     provider: CandidateProvider
     if request.genetic is not None:
-        provider = create_genetic_candidate_provider(request.genetic, request)
+        provider = create_genetic_candidate_provider(
+            request.genetic, request, latents_enabled=request.latents_enabled
+        )
     else:
         provider = RegistryCandidateProvider(request)
     job = StrategySearchJob(
@@ -877,7 +879,10 @@ def dispatch_genetic_discovery(
     )
 
     provider = create_genetic_candidate_provider(
-        request.genetic, request, probe_df=_genetic_probe_frame(request)
+        request.genetic,
+        request,
+        probe_df=_genetic_probe_frame(request),
+        latents_enabled=request.latents_enabled,
     )
     _dispatch_generation(run_id, db_run_id_hex, config_json, provider, generation=0)
 
@@ -1062,7 +1067,10 @@ def finalize_generation(
     # worker is last and the arbitrary order partials come back in. The probe frame
     # re-enables mutation repair when breeding the next generation in ``report()``.
     provider = create_genetic_candidate_provider(
-        genetic, request, probe_df=_genetic_probe_frame(request)
+        genetic,
+        request,
+        probe_df=_genetic_probe_frame(request),
+        latents_enabled=request.latents_enabled,
     )
     provider.load_state(genetic_staging.get_provider_state(run_id))
 
@@ -1103,7 +1111,10 @@ def _finalize_genetic(
         db_run_id=db_run_id,
         request=request,
         total_candidates=_resolve_total_candidates(
-            request, create_genetic_candidate_provider(request.genetic, request)
+            request,
+            create_genetic_candidate_provider(
+                request.genetic, request, latents_enabled=request.latents_enabled
+            ),
         ),
         total_generations=request.genetic.generations,
     )

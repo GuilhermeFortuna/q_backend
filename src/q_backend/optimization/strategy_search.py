@@ -158,6 +158,11 @@ class StrategySearchConfig(BaseModel):
     exit_quality_scoring: ExitQualityScoringConfig = Field(
         default_factory=ExitQualityScoringConfig
     )
+    # Internal harness override (WO153): when False, discovery ignores any PRODUCTION
+    # model and runs latents-OFF. Defaults True so normal discovery stays automatic.
+    # Not part of the frontend discovery request surface (WO156/157 use a separate
+    # Experiments API).
+    latents_enabled: bool = True
 
     @model_validator(mode="after")
     def reject_multi_objective(self) -> StrategySearchConfig:

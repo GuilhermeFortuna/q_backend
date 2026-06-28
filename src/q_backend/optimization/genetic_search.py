@@ -253,24 +253,29 @@ def create_genetic_candidate_provider(
     genetic_config: GeneticSearchConfig,
     search_config: StrategySearchConfig,
     probe_df: pd.DataFrame | None = None,
+    latents_enabled: bool = True,
 ) -> GeneticCandidateProvider:
     """Build a genetic provider after resolving the per-run latent universe once."""
     backtest = search_config.backtest
-    with session_scope() as session:
-        latent_universe = resolve_latent_universe(
-            session,
-            backtest.symbol,
-            backtest.timeframe,
-        )
-        kind_weights = build_kind_weights(
-            session,
-            symbol=backtest.symbol,
-            timeframe=backtest.timeframe,
-            n_latents=latent_universe.n_latents,
-            start=backtest.start,
-            end=backtest.end,
-            latent_model_hash=latent_universe.latent_model_hash,
-        )
+    if not latents_enabled:
+        latent_universe = empty_latent_universe()
+        kind_weights: dict[str, float] = {}
+    else:
+        with session_scope() as session:
+            latent_universe = resolve_latent_universe(
+                session,
+                backtest.symbol,
+                backtest.timeframe,
+            )
+            kind_weights = build_kind_weights(
+                session,
+                symbol=backtest.symbol,
+                timeframe=backtest.timeframe,
+                n_latents=latent_universe.n_latents,
+                start=backtest.start,
+                end=backtest.end,
+                latent_model_hash=latent_universe.latent_model_hash,
+            )
     return GeneticCandidateProvider(
         genetic_config,
         search_config,
@@ -953,6 +958,7 @@ def select_search_orchestrator(
                 config.genetic,
                 config,
                 probe_df=_resolve_probe_frame(backtest_runner, config),
+                latents_enabled=config.latents_enabled,
             )
         if not isinstance(genetic_provider, GeneticCandidateProvider):
             raise TypeError(
