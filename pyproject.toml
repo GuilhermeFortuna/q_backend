@@ -32,6 +32,7 @@ dev = "q_backend.api.main:run_dev"
 worker = "q_backend.cli.worker:main"
 q-optimize = "q_backend.cli.q_optimize:main"
 q-train-encoder = "q_backend.cli.q_train_encoder:main"
+q-promote-encoder = "q_backend.cli.q_promote_encoder:main"
 
 [dependency-groups]
 dev = [

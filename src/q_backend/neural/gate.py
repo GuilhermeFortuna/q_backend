@@ -229,6 +229,89 @@ def classical_baseline_ic(
     return _max_abs_ic(rows, feature_names=classical_names)
 
 
+def _latent_catalog_keys(version: NeuralModelVersion) -> frozenset[str]:
+    return frozenset(
+        neural_catalog_key(name, version.model_hash) for name in version.latent_names
+    )
+
+
+def find_latest_latent_evaluation_run(
+    session: Session, version: NeuralModelVersion
+) -> EvaluationRun | None:
+    """Return the newest completed evaluation run for this version's latents."""
+    latent_keys = _latent_catalog_keys(version)
+    if not latent_keys:
+        return None
+
+    runs = session.execute(
+        select(EvaluationRun)
+        .join(FeatureScoreRow, FeatureScoreRow.run_id == EvaluationRun.id)
+        .where(
+            FeatureScoreRow.feature_name.in_(latent_keys),
+            EvaluationRun.status == RunStatus.COMPLETED.value,
+        )
+        .order_by(desc(EvaluationRun.finished_at), desc(EvaluationRun.created_at))
+    ).scalars()
+
+    for run in runs:
+        rows = _load_score_rows(session, run.id)
+        row_names = {row.feature_name for row in rows}
+        if row_names and row_names <= latent_keys:
+            return run
+    return None
+
+
+def read_latest_latent_gate_result(
+    session: Session, version: NeuralModelVersion
+) -> LatentGateResult | None:
+    """Read the persisted latest gate result without running a new evaluation."""
+    run = find_latest_latent_evaluation_run(session, version)
+    if run is None:
+        return None
+
+    latent_keys = _latent_catalog_keys(version)
+    rows = _load_score_rows(session, run.id)
+    latent_scores = [row for row in rows if row.feature_name in latent_keys]
+    best_latent_ic = _max_abs_ic(latent_scores)
+
+    baseline_ic = 0.0
+    classical_run = _find_completed_run(
+        session,
+        symbol=run.symbol,
+        timeframe=run.timeframe,
+        target_name=run.target_name,
+        horizon=run.target_horizon,
+        start=run.start,
+        end=run.end,
+    )
+    if classical_run is not None:
+        classical_rows = _load_score_rows(session, classical_run.id)
+        classical_names = _classical_feature_names()
+        classical_only = [
+            row for row in classical_rows if row.feature_name in classical_names
+        ]
+        if classical_only:
+            baseline_ic = _max_abs_ic(classical_only)
+
+    threshold = _baseline_threshold(baseline_ic)
+    n_beating = sum(
+        1
+        for row in latent_scores
+        if row.ic is not None
+        and not (isinstance(row.ic, float) and math.isnan(row.ic))
+        and abs(float(row.ic)) > threshold
+    )
+
+    return LatentGateResult(
+        model_hash=version.model_hash,
+        baseline_ic=baseline_ic,
+        best_latent_ic=best_latent_ic,
+        n_latents_beating_baseline=n_beating,
+        passed=best_latent_ic > threshold,
+        evaluation_run_id=str(run.id),
+    )
+
+
 def evaluate_latents(
     session: Session,
     version: NeuralModelVersion,

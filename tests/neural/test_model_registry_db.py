@@ -123,6 +123,8 @@ def test_neural_model_migration_revision_chain(tmp_path) -> None:
     assert callable(revision.module.upgrade)
     assert callable(revision.module.downgrade)
 
+    # Exercise the up/down chain against a disposable sqlite file — never the
+    # configured database (a downgrade there would drop real neural tables).
     db_path = tmp_path / "migration.db"
     alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
     command.upgrade(alembic_cfg, "head")
