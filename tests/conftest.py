@@ -82,6 +82,8 @@ def run_jobs_sync(monkeypatch, tmp_path):
     fake = fakeredis.FakeRedis(decode_responses=True)
 
     from q_backend.api import backtest_jobs as bj
+    from q_backend.api import discovery_ab_jobs as dab
+    from q_backend.api import encoder_ablation_jobs as eaj
     from q_backend.api import neural_jobs as nj
     from q_backend.api import optimization_jobs as oj
     from q_backend.api import strategy_search_jobs as sj
@@ -91,7 +93,7 @@ def run_jobs_sync(monkeypatch, tmp_path):
 
     # Route every Redis user (fan-in counters, partial staging, progress mirrors,
     # cross-generation genetic state) at one in-memory fakeredis.
-    for module in (fanin, staging, genetic_staging, oj, wj, sj, bj):
+    for module in (fanin, staging, genetic_staging, oj, wj, sj, bj, nj, eaj, dab):
         if hasattr(module, "get_redis"):
             monkeypatch.setattr(module, "get_redis", lambda: fake, raising=False)
 
@@ -169,6 +171,12 @@ def run_jobs_sync(monkeypatch, tmp_path):
     monkeypatch.setattr(actors, "run_backtest", _SyncActor(bj.run_backtest_job))
     monkeypatch.setattr(
         actors, "run_neural_training", _SyncActor(nj.run_training_job)
+    )
+    monkeypatch.setattr(
+        actors, "run_encoder_ablation", _SyncActor(eaj.run_encoder_ablation_job)
+    )
+    monkeypatch.setattr(
+        actors, "run_discovery_ab", _SyncActor(dab.run_discovery_ab_job)
     )
 
     return fake

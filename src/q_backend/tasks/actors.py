@@ -130,6 +130,26 @@ def run_neural_training(job_id: str, request_json: str) -> None:
     neural_jobs.run_training_job(job_id, request_json)
 
 
+# --- discovery A/B (WO154) ------------------------------------------------------
+
+
+@dramatiq.actor(**_ACTOR_OPTS)
+def run_discovery_ab(job_id: str, request_json: str) -> None:
+    from q_backend.api import discovery_ab_jobs
+
+    discovery_ab_jobs.run_discovery_ab_job(job_id, request_json)
+
+
+# --- encoder ablation (WO155) ---------------------------------------------------
+
+
+@dramatiq.actor(**_ACTOR_OPTS)
+def run_encoder_ablation(job_id: str, request_json: str) -> None:
+    from q_backend.api import encoder_ablation_jobs
+
+    encoder_ablation_jobs.run_encoder_ablation_job(job_id, request_json)
+
+
 # --- storage ingest (WO48) ------------------------------------------------------
 
 

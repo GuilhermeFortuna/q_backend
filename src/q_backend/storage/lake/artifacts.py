@@ -90,6 +90,48 @@ def read_backtest_result(run_id: str) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _encoder_ablation_dir(job_id: str) -> Path:
+    return lake_root() / "experiments" / "encoder_ablation" / job_id
+
+
+def write_encoder_ablation_result(job_id: str, payload: dict[str, Any]) -> str:
+    """Persist a completed encoder ablation comparison table keyed by job_id."""
+    run_dir = _encoder_ablation_dir(job_id)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "result.json").write_text(json.dumps(payload), encoding="utf-8")
+    return f"experiments/encoder_ablation/{job_id}/result.json"
+
+
+def read_encoder_ablation_result(job_id: str) -> dict[str, Any]:
+    path = _encoder_ablation_dir(job_id) / "result.json"
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"Encoder ablation result not found for job '{job_id}'."
+        )
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _discovery_ab_dir(job_id: str) -> Path:
+    return lake_root() / "experiments" / "discovery_ab" / job_id
+
+
+def write_discovery_ab_report(job_id: str, payload: dict[str, Any]) -> str:
+    """Persist a completed Discovery A/B verdict keyed by job_id."""
+    run_dir = _discovery_ab_dir(job_id)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "result.json").write_text(json.dumps(payload), encoding="utf-8")
+    return f"experiments/discovery_ab/{job_id}/result.json"
+
+
+def read_discovery_ab_report(job_id: str) -> dict[str, Any]:
+    path = _discovery_ab_dir(job_id) / "result.json"
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"Discovery A/B result not found for job '{job_id}'."
+        )
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def delete_backtest_artifacts(run_id: str) -> None:
     run_dir = _run_dir(run_id)
     if run_dir.is_dir():
