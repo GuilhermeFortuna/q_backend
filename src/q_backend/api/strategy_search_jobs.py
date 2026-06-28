@@ -27,6 +27,7 @@ from q_backend.optimization.genetic_search import (
     GeneticStrategySearchOrchestrator,
     _complexity_penalty,
     _config_for_walkforward,
+    create_genetic_candidate_provider,
     search_candidate_for_genome,
 )
 from q_backend.optimization.lockbox import compute_lockbox_bounds
@@ -513,7 +514,7 @@ def start_job(
     run_id, db_run_id = _persist_run_start(request)
     provider: CandidateProvider
     if request.genetic is not None:
-        provider = GeneticCandidateProvider(request.genetic, request)
+        provider = create_genetic_candidate_provider(request.genetic, request)
     else:
         provider = RegistryCandidateProvider(request)
     job = StrategySearchJob(
@@ -875,7 +876,7 @@ def dispatch_genetic_discovery(
         started_at=_now(),
     )
 
-    provider = GeneticCandidateProvider(
+    provider = create_genetic_candidate_provider(
         request.genetic, request, probe_df=_genetic_probe_frame(request)
     )
     _dispatch_generation(run_id, db_run_id_hex, config_json, provider, generation=0)
@@ -1060,7 +1061,7 @@ def finalize_generation(
     # so result→genome mapping and breeding are deterministic regardless of which
     # worker is last and the arbitrary order partials come back in. The probe frame
     # re-enables mutation repair when breeding the next generation in ``report()``.
-    provider = GeneticCandidateProvider(
+    provider = create_genetic_candidate_provider(
         genetic, request, probe_df=_genetic_probe_frame(request)
     )
     provider.load_state(genetic_staging.get_provider_state(run_id))
@@ -1102,7 +1103,7 @@ def _finalize_genetic(
         db_run_id=db_run_id,
         request=request,
         total_candidates=_resolve_total_candidates(
-            request, GeneticCandidateProvider(request.genetic, request)
+            request, create_genetic_candidate_provider(request.genetic, request)
         ),
         total_generations=request.genetic.generations,
     )

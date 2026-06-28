@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import random
+from collections.abc import Sequence
 from typing import Any
 
 import pandas as pd
@@ -26,6 +27,7 @@ from q_backend.backtesting.genome.node_specs import (
     parse_input_ref,
     port_output_type,
 )
+from q_backend.backtesting.genome.latent_universe import sample_latent_index
 from q_backend.backtesting.genome.param_bounds import GENOME_PARAM_BOUNDS
 from q_backend.backtesting.genome.registry_fixtures import REGISTRY_GENOME_FIXTURES
 from q_backend.backtesting.genome.schema import Genome, GenomeNode, NodeRef
@@ -38,7 +40,8 @@ from q_backend.backtesting.genome.validate import (
 INDICATOR_KINDS = sorted(
     kind
     for kind in NODE_SPECS
-    if kind.startswith("ind.") and kind not in {"ind.diff", "ind.ratio", "ind.tsmom"}
+    if kind.startswith("ind.")
+    and kind not in {"ind.diff", "ind.ratio", "ind.tsmom", "ind.latent"}
 )
 CMP_KINDS = sorted(kind for kind in NODE_SPECS if kind.startswith("cmp."))
 EXIT_BOOL_KINDS = ("exit.opposite_signal",)
@@ -158,6 +161,86 @@ def _weighted_choice(
         if pick <= cumulative:
             return choice
     return choices[-1]
+
+
+def _choose_seeding(
+    rng: random.Random,
+    choices: tuple[str, ...],
+    weights: dict[str, float],
+) -> str:
+    """Uniform ``rng.choice`` when weights are empty; else score-biased draw (WO152)."""
+    if not weights:
+        return rng.choice(choices)
+    return _weighted_choice(rng, choices, weights)
+
+
+_CROSSOVER_TREND_KINDS = ("ind.ma", "ind.ema")
+_REVERSION_OSC_KINDS = (
+    "ind.rsi",
+    "ind.momentum",
+    "ind.macd",
+    "ind.atr",
+    "ind.realized_vol",
+)
+_BREAKOUT_STYLES = ("donchian", "bollinger", "trb")
+_BREAKOUT_STYLE_KIND = {
+    "donchian": "ind.donchian",
+    "bollinger": "ind.bollinger",
+    "trb": "ind.trb_channel",
+}
+
+
+def _filter_indicator_kinds(
+    candidates: tuple[str, ...],
+    indicator_kinds: Sequence[str],
+) -> tuple[str, ...]:
+    filtered = tuple(kind for kind in candidates if kind in indicator_kinds)
+    return filtered or candidates
+
+
+def _registry_primary_kind(fixture: dict[str, Any]) -> str:
+    for node in fixture["nodes"]:
+        kind = node["kind"]
+        if kind.startswith("ind.") and kind not in {"ind.diff", "ind.ratio"}:
+            return kind
+    return "ind.ma"
+
+
+def _random_archetypes(
+    *,
+    indicator_kinds: Sequence[str],
+    kind_weights: dict[str, float],
+    n_latents: int,
+) -> tuple[str, ...]:
+    archetypes = ["crossover", "reversion", "breakout"]
+    # Latents are seedable whenever a PRODUCTION model supplies them — independent of
+    # feature scores. Scores only bias *how often* (via _archetype_choice_weights), they
+    # are not a precondition. When no production model exists, ``ind.latent`` is absent
+    # from ``indicator_kinds`` and ``n_latents == 0``, so the no-model path is unchanged.
+    if "ind.latent" in indicator_kinds and n_latents > 0:
+        archetypes.append("latent")
+    return tuple(archetypes)
+
+
+def _archetype_choice_weights(
+    archetypes: tuple[str, ...],
+    *,
+    indicator_kinds: Sequence[str],
+    kind_weights: dict[str, float],
+) -> dict[str, float]:
+    archetype_kinds = {
+        "crossover": _CROSSOVER_TREND_KINDS,
+        "reversion": _REVERSION_OSC_KINDS,
+        "breakout": tuple(_BREAKOUT_STYLE_KIND.values()),
+        "latent": ("ind.latent",),
+    }
+    return {
+        archetype: max(
+            kind_weights.get(kind, 1.0)
+            for kind in _filter_indicator_kinds(archetype_kinds[archetype], indicator_kinds)
+        )
+        for archetype in archetypes
+    }
 
 
 def update_mutation_operator_weights(
@@ -485,12 +568,29 @@ def _random_param_ref(rng: random.Random, key: str) -> dict[str, str]:
     return {"param": key}
 
 
+def _random_node_params(
+    rng: random.Random,
+    kind: str,
+    *,
+    n_latents: int = 0,
+) -> dict[str, Any]:
+    spec = NODE_SPECS[kind]
+    params: dict[str, Any] = {}
+    for key in sorted(spec.allowed_param_keys):
+        if kind == "ind.latent" and key == "latent_index":
+            params[key] = sample_latent_index(rng, n_latents)
+        else:
+            params[key] = _random_param_ref(rng, key)
+    return params
+
+
 def _light_mutate_params(
     rng: random.Random,
     genome: Genome,
     *,
     max_nodes: int,
     max_depth: int,
+    n_latents: int = 0,
 ) -> Genome:
     mutated = clone_genome(genome)
     if not mutated.nodes:
@@ -506,10 +606,15 @@ def _light_mutate_params(
     if bounds is None:
         return mutated
 
-    if bounds.type == "categorical" and bounds.choices:
+    if node.kind == "ind.latent" and key == "latent_index":
+        node.params[key] = sample_latent_index(rng, n_latents)
+    elif bounds.type == "categorical" and bounds.choices:
         node.params[key] = rng.choice(list(bounds.choices))
     elif bounds.type == "int" and bounds.min is not None and bounds.max is not None:
-        node.params[key] = rng.randint(int(bounds.min), int(bounds.max))
+        if key == "latent_index" and n_latents > 0:
+            node.params[key] = sample_latent_index(rng, n_latents)
+        else:
+            node.params[key] = rng.randint(int(bounds.min), int(bounds.max))
     elif bounds.type == "float" and bounds.min is not None and bounds.max is not None:
         node.params[key] = round(rng.uniform(bounds.min, bounds.max), 4)
     else:
@@ -594,6 +699,8 @@ def mutate_genome(
     repair_max_attempts: int = 8,
     operator_weights: dict[str, float] | None = None,
     exit_policy_preset_ids: list[str] | None = None,
+    indicator_kinds: Sequence[str] = INDICATOR_KINDS,
+    n_latents: int = 0,
 ) -> Genome:
     weights = operator_weights or DEFAULT_MUTATION_OPERATOR_WEIGHTS
     op = _weighted_choice(rng, MUTATION_OPERATORS, weights)
@@ -601,7 +708,14 @@ def mutate_genome(
     if op == "rewire":
         mutated = _mutate_rewire(rng, genome, max_nodes=max_nodes, max_depth=max_depth)
     elif op == "swap_indicator":
-        mutated = _mutate_swap_indicator(rng, genome, max_nodes=max_nodes, max_depth=max_depth)
+        mutated = _mutate_swap_indicator(
+            rng,
+            genome,
+            max_nodes=max_nodes,
+            max_depth=max_depth,
+            indicator_kinds=indicator_kinds,
+            n_latents=n_latents,
+        )
     elif op == "nudge_param":
         mutated = _mutate_nudge_param(
             rng,
@@ -611,6 +725,7 @@ def mutate_genome(
             probe_df=probe_df,
             min_signals=min_signals,
             repair_max_attempts=repair_max_attempts,
+            n_latents=n_latents,
         )
     elif op == "swap_exit":
         mutated = _mutate_swap_exit(rng, genome, max_nodes=max_nodes, max_depth=max_depth)
@@ -668,6 +783,8 @@ def _mutate_swap_indicator(
     *,
     max_nodes: int,
     max_depth: int,
+    indicator_kinds: Sequence[str] = INDICATOR_KINDS,
+    n_latents: int = 0,
 ) -> Genome:
     child = clone_genome(genome)
     indicators = [node for node in child.nodes if node.kind.startswith("ind.")]
@@ -677,7 +794,7 @@ def _mutate_swap_indicator(
     old_type = _primary_output_type(node)
     compatible = [
         kind
-        for kind in INDICATOR_KINDS
+        for kind in indicator_kinds
         if _indicator_output_type(kind) == old_type
         and NODE_SPECS[kind].min_inputs == NODE_SPECS[node.kind].min_inputs
     ]
@@ -685,11 +802,7 @@ def _mutate_swap_indicator(
         return child
     new_kind = rng.choice(compatible)
     node.kind = new_kind
-    spec = NODE_SPECS[new_kind]
-    node.params = {
-        key: node.params.get(key, _random_param_ref(rng, key))
-        for key in sorted(spec.allowed_param_keys)
-    }
+    node.params = _random_node_params(rng, new_kind, n_latents=n_latents)
     return _validate_or_raise(child, max_nodes=max_nodes, max_depth=max_depth)
 
 
@@ -707,6 +820,7 @@ def _mutate_nudge_param(
     probe_df: pd.DataFrame | None = None,
     min_signals: int = 0,
     repair_max_attempts: int = 8,
+    n_latents: int = 0,
 ) -> Genome:
     if (
         probe_df is not None
@@ -737,7 +851,13 @@ def _mutate_nudge_param(
             max_node_count=max_nodes,
         ).is_tradeable:
             return repaired
-    return _light_mutate_params(rng, genome, max_nodes=max_nodes, max_depth=max_depth)
+    return _light_mutate_params(
+        rng,
+        genome,
+        max_nodes=max_nodes,
+        max_depth=max_depth,
+        n_latents=n_latents,
+    )
 
 
 def _mutate_swap_exit(
@@ -863,7 +983,12 @@ def _build_random_crossover(
     generation: int,
     max_nodes: int,
     max_depth: int,
+    *,
+    indicator_kinds: Sequence[str] = INDICATOR_KINDS,
+    kind_weights: dict[str, float] | None = None,
 ) -> Genome:
+    weights = kind_weights or {}
+    trend_kinds = _filter_indicator_kinds(_CROSSOVER_TREND_KINDS, indicator_kinds)
     close_id = "n1"
     short_id = "n2"
     long_id = "n3"
@@ -871,8 +996,8 @@ def _build_random_crossover(
     buy_id = "n5"
     sell_id = "n6"
 
-    short_kind = rng.choice(["ind.ma", "ind.ema"])
-    long_kind = rng.choice(["ind.ma", "ind.ema"])
+    short_kind = _choose_seeding(rng, trend_kinds, weights)
+    long_kind = _choose_seeding(rng, trend_kinds, weights)
     short_spec = NODE_SPECS[short_kind]
     long_spec = NODE_SPECS[long_kind]
 
@@ -928,13 +1053,21 @@ def _build_random_reversion(
     generation: int,
     max_nodes: int,
     max_depth: int,
+    *,
+    indicator_kinds: Sequence[str] = INDICATOR_KINDS,
+    kind_weights: dict[str, float] | None = None,
 ) -> Genome:
+    weights = kind_weights or {}
     close_id = "n1"
     osc_id = "n2"
     buy_id = "n3"
     sell_id = "n4"
 
-    osc_kind = "ind.rsi"
+    osc_kinds = _filter_indicator_kinds(_REVERSION_OSC_KINDS, indicator_kinds)
+    if not weights:
+        osc_kind = "ind.rsi" if "ind.rsi" in indicator_kinds else osc_kinds[0]
+    else:
+        osc_kind = _choose_seeding(rng, osc_kinds, weights)
     osc_spec = NODE_SPECS[osc_kind]
     nodes = [
         GenomeNode(id=close_id, kind=SOURCE_KIND, params={}, inputs=[]),
@@ -979,13 +1112,29 @@ def _build_random_breakout(
     generation: int,
     max_nodes: int,
     max_depth: int,
+    *,
+    indicator_kinds: Sequence[str] = INDICATOR_KINDS,
+    kind_weights: dict[str, float] | None = None,
 ) -> Genome:
+    weights = kind_weights or {}
     close_id = "n1"
     ind_id = "n2"
     buy_id = "n3"
     sell_id = "n4"
 
-    style = rng.choice(["donchian", "bollinger", "trb"])
+    available_styles = tuple(
+        style
+        for style in _BREAKOUT_STYLES
+        if _BREAKOUT_STYLE_KIND[style] in indicator_kinds
+    ) or _BREAKOUT_STYLES
+    if not weights:
+        style = rng.choice(available_styles)
+    else:
+        style_weights = {
+            style: weights.get(_BREAKOUT_STYLE_KIND[style], 1.0)
+            for style in available_styles
+        }
+        style = _choose_seeding(rng, available_styles, style_weights)
     nodes = [GenomeNode(id=close_id, kind=SOURCE_KIND, params={}, inputs=[])]
 
     if style == "donchian":
@@ -1117,6 +1266,52 @@ def _build_random_breakout(
     return _validate_or_raise(genome, max_nodes=max_nodes, max_depth=max_depth)
 
 
+def _build_random_latent(
+    rng: random.Random,
+    genome_id: str,
+    generation: int,
+    max_nodes: int,
+    max_depth: int,
+    *,
+    n_latents: int,
+) -> Genome:
+    latent_id = "n1"
+    buy_id = "n2"
+    sell_id = "n3"
+    latent_index = sample_latent_index(rng, n_latents)
+    nodes = [
+        GenomeNode(
+            id=latent_id,
+            kind="ind.latent",
+            params={"latent_index": latent_index},
+            inputs=[],
+        ),
+        GenomeNode(
+            id=buy_id,
+            kind="cmp.cross_above",
+            params={"threshold": 0.0},
+            inputs=[latent_id],
+        ),
+        GenomeNode(
+            id=sell_id,
+            kind="cmp.cross_below",
+            params={"threshold": 0.0},
+            inputs=[latent_id],
+        ),
+    ]
+    genome = Genome(
+        version=1,
+        genome_id=genome_id,
+        nodes=nodes,
+        entry_long=NodeRef(ref=buy_id),
+        entry_short=NodeRef(ref=sell_id),
+        exit_long=NodeRef(ref=sell_id),
+        exit_short=NodeRef(ref=buy_id),
+        metadata={"generation": generation, "origin": "random_latent"},
+    )
+    return _validate_or_raise(genome, max_nodes=max_nodes, max_depth=max_depth)
+
+
 def build_random_genome(
     rng: random.Random,
     *,
@@ -1124,13 +1319,63 @@ def build_random_genome(
     generation: int,
     max_nodes: int,
     max_depth: int,
+    indicator_kinds: Sequence[str] = INDICATOR_KINDS,
+    kind_weights: dict[str, float] | None = None,
+    n_latents: int = 0,
 ) -> Genome:
-    archetype = rng.choice(["crossover", "reversion", "breakout"])
+    weights = kind_weights or {}
+    archetypes = _random_archetypes(
+        indicator_kinds=indicator_kinds,
+        kind_weights=weights,
+        n_latents=n_latents,
+    )
+    if not weights:
+        archetype = rng.choice(archetypes)
+    else:
+        archetype_weights = _archetype_choice_weights(
+            archetypes,
+            indicator_kinds=indicator_kinds,
+            kind_weights=weights,
+        )
+        archetype = _choose_seeding(rng, archetypes, archetype_weights)
     if archetype == "crossover":
-        return _build_random_crossover(rng, genome_id, generation, max_nodes, max_depth)
+        return _build_random_crossover(
+            rng,
+            genome_id,
+            generation,
+            max_nodes,
+            max_depth,
+            indicator_kinds=indicator_kinds,
+            kind_weights=weights,
+        )
     if archetype == "reversion":
-        return _build_random_reversion(rng, genome_id, generation, max_nodes, max_depth)
-    return _build_random_breakout(rng, genome_id, generation, max_nodes, max_depth)
+        return _build_random_reversion(
+            rng,
+            genome_id,
+            generation,
+            max_nodes,
+            max_depth,
+            indicator_kinds=indicator_kinds,
+            kind_weights=weights,
+        )
+    if archetype == "latent":
+        return _build_random_latent(
+            rng,
+            genome_id,
+            generation,
+            max_nodes,
+            max_depth,
+            n_latents=n_latents,
+        )
+    return _build_random_breakout(
+        rng,
+        genome_id,
+        generation,
+        max_nodes,
+        max_depth,
+        indicator_kinds=indicator_kinds,
+        kind_weights=weights,
+    )
 
 
 def _tradeable_registry_fallback(
@@ -1201,7 +1446,11 @@ def _draw_tradeable_random_genome(
     ohlcv: pd.DataFrame,
     min_signals: int,
     repair_max_attempts: int,
+    indicator_kinds: Sequence[str] = INDICATOR_KINDS,
+    kind_weights: dict[str, float] | None = None,
+    n_latents: int = 0,
 ) -> Genome:
+    weights = kind_weights or {}
     redraw_cap = repair_max_attempts + 1
     for _ in range(redraw_cap):
         genome = build_random_genome(
@@ -1210,6 +1459,9 @@ def _draw_tradeable_random_genome(
             generation=generation,
             max_nodes=max_nodes,
             max_depth=max_depth,
+            indicator_kinds=indicator_kinds,
+            kind_weights=weights,
+            n_latents=n_latents,
         )
         genome = _ensure_tradeable_genome(
             rng,
@@ -1273,15 +1525,30 @@ def build_initial_population(
     seed_exit_policies: bool = False,
     exit_policy_preset_ids: list[str] | None = None,
     exit_policy_seed_fraction: float = 0.25,
+    indicator_kinds: Sequence[str] = INDICATOR_KINDS,
+    n_latents: int = 0,
+    kind_weights: dict[str, float] | None = None,
 ) -> list[Genome]:
+    weights = kind_weights or {}
     population: list[Genome] = []
-    registry_templates = list(REGISTRY_GENOME_FIXTURES.values())
+    registry_items = list(REGISTRY_GENOME_FIXTURES.items())
+    registry_names = tuple(name for name, _ in registry_items)
     seed_count = population_size // 2
     random_count = population_size - seed_count
     probe_enabled = ohlcv is not None and len(ohlcv) > 0 and min_seed_signals > 0
 
     for index in range(seed_count):
-        template = Genome.model_validate(copy.deepcopy(rng.choice(registry_templates)))
+        if weights:
+            registry_name_weights = {
+                name: weights.get(_registry_primary_kind(fixture), 1.0)
+                for name, fixture in registry_items
+            }
+            chosen_name = _choose_seeding(rng, registry_names, registry_name_weights)
+        else:
+            chosen_name = rng.choice(registry_names)
+        template = Genome.model_validate(
+            copy.deepcopy(REGISTRY_GENOME_FIXTURES[chosen_name])
+        )
         template = clone_genome(
             template,
             genome_id=f"gen0-seed-{index}",
@@ -1289,7 +1556,11 @@ def build_initial_population(
         )
         try:
             genome = _light_mutate_params(
-                rng, template, max_nodes=max_nodes, max_depth=max_depth
+                rng,
+                template,
+                max_nodes=max_nodes,
+                max_depth=max_depth,
+                n_latents=n_latents,
             )
         except GenomeValidationError:
             genome = clone_genome(template)
@@ -1319,6 +1590,9 @@ def build_initial_population(
                 ohlcv=ohlcv,
                 min_signals=min_seed_signals,
                 repair_max_attempts=repair_max_attempts,
+                indicator_kinds=indicator_kinds,
+                kind_weights=weights,
+                n_latents=n_latents,
             )
         else:
             genome = _draw_valid(
@@ -1329,6 +1603,9 @@ def build_initial_population(
                     generation=0,
                     max_nodes=max_nodes,
                     max_depth=max_depth,
+                    indicator_kinds=indicator_kinds,
+                    kind_weights=weights,
+                    n_latents=n_latents,
                 ),
             )
         population.append(genome)

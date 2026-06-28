@@ -25,6 +25,13 @@ from q_backend.backtesting.genome.operators import (
     update_mutation_operator_weights,
 )
 from q_backend.backtesting.genome.schema import Genome
+from q_backend.storage.db.engine import session_scope
+from q_backend.backtesting.genome.latent_universe import (
+    LatentUniverse,
+    empty_latent_universe,
+    resolve_latent_universe,
+)
+from q_backend.backtesting.genome.score_bias import build_kind_weights
 from q_backend.backtesting.genome.search_space import derive_genome_search_space
 from q_backend.optimization.auto_search_space import default_risk_search_space
 from q_backend.optimization.backtest_runner import BacktestRunConfig, BacktestRunner, DefaultBacktestRunner
@@ -221,6 +228,8 @@ def _search_space_for_genome(
 def search_candidate_for_genome(
     genome: Genome,
     search_config: StrategySearchConfig,
+    *,
+    latent_model_hash: str | None = None,
 ) -> SearchCandidate:
     """Build the WO31 ``SearchCandidate`` for a single genome.
 
@@ -228,11 +237,46 @@ def search_candidate_for_genome(
     the distributed per-generation candidate worker, so both construct an identical
     candidate from a genome.
     """
+    fixed_params: dict[str, Any] = {"genome": genome.model_dump()}
+    if latent_model_hash is not None:
+        fixed_params["latent_model_hash"] = latent_model_hash
+    fixed_params["timeframe"] = search_config.backtest.timeframe
     return SearchCandidate(
         candidate_id=genome.genome_id,
         strategy="CompositeStrategy",
         search_space=_search_space_for_genome(genome, search_config),
-        fixed_params={"genome": genome.model_dump()},
+        fixed_params=fixed_params,
+    )
+
+
+def create_genetic_candidate_provider(
+    genetic_config: GeneticSearchConfig,
+    search_config: StrategySearchConfig,
+    probe_df: pd.DataFrame | None = None,
+) -> GeneticCandidateProvider:
+    """Build a genetic provider after resolving the per-run latent universe once."""
+    backtest = search_config.backtest
+    with session_scope() as session:
+        latent_universe = resolve_latent_universe(
+            session,
+            backtest.symbol,
+            backtest.timeframe,
+        )
+        kind_weights = build_kind_weights(
+            session,
+            symbol=backtest.symbol,
+            timeframe=backtest.timeframe,
+            n_latents=latent_universe.n_latents,
+            start=backtest.start,
+            end=backtest.end,
+            latent_model_hash=latent_universe.latent_model_hash,
+        )
+    return GeneticCandidateProvider(
+        genetic_config,
+        search_config,
+        probe_df=probe_df,
+        latent_universe=latent_universe,
+        kind_weights=kind_weights,
     )
 
 
@@ -244,10 +288,14 @@ class GeneticCandidateProvider:
         genetic_config: GeneticSearchConfig,
         search_config: StrategySearchConfig,
         probe_df: pd.DataFrame | None = None,
+        latent_universe: LatentUniverse | None = None,
+        kind_weights: dict[str, float] | None = None,
     ) -> None:
         self._genetic = genetic_config
         self._search = search_config
         self._probe_df = probe_df
+        self._latent_universe = latent_universe or empty_latent_universe()
+        self._kind_weights = kind_weights or {}
         self._rng = random.Random(genetic_config.init_seed)
         self._generation = 0
         self._next_individual = 0
@@ -262,6 +310,9 @@ class GeneticCandidateProvider:
             seed_exit_policies=genetic_config.seed_exit_policies,
             exit_policy_preset_ids=genetic_config.exit_policy_preset_ids,
             exit_policy_seed_fraction=genetic_config.exit_policy_seed_fraction,
+            indicator_kinds=self._latent_universe.indicator_kinds,
+            n_latents=self._latent_universe.n_latents,
+            kind_weights=self._kind_weights,
         )
         self._genome_by_id = {genome.genome_id: genome for genome in self._population}
         self._champion: Genome | None = None
@@ -299,7 +350,11 @@ class GeneticCandidateProvider:
 
     def candidates(self) -> list[SearchCandidate]:
         return [
-            search_candidate_for_genome(genome, self._search)
+            search_candidate_for_genome(
+                genome,
+                self._search,
+                latent_model_hash=self._latent_universe.latent_model_hash,
+            )
             for genome in self._population
         ]
 
@@ -492,6 +547,8 @@ class GeneticCandidateProvider:
                     repair_max_attempts=self._genetic.repair_max_attempts,
                     operator_weights=operator_weights,
                     exit_policy_preset_ids=self._genetic.exit_policy_preset_ids,
+                    indicator_kinds=self._latent_universe.indicator_kinds,
+                    n_latents=self._latent_universe.n_latents,
                 )
             return clone_genome(
                 child,
@@ -892,7 +949,7 @@ def select_search_orchestrator(
     if config.genetic is not None:
         genetic_provider = provider
         if genetic_provider is None:
-            genetic_provider = GeneticCandidateProvider(
+            genetic_provider = create_genetic_candidate_provider(
                 config.genetic,
                 config,
                 probe_df=_resolve_probe_frame(backtest_runner, config),

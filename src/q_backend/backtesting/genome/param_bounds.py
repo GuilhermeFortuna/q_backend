@@ -10,6 +10,9 @@ from q_backend.backtesting.strategy_registry import StrategyParamSpec
 MA_TYPE_CHOICES = sorted(["sma", "ema", "wma", "smma", "hma"])
 VOL_ESTIMATOR_CHOICES = ["yang_zhang", "close_to_close"]
 
+# Static GA upper bound for ``latent_index``; per-model clamp to ``n_latents - 1`` happens at eval time.
+MAX_LATENT_INDEX = 31
+
 GENOME_PARAM_BOUNDS: dict[str, StrategyParamSpec] = {
     "short_period": StrategyParamSpec(
         name="short_period",
@@ -209,5 +212,14 @@ GENOME_PARAM_BOUNDS: dict[str, StrategyParamSpec] = {
         min=100,
         max=400,
         step=100,
+    ),
+    "latent_index": StrategyParamSpec(
+        name="latent_index",
+        label="Latent index",
+        type="int",
+        default=0,
+        min=0,
+        max=MAX_LATENT_INDEX,
+        step=1,
     ),
 }

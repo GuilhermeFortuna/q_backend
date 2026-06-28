@@ -24,6 +24,12 @@ from q_backend.backtesting.strategies.lai_lau_common import (
 )
 from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy, resolve_symbol
 from q_backend.backtesting.strategy_registry import register_strategy
+from q_backend.features.compute import (
+    _apply_warmup,
+    _get_or_compute_latent_frame,
+    _oos_warmup_bars,
+)
+from q_backend.storage.lake.artifacts import read_neural_model
 from q_backend.backtesting.technical_indicators import (
     compute_atr,
     compute_bollinger_bands,
@@ -87,6 +93,9 @@ class CompositeStrategy(TradingStrategy):
         genome: Genome | dict[str, Any],
         params: dict[str, Any] | None = None,
         symbol: str = "BTCUSDT",
+        *,
+        timeframe: str | None = None,
+        latent_model_hash: str | None = None,
         **kwargs: Any,
     ) -> None:
         if isinstance(genome, dict):
@@ -94,10 +103,15 @@ class CompositeStrategy(TradingStrategy):
         self.genome = genome
         self.trial_params = dict(params or {})
         self.symbol = symbol
+        self.timeframe = timeframe
+        self._latent_model_hash = latent_model_hash
         self._exit_rule_policy = get_exit_rule_policy(genome)
         self._plan: ExecutionPlan | None = None
         self._timestamp_to_bar: pd.Series | None = None
         self._series_cache: dict[str, dict[str, pd.Series]] = {}
+        self._latent_frame_cache: pd.DataFrame | None = None
+        self._latent_warmup: int | None = None
+        self._latent_train_end: Any = None
         self._last_data_len: int | None = None
         self._compiled_params_key: tuple[tuple[str, Any], ...] | None = None
         super().__init__(genome=genome.model_dump(), params=self.trial_params, symbol=symbol, **kwargs)
@@ -130,6 +144,8 @@ class CompositeStrategy(TradingStrategy):
         data_len = len(df)
         if data_len != self._last_data_len:
             self._series_cache.clear()
+            self._latent_frame_cache = None
+            self._latent_warmup = None
             self._last_data_len = data_len
 
         plan = self.plan
@@ -176,6 +192,31 @@ class CompositeStrategy(TradingStrategy):
     def _binding_series(self, df: pd.DataFrame, compiled: Any, index: int) -> pd.Series:
         binding = compiled.input_bindings[index]
         return df[binding.column]
+
+    def _bars_for_latent_compute(self, df: pd.DataFrame) -> pd.DataFrame:
+        working = df.copy()
+        if "time" not in working.columns:
+            working = working.reset_index()
+            if "time" not in working.columns:
+                working = working.rename(columns={working.columns[0]: "time"})
+        bars = working[["time", "open", "high", "low", "close", "volume"]].copy()
+        return bars.sort_values("time").reset_index(drop=True)
+
+    def _get_cached_latent_frame(self, bars: pd.DataFrame) -> pd.DataFrame:
+        if self._latent_frame_cache is not None and len(self._latent_frame_cache) == len(bars):
+            return self._latent_frame_cache
+        assert self._latent_model_hash is not None
+        frame = _get_or_compute_latent_frame(self._latent_model_hash, bars)
+        self._latent_frame_cache = frame
+        self._latent_warmup = None  # recompute warmup against the new window
+        return frame
+
+    def _get_latent_train_end(self) -> Any:
+        """``train_end`` for the production encoder — read once per run, not per node."""
+        if self._latent_train_end is None:
+            assert self._latent_model_hash is not None
+            self._latent_train_end = read_neural_model(self._latent_model_hash).config.train_end
+        return self._latent_train_end
 
     def _evaluate_node(self, df: pd.DataFrame, compiled: Any) -> None:
         kind = compiled.node.kind
@@ -286,6 +327,27 @@ class CompositeStrategy(TradingStrategy):
 
             df[cols["out"]] = (pd.Series(sig1, index=df.index) + sig2 + sig3) / 3.0
             df[cols["volatility"]] = compute_realized_vol(source, vol_w)
+        elif kind == "ind.latent":
+            if self._latent_model_hash is None:
+                df[cols["out"]] = np.nan
+            else:
+                bars = self._bars_for_latent_compute(df)
+                latent_frame = self._get_cached_latent_frame(bars)
+                latent_index = int(params.get("latent_index", 0))
+                n_latents = len(latent_frame.columns)
+                idx = min(max(0, latent_index), n_latents - 1)
+                col_name = latent_frame.columns[idx]
+                if self._latent_warmup is None:
+                    self._latent_warmup = _oos_warmup_bars(
+                        bars["time"], self._get_latent_train_end()
+                    )
+                raw = latent_frame[col_name].reset_index(drop=True)
+                values = _apply_warmup(raw, self._latent_warmup)
+                by_time = pd.Series(values.to_numpy(), index=bars["time"])
+                if "time" in df.columns:
+                    df[cols["out"]] = df["time"].map(by_time).to_numpy()
+                else:
+                    df[cols["out"]] = pd.Series(df.index).map(by_time).to_numpy()
         elif kind == "transform.shift":
             source = self._binding_series(df, compiled, 0)
             df[cols["out"]] = source.shift(int(params.get("bars", 1)))
@@ -465,7 +527,19 @@ class CompositeStrategy(TradingStrategy):
             for port, col in compiled.column_by_port.items():
                 if port.endswith("_signal"):
                     continue
-                pane = "oscillator" if kind in ("ind.rsi", "ind.macd", "ind.momentum", "ind.realized_vol", "ind.tsmom") else "price"
+                pane = (
+                    "oscillator"
+                    if kind
+                    in (
+                        "ind.rsi",
+                        "ind.macd",
+                        "ind.momentum",
+                        "ind.realized_vol",
+                        "ind.tsmom",
+                        "ind.latent",
+                    )
+                    else "price"
+                )
                 specs.append(
                     ChartIndicatorSpec(
                         key=col,
@@ -478,8 +552,15 @@ class CompositeStrategy(TradingStrategy):
 
 def _build_composite(params: dict[str, Any], symbol: str) -> CompositeStrategy:
     genome = params.get("genome", DEFAULT_MA_CROSSOVER_GENOME)
-    trial_params = {k: v for k, v in params.items() if k != "genome"}
-    return CompositeStrategy(genome=genome, params=trial_params, symbol=symbol)
+    reserved = frozenset({"genome", "latent_model_hash", "timeframe"})
+    trial_params = {k: v for k, v in params.items() if k not in reserved}
+    return CompositeStrategy(
+        genome=genome,
+        params=trial_params,
+        symbol=symbol,
+        timeframe=params.get("timeframe"),
+        latent_model_hash=params.get("latent_model_hash"),
+    )
 
 
 register_strategy(

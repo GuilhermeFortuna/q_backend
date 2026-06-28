@@ -369,6 +369,15 @@ NODE_SPECS: dict[str, NodeSpec] = {
         {"out": "oscillator", "volatility": "oscillator"},
         frozenset({"lookback_1", "lookback_2", "lookback_3", "vol_window"}),
     ),
+    "ind.latent": NodeSpec(
+        "ind.latent",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "oscillator"},
+        frozenset({"latent_index"}),
+    ),
 }
 
 ALLOWED_NODE_KINDS = frozenset(NODE_SPECS.keys())
