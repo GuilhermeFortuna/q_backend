@@ -5,8 +5,10 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from q_backend.features.evidence import normalize_feature_name, normalize_node_kind
-from q_backend.features.evidence_service import list_profile_evidence
 from q_backend.features.registry import feature_id, get_feature_spec
+
+# NB: `list_profile_evidence` is imported lazily in `_load_cache` to break the
+# import cycle with `features.evidence_service` (which imports this module).
 from q_backend.optimization.hypothesis import (
     FeatureAdmissionResolver,
     InstrumentResearchProfile,
@@ -34,6 +36,8 @@ class ProfileFeatureAdmissionResolver:
         self._cache = self._load_cache()
 
     def _load_cache(self) -> dict[str, set[int]]:
+        from q_backend.features.evidence_service import list_profile_evidence
+
         evidences = list_profile_evidence(
             self._session,
             profile_id=self._profile.profile_id,

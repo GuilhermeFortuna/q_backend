@@ -21,7 +21,11 @@ from q_backend.features.evaluation import (
 from q_backend.features.scoring import RedundancyCluster
 from q_backend.features.split_manifest import SplitManifest, slice_segment
 from q_backend.features.targets import TargetSpec, align_feature_target, purge_embargo
-from q_backend.optimization.dsr import _norm_cdf, expected_max_sharpe
+
+# NB: `q_backend.optimization.dsr` is imported lazily inside the functions below.
+# A module-level import here forms a cycle (features.evidence -> optimization.dsr ->
+# optimization/__init__ -> feature_admission -> features.evidence) that makes
+# `import q_backend.features.evidence` fail when it is the first module imported.
 
 EvidenceDecision = Literal["admitted", "rejected", "inconclusive"]
 
@@ -266,6 +270,8 @@ def permutation_null_floor(
     if math.isnan(null_std) or null_std <= 0.0:
         null_std = 1.0 / math.sqrt(max(len(aligned_feature), 2))
 
+    from q_backend.optimization.dsr import expected_max_sharpe
+
     floor = expected_max_sharpe(
         max(1, num_trials),
         mu=null_mean,
@@ -281,6 +287,8 @@ def deflated_ic_score(
     n_obs: int,
     null_floor: float,
 ) -> float:
+    from q_backend.optimization.dsr import _norm_cdf, expected_max_sharpe
+
     if n_obs < 2 or math.isnan(observed_rank_ic):
         return 0.0
     abs_obs = abs(observed_rank_ic)

@@ -129,6 +129,33 @@ def _evaluate_with_series(
     )
 
 
+def test_ohlcv_to_bars_normalizes_volume_for_compute():
+    """Regression: OHLCV records carry tick_volume, not volume; the evidence loader
+    must emit a canonical `volume` column so features.compute does not reject the frame
+    with 'bars missing required columns: [volume]' (production alpha-research failure)."""
+    from q_backend.features.compute import _validate_bars
+    from q_backend.features.evidence_service import _ohlcv_to_bars
+    from q_backend.market_data.models import OHLCV
+
+    records = [
+        OHLCV(
+            time=datetime(2024, 1, 1, hour) if hour < 24 else datetime(2024, 1, 2),
+            open=100.0 + hour,
+            high=101.0 + hour,
+            low=99.0 + hour,
+            close=100.5 + hour,
+            tick_volume=1000 + hour,
+            real_volume=None,
+        )
+        for hour in range(5)
+    ]
+    frame = _ohlcv_to_bars(records)
+    assert "volume" in frame.columns
+    assert frame["volume"].tolist() == [float(1000 + h) for h in range(5)]
+    # Must satisfy the compute-path validator (raises ValueError if volume is absent).
+    _validate_bars(frame)
+
+
 def test_split_segments_are_disjoint():
     bars, manifest, _ = _manifest_and_segment()
     assert manifest.evidence.bar_count > 0

@@ -38,7 +38,13 @@ from q_backend.storage.lake.artifacts import read_feature_evidence, write_featur
 
 def _ohlcv_to_bars(records: list[Any]) -> pd.DataFrame:
     rows = [record.model_dump() if hasattr(record, "model_dump") else dict(record) for record in records]
-    return pd.DataFrame(rows).sort_values("time").reset_index(drop=True)
+    frame = pd.DataFrame(rows).sort_values("time").reset_index(drop=True)
+    # OHLCV records carry `tick_volume`/`real_volume`, but the feature-compute path
+    # (features.compute / features.matrix) requires a canonical `volume` column.
+    # Mirror features.matrix._ohlcv_to_compute_bars so Feature Store and evidence agree.
+    if "volume" not in frame.columns and "tick_volume" in frame.columns:
+        frame["volume"] = frame["tick_volume"].astype(float)
+    return frame
 
 
 def _matrix_from_segment(
