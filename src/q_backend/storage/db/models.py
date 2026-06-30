@@ -307,6 +307,14 @@ class StrategySearchCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     diagnostics: Mapped[Optional[dict[str, Any]]] = mapped_column(
         PortableJSON, nullable=True
     )
+    profile_version: Mapped[Optional[int]] = mapped_column(nullable=True)
+    hypothesis_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    hypothesis_rationale: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    hypothesis_required_features: Mapped[Optional[list[str]]] = mapped_column(
+        PortableJSON, nullable=True
+    )
+    hypothesis_template_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
 
     run: Mapped["StrategySearchRun"] = relationship(back_populates="candidates")
 
@@ -438,6 +446,59 @@ class FeatureScoreRow(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("run_id", "feature_id", name="uq_feature_score_rows_run_feature"),
         Index("ix_feature_score_rows_feature_name", "feature_name"),
+    )
+
+
+class FeatureEvidenceRow(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "feature_evidence_rows"
+
+    profile_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    profile_version: Mapped[int] = mapped_column(nullable=False)
+    feature_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    feature_version: Mapped[int] = mapped_column(nullable=False)
+    feature_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    node_kind: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    target: Mapped[str] = mapped_column(String(64), nullable=False)
+    horizon: Mapped[int] = mapped_column(nullable=False)
+    split_manifest_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    data_fingerprint: Mapped[str] = mapped_column(String(128), nullable=False)
+    ic: Mapped[Optional[float]] = mapped_column(nullable=True)
+    rank_ic: Mapped[Optional[float]] = mapped_column(nullable=True)
+    mutual_info: Mapped[Optional[float]] = mapped_column(nullable=True)
+    sign_consistency: Mapped[Optional[float]] = mapped_column(nullable=True)
+    median_effect: Mapped[Optional[float]] = mapped_column(nullable=True)
+    effect_dispersion: Mapped[Optional[float]] = mapped_column(nullable=True)
+    n_obs: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    permutation_null_floor: Mapped[Optional[float]] = mapped_column(nullable=True)
+    deflated_score: Mapped[Optional[float]] = mapped_column(nullable=True)
+    decision: Mapped[str] = mapped_column(String(32), nullable=False)
+    rejection_reasons: Mapped[list[str]] = mapped_column(
+        PortableJSON, nullable=False, default=list
+    )
+    leakage_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    is_representative: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    cluster_id: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    attempted_feature_count: Mapped[int] = mapped_column(
+        nullable=False, default=1, server_default="1"
+    )
+    diagnostics_artifact_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "profile_id",
+            "profile_version",
+            "feature_id",
+            "feature_version",
+            "target",
+            "horizon",
+            "split_manifest_hash",
+            name="uq_feature_evidence_composite_key",
+        ),
+        Index("ix_feature_evidence_profile", "profile_id", "profile_version"),
+        Index("ix_feature_evidence_decision", "decision"),
     )
 
 

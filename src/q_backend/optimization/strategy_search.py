@@ -51,6 +51,10 @@ from q_backend.optimization.models import (
 from q_backend.optimization.objectives import resolve_objective
 from q_backend.backtesting.models import Trade
 from q_backend.optimization.exit_quality import score_exit_quality, summarize_exit_quality
+from q_backend.market_data.exogenous_config import (
+    ExogenousSeriesConfig,
+    validate_exogenous_for_primary,
+)
 from q_backend.optimization.walkforward import (
     WalkForwardConfig,
     WalkForwardProgress,
@@ -163,6 +167,17 @@ class StrategySearchConfig(BaseModel):
     # Not part of the frontend discovery request surface (WO156/157 use a separate
     # Experiments API).
     latents_enabled: bool = True
+    exogenous_series: list[ExogenousSeriesConfig] = Field(default_factory=list)
+    exogenous_provenance: list[dict[str, Any]] | None = None
+
+    @model_validator(mode="after")
+    def validate_exogenous_context(self) -> StrategySearchConfig:
+        validate_exogenous_for_primary(
+            primary_symbol=self.backtest.symbol,
+            primary_timeframe=self.backtest.timeframe,
+            exogenous_series=self.exogenous_series,
+        )
+        return self
 
     @model_validator(mode="after")
     def reject_multi_objective(self) -> StrategySearchConfig:
@@ -401,6 +416,16 @@ def _build_optimization_config(
 
     backtest = config.backtest.model_copy(deep=True)
     backtest.strategy = candidate.strategy
+
+    # Apply matched profile session rules (like day_trade, timings) if applicable
+    from q_backend.optimization.hypothesis import match_profile
+    profile = match_profile(backtest.symbol, backtest.timeframe)
+    if profile is not None:
+        rules = profile.session_rules
+        backtest.day_trade = rules.day_trade
+        backtest.day_trade_start_time = rules.day_trade_start_time
+        backtest.day_trade_end_time = rules.day_trade_end_time
+        backtest.day_trade_close_time = rules.day_trade_close_time
 
     return OptimizationConfig(
         study=study,
@@ -764,7 +789,7 @@ class StrategySearchRunner:
         ranked = _rank_results(results)
         best = ranked[0] if ranked and ranked[0].rank == 1 else None
         metadata: dict[str, dict[str, Any]] | None = None
-        if isinstance(provider, RegistryCandidateProvider):
+        if hasattr(provider, "candidate_metadata"):
             provider_metadata = provider.candidate_metadata()
             if provider_metadata:
                 metadata = provider_metadata

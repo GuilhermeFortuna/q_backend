@@ -11,6 +11,7 @@ from q_backend.storage.db.models import (
     DataIngestionRun,
     EvaluationRun,
     FeatureDefinition,
+    FeatureEvidenceRow,
     FeatureScoreRow,
     FeatureStatus,
     FeatureVersion,
@@ -654,6 +655,11 @@ def create_strategy_search_candidate(
     last_exit_mutation_op: Optional[str] = None,
     exit_param_names: Optional[list[str]] = None,
     diagnostics: Optional[dict[str, Any]] = None,
+    profile_version: Optional[int] = None,
+    hypothesis_id: Optional[str] = None,
+    hypothesis_rationale: Optional[str] = None,
+    hypothesis_required_features: Optional[list[str]] = None,
+    hypothesis_template_hash: Optional[str] = None,
 ) -> StrategySearchCandidate:
     candidate = StrategySearchCandidate(
         run_id=run_id,
@@ -683,6 +689,11 @@ def create_strategy_search_candidate(
         last_exit_mutation_op=last_exit_mutation_op,
         exit_param_names=exit_param_names,
         diagnostics=diagnostics,
+        profile_version=profile_version,
+        hypothesis_id=hypothesis_id,
+        hypothesis_rationale=hypothesis_rationale,
+        hypothesis_required_features=hypothesis_required_features,
+        hypothesis_template_hash=hypothesis_template_hash,
     )
     session.add(candidate)
     session.flush()
@@ -1214,3 +1225,114 @@ def get_feature_evaluation_history(
             }
         )
     return history
+
+
+def create_feature_evidence_row(
+    session: Session,
+    *,
+    profile_id: str,
+    profile_version: int,
+    feature_id: str,
+    feature_version: int,
+    feature_name: str,
+    node_kind: str | None,
+    target: str,
+    horizon: int,
+    split_manifest_hash: str,
+    data_fingerprint: str,
+    ic: float | None,
+    rank_ic: float | None,
+    mutual_info: float | None,
+    sign_consistency: float | None,
+    median_effect: float | None,
+    effect_dispersion: float | None,
+    n_obs: int,
+    permutation_null_floor: float | None,
+    deflated_score: float | None,
+    decision: str,
+    rejection_reasons: list[str],
+    leakage_status: str,
+    is_representative: bool,
+    cluster_id: int,
+    attempted_feature_count: int,
+    diagnostics_artifact_id: str,
+    status: str,
+) -> FeatureEvidenceRow:
+    row = FeatureEvidenceRow(
+        profile_id=profile_id,
+        profile_version=profile_version,
+        feature_id=feature_id,
+        feature_version=feature_version,
+        feature_name=feature_name,
+        node_kind=node_kind,
+        target=target,
+        horizon=horizon,
+        split_manifest_hash=split_manifest_hash,
+        data_fingerprint=data_fingerprint,
+        ic=ic,
+        rank_ic=rank_ic,
+        mutual_info=mutual_info,
+        sign_consistency=sign_consistency,
+        median_effect=median_effect,
+        effect_dispersion=effect_dispersion,
+        n_obs=n_obs,
+        permutation_null_floor=permutation_null_floor,
+        deflated_score=deflated_score,
+        decision=decision,
+        rejection_reasons=rejection_reasons,
+        leakage_status=leakage_status,
+        is_representative=is_representative,
+        cluster_id=cluster_id,
+        attempted_feature_count=attempted_feature_count,
+        diagnostics_artifact_id=diagnostics_artifact_id,
+        status=status,
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def get_feature_evidence(
+    session: Session,
+    *,
+    profile_id: str,
+    profile_version: int,
+    feature_id: str,
+    feature_version: int,
+    target: str,
+    horizon: int,
+    split_manifest_hash: str,
+) -> FeatureEvidenceRow | None:
+    return session.execute(
+        select(FeatureEvidenceRow).where(
+            FeatureEvidenceRow.profile_id == profile_id,
+            FeatureEvidenceRow.profile_version == profile_version,
+            FeatureEvidenceRow.feature_id == feature_id,
+            FeatureEvidenceRow.feature_version == feature_version,
+            FeatureEvidenceRow.target == target,
+            FeatureEvidenceRow.horizon == horizon,
+            FeatureEvidenceRow.split_manifest_hash == split_manifest_hash,
+        )
+    ).scalar_one_or_none()
+
+
+def list_feature_evidence_for_profile(
+    session: Session,
+    *,
+    profile_id: str,
+    profile_version: int,
+    split_manifest_hash: str,
+    data_fingerprint: str,
+) -> list[FeatureEvidenceRow]:
+    return list(
+        session.execute(
+            select(FeatureEvidenceRow)
+            .where(
+                FeatureEvidenceRow.profile_id == profile_id,
+                FeatureEvidenceRow.profile_version == profile_version,
+                FeatureEvidenceRow.split_manifest_hash == split_manifest_hash,
+                FeatureEvidenceRow.data_fingerprint == data_fingerprint,
+            )
+            .order_by(FeatureEvidenceRow.feature_name, FeatureEvidenceRow.horizon)
+        ).scalars()
+    )

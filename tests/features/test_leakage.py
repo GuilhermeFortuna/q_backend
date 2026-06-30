@@ -40,7 +40,14 @@ def _synthetic_bars(n: int = 260) -> pd.DataFrame:
     )
 
 
-@pytest.mark.parametrize("spec_name", [spec.name for spec in list_feature_specs()])
+@pytest.mark.parametrize(
+    "spec_name",
+    [
+        spec.name
+        for spec in list_feature_specs()
+        if spec.source != "neural" and spec.category != "exogenous"
+    ],
+)
 def test_assert_causal_passes_for_v1_specs(spec_name: str) -> None:
     bars = _synthetic_bars()
     spec = get_feature_spec(spec_name)

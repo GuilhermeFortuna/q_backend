@@ -411,6 +411,154 @@ def read_feature_matrix(matrix_id: str) -> StoredFeatureMatrix:
     return StoredFeatureMatrix(frame=frame, manifest=manifest)
 
 
+def _feature_evidence_dir(artifact_id: str) -> Path:
+    return lake_root() / "features" / "evidence" / artifact_id
+
+
+def write_feature_evidence(artifact_id: str, payload: dict[str, Any]) -> str:
+    evidence_dir = _feature_evidence_dir(artifact_id)
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    (evidence_dir / "diagnostics.json").write_text(
+        json.dumps(payload, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    return f"features/evidence/{artifact_id}/diagnostics.json"
+
+
+def read_feature_evidence(artifact_id: str) -> dict[str, Any]:
+    path = _feature_evidence_dir(artifact_id) / "diagnostics.json"
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"Feature evidence diagnostics not found for '{artifact_id}'."
+        )
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _research_acceptance_dir(acceptance_id: str) -> Path:
+    return lake_root() / "research_acceptance" / acceptance_id
+
+
+def write_research_acceptance_result(acceptance_id: str, payload: dict[str, Any]) -> str:
+    acceptance_dir = _research_acceptance_dir(acceptance_id)
+    acceptance_dir.mkdir(parents=True, exist_ok=True)
+    (acceptance_dir / "result.json").write_text(
+        json.dumps(payload, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    return f"research_acceptance/{acceptance_id}/result.json"
+
+
+def write_research_acceptance_seed(
+    acceptance_id: str,
+    seed: int,
+    payload: dict[str, Any],
+) -> str:
+    seeds_dir = _research_acceptance_dir(acceptance_id) / "seeds"
+    seeds_dir.mkdir(parents=True, exist_ok=True)
+    (seeds_dir / f"{seed}.json").write_text(
+        json.dumps(payload, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    return f"research_acceptance/{acceptance_id}/seeds/{seed}.json"
+
+
+def read_research_acceptance_result(acceptance_id: str) -> dict[str, Any]:
+    path = _research_acceptance_dir(acceptance_id) / "result.json"
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"Research acceptance result not found for '{acceptance_id}'."
+        )
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _lockbox_consumption_dir(manifest_hash: str) -> Path:
+    return lake_root() / "research_acceptance" / "consumption" / manifest_hash
+
+
+def write_lockbox_consumption(manifest_hash: str, payload: dict[str, Any]) -> str:
+    consumption_dir = _lockbox_consumption_dir(manifest_hash)
+    consumption_dir.mkdir(parents=True, exist_ok=True)
+    (consumption_dir / "record.json").write_text(
+        json.dumps(payload, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    return f"research_acceptance/consumption/{manifest_hash}/record.json"
+
+
+def read_lockbox_consumption(manifest_hash: str) -> dict[str, Any]:
+    path = _lockbox_consumption_dir(manifest_hash) / "record.json"
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"Lock-box consumption record not found for manifest '{manifest_hash}'."
+        )
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _alpha_research_dir(job_id: str) -> Path:
+    return lake_root() / "experiments" / "alpha_research" / job_id
+
+
+def write_alpha_research_checkpoint(job_id: str, payload: dict[str, Any]) -> str:
+    run_dir = _alpha_research_dir(job_id)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "checkpoint.json").write_text(
+        json.dumps(payload, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    return f"experiments/alpha_research/{job_id}/checkpoint.json"
+
+
+def read_alpha_research_checkpoint(job_id: str) -> dict[str, Any]:
+    path = _alpha_research_dir(job_id) / "checkpoint.json"
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"Alpha-research checkpoint not found for job '{job_id}'."
+        )
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def write_alpha_research_result(job_id: str, payload: dict[str, Any]) -> str:
+    run_dir = _alpha_research_dir(job_id)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "result.json").write_text(
+        json.dumps(payload, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    return f"experiments/alpha_research/{job_id}/result.json"
+
+
+def read_alpha_research_result(job_id: str) -> dict[str, Any]:
+    path = _alpha_research_dir(job_id) / "result.json"
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"Alpha-research result not found for job '{job_id}'."
+        )
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def write_alpha_research_artifact(
+    job_id: str,
+    artifact_name: str,
+    payload: dict[str, Any],
+) -> str:
+    run_dir = _alpha_research_dir(job_id)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / f"{artifact_name}.json").write_text(
+        json.dumps(payload, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    return f"experiments/alpha_research/{job_id}/{artifact_name}.json"
+
+
+def read_alpha_research_artifact(job_id: str, artifact_name: str) -> dict[str, Any]:
+    path = _alpha_research_dir(job_id) / f"{artifact_name}.json"
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"Alpha-research artifact '{artifact_name}' not found for job '{job_id}'."
+        )
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def _neural_model_dir(model_hash: str) -> Path:
     return lake_root() / "neural_models" / model_hash
 

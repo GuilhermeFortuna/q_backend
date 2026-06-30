@@ -9,6 +9,7 @@ import pandas as pd
 
 from q_backend.backtesting.exit_strategy import ExitStrategy
 from q_backend.backtesting.genome.compile import ExecutionPlan, compile_genome
+from q_backend.backtesting.genome.feature_nodes import evaluate_feature_node
 from q_backend.backtesting.genome.exit_rule_policy import (
     get_exit_rule_policy,
     resolve_exit_params_from_policy,
@@ -24,11 +25,8 @@ from q_backend.backtesting.strategies.lai_lau_common import (
 )
 from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy, resolve_symbol
 from q_backend.backtesting.strategy_registry import register_strategy
-from q_backend.features.compute import (
-    _apply_warmup,
-    _get_or_compute_latent_frame,
-    _oos_warmup_bars,
-)
+from q_backend.backtesting.session_context import prepare_evaluation_frame
+from q_backend.market_data.exogenous_columns import resolve_exog_column
 from q_backend.storage.lake.artifacts import read_neural_model
 from q_backend.backtesting.technical_indicators import (
     compute_atr,
@@ -38,6 +36,12 @@ from q_backend.backtesting.technical_indicators import (
     compute_realized_vol,
     compute_rsi,
     compute_yang_zhang,
+)
+from q_backend.backtesting.transforms import (
+    compute_clip,
+    compute_pct_change,
+    compute_rolling_rank,
+    compute_rolling_zscore,
 )
 
 DEFAULT_MA_CROSSOVER_GENOME: dict[str, Any] = {
@@ -135,6 +139,8 @@ class CompositeStrategy(TradingStrategy):
 
     def compute_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
         df = data.copy()
+        if any(node.kind.startswith("feature.") for node in self.genome.nodes):
+            df = prepare_evaluation_frame(df, timeframe=self.timeframe)
         params_key = tuple(sorted(self.trial_params.items()))
         if params_key != self._compiled_params_key:
             self._plan = None
@@ -206,6 +212,8 @@ class CompositeStrategy(TradingStrategy):
         if self._latent_frame_cache is not None and len(self._latent_frame_cache) == len(bars):
             return self._latent_frame_cache
         assert self._latent_model_hash is not None
+        from q_backend.features.compute import _get_or_compute_latent_frame
+
         frame = _get_or_compute_latent_frame(self._latent_model_hash, bars)
         self._latent_frame_cache = frame
         self._latent_warmup = None  # recompute warmup against the new window
@@ -233,6 +241,41 @@ class CompositeStrategy(TradingStrategy):
             df[cols["out"]] = df["open"]
         elif kind == "source.volume":
             df[cols["out"]] = df["volume"]
+        elif kind == "source.exog.close":
+            df[cols["out"]] = resolve_exog_column(df, str(params["symbol"]), "close")
+        elif kind == "source.exog.return":
+            lookback = int(params["lookback_bars"])
+            df[cols["out"]] = resolve_exog_column(
+                df, str(params["symbol"]), f"return_{lookback}"
+            )
+        elif kind == "source.exog.return_zscore":
+            lookback = int(params["lookback_bars"])
+            window = int(params["window"])
+            df[cols["out"]] = resolve_exog_column(
+                df,
+                str(params["symbol"]),
+                f"return_zscore_{lookback}_{window}",
+            )
+        elif kind == "source.exog.rolling_corr":
+            window = int(params["window"])
+            df[cols["out"]] = resolve_exog_column(
+                df, str(params["symbol"]), f"rolling_corr_{window}"
+            )
+        elif kind == "source.exog.relative_strength":
+            lookback = int(params["lookback_bars"])
+            df[cols["out"]] = resolve_exog_column(
+                df, str(params["symbol"]), f"relative_strength_{lookback}"
+            )
+        elif kind == "source.exog.vol_regime":
+            vol_window = int(params["vol_window"])
+            df[cols["out"]] = resolve_exog_column(
+                df, str(params["symbol"]), f"vol_regime_{vol_window}"
+            ).astype(bool)
+        elif kind == "source.exog.direction_regime":
+            lookback = int(params["lookback_bars"])
+            df[cols["out"]] = resolve_exog_column(
+                df, str(params["symbol"]), f"direction_regime_{lookback}"
+            ).astype(bool)
         elif kind == "ind.ma":
             source = self._binding_series(df, compiled, 0)
             df[cols["out"]] = compute_ma(
@@ -331,6 +374,8 @@ class CompositeStrategy(TradingStrategy):
             if self._latent_model_hash is None:
                 df[cols["out"]] = np.nan
             else:
+                from q_backend.features.compute import _apply_warmup, _oos_warmup_bars
+
                 bars = self._bars_for_latent_compute(df)
                 latent_frame = self._get_cached_latent_frame(bars)
                 latent_index = int(params.get("latent_index", 0))
@@ -357,6 +402,32 @@ class CompositeStrategy(TradingStrategy):
         elif kind == "transform.scale":
             source = self._binding_series(df, compiled, 0)
             df[cols["out"]] = source * float(params["factor"])
+        elif kind == "transform.zscore":
+            source = self._binding_series(df, compiled, 0)
+            df[cols["out"]] = compute_rolling_zscore(source, int(params["window"]))
+        elif kind == "transform.rank":
+            source = self._binding_series(df, compiled, 0)
+            df[cols["out"]] = compute_rolling_rank(source, int(params["window"]))
+        elif kind == "transform.pct_change":
+            source = self._binding_series(df, compiled, 0)
+            df[cols["out"]] = compute_pct_change(source, int(params["change_bars"]))
+        elif kind == "transform.clip":
+            source = self._binding_series(df, compiled, 0)
+            df[cols["out"]] = compute_clip(
+                source,
+                float(params["clip_low"]),
+                float(params["clip_high"]),
+            )
+        elif kind.startswith("feature."):
+            evaluate_feature_node(
+                df,
+                kind=kind,
+                params=params,
+                cols=cols,
+                binding_series=lambda frame, index: self._binding_series(
+                    frame, compiled, index
+                ),
+            )
         elif kind.startswith("cmp.") or kind.startswith("logic."):
             self._evaluate_bool_node(df, compiled)
         elif kind == "exit.middle_band":

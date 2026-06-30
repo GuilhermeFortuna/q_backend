@@ -14,6 +14,8 @@ from q_backend.backtesting.position_sizing import (
     build_position_sizer,
 )
 from q_backend.backtesting.costs import TransactionCostConfig
+from q_backend.backtesting.session_context import prepare_evaluation_frame
+from q_backend.backtesting.session_context.config import SessionContextConfig
 from q_backend.market_data.clients.metatrader import _to_naive_local
 from q_backend.optimization.metrics import build_equity_curve, compute_extended_metrics
 from q_backend.optimization.search_space import (
@@ -49,6 +51,7 @@ class BacktestRunConfig:
     day_trade_start_time: str = "09:00"
     day_trade_end_time: str = "16:00"
     day_trade_close_time: str = "17:00"
+    session_context: SessionContextConfig | None = None
     engine: Literal["candle", "tick"] = "candle"
     display_timeframe: str = "M1"
     tick_flags: Optional[str] = None
@@ -99,11 +102,16 @@ class DefaultBacktestRunner:
         df = pd.DataFrame([bar.model_dump() for bar in ohlcv_data])
         df.set_index("time", inplace=True)
         df.index = pd.to_datetime(df.index, format="ISO8601")
+        if df.index.tz is not None:
+            df.index = pd.DatetimeIndex(
+                [_to_naive_local(ts.to_pydatetime()) for ts in df.index]
+            )
+        df = prepare_evaluation_frame(df, timeframe=timeframe)
 
         def data_provider(_config: BacktestRunConfig) -> pd.DataFrame:
             return df
 
-        return cls(data_provider=data_provider)
+        return cls(data_provider=data_provider, df=df)
 
     @staticmethod
     def load_sliced_frame(
@@ -131,7 +139,7 @@ class DefaultBacktestRunner:
             df.index = pd.DatetimeIndex(
                 [_to_naive_local(ts.to_pydatetime()) for ts in df.index]
             )
-        return df
+        return prepare_evaluation_frame(df, timeframe=timeframe)
 
     @classmethod
     def from_frame_sliced(cls, df: pd.DataFrame) -> "DefaultBacktestRunner":
@@ -196,6 +204,7 @@ class DefaultBacktestRunner:
 
     def run(self, config: BacktestRunConfig) -> BacktestRunResult:
         df = self._fetch_data(config)
+        df = prepare_evaluation_frame(df, timeframe=config.timeframe)
         if config.entries is not None:
             manager_template = config.entry_manager or EntryManagerConfig()
             merged_strategy_params = {

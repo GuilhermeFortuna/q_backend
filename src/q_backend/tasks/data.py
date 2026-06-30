@@ -14,7 +14,9 @@ from pathlib import Path
 
 import pandas as pd
 
+from q_backend.market_data.exogenous_context import prepare_evaluation_frame
 from q_backend.optimization.backtest_runner import DefaultBacktestRunner
+from q_backend.optimization.strategy_search import StrategySearchConfig
 from q_backend.storage.settings import get_settings
 from q_backend.tasks.worker_context import get_worker_market_data_service
 
@@ -94,6 +96,20 @@ def _write_ohlcv_cache(df: pd.DataFrame, path: Path) -> None:
         df.rename_axis("time").reset_index().to_parquet(path, index=False)
     except Exception:
         logger.warning("Failed to write OHLCV cache at %s", path, exc_info=True)
+
+
+def load_evaluation_frame(request: StrategySearchConfig) -> pd.DataFrame:
+    """Load primary OHLCV once and attach configured exogenous context columns."""
+    backtest = request.backtest
+    frame, _ = prepare_evaluation_frame(
+        primary_symbol=backtest.symbol,
+        primary_timeframe=backtest.timeframe,
+        start=backtest.start,
+        end=backtest.end,
+        exogenous_series=request.exogenous_series,
+        loader=load_ohlcv_frame,
+    )
+    return frame
 
 
 def sliced_runner(

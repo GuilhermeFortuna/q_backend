@@ -44,7 +44,9 @@ from q_backend.optimization.strategy_search import (
     evaluate_candidate,
 )
 from q_backend.optimization.walkforward import split_windows
-from q_backend.tasks.data import load_ohlcv_frame
+from q_backend.market_data.exogenous_context import get_cached_exogenous_provenance
+from q_backend.market_data.exogenous_config import validate_exogenous_for_primary
+from q_backend.tasks.data import load_evaluation_frame, load_ohlcv_frame
 from q_backend.tasks.fanin import (
     clear_job_keys,
     decrement,
@@ -154,10 +156,24 @@ def evict_run(run_id: str) -> None:
 
 
 def validate_strategy_search_request(config: StrategySearchConfig) -> None:
+    validate_exogenous_for_primary(
+        primary_symbol=config.backtest.symbol,
+        primary_timeframe=config.backtest.timeframe,
+        exogenous_series=config.exogenous_series,
+    )
     wf_end, _, _ = compute_lockbox_bounds(
         config.backtest.start, config.backtest.end, config.lockbox
     )
     split_windows(config.backtest.start, wf_end, config.walkforward)
+
+
+def _load_run_frame(request: StrategySearchConfig) -> pd.DataFrame:
+    if request.exogenous_series:
+        return load_evaluation_frame(request)
+    backtest = request.backtest
+    return load_ohlcv_frame(
+        backtest.symbol, backtest.timeframe, backtest.start, backtest.end
+    )
 
 
 def _serialize_search_config(config: StrategySearchConfig) -> dict[str, Any]:
@@ -169,6 +185,18 @@ def _serialize_search_config(config: StrategySearchConfig) -> dict[str, Any]:
         payload.pop("lockbox", None)
     if config.genetic is not None:
         payload["provider"] = "genetic"
+    if config.exogenous_series:
+        provenance = config.exogenous_provenance
+        if not provenance:
+            provenance = get_cached_exogenous_provenance(
+                primary_symbol=config.backtest.symbol,
+                primary_timeframe=config.backtest.timeframe,
+                start=config.backtest.start,
+                end=config.backtest.end,
+                exogenous_series=config.exogenous_series,
+            )
+        if provenance:
+            payload["exogenous_provenance"] = provenance
     return payload
 
 
@@ -432,6 +460,15 @@ def _persist_run_finish(job: StrategySearchJob, terminal_status: JobStatus) -> N
                 candidates_to_persist = _candidates_for_persistence(result)
                 for candidate in candidates_to_persist:
                     meta = (metadata or {}).get(candidate.candidate_id, {})
+                    from q_backend.optimization.hypothesis import extract_hypothesis_metadata
+                    hyp_info = extract_hypothesis_metadata(meta.get("genome"))
+                    
+                    profile_ver = meta.get("profile_version") or hyp_info.get("profile_version")
+                    hyp_id = meta.get("hypothesis_id") or hyp_info.get("hypothesis_id")
+                    hyp_rat = meta.get("hypothesis_rationale") or hyp_info.get("hypothesis_rationale")
+                    hyp_req = meta.get("hypothesis_required_features") or hyp_info.get("hypothesis_required_features")
+                    hyp_hash = meta.get("hypothesis_template_hash") or hyp_info.get("hypothesis_template_hash")
+
                     create_strategy_search_candidate(
                         session,
                         run_id=job.db_run_id,
@@ -461,6 +498,11 @@ def _persist_run_finish(job: StrategySearchJob, terminal_status: JobStatus) -> N
                         last_exit_mutation_op=meta.get("last_exit_mutation_op"),
                         exit_param_names=meta.get("exit_param_names"),
                         diagnostics=candidate.diagnostics,
+                        profile_version=profile_ver,
+                        hypothesis_id=hyp_id,
+                        hypothesis_rationale=hyp_rat,
+                        hypothesis_required_features=hyp_req,
+                        hypothesis_template_hash=hyp_hash,
                     )
             update_strategy_search_run(
                 session,
@@ -512,13 +554,8 @@ def start_job(
     validate_strategy_search_request(request)
 
     run_id, db_run_id = _persist_run_start(request)
-    provider: CandidateProvider
-    if request.genetic is not None:
-        provider = create_genetic_candidate_provider(
-            request.genetic, request, latents_enabled=request.latents_enabled
-        )
-    else:
-        provider = RegistryCandidateProvider(request)
+    from q_backend.optimization.hypothesis import resolve_candidate_provider
+    provider = resolve_candidate_provider(request)
     job = StrategySearchJob(
         run_id=run_id,
         db_run_id=db_run_id,
@@ -608,19 +645,11 @@ _UNSUPPORTED_OFFSET = 10_000_000
 
 def _candidate_runner(request: StrategySearchConfig) -> DefaultBacktestRunner:
     """Build a runner that slices the run's cached OHLCV frame per window."""
-    backtest = request.backtest
-    return DefaultBacktestRunner.from_frame_sliced(
-        load_ohlcv_frame(
-            backtest.symbol, backtest.timeframe, backtest.start, backtest.end
-        )
-    )
+    return DefaultBacktestRunner.from_frame_sliced(_load_run_frame(request))
 
 
 def _candidate_ohlcv(request: StrategySearchConfig) -> pd.DataFrame:
-    backtest = request.backtest
-    return load_ohlcv_frame(
-        backtest.symbol, backtest.timeframe, backtest.start, backtest.end
-    )
+    return _load_run_frame(request)
 
 
 def _genetic_probe_frame(request: StrategySearchConfig) -> pd.DataFrame | None:
@@ -634,9 +663,7 @@ def _genetic_probe_frame(request: StrategySearchConfig) -> pd.DataFrame | None:
         return None
     backtest = request.backtest
     try:
-        return load_ohlcv_frame(
-            backtest.symbol, backtest.timeframe, backtest.start, backtest.end
-        )
+        return _load_run_frame(request)
     except Exception:  # noqa: BLE001 - viability is best-effort; never block a run
         logger.warning(
             "Genetic probe frame load failed for %s; trade-viability disabled",
@@ -701,9 +728,12 @@ def dispatch_candidates(run_id: str, db_run_id_hex: str, config_json: str) -> No
         dispatch_genetic_discovery(run_id, db_run_id_hex, config_json)
         return
     db_run_id = uuid.UUID(db_run_id_hex) if db_run_id_hex else None
-    provider = RegistryCandidateProvider(request)
+    from q_backend.optimization.hypothesis import resolve_candidate_provider
+    provider = resolve_candidate_provider(request)
     candidates = list(provider.candidates())
-    unsupported = [_unsupported_result(name) for name in provider.unsupported_names()]
+    unsupported = []
+    if hasattr(provider, "unsupported_names"):
+        unsupported = [_unsupported_result(name) for name in provider.unsupported_names()]
     total = len(candidates) + len(unsupported)
 
     if is_cancelled(run_id):
@@ -754,7 +784,8 @@ def run_candidate(
     """Candidate worker: walk-forward evaluate one candidate strategy."""
     request = StrategySearchConfig.model_validate_json(config_json)
     db_run_id = uuid.UUID(db_run_id_hex) if db_run_id_hex else None
-    provider = RegistryCandidateProvider(request)
+    from q_backend.optimization.hypothesis import resolve_candidate_provider
+    provider = resolve_candidate_provider(request)
     candidates = list(provider.candidates())
     candidate = candidates[candidate_index]
 
@@ -1169,8 +1200,11 @@ def finalize_discovery(run_id: str, db_run_id_hex: str, config_json: str) -> Non
         results = [candidate_result_from_dict(p) for p in load_partials(run_id)]
         ranked = _rank_results(results)
         best = ranked[0] if ranked and ranked[0].rank == 1 else None
-        provider = RegistryCandidateProvider(request)
-        provider_metadata = provider.candidate_metadata()
+        from q_backend.optimization.hypothesis import resolve_candidate_provider
+        provider = resolve_candidate_provider(request)
+        provider_metadata = {}
+        if hasattr(provider, "candidate_metadata"):
+            provider_metadata = provider.candidate_metadata()
         job.result = StrategySearchResult(
             candidates=ranked,
             objective_mode=request.objective.mode,
@@ -1332,6 +1366,11 @@ def _serialize_db_candidate(candidate, *, run_id: str | None = None) -> dict[str
         "window_count": candidate.window_count,
         "completed_windows": candidate.completed_windows,
         "error": None,
+        "profile_version": getattr(candidate, "profile_version", None),
+        "hypothesis_id": getattr(candidate, "hypothesis_id", None),
+        "hypothesis_rationale": getattr(candidate, "hypothesis_rationale", None),
+        "hypothesis_required_features": getattr(candidate, "hypothesis_required_features", None),
+        "hypothesis_template_hash": getattr(candidate, "hypothesis_template_hash", None),
     }
     if candidate.generation is not None:
         payload["generation"] = candidate.generation

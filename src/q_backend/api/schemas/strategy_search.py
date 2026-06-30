@@ -58,6 +58,12 @@ class StrategySearchCandidateResponse(BaseModel):
     last_exit_mutation_op: Optional[str] = None
     exit_quality: Optional[Dict[str, Any]] = None
     diagnostics: Optional[Dict[str, Any]] = None
+    profile_version: Optional[int] = None
+    hypothesis_id: Optional[str] = None
+    hypothesis_rationale: Optional[str] = None
+    hypothesis_required_features: Optional[List[str]] = None
+    hypothesis_template_hash: Optional[str] = None
+
 
 
 class StrategySearchResultsResponse(BaseModel):

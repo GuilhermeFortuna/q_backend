@@ -22,6 +22,7 @@ from q_backend.backtesting.genome.exit_rule_policy import (
     selected_exit_policy_presets,
 )
 from q_backend.backtesting.genome.param_bounds import GENOME_PARAM_BOUNDS
+from q_backend.backtesting.session_context.compute import hhmm_to_minutes, parse_hhmm
 from q_backend.backtesting.genome.schema import Genome, GenomeNode
 
 
@@ -96,6 +97,52 @@ def validate_genome(
                     raise GenomeValidationError(
                         f"Node '{node.id}': transform.shift.bars must be 1 (got {value!r})."
                     )
+            elif key == "change_bars" and node.kind == "transform.pct_change":
+                if not isinstance(value, int) or value < 1:
+                    raise GenomeValidationError(
+                        f"Node '{node.id}': transform.pct_change.change_bars must be >= 1 "
+                        f"(got {value!r})."
+                    )
+            elif node.kind == "transform.clip" and not _is_param_ref(value):
+                if key == "clip_low" and "clip_high" in node.params:
+                    high = node.params["clip_high"]
+                    if not _is_param_ref(high) and isinstance(value, (int, float)) and value > high:
+                        raise GenomeValidationError(
+                            f"Node '{node.id}': clip_low must be <= clip_high."
+                        )
+                if key == "clip_high" and "clip_low" in node.params:
+                    low = node.params["clip_low"]
+                    if not _is_param_ref(low) and isinstance(value, (int, float)) and value < low:
+                        raise GenomeValidationError(
+                            f"Node '{node.id}': clip_high must be >= clip_low."
+                        )
+            elif (
+                node.kind == "feature.session_window"
+                and key == "window_to"
+                and not _is_param_ref(value)
+                and "window_from" in node.params
+                and not _is_param_ref(node.params["window_from"])
+            ):
+                try:
+                    parse_hhmm(str(node.params["window_from"]))
+                    parse_hhmm(str(value))
+                except ValueError as exc:
+                    raise GenomeValidationError(
+                        f"Node '{node.id}' param '{key}' must be HH:MM."
+                    ) from exc
+                if hhmm_to_minutes(str(node.params["window_from"])) >= hhmm_to_minutes(str(value)):
+                    raise GenomeValidationError(
+                        f"Node '{node.id}': feature.session_window window_from must be before window_to."
+                    )
+            elif key in {"session_open", "session_close", "window_from", "window_to"} and not _is_param_ref(
+                value
+            ):
+                try:
+                    parse_hhmm(str(value))
+                except ValueError as exc:
+                    raise GenomeValidationError(
+                        f"Node '{node.id}' param '{key}' must be HH:MM."
+                    ) from exc
 
         input_count = len(node.inputs)
         if input_count < spec.min_inputs or input_count > spec.max_inputs:

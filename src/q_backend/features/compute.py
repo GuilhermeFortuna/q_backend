@@ -17,6 +17,9 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from q_backend.backtesting.genome.feature_nodes import evaluate_feature_node
+from q_backend.backtesting.session_context import prepare_evaluation_frame
+from q_backend.backtesting.session_context.metadata import CONTEXT_NODE_METADATA
 from q_backend.backtesting.moving_averages import compute_ma, normalize_ma_type
 from q_backend.backtesting.technical_indicators import (
     compute_atr,
@@ -27,6 +30,12 @@ from q_backend.backtesting.technical_indicators import (
     compute_rsi,
     compute_yang_zhang,
 )
+from q_backend.backtesting.transforms import (
+    compute_clip,
+    compute_pct_change,
+    compute_rolling_rank,
+    compute_rolling_zscore,
+)
 from q_backend.features.leakage import (
     FORWARD_LOOKING_KINDS,
     assert_neural_oos_only,
@@ -34,6 +43,7 @@ from q_backend.features.leakage import (
     to_utc_series,
 )
 from q_backend.features.registry import FeatureSpec, feature_id, get_feature_spec, resolve_params
+from q_backend.market_data.exogenous_columns import resolve_exog_column
 from q_backend.storage.lake.artifacts import read_neural_model
 
 _REQUIRED_BAR_COLUMNS = frozenset({"time", "open", "high", "low", "close", "volume"})
@@ -58,6 +68,39 @@ _FEATURE_OUTPUT_PORT: dict[str, str] = {
     "tsmom_volatility": "volatility",
     "trend_blend": "out",
     "trend_blend_volatility": "volatility",
+    "zscore": "out",
+    "rank": "out",
+    "pct_change": "out",
+    "clip": "out",
+    "minutes_from_open": "out",
+    "time_of_day": "out",
+    "day_of_week": "out",
+    "month_of_year": "out",
+    "session_window": "out",
+    "vol_regime": "out",
+    "trend_regime": "out",
+    "range_compression": "out",
+    "prev_session_high": "out",
+    "prev_session_low": "out",
+    "prev_session_close": "out",
+    "session_gap": "out",
+    "dist_prev_session_high_atr": "out",
+    "dist_prev_session_low_atr": "out",
+    "dist_prev_session_close_atr": "out",
+    "opening_range_high": "out",
+    "opening_range_low": "out",
+    "d1_prev_high": "out",
+    "d1_prev_low": "out",
+    "d1_prev_close": "out",
+    "d1_trend": "out",
+    "d1_volatility": "out",
+    "exog_close": "out",
+    "exog_return": "out",
+    "exog_return_zscore": "out",
+    "exog_rolling_corr": "out",
+    "exog_relative_strength": "out",
+    "exog_vol_regime": "out",
+    "exog_direction_regime": "out",
 }
 
 # In-process LRU: key ``(model_hash, bars_range_hash)`` → full latent frame.
@@ -307,6 +350,80 @@ def _compute_node_outputs(
         blend = (pd.Series(sig1, index=df.index) + sig2 + sig3) / 3.0
         return {"out": blend, "volatility": compute_realized_vol(close, vol_w)}
 
+    if node_kind == "transform.zscore":
+        return {"out": compute_rolling_zscore(close, int(params["window"]))}
+    if node_kind == "transform.rank":
+        return {"out": compute_rolling_rank(close, int(params["window"]))}
+    if node_kind == "transform.pct_change":
+        return {"out": compute_pct_change(close, int(params["change_bars"]))}
+    if node_kind == "transform.clip":
+        return {
+            "out": compute_clip(
+                close,
+                float(params["clip_low"]),
+                float(params["clip_high"]),
+            )
+        }
+
+    if node_kind == "source.exog.close":
+        return {"out": resolve_exog_column(df, str(params["symbol"]), "close")}
+    if node_kind == "source.exog.return":
+        lookback = int(params["lookback_bars"])
+        return {
+            "out": resolve_exog_column(df, str(params["symbol"]), f"return_{lookback}")
+        }
+    if node_kind == "source.exog.return_zscore":
+        lookback = int(params["lookback_bars"])
+        window = int(params["window"])
+        return {
+            "out": resolve_exog_column(
+                df,
+                str(params["symbol"]),
+                f"return_zscore_{lookback}_{window}",
+            )
+        }
+    if node_kind == "source.exog.rolling_corr":
+        window = int(params["window"])
+        return {
+            "out": resolve_exog_column(
+                df, str(params["symbol"]), f"rolling_corr_{window}"
+            )
+        }
+    if node_kind == "source.exog.relative_strength":
+        lookback = int(params["lookback_bars"])
+        return {
+            "out": resolve_exog_column(
+                df, str(params["symbol"]), f"relative_strength_{lookback}"
+            )
+        }
+    if node_kind == "source.exog.vol_regime":
+        vol_window = int(params["vol_window"])
+        return {
+            "out": resolve_exog_column(
+                df, str(params["symbol"]), f"vol_regime_{vol_window}"
+            ).astype(bool)
+        }
+    if node_kind == "source.exog.direction_regime":
+        lookback = int(params["lookback_bars"])
+        return {
+            "out": resolve_exog_column(
+                df, str(params["symbol"]), f"direction_regime_{lookback}"
+            ).astype(bool)
+        }
+
+    if node_kind.startswith("feature."):
+        working = df.set_index("time")
+        working = prepare_evaluation_frame(working)
+        col_name = "_feature_out"
+        evaluate_feature_node(
+            working,
+            kind=node_kind,
+            params=params,
+            cols={"out": col_name},
+            binding_series=lambda frame, _index: frame["close"],
+        )
+        return {"out": working[col_name].reset_index(drop=True)}
+
     raise ValueError(f"Unsupported feature node kind '{node_kind}'.")
 
 
@@ -326,7 +443,8 @@ def compute_feature(
     port = _output_port(spec.name)
     raw = _compute_node_outputs(spec.node_kind, df, resolved)[port]
 
-    warmup = _warmup_bars(spec, resolved)
+    meta = CONTEXT_NODE_METADATA.get(spec.node_kind or "")
+    warmup = meta.availability_delay_bars if meta is not None else _warmup_bars(spec, resolved)
     values = _apply_warmup(raw.reset_index(drop=True), warmup)
     series = pd.Series(values.to_numpy(), index=df["time"], name=spec.name)
 

@@ -60,6 +60,7 @@ from q_backend.optimization.strategy_search import (
     _rank_results,
     evaluate_candidate,
 )
+from q_backend.optimization.hypothesis import FeatureAdmissionResolver
 
 _NO_RESULT_PROGRESS_BONUS = 0.5
 _EFFICIENCY_LOG_CAP = 2.0
@@ -254,6 +255,7 @@ def create_genetic_candidate_provider(
     search_config: StrategySearchConfig,
     probe_df: pd.DataFrame | None = None,
     latents_enabled: bool = True,
+    resolver: FeatureAdmissionResolver | None = None,
 ) -> GeneticCandidateProvider:
     """Build a genetic provider after resolving the per-run latent universe once."""
     backtest = search_config.backtest
@@ -282,6 +284,7 @@ def create_genetic_candidate_provider(
         probe_df=probe_df,
         latent_universe=latent_universe,
         kind_weights=kind_weights,
+        resolver=resolver,
     )
 
 
@@ -295,6 +298,7 @@ class GeneticCandidateProvider:
         probe_df: pd.DataFrame | None = None,
         latent_universe: LatentUniverse | None = None,
         kind_weights: dict[str, float] | None = None,
+        resolver: FeatureAdmissionResolver | None = None,
     ) -> None:
         self._genetic = genetic_config
         self._search = search_config
@@ -304,6 +308,44 @@ class GeneticCandidateProvider:
         self._rng = random.Random(genetic_config.init_seed)
         self._generation = 0
         self._next_individual = 0
+
+        # Seeding hypothesis templates into the genetic population
+        from q_backend.optimization.hypothesis import (
+            FailClosedFeatureAdmissionResolver,
+            get_hypotheses_for_profile,
+            match_profile,
+            compute_template_hash,
+        )
+        resolver_inst = resolver or FailClosedFeatureAdmissionResolver()
+        symbol = search_config.backtest.symbol
+        timeframe = search_config.backtest.timeframe
+        profile = match_profile(symbol, timeframe)
+        seed_genomes: list[Genome] = []
+        if profile is not None and getattr(genetic_config, "seed_hypotheses", True):
+            for hyp in get_hypotheses_for_profile(profile.profile_id):
+                if all(resolver_inst.is_feature_admitted(f, symbol, timeframe) for f in hyp.required_features):
+                    # Check incompatibilities
+                    incompatible = False
+                    for inc in hyp.incompatibilities:
+                        if inc == timeframe or inc == symbol:
+                            incompatible = True
+                            break
+                    if not incompatible:
+                        template = dict(hyp.genome_template)
+                        template["genome_id"] = hyp.hypothesis_id
+                        template["version"] = 1
+                        tpl_hash = compute_template_hash(hyp.genome_template)
+                        if "metadata" not in template:
+                            template["metadata"] = {}
+                        template["metadata"]["hypothesis"] = {
+                            "profile_version": profile.version,
+                            "hypothesis_id": hyp.hypothesis_id,
+                            "rationale": hyp.rationale,
+                            "required_features": list(hyp.required_features),
+                            "template_hash": tpl_hash,
+                        }
+                        seed_genomes.append(Genome.model_validate(template))
+
         self._population: list[Genome] = build_initial_population(
             self._rng,
             population_size=genetic_config.population_size,
@@ -318,6 +360,7 @@ class GeneticCandidateProvider:
             indicator_kinds=self._latent_universe.indicator_kinds,
             n_latents=self._latent_universe.n_latents,
             kind_weights=self._kind_weights,
+            seed_genomes=seed_genomes,
         )
         self._genome_by_id = {genome.genome_id: genome for genome in self._population}
         self._champion: Genome | None = None

@@ -19,6 +19,8 @@ import pandas as pd
 
 from q_backend.features.compute import compute_feature
 from q_backend.features.registry import feature_id, get_feature_spec, resolve_params
+from q_backend.market_data.exogenous_config import ExogenousSeriesConfig
+from q_backend.market_data.exogenous_context import attach_exogenous_context
 from q_backend.market_data.local_store import read_ohlcv
 from q_backend.market_data.models import OHLCV
 from q_backend.storage.lake.artifacts import (
@@ -51,6 +53,51 @@ def _iso_z(dt: datetime) -> str:
     else:
         ts = ts.tz_convert("UTC")
     return ts.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _ohlcv_to_indexed_frame(bars: list[OHLCV]) -> pd.DataFrame:
+    df = _ohlcv_to_compute_bars(bars)
+    if df.empty:
+        return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+    return df.set_index("time")
+
+
+def _load_ohlcv_indexed(
+    symbol: str, timeframe: str, start: datetime, end: datetime
+) -> pd.DataFrame:
+    return _ohlcv_to_indexed_frame(read_ohlcv(symbol, timeframe, start, end))
+
+
+def _attach_exogenous_to_bars(
+    bars_df: pd.DataFrame,
+    *,
+    primary_symbol: str,
+    primary_timeframe: str,
+    start: datetime,
+    end: datetime,
+    exogenous_series: list[ExogenousSeriesConfig],
+) -> pd.DataFrame:
+    indexed = bars_df.set_index("time").sort_index()
+    enriched, _ = attach_exogenous_context(
+        indexed,
+        exogenous_series,
+        primary_symbol=primary_symbol,
+        primary_timeframe=primary_timeframe,
+        loader=_load_ohlcv_indexed,
+        start=start,
+        end=end,
+    )
+    return enriched.reset_index()
+
+
+def _requests_need_exogenous(features: list[FeatureRequest]) -> bool:
+    return any(get_feature_spec(request.name).category == "exogenous" for request in features)
+
+
+def _exogenous_cache_entries(
+    exogenous_series: list[ExogenousSeriesConfig],
+) -> list[dict[str, Any]]:
+    return [spec.model_dump(mode="json") for spec in exogenous_series]
 
 
 def _ohlcv_to_compute_bars(bars: list[OHLCV]) -> pd.DataFrame:
@@ -86,8 +133,10 @@ def _matrix_cache_payload(
     start: datetime,
     end: datetime,
     feature_entries: list[tuple[str, int, dict[str, Any]]],
+    *,
+    exogenous_series: list[ExogenousSeriesConfig] | None = None,
 ) -> dict[str, Any]:
-    return {
+    payload: dict[str, Any] = {
         "symbol": symbol,
         "timeframe": timeframe.upper(),
         "start": _iso_z(start),
@@ -105,6 +154,9 @@ def _matrix_cache_payload(
             key=lambda item: item["feature_id"],
         ),
     }
+    if exogenous_series:
+        payload["exogenous_series"] = _exogenous_cache_entries(exogenous_series)
+    return payload
 
 
 def compute_matrix_id(
@@ -113,12 +165,16 @@ def compute_matrix_id(
     start: datetime,
     end: datetime,
     features: list[FeatureRequest],
+    *,
+    exogenous_series: list[ExogenousSeriesConfig] | None = None,
 ) -> str:
     entries: list[tuple[str, int, dict[str, Any]]] = []
     for request in features:
         spec, params, fid = _resolve_request(request)
         entries.append((fid, spec.version, params))
-    payload = _matrix_cache_payload(symbol, timeframe, start, end, entries)
+    payload = _matrix_cache_payload(
+        symbol, timeframe, start, end, entries, exogenous_series=exogenous_series
+    )
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -161,11 +217,20 @@ def build_feature_matrix(
     features: list[FeatureRequest],
     *,
     use_cache: bool = True,
+    exogenous_series: list[ExogenousSeriesConfig] | None = None,
 ) -> FeatureMatrix:
     if not features:
         raise ValueError("features must contain at least one FeatureRequest")
 
-    matrix_id = compute_matrix_id(symbol, timeframe, start, end, features)
+    needs_exogenous = _requests_need_exogenous(features)
+    if needs_exogenous and not exogenous_series:
+        raise ValueError(
+            "exogenous_series is required when building a matrix with exogenous features"
+        )
+
+    matrix_id = compute_matrix_id(
+        symbol, timeframe, start, end, features, exogenous_series=exogenous_series
+    )
     if use_cache and feature_matrix_exists(matrix_id):
         cached = read_feature_matrix(matrix_id)
         return FeatureMatrix(
@@ -176,6 +241,15 @@ def build_feature_matrix(
 
     bars = read_ohlcv(symbol, timeframe, start, end)
     bars_df = _ohlcv_to_compute_bars(bars)
+    if exogenous_series:
+        bars_df = _attach_exogenous_to_bars(
+            bars_df,
+            primary_symbol=symbol,
+            primary_timeframe=timeframe,
+            start=start,
+            end=end,
+            exogenous_series=exogenous_series,
+        )
 
     columns: dict[str, pd.Series] = {}
     feature_manifest_rows: list[dict[str, Any]] = []

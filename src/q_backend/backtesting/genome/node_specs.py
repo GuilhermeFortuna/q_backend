@@ -16,6 +16,16 @@ SeriesType = Literal["price_series", "oscillator"]
 
 
 @dataclass(frozen=True)
+class NodeGenMetadata:
+    """Effective GA generation flags for one node kind (WO158)."""
+
+    category: str
+    random_init: bool
+    add_node: bool
+    swap: bool
+
+
+@dataclass(frozen=True)
 class NodeSpec:
     kind: str
     min_inputs: int
@@ -24,6 +34,182 @@ class NodeSpec:
     output_ports: tuple[str, ...]
     port_types: dict[str, OutputType]
     allowed_param_keys: frozenset[str]
+    gen_category: str | None = None
+    gen_random_init: bool | None = None
+    gen_add_node: bool | None = None
+    gen_swap: bool | None = None
+
+
+_SWAP_EXCLUDED_INDICATORS = frozenset({"ind.diff", "ind.ratio", "ind.tsmom", "ind.latent"})
+_ADD_NODE_INDICATORS = frozenset({"ind.ma", "ind.ema", "ind.rsi"})
+_WO158_TRANSFORM_KINDS = frozenset(
+    {
+        "transform.zscore",
+        "transform.rank",
+        "transform.pct_change",
+        "transform.clip",
+    }
+)
+_WO159_CONTEXT_FEATURE_KINDS = frozenset(
+    {
+        "feature.minutes_from_open",
+        "feature.time_of_day",
+        "feature.day_of_week",
+        "feature.month_of_year",
+        "feature.session_window",
+        "feature.vol_regime",
+        "feature.trend_regime",
+        "feature.range_compression",
+        "feature.prev_session_high",
+        "feature.prev_session_low",
+        "feature.prev_session_close",
+        "feature.session_gap",
+        "feature.dist_prev_session_high_atr",
+        "feature.dist_prev_session_low_atr",
+        "feature.dist_prev_session_close_atr",
+        "feature.opening_range_high",
+        "feature.opening_range_low",
+        "feature.d1_prev_high",
+        "feature.d1_prev_low",
+        "feature.d1_prev_close",
+        "feature.d1_trend",
+        "feature.d1_volatility",
+    }
+)
+
+
+def _derive_gen_category(kind: str) -> str:
+    prefix = kind.split(".", 1)[0]
+    return {
+        "source": "source",
+        "ind": "indicator",
+        "transform": "transform",
+        "feature": "feature",
+        "cmp": "cmp",
+        "logic": "logic",
+        "exit": "exit",
+    }.get(prefix, "core")
+
+
+def resolve_node_gen_metadata(spec: NodeSpec) -> NodeGenMetadata:
+    """Return effective generation metadata (explicit fields override derivation)."""
+    category = spec.gen_category if spec.gen_category is not None else _derive_gen_category(spec.kind)
+
+    if spec.kind in _WO158_TRANSFORM_KINDS:
+        return NodeGenMetadata(
+            category=spec.gen_category or "transform",
+            random_init=spec.gen_random_init if spec.gen_random_init is not None else True,
+            add_node=spec.gen_add_node if spec.gen_add_node is not None else True,
+            swap=spec.gen_swap if spec.gen_swap is not None else True,
+        )
+
+    if spec.kind in _WO159_CONTEXT_FEATURE_KINDS:
+        swap_default = spec.kind != "feature.session_window"
+        return NodeGenMetadata(
+            category=spec.gen_category or "feature",
+            random_init=spec.gen_random_init if spec.gen_random_init is not None else True,
+            add_node=spec.gen_add_node if spec.gen_add_node is not None else True,
+            swap=spec.gen_swap if spec.gen_swap is not None else swap_default,
+        )
+
+    if spec.kind.startswith("feature."):
+        return NodeGenMetadata(
+            category=category,
+            random_init=spec.gen_random_init if spec.gen_random_init is not None else False,
+            add_node=spec.gen_add_node if spec.gen_add_node is not None else False,
+            swap=spec.gen_swap if spec.gen_swap is not None else False,
+        )
+
+    if spec.kind.startswith("ind."):
+        swap = spec.gen_swap
+        if swap is None:
+            swap = spec.kind not in _SWAP_EXCLUDED_INDICATORS
+        add_node = spec.gen_add_node
+        if add_node is None:
+            add_node = spec.kind in _ADD_NODE_INDICATORS
+        random_init = spec.gen_random_init if spec.gen_random_init is not None else False
+        return NodeGenMetadata(
+            category=category,
+            random_init=random_init,
+            add_node=add_node,
+            swap=swap,
+        )
+
+    if spec.kind.startswith("transform."):
+        random_init = spec.gen_random_init if spec.gen_random_init is not None else False
+        add_node = spec.gen_add_node if spec.gen_add_node is not None else False
+        swap = spec.gen_swap if spec.gen_swap is not None else False
+        return NodeGenMetadata(
+            category=category,
+            random_init=random_init,
+            add_node=add_node,
+            swap=swap,
+        )
+
+    return NodeGenMetadata(
+        category=category,
+        random_init=spec.gen_random_init if spec.gen_random_init is not None else False,
+        add_node=spec.gen_add_node if spec.gen_add_node is not None else False,
+        swap=spec.gen_swap if spec.gen_swap is not None else False,
+    )
+
+
+def base_indicator_kinds() -> tuple[str, ...]:
+    """Indicator kinds eligible for swap (excludes latent — added per-run by latent universe)."""
+    return tuple(
+        sorted(
+            kind
+            for kind, spec in NODE_SPECS.items()
+            if kind.startswith("ind.")
+            and resolve_node_gen_metadata(spec).swap
+            and kind != "ind.latent"
+        )
+    )
+
+
+def add_node_kinds() -> tuple[str, ...]:
+    """Unary series producers eligible for ``add_node`` mutation."""
+    return tuple(
+        sorted(
+            kind
+            for kind, spec in NODE_SPECS.items()
+            if resolve_node_gen_metadata(spec).add_node
+        )
+    )
+
+
+def random_init_transform_kinds() -> tuple[str, ...]:
+    """Transforms that may be inserted during random genome construction."""
+    return tuple(
+        sorted(
+            kind
+            for kind, spec in NODE_SPECS.items()
+            if kind.startswith("transform.")
+            and resolve_node_gen_metadata(spec).random_init
+        )
+    )
+
+
+def swap_kinds(indicator_kinds: tuple[str, ...] | list[str]) -> tuple[str, ...]:
+    """Kinds eligible when swapping a unary series node (indicators + transforms + features)."""
+    transform_kinds = tuple(
+        sorted(
+            kind
+            for kind, spec in NODE_SPECS.items()
+            if kind.startswith("transform.") and resolve_node_gen_metadata(spec).swap
+        )
+    )
+    feature_kinds = tuple(
+        sorted(
+            kind
+            for kind, spec in NODE_SPECS.items()
+            if kind.startswith("feature.") and resolve_node_gen_metadata(spec).swap
+        )
+    )
+    indicator_swap = tuple(
+        sorted(kind for kind in indicator_kinds if kind in NODE_SPECS and kind.startswith("ind."))
+    )
+    return indicator_swap + transform_kinds + feature_kinds
 
 
 def _series_ports(*names: str, series_type: SeriesType = "price_series") -> dict[str, OutputType]:
@@ -36,6 +222,97 @@ NODE_SPECS: dict[str, NodeSpec] = {
     "source.low": NodeSpec("source.low", 0, 0, None, ("out",), {"out": "price_series"}, frozenset()),
     "source.open": NodeSpec("source.open", 0, 0, None, ("out",), {"out": "price_series"}, frozenset()),
     "source.volume": NodeSpec("source.volume", 0, 0, None, ("out",), {"out": "price_series"}, frozenset()),
+    "source.exog.close": NodeSpec(
+        "source.exog.close",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "price_series"},
+        frozenset({"symbol"}),
+        gen_category="exogenous",
+        gen_random_init=False,
+        gen_add_node=False,
+        gen_swap=False,
+    ),
+    "source.exog.return": NodeSpec(
+        "source.exog.return",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "oscillator"},
+        frozenset({"symbol", "lookback_bars"}),
+        gen_category="exogenous",
+        gen_random_init=False,
+        gen_add_node=False,
+        gen_swap=False,
+    ),
+    "source.exog.return_zscore": NodeSpec(
+        "source.exog.return_zscore",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "oscillator"},
+        frozenset({"symbol", "lookback_bars", "window"}),
+        gen_category="exogenous",
+        gen_random_init=False,
+        gen_add_node=False,
+        gen_swap=False,
+    ),
+    "source.exog.rolling_corr": NodeSpec(
+        "source.exog.rolling_corr",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "oscillator"},
+        frozenset({"symbol", "window"}),
+        gen_category="exogenous",
+        gen_random_init=False,
+        gen_add_node=False,
+        gen_swap=False,
+    ),
+    "source.exog.relative_strength": NodeSpec(
+        "source.exog.relative_strength",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "oscillator"},
+        frozenset({"symbol", "lookback_bars"}),
+        gen_category="exogenous",
+        gen_random_init=False,
+        gen_add_node=False,
+        gen_swap=False,
+    ),
+    "source.exog.vol_regime": NodeSpec(
+        "source.exog.vol_regime",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "bool_series"},
+        frozenset({"symbol", "vol_window"}),
+        gen_category="exogenous",
+        gen_random_init=False,
+        gen_add_node=False,
+        gen_swap=False,
+    ),
+    "source.exog.direction_regime": NodeSpec(
+        "source.exog.direction_regime",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "bool_series"},
+        frozenset({"symbol", "lookback_bars"}),
+        gen_category="exogenous",
+        gen_random_init=False,
+        gen_add_node=False,
+        gen_swap=False,
+    ),
     "ind.ma": NodeSpec(
         "ind.ma",
         1,
@@ -206,6 +483,344 @@ NODE_SPECS: dict[str, NodeSpec] = {
         ("out",),
         {"out": "price_series"},
         frozenset({"factor"}),
+    ),
+    "transform.zscore": NodeSpec(
+        "transform.zscore",
+        1,
+        1,
+        None,
+        ("out",),
+        {"out": "oscillator"},
+        frozenset({"window"}),
+        gen_category="transform",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
+    ),
+    "transform.rank": NodeSpec(
+        "transform.rank",
+        1,
+        1,
+        None,
+        ("out",),
+        {"out": "oscillator"},
+        frozenset({"window"}),
+        gen_category="transform",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
+    ),
+    "transform.pct_change": NodeSpec(
+        "transform.pct_change",
+        1,
+        1,
+        None,
+        ("out",),
+        {"out": "oscillator"},
+        frozenset({"change_bars"}),
+        gen_category="transform",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
+    ),
+    "transform.clip": NodeSpec(
+        "transform.clip",
+        1,
+        1,
+        None,
+        ("out",),
+        {"out": "price_series"},
+        frozenset({"clip_low", "clip_high"}),
+        gen_category="transform",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
+    ),
+    "feature.minutes_from_open": NodeSpec(
+        "feature.minutes_from_open",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "oscillator"},
+        frozenset({"session_open"}),
+        gen_category="feature",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
+    ),
+    "feature.time_of_day": NodeSpec(
+        "feature.time_of_day",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "oscillator"},
+        frozenset({"session_open", "session_close"}),
+        gen_category="feature",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
+    ),
+    "feature.day_of_week": NodeSpec(
+        "feature.day_of_week",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "oscillator"},
+        frozenset(),
+        gen_category="feature",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
+    ),
+    "feature.month_of_year": NodeSpec(
+        "feature.month_of_year",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "oscillator"},
+        frozenset(),
+        gen_category="feature",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
+    ),
+    "feature.session_window": NodeSpec(
+        "feature.session_window",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "bool_series"},
+        frozenset({"window_from", "window_to"}),
+        gen_category="feature",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=False,
+    ),
+    "feature.vol_regime": NodeSpec(
+        "feature.vol_regime",
+        1,
+        1,
+        ("price_series",),
+        ("out",),
+        {"out": "oscillator"},
+        frozenset({"window", "regime_lookback"}),
+        gen_category="feature",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
+    ),
+    "feature.trend_regime": NodeSpec(
+        "feature.trend_regime",
+        1,
+        1,
+        ("price_series",),
+        ("out",),
+        {"out": "oscillator"},
+        frozenset({"ma_period"}),
+        gen_category="feature",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
+    ),
+    "feature.range_compression": NodeSpec(
+        "feature.range_compression",
+        1,
+        1,
+        ("price_series",),
+        ("out",),
+        {"out": "oscillator"},
+        frozenset({"window", "regime_lookback"}),
+        gen_category="feature",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
+    ),
+    "feature.prev_session_high": NodeSpec(
+        "feature.prev_session_high",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "price_series"},
+        frozenset(),
+        gen_category="feature",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
+    ),
+    "feature.prev_session_low": NodeSpec(
+        "feature.prev_session_low",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "price_series"},
+        frozenset(),
+        gen_category="feature",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
+    ),
+    "feature.prev_session_close": NodeSpec(
+        "feature.prev_session_close",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "price_series"},
+        frozenset(),
+        gen_category="feature",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
+    ),
+    "feature.session_gap": NodeSpec(
+        "feature.session_gap",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "oscillator"},
+        frozenset(),
+        gen_category="feature",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
+    ),
+    "feature.dist_prev_session_high_atr": NodeSpec(
+        "feature.dist_prev_session_high_atr",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "oscillator"},
+        frozenset({"atr_period"}),
+        gen_category="feature",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
+    ),
+    "feature.dist_prev_session_low_atr": NodeSpec(
+        "feature.dist_prev_session_low_atr",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "oscillator"},
+        frozenset({"atr_period"}),
+        gen_category="feature",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
+    ),
+    "feature.dist_prev_session_close_atr": NodeSpec(
+        "feature.dist_prev_session_close_atr",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "oscillator"},
+        frozenset({"atr_period"}),
+        gen_category="feature",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
+    ),
+    "feature.opening_range_high": NodeSpec(
+        "feature.opening_range_high",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "price_series"},
+        frozenset({"session_open", "range_minutes"}),
+        gen_category="feature",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
+    ),
+    "feature.opening_range_low": NodeSpec(
+        "feature.opening_range_low",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "price_series"},
+        frozenset({"session_open", "range_minutes"}),
+        gen_category="feature",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
+    ),
+    "feature.d1_prev_high": NodeSpec(
+        "feature.d1_prev_high",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "price_series"},
+        frozenset(),
+        gen_category="feature",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
+    ),
+    "feature.d1_prev_low": NodeSpec(
+        "feature.d1_prev_low",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "price_series"},
+        frozenset(),
+        gen_category="feature",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
+    ),
+    "feature.d1_prev_close": NodeSpec(
+        "feature.d1_prev_close",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "price_series"},
+        frozenset(),
+        gen_category="feature",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
+    ),
+    "feature.d1_trend": NodeSpec(
+        "feature.d1_trend",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "oscillator"},
+        frozenset(),
+        gen_category="feature",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
+    ),
+    "feature.d1_volatility": NodeSpec(
+        "feature.d1_volatility",
+        0,
+        0,
+        None,
+        ("out",),
+        {"out": "oscillator"},
+        frozenset(),
+        gen_category="feature",
+        gen_random_init=True,
+        gen_add_node=True,
+        gen_swap=True,
     ),
     "cmp.gt": NodeSpec(
         "cmp.gt",

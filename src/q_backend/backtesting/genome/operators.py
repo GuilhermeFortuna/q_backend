@@ -24,8 +24,13 @@ from q_backend.backtesting.genome.activity import (
 from q_backend.backtesting.genome.node_specs import (
     NODE_SPECS,
     OutputType,
+    add_node_kinds,
+    base_indicator_kinds,
     parse_input_ref,
     port_output_type,
+    random_init_transform_kinds,
+    resolve_node_gen_metadata,
+    swap_kinds,
 )
 from q_backend.backtesting.genome.latent_universe import sample_latent_index
 from q_backend.backtesting.genome.param_bounds import GENOME_PARAM_BOUNDS
@@ -37,12 +42,8 @@ from q_backend.backtesting.genome.validate import (
     validate_genome,
 )
 
-INDICATOR_KINDS = sorted(
-    kind
-    for kind in NODE_SPECS
-    if kind.startswith("ind.")
-    and kind not in {"ind.diff", "ind.ratio", "ind.tsmom", "ind.latent"}
-)
+INDICATOR_KINDS = base_indicator_kinds()
+ADD_NODE_KINDS = add_node_kinds()
 CMP_KINDS = sorted(kind for kind in NODE_SPECS if kind.startswith("cmp."))
 EXIT_BOOL_KINDS = ("exit.opposite_signal",)
 SOURCE_KIND = "source.close"
@@ -54,6 +55,12 @@ EXIT_MUTATION_OPERATORS = (
     "drop_exit_policy",
     "nudge_exit_param_ref",
 )
+_FEATURE_LITERAL_DEFAULTS = {
+    "session_open": "09:00",
+    "session_close": "18:00",
+    "window_from": "10:00",
+    "window_to": "12:00",
+}
 MUTATION_OPERATORS = (
     "rewire",
     "swap_indicator",
@@ -578,7 +585,9 @@ def _random_node_params(
     spec = NODE_SPECS[kind]
     params: dict[str, Any] = {}
     for key in sorted(spec.allowed_param_keys):
-        if kind == "ind.latent" and key == "latent_index":
+        if key in _FEATURE_LITERAL_DEFAULTS:
+            params[key] = _FEATURE_LITERAL_DEFAULTS[key]
+        elif kind == "ind.latent" and key == "latent_index":
             params[key] = sample_latent_index(rng, n_latents)
         else:
             params[key] = _random_param_ref(rng, key)
@@ -788,15 +797,20 @@ def _mutate_swap_indicator(
     n_latents: int = 0,
 ) -> Genome:
     child = clone_genome(genome)
-    indicators = [node for node in child.nodes if node.kind.startswith("ind.")]
-    if not indicators:
+    swappable = [
+        node
+        for node in child.nodes
+        if node.kind.startswith(("ind.", "transform.", "feature."))
+        and resolve_node_gen_metadata(NODE_SPECS[node.kind]).swap
+    ]
+    if not swappable:
         return child
-    node = rng.choice(indicators)
+    node = rng.choice(swappable)
     old_type = _primary_output_type(node)
     compatible = [
         kind
-        for kind in indicator_kinds
-        if _indicator_output_type(kind) == old_type
+        for kind in swap_kinds(tuple(indicator_kinds))
+        if _node_output_type(kind) == old_type
         and NODE_SPECS[kind].min_inputs == NODE_SPECS[node.kind].min_inputs
     ]
     if not compatible:
@@ -807,9 +821,39 @@ def _mutate_swap_indicator(
     return _validate_or_raise(child, max_nodes=max_nodes, max_depth=max_depth)
 
 
-def _indicator_output_type(kind: str) -> OutputType:
+def _node_output_type(kind: str) -> OutputType:
     spec = NODE_SPECS[kind]
     return spec.port_types[spec.output_ports[0]]
+
+
+def _indicator_output_type(kind: str) -> OutputType:
+    return _node_output_type(kind)
+
+
+def _maybe_wrap_with_transform(
+    rng: random.Random,
+    *,
+    nodes: list[GenomeNode],
+    source_id: str,
+    next_node_index: int,
+) -> tuple[str, int]:
+    pool = random_init_transform_kinds()
+    if not pool or rng.random() >= 0.35:
+        return source_id, next_node_index
+    kind = rng.choice(pool)
+    spec = NODE_SPECS[kind]
+    transform_id = f"n{next_node_index}"
+    next_node_index += 1
+    params = {key: _random_param_ref(rng, key) for key in sorted(spec.allowed_param_keys)}
+    nodes.append(
+        GenomeNode(
+            id=transform_id,
+            kind=kind,
+            params=params,
+            inputs=[source_id],
+        )
+    )
+    return transform_id, next_node_index
 
 
 def _mutate_nudge_param(
@@ -902,11 +946,11 @@ def _mutate_add_node(
         close_id = close_nodes[0].id
 
     new_id = f"n{len(child.nodes) + 1}"
-    kind = rng.choice(["ind.ma", "ind.ema", "ind.rsi"])
+    kind = rng.choice(ADD_NODE_KINDS)
     spec = NODE_SPECS[kind]
-    params = {key: _random_param_ref(rng, key) for key in sorted(spec.allowed_param_keys)}
+    params = _random_node_params(rng, kind)
     child.nodes.append(
-        GenomeNode(id=new_id, kind=kind, params=params, inputs=[close_id])
+        GenomeNode(id=new_id, kind=kind, params=params, inputs=[close_id] if spec.min_inputs > 0 else [])
     )
 
     bool_nodes = [
@@ -1004,13 +1048,22 @@ def _build_random_crossover(
 
     nodes = [
         GenomeNode(id=close_id, kind=SOURCE_KIND, params={}, inputs=[]),
+    ]
+    short_input, next_idx = _maybe_wrap_with_transform(
+        rng, nodes=nodes, source_id=close_id, next_node_index=7
+    )
+    long_input, next_idx = _maybe_wrap_with_transform(
+        rng, nodes=nodes, source_id=close_id, next_node_index=next_idx
+    )
+    nodes.extend(
+        [
         GenomeNode(
             id=short_id,
             kind=short_kind,
             params={
                 key: _random_param_ref(rng, key) for key in sorted(short_spec.allowed_param_keys)
             },
-            inputs=[close_id],
+            inputs=[short_input],
         ),
         GenomeNode(
             id=long_id,
@@ -1018,7 +1071,7 @@ def _build_random_crossover(
             params={
                 key: _random_param_ref(rng, key) for key in sorted(long_spec.allowed_param_keys)
             },
-            inputs=[close_id],
+            inputs=[long_input],
         ),
         GenomeNode(id=diff_id, kind="ind.diff", params={}, inputs=[short_id, long_id]),
         GenomeNode(
@@ -1033,7 +1086,8 @@ def _build_random_crossover(
             params={"threshold": {"param": "threshold", "negate": True}},
             inputs=[diff_id],
         ),
-    ]
+        ]
+    )
 
     genome = Genome(
         version=1,
@@ -1072,13 +1126,19 @@ def _build_random_reversion(
     osc_spec = NODE_SPECS[osc_kind]
     nodes = [
         GenomeNode(id=close_id, kind=SOURCE_KIND, params={}, inputs=[]),
+    ]
+    osc_input, _next_idx = _maybe_wrap_with_transform(
+        rng, nodes=nodes, source_id=close_id, next_node_index=5
+    )
+    nodes.extend(
+        [
         GenomeNode(
             id=osc_id,
             kind=osc_kind,
             params={
                 key: _random_param_ref(rng, key) for key in sorted(osc_spec.allowed_param_keys)
             },
-            inputs=[close_id] if osc_spec.max_inputs > 0 else [],
+            inputs=[osc_input] if osc_spec.max_inputs > 0 else [],
         ),
         GenomeNode(
             id=buy_id,
@@ -1092,7 +1152,8 @@ def _build_random_reversion(
             params={"threshold": {"param": "overbought"}},
             inputs=[osc_id],
         ),
-    ]
+        ]
+    )
 
     genome = Genome(
         version=1,
@@ -1529,16 +1590,58 @@ def build_initial_population(
     indicator_kinds: Sequence[str] = INDICATOR_KINDS,
     n_latents: int = 0,
     kind_weights: dict[str, float] | None = None,
+    seed_genomes: list[Genome] | None = None,
 ) -> list[Genome]:
     weights = kind_weights or {}
     population: list[Genome] = []
+    
+    # Hypothesis templates seeding
+    seed_genomes = seed_genomes or []
+    seed_count = population_size // 2
+    
+    # 1. Inject up to seed_count hypothesis seed genomes first
+    num_hyp_seeds = min(len(seed_genomes), seed_count)
+    probe_enabled = ohlcv is not None and len(ohlcv) > 0 and min_seed_signals > 0
+    
+    for index in range(num_hyp_seeds):
+        genome = clone_genome(
+            seed_genomes[index],
+            genome_id=f"gen0-seed-hyp-{index}",
+            generation=0,
+        )
+        try:
+            genome = _light_mutate_params(
+                rng,
+                genome,
+                max_nodes=max_nodes,
+                max_depth=max_depth,
+                n_latents=n_latents,
+            )
+        except GenomeValidationError:
+            pass
+        
+        if probe_enabled:
+            genome = _ensure_tradeable_genome(
+                rng,
+                genome,
+                ohlcv=ohlcv,
+                min_signals=min_seed_signals,
+                max_nodes=max_nodes,
+                max_depth=max_depth,
+                repair_max_attempts=repair_max_attempts,
+                genome_id=f"gen0-seed-hyp-{index}",
+                generation=0,
+            )
+        population.append(genome)
+
+    # 2. Fill the remaining seed count using registry fixtures
+    remaining_seeds = seed_count - len(population)
+    random_count = population_size - seed_count
+    
     registry_items = list(REGISTRY_GENOME_FIXTURES.items())
     registry_names = tuple(name for name, _ in registry_items)
-    seed_count = population_size // 2
-    random_count = population_size - seed_count
-    probe_enabled = ohlcv is not None and len(ohlcv) > 0 and min_seed_signals > 0
 
-    for index in range(seed_count):
+    for index in range(remaining_seeds):
         if weights:
             registry_name_weights = {
                 name: weights.get(_registry_primary_kind(fixture), 1.0)
