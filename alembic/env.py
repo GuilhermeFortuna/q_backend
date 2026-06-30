@@ -5,6 +5,7 @@ from sqlalchemy import engine_from_config, pool
 
 from q_backend.storage.db.base import Base
 from q_backend.storage.db import models  # noqa: F401
+from q_backend.storage.db import execution_models  # noqa: F401
 from q_backend.storage.settings import get_settings
 
 config = context.config

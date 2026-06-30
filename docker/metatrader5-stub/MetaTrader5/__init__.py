@@ -37,6 +37,23 @@ COPY_TICKS_TRADE = 2
 TICK_FLAG_BUY = 32
 TICK_FLAG_SELL = 64
 
+# Trade / order constants (mirrors official MT5 Python bindings for imports).
+ORDER_TYPE_BUY = 0
+ORDER_TYPE_SELL = 1
+TRADE_ACTION_DEAL = 1
+ORDER_TIME_GTC = 0
+ORDER_FILLING_FOK = 0
+ORDER_FILLING_IOC = 1
+ORDER_FILLING_RETURN = 2
+SYMBOL_FILLING_FOK = 1
+SYMBOL_FILLING_IOC = 2
+SYMBOL_FILLING_RETURN = 4
+TRADE_RETCODE_DONE = 10009
+TRADE_RETCODE_DONE_PARTIAL = 10010
+TRADE_RETCODE_REQUOTE = 10004
+TRADE_RETCODE_REJECT = 10006
+TRADE_RETCODE_TIMEOUT = 10012
+
 _STUB_ERROR = (
     -1,
     "MetaTrader5 is unavailable in Docker (Windows-only). Run the backend natively for live MT5 data.",
@@ -93,3 +110,31 @@ def copy_ticks_range(*_args: Any, **_kwargs: Any) -> None:
 
 def symbols_get(_pattern: str | None = None) -> list[Any]:
     return []
+
+
+def account_info() -> None:
+    return None
+
+
+def order_check(_request: dict[str, Any]) -> None:
+    return None
+
+
+def order_send(_request: dict[str, Any]) -> None:
+    return None
+
+
+def orders_get(**_kwargs: Any) -> None:
+    return None
+
+
+def positions_get(**_kwargs: Any) -> None:
+    return None
+
+
+def history_orders_get(*_args: Any, **_kwargs: Any) -> None:
+    return None
+
+
+def history_deals_get(*_args: Any, **_kwargs: Any) -> None:
+    return None

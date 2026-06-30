@@ -449,6 +449,102 @@ once shares the cores fairly instead of oversubscribing the machine. Size it wit
 > status; the worker executes. Orphaned runs (worker killed mid-job) are reconciled to
 > `cancelled` on the next API startup.
 
+### 7. Forward execution worker (`q-execution`)
+
+Paper/live forward execution runs in a **standalone process** — not inside the API lifespan and not in the Dramatiq pool. It is the only component authorized to poll completed bars, run the risk gate, commit order intents, and submit paper fills.
+
+```bash
+uv run q-execution run
+```
+
+Flatten one deployment explicitly (bypasses strategy signals, not lease or persistence safety):
+
+```bash
+uv run q-execution flatten <deployment-uuid>
+```
+
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `Q_EXECUTION_WORKER_ID` | `execution-worker-1` | Lease owner identity |
+| `Q_EXECUTION_LEASE_TTL_SECONDS` | `30` | Deployment lease TTL / heartbeat |
+| `Q_EXECUTION_POLL_INTERVAL_SECONDS` | `1.0` | Bar poll cadence |
+| `Q_EXECUTION_MAX_QUOTE_AGE_SECONDS` | `30` | Executable quote freshness |
+| `Q_EXECUTION_MAX_BAR_AGE_SECONDS` | `7200` | Completed-bar freshness |
+| `Q_EXECUTION_BENCHMARK_P95_BUDGET_MS` | `500` | Closed-bar → fill p95 budget |
+
+**Lifecycle commands** (via API in WO171; semantics today):
+
+| Command | Effect |
+|---------|--------|
+| **Start** | `running` — evaluate new bars and submit orders |
+| **Pause** | Stop evaluating new bars; retain open position |
+| **Stop** | Terminate evaluation; retain position unless flatten requested |
+| **Flatten** | Market close at current executable quote |
+| **Kill switch** | Block all new entries; flatten still allowed |
+
+**Measured phase timings** (synthetic local benchmark, M15/H1 MACrossover fixtures):
+
+| Phase | CCM$ H1 p50 | WIN$ H1 p50 | WDO$ M15 p50 |
+|-------|-------------|-------------|--------------|
+| Indicators | ~2 ms | ~2 ms | ~3 ms |
+| Evaluate | ~0.5 ms | ~0.5 ms | ~0.5 ms |
+| Full path (eval + risk + broker + persist) | <50 ms p95 | <50 ms p95 | <50 ms p95 |
+
+Run benchmarks: `uv run pytest tests/execution/test_evaluator_benchmark.py tests/execution/test_worker.py -k benchmark -s`
+
+**Execution API contracts (WO171 → WO173/WO174):** control-plane routes under `/api/v1/execution/*` never submit broker orders. Key bodies:
+
+- `POST /api/v1/execution/accounts` — `{"name":"desk-main","initial_balance":"100000.00","currency":"BRL"}`
+- `POST /api/v1/execution/deployments` — paper account id + immutable `identity` (or `source_backtest_run_id` from a saved run)
+- `POST /api/v1/execution/deployments/{id}/actions` — `{"action":"start|pause|stop|flatten","confirm":true}`
+- `GET /api/v1/execution/health` — separate `api_status`, `worker_status`, `market_data_status`, `live_capability_locked`
+- `PUT /api/v1/execution/kill-switch` — `{"enabled":true,"confirm":true,"reason":"…","updated_by":"operator"}`
+
+Money/price/quantity fields serialize as decimal strings in JSON responses.
+
+### 8. MT5 live broker (`live_locked`)
+
+The MT5 live adapter is **implemented, locked, and operationally unvalidated**. It translates
+broker-neutral market orders into auditable MT5 requests and reconciles fills through deal history,
+but cannot submit in the current environment.
+
+| Gate | Setting | Default |
+|------|---------|---------|
+| Global enable | `Q_LIVE_EXECUTION_ENABLED` | `false` |
+| Account allowlist | `Q_LIVE_EXECUTION_ACCOUNT_ALLOWLIST` | empty |
+| Deployment flag | `live_activation_enabled` on deployment row | `false` |
+| Controlled-account validation | `Q_LIVE_EXECUTION_VALIDATED` | `false` |
+| Dry run (blocks `order_send` even when gates pass) | `Q_LIVE_EXECUTION_DRY_RUN` | `true` |
+
+API/UI capability remains **`live_locked`** until a separate controlled-account validation record
+exists (`Q_LIVE_EXECUTION_VALIDATED=true` plus allowlisted account).
+
+**Retcode mapping (summary):**
+
+| MT5 retcode family | Domain outcome |
+|--------------------|----------------|
+| `DONE` / `DONE_PARTIAL` | Reconcile via `history_deals_get`; fill only when deal ticket is found |
+| `REQUOTE`, `REJECT`, `INVALID_VOLUME`, `MARKET_CLOSED` | `rejected` with `order_send_failed` / `order_check_failed` |
+| `TIMEOUT`, `NO_CONNECTION`, `None` response | `unknown`; search deals/orders by magic+comment — **never resend** |
+
+**Reconciliation procedure:**
+
+1. Run `order_check()` before any `order_send()`.
+2. Persist normalized request (passwords stripped) and raw retcode/order/deal tickets.
+3. On ambiguous outcomes, call `recover_unknown()` which queries `orders_get()`, `history_orders_get()`,
+   and `history_deals_get()` using Q intent magic/comment.
+4. Deduplicate external deal tickets before ledger application.
+
+Run contract tests: `uv run pytest tests/execution/test_metatrader_broker.py`
+
+**Future controlled-account validation checklist (not complete):**
+
+- [ ] Dedicated demo/live account provisioned and allowlisted
+- [ ] Manual micro-order round trip on controlled account
+- [ ] Reconciliation verified against terminal deal history
+- [ ] Set `Q_LIVE_EXECUTION_VALIDATED=true` only after sign-off
+- [ ] Set `Q_LIVE_EXECUTION_DRY_RUN=false` only on the execution worker host
+
 ---
 
 ## 📊 Backtesting Showcase

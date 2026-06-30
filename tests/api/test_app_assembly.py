@@ -84,6 +84,23 @@ FULL_ROUTE_INVENTORY: list[tuple[str, str]] = [
     ("DELETE", "/api/v1/storage/{symbol}/{timeframe}"),
     ("GET", "/api/v1/news"),
     ("GET", "/api/v1/news/{article_id}"),
+    ("POST", "/api/v1/execution/accounts"),
+    ("GET", "/api/v1/execution/accounts"),
+    ("GET", "/api/v1/execution/accounts/{account_id}"),
+    ("POST", "/api/v1/execution/deployments"),
+    ("GET", "/api/v1/execution/deployments"),
+    ("GET", "/api/v1/execution/deployments/{deployment_id}"),
+    ("POST", "/api/v1/execution/deployments/{deployment_id}/actions"),
+    ("GET", "/api/v1/execution/deployments/{deployment_id}/decisions"),
+    ("GET", "/api/v1/execution/deployments/{deployment_id}/orders"),
+    ("GET", "/api/v1/execution/deployments/{deployment_id}/fills"),
+    ("GET", "/api/v1/execution/positions"),
+    ("GET", "/api/v1/execution/accounts/{account_id}/ledger"),
+    ("GET", "/api/v1/execution/deployments/{deployment_id}/risk-events"),
+    ("GET", "/api/v1/execution/audit-events"),
+    ("GET", "/api/v1/execution/health"),
+    ("GET", "/api/v1/execution/kill-switch"),
+    ("PUT", "/api/v1/execution/kill-switch"),
 ]
 
 FULL_OPENAPI_PATHS: list[str] = [
@@ -150,6 +167,19 @@ FULL_OPENAPI_PATHS: list[str] = [
     "/api/v1/storage/{symbol}/{timeframe}",
     "/api/v1/news",
     "/api/v1/news/{article_id}",
+    "/api/v1/execution/accounts",
+    "/api/v1/execution/deployments",
+    "/api/v1/execution/deployments/{deployment_id}",
+    "/api/v1/execution/deployments/{deployment_id}/actions",
+    "/api/v1/execution/deployments/{deployment_id}/decisions",
+    "/api/v1/execution/deployments/{deployment_id}/orders",
+    "/api/v1/execution/deployments/{deployment_id}/fills",
+    "/api/v1/execution/positions",
+    "/api/v1/execution/accounts/{account_id}/ledger",
+    "/api/v1/execution/deployments/{deployment_id}/risk-events",
+    "/api/v1/execution/audit-events",
+    "/api/v1/execution/health",
+    "/api/v1/execution/kill-switch",
 ]
 
 

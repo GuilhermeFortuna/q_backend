@@ -27,6 +27,26 @@ class Settings(BaseSettings):
     ai_strategy_api_key: str = ""
     ai_strategy_timeout_seconds: int = 60
     ai_strategy_max_output_tokens: int = 4096
+    # Forward execution worker (standalone process — not Dramatiq, not API lifespan).
+    execution_worker_id: str = "execution-worker-1"
+    execution_lease_ttl_seconds: int = 30
+    execution_poll_interval_seconds: float = 1.0
+    execution_max_quote_age_seconds: float = 30.0
+    execution_max_bar_age_seconds: float = 7200.0
+    execution_paper_slippage_points: float = 0.0
+    execution_paper_cost_per_contract: float = 0.0
+    execution_paper_cost_bps: float = 0.0
+    execution_default_point_value: float = 0.2
+    execution_benchmark_p95_budget_ms: float = 500.0
+    execution_initial_window_bars: int = 260
+    execution_live_capability_locked: bool = True
+    # MT5 live execution gates (WO172) — all default deny; capability stays live_locked.
+    live_execution_enabled: bool = False
+    live_execution_account_allowlist: str = ""
+    live_execution_validated: bool = False
+    live_execution_max_quote_age_seconds: float = 30.0
+    live_execution_slippage_deviation: int = 20
+    live_execution_dry_run: bool = True
 
 
 @lru_cache

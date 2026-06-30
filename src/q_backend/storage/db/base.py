@@ -1,10 +1,15 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, func
+from sqlalchemy import DateTime, Numeric, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import JSON, TypeDecorator
+
+# Decimal-safe persisted money/quantity/price (never binary float balances).
+MoneyNumeric = Numeric(20, 8)
+QuantityNumeric = Numeric(20, 8)
+PriceNumeric = Numeric(20, 8)
 
 
 def utc_now() -> datetime:

@@ -4,6 +4,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from q_backend.storage.db.base import Base
+from q_backend.storage.db import models  # noqa: F401
+from q_backend.storage.db import execution_models  # noqa: F401
 
 
 @pytest.fixture

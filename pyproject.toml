@@ -33,6 +33,7 @@ worker = "q_backend.cli.worker:main"
 q-optimize = "q_backend.cli.q_optimize:main"
 q-train-encoder = "q_backend.cli.q_train_encoder:main"
 q-promote-encoder = "q_backend.cli.q_promote_encoder:main"
+q-execution = "q_backend.cli.q_execution:main"
 
 [dependency-groups]
 dev = [
@@ -41,7 +42,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["tests/api"]
+pythonpath = ["tests/api", "tests"]
 markers = [
     "integration: requires running Postgres and Redis (docker compose)",
 ]
