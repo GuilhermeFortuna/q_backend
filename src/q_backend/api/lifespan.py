@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from q_backend.api import backtest_jobs
 from q_backend.api import discovery_ab_jobs
 from q_backend.api import encoder_ablation_jobs
+from q_backend.api import alpha_research_jobs
 from q_backend.api import optimization_jobs
 from q_backend.api import strategy_search_jobs
 from q_backend.api import walkforward_jobs
@@ -39,6 +40,7 @@ async def lifespan(app: FastAPI):
     discovery_ab_jobs.reconcile_orphaned_runs()
     backtest_jobs.reconcile_orphaned_runs()
     encoder_ablation_jobs.reconcile_orphaned_runs()
+    alpha_research_jobs.reconcile_orphaned_runs()
     reconcile_orphaned_eval_runs()
     # Seed the Feature Store from the in-code FeatureSpec registry (WO130 sync).
     # Idempotent and one-way: refreshes recipe metadata but never downgrades a

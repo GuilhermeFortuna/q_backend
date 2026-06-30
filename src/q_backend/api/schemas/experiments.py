@@ -4,9 +4,11 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field, model_validator
 
 from q_backend.optimization.strategy_search import StrategySearchConfig
+from q_backend.optimization.walkforward import WalkForwardConfig
 
 MAX_AB_SEEDS = 32
 MAX_ABLATION_CONFIGS = 8
+DEFAULT_MINIMUM_COMPLETE_PAIRS = 2
 
 _DEFAULT_INPUT_FEATURES: tuple[str, ...] = (
     "rsi",
@@ -21,6 +23,11 @@ class DiscoveryAbRequest(BaseModel):
 
     config: StrategySearchConfig
     seeds: list[int] = Field(min_length=1, max_length=MAX_AB_SEEDS)
+    minimum_complete_pairs: int = Field(
+        default=DEFAULT_MINIMUM_COMPLETE_PAIRS,
+        ge=1,
+        le=MAX_AB_SEEDS,
+    )
 
     @model_validator(mode="after")
     def validate_request(self) -> "DiscoveryAbRequest":
@@ -28,29 +35,56 @@ class DiscoveryAbRequest(BaseModel):
             raise ValueError("Discovery A/B requires genetic search config")
         if len(self.seeds) != len(set(self.seeds)):
             raise ValueError("seeds must be unique")
+        if self.minimum_complete_pairs > len(self.seeds):
+            raise ValueError(
+                "minimum_complete_pairs cannot exceed the number of requested seeds"
+            )
         return self
 
 
 class DiscoveryAbArmSummary(BaseModel):
     values: list[float]
-    mean: float
+    mean: Optional[float] = None
 
 
 class DiscoveryAbPairedDelta(BaseModel):
     values: list[float]
-    mean: float
-    cohens_d: float
-    p_value: float
+    mean: Optional[float] = None
+    cohens_d: Optional[float] = None
+    p_value: Optional[float] = None
 
 
 class DiscoveryAbResult(BaseModel):
-    verdict: Literal["helps", "no_effect", "hurts"]
+    verdict: Literal["helps", "no_effect", "hurts", "inconclusive"]
     n_seeds: int
+    requested_seeds: int
+    complete_pairs: int
+    minimum_complete_pairs: int = DEFAULT_MINIMUM_COMPLETE_PAIRS
+    dropped_pair_reasons: list[str] = Field(default_factory=list)
     metric: Literal["lockbox_objective", "oos_objective"]
     control: DiscoveryAbArmSummary
     treatment: DiscoveryAbArmSummary
     paired_delta: DiscoveryAbPairedDelta
     child_runs: list[dict[str, Any]] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_payload(cls, data: Any) -> Any:
+        """Preserve readability of stored reports written before WO166."""
+        if not isinstance(data, dict):
+            return data
+        migrated = dict(data)
+        if "complete_pairs" not in migrated and "n_seeds" in migrated:
+            migrated["complete_pairs"] = migrated["n_seeds"]
+        if "requested_seeds" not in migrated:
+            child_runs = migrated.get("child_runs") or []
+            seeds = {child.get("seed") for child in child_runs if child.get("seed") is not None}
+            migrated["requested_seeds"] = len(seeds) if seeds else migrated.get("n_seeds", 0)
+        if "minimum_complete_pairs" not in migrated:
+            migrated["minimum_complete_pairs"] = DEFAULT_MINIMUM_COMPLETE_PAIRS
+        if "dropped_pair_reasons" not in migrated:
+            migrated["dropped_pair_reasons"] = []
+        return migrated
 
 
 class DiscoveryAbStartResponse(BaseModel):
@@ -133,3 +167,76 @@ class EncoderAblationStatusResponse(BaseModel):
     progress: Optional[str] = None
     result: Optional[EncoderAblationResult] = None
     error: Optional[str] = None
+
+
+class AlphaResearchComputeBudget(BaseModel):
+    """Bounded compute overrides; profile acceptance thresholds are not mutable."""
+
+    study_n_trials: int | None = Field(default=None, ge=1, le=500)
+    optimization_seeds: int | None = Field(default=None, ge=1, le=10)
+    walkforward: WalkForwardConfig | None = None
+
+    @model_validator(mode="after")
+    def reject_threshold_overrides(self) -> "AlphaResearchComputeBudget":
+        forbidden = {
+            key
+            for key, value in self.model_dump().items()
+            if key.startswith("min_") or key.endswith("_threshold")
+        }
+        if forbidden:
+            raise ValueError(
+                "Alpha-research compute budget cannot override profile acceptance thresholds."
+            )
+        return self
+
+
+class AlphaResearchRequest(BaseModel):
+    profile_id: str
+    start: datetime
+    end: datetime
+    catalog_version: int | None = Field(default=None, ge=1)
+    profile_version: int | None = Field(default=None, ge=1)
+    target_name: str = "fwd_return"
+    compute_budget: AlphaResearchComputeBudget | None = None
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "AlphaResearchRequest":
+        if self.end <= self.start:
+            raise ValueError("end must be after start")
+        return self
+
+
+class AlphaResearchStageStatus(BaseModel):
+    name: str
+    status: Literal["pending", "running", "completed", "failed", "skipped"]
+    detail: str | None = None
+
+
+class AlphaResearchResult(BaseModel):
+    verdict: Literal["ready_for_paper", "inconclusive", "rejected"]
+    profile_id: str
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    split_manifest: dict[str, Any] | None = None
+    feature_evidence_summary: list[dict[str, Any]] = Field(default_factory=list)
+    hypothesis_manifest: list[dict[str, Any]] = Field(default_factory=list)
+    champion: dict[str, Any] | None = None
+    acceptance: dict[str, Any] | None = None
+    stages: list[AlphaResearchStageStatus] = Field(default_factory=list)
+    inconclusive_reasons: list[str] = Field(default_factory=list)
+    coverage: dict[str, Any] = Field(default_factory=dict)
+
+
+class AlphaResearchStartResponse(BaseModel):
+    job_id: str
+    status: str
+
+
+class AlphaResearchStatusResponse(BaseModel):
+    job_id: str
+    status: Literal["queued", "running", "completed", "failed", "cancelled"]
+    progress: float = 0.0
+    detail: str | None = None
+    stages: list[AlphaResearchStageStatus] = Field(default_factory=list)
+    result: AlphaResearchResult | None = None
+    error: str | None = None
+    checkpoint: dict[str, Any] | None = None

@@ -150,6 +150,16 @@ def run_encoder_ablation(job_id: str, request_json: str) -> None:
     encoder_ablation_jobs.run_encoder_ablation_job(job_id, request_json)
 
 
+# --- alpha research (WO164) -----------------------------------------------------
+
+
+@dramatiq.actor(**_ACTOR_OPTS)
+def run_alpha_research(job_id: str, request_json: str, resume: bool = False) -> None:
+    from q_backend.api import alpha_research_jobs
+
+    alpha_research_jobs.run_alpha_research_job(job_id, request_json, resume=resume)
+
+
 # --- storage ingest (WO48) ------------------------------------------------------
 
 

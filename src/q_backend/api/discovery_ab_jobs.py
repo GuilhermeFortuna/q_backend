@@ -12,7 +12,13 @@ from typing import Any, Literal, Optional
 from scipy import stats
 
 from q_backend.api import strategy_search_jobs
-from q_backend.api.schemas.experiments import DiscoveryAbRequest, DiscoveryAbResult
+from q_backend.api.schemas.experiments import (
+    DEFAULT_MINIMUM_COMPLETE_PAIRS,
+    DiscoveryAbArmSummary,
+    DiscoveryAbPairedDelta,
+    DiscoveryAbRequest,
+    DiscoveryAbResult,
+)
 from q_backend.optimization.models import ObjectiveMode
 from q_backend.optimization.objectives import resolve_objective
 from q_backend.optimization.strategy_search import StrategySearchConfig
@@ -32,7 +38,7 @@ logger = logging.getLogger(__name__)
 PROGRESS_NAMESPACE = "discovery_ab"
 
 JobStatus = Literal["queued", "running", "completed", "failed"]
-_VERDICT = Literal["helps", "no_effect", "hurts"]
+_VERDICT = Literal["helps", "no_effect", "hurts", "inconclusive"]
 _FINISHED_CHILD_STATUSES = frozenset({"completed", "failed", "cancelled"})
 _ALPHA = 0.05
 _CHILD_POLL_INTERVAL_SEC = 2.0
@@ -148,10 +154,12 @@ def _compute_verdict(
     treatment_values: list[float],
 ) -> tuple[_VERDICT, list[float], float, float, float]:
     deltas = [treatment - control for control, treatment in zip(control_values, treatment_values)]
-    mean_delta = statistics.mean(deltas) if deltas else 0.0
+    mean_delta = statistics.mean(deltas)
 
     if len(deltas) < 2:
-        p_value = 1.0
+        _, p_value = stats.ttest_rel(treatment_values, control_values)
+        if p_value != p_value:  # NaN guard
+            p_value = 1.0
     else:
         _, p_value = stats.ttest_rel(treatment_values, control_values)
         if p_value != p_value:  # NaN guard
@@ -176,23 +184,30 @@ def _build_result(
     *,
     child_runs: list[dict[str, Any]],
     notes: list[str],
+    requested_seeds: int,
+    minimum_complete_pairs: int = DEFAULT_MINIMUM_COMPLETE_PAIRS,
 ) -> DiscoveryAbResult:
     control_by_seed: dict[int, float] = {}
     treatment_by_seed: dict[int, float] = {}
     metric_name = ""
+    dropped_pair_reasons: list[str] = []
 
     for child in child_runs:
         seed = child["seed"]
         arm = child["arm"]
         if child.get("terminal_status") != "completed":
-            notes.append(
+            reason = (
                 f"seed {seed} {arm}: child run {child['run_id']} "
                 f"ended {child.get('terminal_status')}"
             )
+            notes.append(reason)
+            dropped_pair_reasons.append(reason)
             continue
         value, metric, note = _best_objective_from_child_run(child["run_id"])
         if note:
-            notes.append(f"seed {seed} {arm}: {note}")
+            reason = f"seed {seed} {arm}: {note}"
+            notes.append(reason)
+            dropped_pair_reasons.append(reason)
             continue
         if not metric_name:
             metric_name = metric
@@ -202,11 +217,37 @@ def _build_result(
             treatment_by_seed[seed] = value  # type: ignore[assignment]
 
     surviving_seeds = sorted(set(control_by_seed) & set(treatment_by_seed))
+    complete_pairs = len(surviving_seeds)
     control_values = [control_by_seed[seed] for seed in surviving_seeds]
     treatment_values = [treatment_by_seed[seed] for seed in surviving_seeds]
 
+    for seed in sorted(set(control_by_seed) ^ set(treatment_by_seed)):
+        missing_arm = "treatment" if seed in control_by_seed else "control"
+        reason = f"seed {seed}: missing paired {missing_arm} objective"
+        dropped_pair_reasons.append(reason)
+
     if not metric_name:
         metric_name = "oos_objective"
+
+    if complete_pairs < minimum_complete_pairs:
+        return DiscoveryAbResult(
+            verdict="inconclusive",
+            n_seeds=complete_pairs,
+            requested_seeds=requested_seeds,
+            complete_pairs=complete_pairs,
+            minimum_complete_pairs=minimum_complete_pairs,
+            dropped_pair_reasons=dropped_pair_reasons,
+            metric=metric_name,  # type: ignore[arg-type]
+            control=DiscoveryAbArmSummary(values=control_values, mean=None),
+            treatment=DiscoveryAbArmSummary(values=treatment_values, mean=None),
+            paired_delta=DiscoveryAbPairedDelta(
+                values=[],
+                mean=None,
+                cohens_d=None,
+                p_value=None,
+            ),
+            child_runs=child_runs,
+        )
 
     verdict, deltas, mean_delta, cohens_d, p_value = _compute_verdict(
         control_values,
@@ -215,15 +256,19 @@ def _build_result(
 
     return DiscoveryAbResult(
         verdict=verdict,
-        n_seeds=len(surviving_seeds),
+        n_seeds=complete_pairs,
+        requested_seeds=requested_seeds,
+        complete_pairs=complete_pairs,
+        minimum_complete_pairs=minimum_complete_pairs,
+        dropped_pair_reasons=dropped_pair_reasons,
         metric=metric_name,  # type: ignore[arg-type]
         control={
             "values": control_values,
-            "mean": statistics.mean(control_values) if control_values else 0.0,
+            "mean": statistics.mean(control_values),
         },
         treatment={
             "values": treatment_values,
-            "mean": statistics.mean(treatment_values) if treatment_values else 0.0,
+            "mean": statistics.mean(treatment_values),
         },
         paired_delta={
             "values": deltas,
@@ -301,7 +346,12 @@ def run_discovery_ab_job(job_id: str, request_json: str) -> None:
                 },
             )
 
-        result = _build_result(child_runs=child_runs, notes=notes)
+        result = _build_result(
+            child_runs=child_runs,
+            notes=notes,
+            requested_seeds=len(request.seeds),
+            minimum_complete_pairs=request.minimum_complete_pairs,
+        )
         detail = "; ".join(notes) if notes else None
         result_payload = result.model_dump(mode="json")
         write_discovery_ab_report(job_id, result_payload)

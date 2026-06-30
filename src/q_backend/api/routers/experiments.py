@@ -2,7 +2,11 @@ from fastapi import APIRouter, HTTPException
 
 from q_backend.api import discovery_ab_jobs
 from q_backend.api import encoder_ablation_jobs
+from q_backend.api import alpha_research_jobs
 from q_backend.api.schemas.experiments import (
+    AlphaResearchRequest,
+    AlphaResearchStartResponse,
+    AlphaResearchStatusResponse,
     DiscoveryAbRequest,
     DiscoveryAbStartResponse,
     DiscoveryAbStatusResponse,
@@ -66,3 +70,43 @@ def get_encoder_ablation_status(job_id: str):
             detail=f"Encoder ablation job '{job_id}' not found.",
         )
     return payload
+
+
+@router.post(
+    "/api/v1/experiments/alpha-research",
+    response_model=AlphaResearchStartResponse,
+)
+def start_alpha_research(body: AlphaResearchRequest):
+    """Enqueue an instrument alpha-research experiment for one approved profile."""
+    try:
+        return alpha_research_jobs.start_alpha_research_job(request=body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get(
+    "/api/v1/experiments/alpha-research/{job_id}",
+    response_model=AlphaResearchStatusResponse,
+)
+def get_alpha_research_status(job_id: str):
+    """Return progress/status for an alpha-research experiment."""
+    payload = alpha_research_jobs.get_alpha_research_status_payload(job_id)
+    if payload is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Alpha-research job '{job_id}' not found.",
+        )
+    return payload
+
+
+@router.post("/api/v1/experiments/alpha-research/{job_id}/cancel")
+def cancel_alpha_research(job_id: str):
+    """Request cancellation of an in-flight alpha-research experiment."""
+    payload = alpha_research_jobs.get_alpha_research_status_payload(job_id)
+    if payload is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Alpha-research job '{job_id}' not found.",
+        )
+    alpha_research_jobs.request_cancel(job_id)
+    return {"job_id": job_id, "status": "cancelled"}

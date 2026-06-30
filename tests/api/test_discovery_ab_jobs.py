@@ -22,7 +22,7 @@ from q_backend.api.routers.experiments import (
     get_discovery_ab_status,
     start_discovery_ab,
 )
-from q_backend.api.schemas.experiments import DiscoveryAbRequest
+from q_backend.api.schemas.experiments import DiscoveryAbRequest, DiscoveryAbResult
 from q_backend.features.compute import clear_model_output_cache, compute_feature
 from q_backend.features.registry import (
     get_feature_spec,
@@ -381,6 +381,158 @@ def test_dropped_child_seed_noted_in_detail(
     assert payload.get("detail")
     assert "missing candidate" in payload["detail"]
     assert payload["result"]["n_seeds"] < len(request.seeds)
+
+
+def test_zero_complete_pairs_returns_inconclusive_without_synthetic_stats() -> None:
+    result = discovery_ab_jobs._build_result(
+        child_runs=[
+            {
+                "seed": 1,
+                "arm": "control",
+                "run_id": "run-c-1",
+                "terminal_status": "failed",
+            },
+            {
+                "seed": 1,
+                "arm": "treatment",
+                "run_id": "run-t-1",
+                "terminal_status": "cancelled",
+            },
+        ],
+        notes=[],
+        requested_seeds=1,
+        minimum_complete_pairs=2,
+    )
+
+    assert result.verdict == "inconclusive"
+    assert result.complete_pairs == 0
+    assert result.requested_seeds == 1
+    assert result.control.mean is None
+    assert result.treatment.mean is None
+    assert result.paired_delta.mean is None
+    assert result.paired_delta.cohens_d is None
+    assert result.paired_delta.p_value is None
+    assert result.paired_delta.values == []
+    assert result.dropped_pair_reasons
+
+
+def test_one_complete_pair_returns_inconclusive() -> None:
+    with patch.object(
+        discovery_ab_jobs,
+        "_best_objective_from_child_run",
+        side_effect=[(0.4, "oos_objective", ""), (0.55, "oos_objective", "")],
+    ):
+        result = discovery_ab_jobs._build_result(
+            child_runs=[
+                {
+                    "seed": 7,
+                    "arm": "control",
+                    "run_id": "run-c-7",
+                    "terminal_status": "completed",
+                },
+                {
+                    "seed": 7,
+                    "arm": "treatment",
+                    "run_id": "run-t-7",
+                    "terminal_status": "completed",
+                },
+            ],
+            notes=[],
+            requested_seeds=3,
+            minimum_complete_pairs=2,
+        )
+
+    assert result.verdict == "inconclusive"
+    assert result.complete_pairs == 1
+    assert result.control.values == [0.4]
+    assert result.treatment.values == [0.55]
+    assert result.paired_delta.mean is None
+
+
+def test_sufficient_pairs_returns_three_way_verdict_with_stats() -> None:
+    with patch.object(
+        discovery_ab_jobs,
+        "_best_objective_from_child_run",
+        side_effect=[
+            (0.40, "oos_objective", ""),
+            (0.55, "oos_objective", ""),
+            (0.42, "oos_objective", ""),
+            (0.60, "oos_objective", ""),
+        ],
+    ):
+        result = discovery_ab_jobs._build_result(
+            child_runs=[
+                {
+                    "seed": 1,
+                    "arm": "control",
+                    "run_id": "run-c-1",
+                    "terminal_status": "completed",
+                },
+                {
+                    "seed": 1,
+                    "arm": "treatment",
+                    "run_id": "run-t-1",
+                    "terminal_status": "completed",
+                },
+                {
+                    "seed": 2,
+                    "arm": "control",
+                    "run_id": "run-c-2",
+                    "terminal_status": "completed",
+                },
+                {
+                    "seed": 2,
+                    "arm": "treatment",
+                    "run_id": "run-t-2",
+                    "terminal_status": "completed",
+                },
+            ],
+            notes=[],
+            requested_seeds=2,
+            minimum_complete_pairs=2,
+        )
+
+    assert result.verdict in {"helps", "no_effect", "hurts"}
+    assert result.complete_pairs == 2
+    assert result.control.mean is not None
+    assert result.treatment.mean is not None
+    assert result.paired_delta.mean is not None
+    assert result.paired_delta.cohens_d is not None
+    assert result.paired_delta.p_value is not None
+
+
+def test_legacy_no_effect_payload_deserializes() -> None:
+    legacy = {
+        "verdict": "no_effect",
+        "n_seeds": 0,
+        "metric": "oos_objective",
+        "control": {"values": [], "mean": 0.0},
+        "treatment": {"values": [], "mean": 0.0},
+        "paired_delta": {"values": [], "mean": 0.0, "cohens_d": 0.0, "p_value": 1.0},
+        "child_runs": [],
+    }
+
+    result = DiscoveryAbResult.model_validate(legacy)
+    assert result.verdict == "no_effect"
+    assert result.complete_pairs == 0
+    assert result.requested_seeds == 0
+    assert result.control.mean == 0.0
+    assert result.paired_delta.p_value == 1.0
+
+
+def test_inconclusive_result_serializes_nullable_statistics() -> None:
+    result = discovery_ab_jobs._build_result(
+        child_runs=[],
+        notes=[],
+        requested_seeds=2,
+        minimum_complete_pairs=2,
+    )
+    payload = result.model_dump(mode="json")
+
+    assert payload["verdict"] == "inconclusive"
+    assert payload["control"]["mean"] is None
+    assert payload["paired_delta"]["p_value"] is None
+    DiscoveryAbResult.model_validate(payload)
 
 
 def test_discovery_ab_route_smoke(
