@@ -17,6 +17,7 @@ from q_backend.api.schemas.execution import (
     DecisionListResponse,
     DeploymentActionRequest,
     DeploymentActionResponse,
+    DeploymentChartResponse,
     DeploymentCreateRequest,
     DeploymentDetailResponse,
     DeploymentListResponse,
@@ -193,6 +194,28 @@ def list_deployment_fills(
         to_time=to_time,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.get(
+    "/api/v1/execution/deployments/{deployment_id}/chart",
+    response_model=DeploymentChartResponse,
+)
+def get_deployment_chart(
+    deployment_id: uuid.UUID,
+    session: Session = Depends(_session_or_503),
+    mds: MarketDataService = Depends(get_market_data_service),
+    bars: int = Query(200, ge=1, le=1000),
+):
+    # Imported lazily to avoid a circular import at app-construction time:
+    # execution_chart -> execution.strategy_build -> api.schemas.backtest -> api.__init__.
+    from q_backend.api.services import execution_chart as execution_chart_service
+
+    return execution_chart_service.get_deployment_chart(
+        session,
+        mds,
+        deployment_id,
+        bars=bars,
     )
 
 

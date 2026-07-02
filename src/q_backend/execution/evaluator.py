@@ -43,6 +43,7 @@ from q_backend.backtesting.position_sizing import PositionSizingConfig, build_po
 from q_backend.backtesting.strategy import TradingStrategy
 from q_backend.execution.bars import bar_close_time, frame_close_times, trim_rolling_window
 from q_backend.execution.domain import SignalAction, StrategyIdentity
+from q_backend.execution.indicator_frame import augment_indicator_frame
 from q_backend.execution.position_adapter import execution_position_to_trade
 from q_backend.execution.results import EvaluationPhaseTiming, ForwardDecisionResult
 from q_backend.execution.signal_eval import evaluate_queued_signals
@@ -225,49 +226,7 @@ class StrategyEvaluator:
         return results
 
     def _augmented_frame(self) -> pd.DataFrame:
-        chunk = self.strategy.compute_indicators(self._rolling.copy())
-        if not hasattr(self.strategy, "exit_strategy"):
-            return chunk
-
-        from q_backend.backtesting.technical_indicators import (
-            compute_atr,
-            compute_donchian_channels,
-        )
-
-        donchian_periods: set[int] = set()
-        for col in self.strategy.exit_strategy.required_columns():
-            if col in chunk.columns:
-                continue
-            if (
-                col.startswith("atr_")
-                and "high" in chunk.columns
-                and "low" in chunk.columns
-                and "close" in chunk.columns
-            ):
-                period = int(col.split("_", 1)[1])
-                chunk[col] = compute_atr(
-                    chunk["high"], chunk["low"], chunk["close"], period
-                )
-            elif col.startswith("donchian_high_") or col.startswith("donchian_low_"):
-                prefix = (
-                    "donchian_high_"
-                    if col.startswith("donchian_high_")
-                    else "donchian_low_"
-                )
-                donchian_periods.add(int(col.removeprefix(prefix)))
-
-        if donchian_periods and "high" in chunk.columns and "low" in chunk.columns:
-            for period in donchian_periods:
-                high_col = f"donchian_high_{period}"
-                low_col = f"donchian_low_{period}"
-                if high_col in chunk.columns and low_col in chunk.columns:
-                    continue
-                upper, lower = compute_donchian_channels(
-                    chunk["high"], chunk["low"], period
-                )
-                chunk[high_col] = upper
-                chunk[low_col] = lower
-        return chunk
+        return augment_indicator_frame(self.strategy, self._rolling)
 
     def _evaluate_row(
         self,

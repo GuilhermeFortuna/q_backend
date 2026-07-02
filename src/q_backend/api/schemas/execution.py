@@ -282,6 +282,33 @@ class ExecutionHealthResponse(BaseModel):
     checked_at: datetime
 
 
+class DeploymentChartBar(BaseModel):
+    timestamp: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+
+
+class DeploymentChartIndicator(BaseModel):
+    key: str
+    label: str
+    pane: Literal["price", "oscillator"]
+    color: Optional[str] = None
+    values: list[Optional[float]]
+
+
+class DeploymentChartResponse(BaseModel):
+    symbol: str
+    timeframe: str
+    window_bound_bars: int
+    last_bar_close_time: Optional[datetime] = None
+    next_bar_close_time: Optional[datetime] = None
+    bars: list[DeploymentChartBar]
+    indicators: list[DeploymentChartIndicator]
+
+
 class KillSwitchResponse(BaseModel):
     enabled: bool
     reason: Optional[str] = None

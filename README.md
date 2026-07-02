@@ -499,8 +499,30 @@ Run benchmarks: `uv run pytest tests/execution/test_evaluator_benchmark.py tests
 - `POST /api/v1/execution/deployments/{id}/actions` — `{"action":"start|pause|stop|flatten","confirm":true}`
 - `GET /api/v1/execution/health` — separate `api_status`, `worker_status`, `market_data_status`, `live_capability_locked`
 - `PUT /api/v1/execution/kill-switch` — `{"enabled":true,"confirm":true,"reason":"…","updated_by":"operator"}`
+- `GET /api/v1/execution/deployments/{id}/chart?bars=200` (WO175) — read-only live chart payload: the same bounded OHLCV window the forward evaluator consumes plus the strategy's own indicator series, computed through the identical `execution.indicator_frame.augment_indicator_frame` path the worker uses (never a re-implementation). `bars` is the display count (default 200, max 1000); the endpoint fetches `bars + compute_window_bound_bars(compiled_config)` completed bars (forming bar excluded), computes indicators, then trims to the last `bars` so warm-up NaNs never reach the display window. Read-only (no worker/evaluator state, no persistence). Payload is cached in-process on `(deployment_id, bars, last completed bar open time)` so 5-second polling recomputes only when a new bar lands. Degrades honestly: unknown deployment → 404; market data unavailable (MT5 offline in `mt5` mode, empty local store in `local` mode) → 503; strategy window that cannot be bounded → 422.
 
 Money/price/quantity fields serialize as decimal strings in JSON responses.
+
+**Deployment chart JSON contract (WO175):** shape mirrors the backtest chart (`bars`, `indicators`) plus additive metadata (`symbol`, `timeframe`, `window_bound_bars`, `last_bar_close_time`, `next_bar_close_time`). Warm-up NaNs serialize as `null`. Example (`bars` and `values` truncated for brevity; two indicators on `price` plus one on `oscillator`):
+
+```json
+{
+  "symbol": "WIN$",
+  "timeframe": "H1",
+  "window_bound_bars": 65,
+  "last_bar_close_time": "2023-01-06T10:00:00Z",
+  "next_bar_close_time": "2023-01-06T11:00:00Z",
+  "bars": [
+    {"timestamp": "2023-01-06T08:00:00Z", "open": 75.99013025404263, "high": 76.2713901564827, "low": 75.60697727845468, "close": 76.01412987482365, "volume": 2526},
+    {"timestamp": "2023-01-06T09:00:00Z", "open": 76.79759927190695, "high": 76.86363402451663, "low": 76.73837731260693, "close": 76.77086837748791, "volume": 3051}
+  ],
+  "indicators": [
+    {"key": "ma_short", "label": "SMA Short (5)", "pane": "price", "color": "#c9a227", "values": [79.25087982945149, 78.44122533253503, 77.6819007991252, 77.30020546035281]},
+    {"key": "ma_long", "label": "SMA Long (20)", "pane": "price", "color": "#6eb5ff", "values": [81.78716766001001, 81.51747117702958, 81.16929017357572, 80.86924261176772]},
+    {"key": "delta", "label": "Delta", "pane": "oscillator", "color": "#c9a227", "values": [-2.5362878305585213, -3.076245844494551, -3.4873893744505153, -3.5690371514149035]}
+  ]
+}
+```
 
 ### 8. MT5 live broker (`live_locked`)
 
