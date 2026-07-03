@@ -26,6 +26,26 @@ except ImportError:  # pragma: no cover
     fakeredis = None
 
 
+def pytest_addoption(parser):
+    """Register the golden-regeneration flag (see tests/backtesting/test_goldens.py).
+
+    Regenerating a golden is a deliberate act: the resulting file diff shows up in
+    git and must be justified in the commit/WO message that regenerates it.
+    """
+    parser.addoption(
+        "--regen-goldens",
+        action="store_true",
+        default=False,
+        help="Rewrite backtest golden files from current engine output instead of "
+        "comparing against the committed goldens.",
+    )
+
+
+@pytest.fixture
+def regen_goldens(request) -> bool:
+    return bool(request.config.getoption("--regen-goldens"))
+
+
 def _synthetic_ohlcv(symbol, timeframe, start, end) -> pd.DataFrame:
     """A deterministic daily OHLCV frame spanning [start, end].
 

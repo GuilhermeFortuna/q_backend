@@ -1,0 +1,65 @@
+{
+  "case": "rsi_mean_reversion_baseline",
+  "engine": "candle",
+  "metrics": {
+    "avg_loss": 0.0,
+    "avg_win": 4.0919350399,
+    "expectancy": 4.0919350399,
+    "losing_trades": 0,
+    "max_consecutive_losses": 0,
+    "max_consecutive_wins": 2,
+    "max_drawdown_pct": 0.0,
+    "max_drawdown_value": 0.0,
+    "profit_factor": 8.1838700799,
+    "recovery_factor": 0.0,
+    "total_commission": 0.0,
+    "total_pnl": 8.1838700799,
+    "total_trades": 2,
+    "win_loss_ratio": 0.0,
+    "win_rate": 1.0,
+    "winning_trades": 2
+  },
+  "surface": "A second registered strategy category (mean reversion) to pin the RSI entry/exit surface, long+short.",
+  "trade_count": 3,
+  "trades": [
+    {
+      "action": "BUY",
+      "commission": 0.0,
+      "entry_price": 98.915060349,
+      "entry_time": "2023-01-02T19:00:00+00:00",
+      "exit_price": 102.8517652802,
+      "exit_reason": "SIGNAL",
+      "exit_time": "2023-01-09T16:00:00+00:00",
+      "pnl": 3.9367049312,
+      "point_value": 1.0,
+      "quantity": 1.0,
+      "status": "CLOSED"
+    },
+    {
+      "action": "SELL",
+      "commission": 0.0,
+      "entry_price": 102.8517652802,
+      "entry_time": "2023-01-09T16:00:00+00:00",
+      "exit_price": 98.6046001315,
+      "exit_reason": "SIGNAL",
+      "exit_time": "2023-01-18T15:00:00+00:00",
+      "pnl": 4.2471651487,
+      "point_value": 1.0,
+      "quantity": 1.0,
+      "status": "CLOSED"
+    },
+    {
+      "action": "BUY",
+      "commission": 0.0,
+      "entry_price": 98.6046001315,
+      "entry_time": "2023-01-18T15:00:00+00:00",
+      "exit_price": null,
+      "exit_reason": null,
+      "exit_time": null,
+      "pnl": null,
+      "point_value": 1.0,
+      "quantity": 1.0,
+      "status": "OPEN"
+    }
+  ]
+}

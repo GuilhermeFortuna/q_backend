@@ -1,0 +1,27 @@
+{
+  "case": "tick_ma_breakout",
+  "engine": "tick",
+  "metrics": {
+    "avg_loss": 0.0,
+    "avg_win": 13.1518138594,
+    "expectancy": 13.1518138594,
+    "losing_trades": 0,
+    "max_consecutive_losses": 0,
+    "max_consecutive_wins": 3,
+    "max_drawdown_pct": 0.0,
+    "max_drawdown_value": 0.0,
+    "profit_factor": 39.4554415781,
+    "recovery_factor": 0.0,
+    "return_drawdown_ratio": 394554.4157814532,
+    "sharpe_ratio": 50.6898473847,
+    "total_commission": 0.0,
+    "total_pnl": 39.4554415781,
+    "total_return_pct": 0.0003945544,
+    "total_trades": 3,
+    "trade_sharpe_ratio": 50.6898473847,
+    "win_loss_ratio": 0.0,
+    "win_rate": 1.0,
+    "winning_trades": 3
+  },
+  "surface": "Tick engine through tick_backtest_runner: TickMaBreakout over a fixed synthetic tick stream. Pins the tick pipeline's summary metrics."
+}
