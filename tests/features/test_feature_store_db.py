@@ -92,7 +92,7 @@ def test_feature_store_migration_revision_chain() -> None:
     script = ScriptDirectory.from_config(alembic_cfg)
 
     head = script.get_current_head()
-    assert head == "20260630_0015"
+    assert head == "20260702_0016"
 
     feature_revision = script.get_revision("20260626_0010")
     assert feature_revision is not None

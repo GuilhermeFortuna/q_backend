@@ -340,11 +340,43 @@ def test_execution_migration_revision_chain() -> None:
     alembic_cfg = Config("alembic.ini")
     script = ScriptDirectory.from_config(alembic_cfg)
 
-    head = script.get_current_head()
-    assert head == "20260630_0015"
+    # Full linear migration chain from base to head. Assert the whole ordered
+    # chain (rather than a single hardcoded down_revision pair) so that adding
+    # the next migration updates this one list instead of silently going stale.
+    expected_chain = [
+        "20260607_0001",
+        "20260609_0002",
+        "20260611_0003",
+        "20260613_0004",
+        "20260613_0005",
+        "20260621_0006",
+        "20260621_0007",
+        "20260622_0008",
+        "20260626_0009",
+        "20260626_0010",
+        "20260626_0011",
+        "20260628_0012",
+        "20260628_0013",
+            "20260630_0014",
+            "20260630_0015",
+            "20260702_0016",
+        ]
 
-    revision = script.get_revision("20260630_0015")
-    assert revision is not None
-    assert revision.down_revision == "20260628_0013"
-    assert callable(revision.module.upgrade)
-    assert callable(revision.module.downgrade)
+    assert script.get_current_head() == expected_chain[-1]
+
+    # Walk the chain from head back to base and confirm it is linear and matches.
+    actual_chain: list[str] = []
+    for revision in script.walk_revisions():
+        actual_chain.append(revision.revision)
+        down = revision.down_revision
+        assert down is None or isinstance(down, str), (
+            f"revision {revision.revision} has a non-linear down_revision: {down!r}"
+        )
+
+    assert list(reversed(actual_chain)) == expected_chain
+
+    head_revision = script.get_revision(expected_chain[-1])
+    assert head_revision is not None
+    assert head_revision.down_revision == expected_chain[-2]
+    assert callable(head_revision.module.upgrade)
+    assert callable(head_revision.module.downgrade)
