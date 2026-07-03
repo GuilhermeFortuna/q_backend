@@ -32,8 +32,11 @@ from q_backend.api.schemas.execution import (
     LedgerEntryListResponse,
     LedgerEntryResponse,
     OrderListResponse,
+    OrderResolutionRequest,
+    OrderResolutionResponse,
     OrderResponse,
     PaperAccountCreateRequest,
+    PendingReconciliationListResponse,
     PaperAccountListResponse,
     PaperAccountResponse,
     PositionListResponse,
@@ -49,7 +52,18 @@ from q_backend.execution.commands import (
     start_deployment,
     stop_deployment,
 )
-from q_backend.execution.domain import BrokerMode, DeploymentLifecycle, IllegalLifecycleTransition
+from q_backend.execution.domain import (
+    BrokerMode,
+    DeploymentLifecycle,
+    ExecutionSide,
+    FillRecord,
+    IllegalLifecycleTransition,
+)
+from q_backend.execution.ledger import ExecutionLedger
+from q_backend.execution.reconciliation import (
+    OrderNotPendingError,
+    resolve_order_manually,
+)
 from q_backend.execution.validation import (
     ExecutionValidationError,
     identity_from_saved_backtest,
@@ -65,6 +79,7 @@ from q_backend.storage.db.execution_repositories import (
     create_paper_account,
     get_execution_control_state,
     get_execution_deployment,
+    get_execution_order,
     get_latest_decision,
     get_open_net_position,
     get_paper_account,
@@ -78,6 +93,7 @@ from q_backend.storage.db.execution_repositories import (
     list_ledger_entries_page,
     list_orders_page,
     list_paper_accounts,
+    list_pending_reconciliation_orders_page,
     list_positions_page,
     list_risk_events_page,
     record_audit_event,
@@ -380,6 +396,96 @@ def list_orders(
         limit=limit,
         offset=offset,
     )
+
+
+def list_pending_reconciliation(
+    session: Session,
+    deployment_id: uuid.UUID,
+    *,
+    limit: int,
+    offset: int,
+) -> PendingReconciliationListResponse:
+    if get_execution_deployment(session, deployment_id) is None:
+        raise HTTPException(status_code=404, detail="deployment not found")
+    items, total = list_pending_reconciliation_orders_page(
+        session,
+        deployment_id=deployment_id,
+        limit=limit,
+        offset=offset,
+    )
+    return PendingReconciliationListResponse(
+        items=[OrderResponse.model_validate(item) for item in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+def resolve_order(
+    session: Session,
+    order_id: uuid.UUID,
+    body: OrderResolutionRequest,
+) -> OrderResolutionResponse:
+    order = get_execution_order(session, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="order not found")
+    deployment = get_execution_deployment(session, order.deployment_id)
+    if deployment is None:
+        raise HTTPException(status_code=404, detail="deployment not found")
+
+    settings = get_settings()
+    point_value = Decimal(str(settings.execution_default_point_value))
+    ledger = ExecutionLedger()
+
+    fill: Optional[FillRecord] = None
+    if body.outcome == "filled":
+        fill = FillRecord(
+            broker_mode=BrokerMode(order.broker_mode),
+            external_fill_id=body.external_fill_id or f"manual:{order.id}",
+            side=ExecutionSide(order.side),
+            quantity=body.quantity if body.quantity is not None else order.quantity,
+            price=body.price,
+            fee=body.fee if body.fee is not None else Decimal("0"),
+            filled_at=_as_utc(body.filled_at) if body.filled_at is not None else _utcnow(),
+            metadata={"manual_resolution": True, "actor": body.actor},
+        )
+    try:
+        outcome = resolve_order_manually(
+            session,
+            order=order,
+            deployment=deployment,
+            outcome=body.outcome,
+            actor=body.actor,
+            note=body.reason,
+            ledger=ledger,
+            point_value=point_value,
+            fill=fill,
+        )
+        record_audit_event(
+            session,
+            event_type="order_reconciliation_resolved",
+            actor=body.actor,
+            deployment_id=deployment.id,
+            message=f"order {order.id} resolved: {outcome.resolution.value}",
+            payload={
+                "order_id": str(order.id),
+                "outcome": body.outcome,
+                "resolution": outcome.resolution.value,
+                "reason": body.reason,
+            },
+        )
+        session.flush()
+        session.refresh(order)
+        return OrderResolutionResponse(
+            accepted=True,
+            order=OrderResponse.model_validate(order),
+            resolution=outcome.resolution.value,
+            message=outcome.message,
+        )
+    except OrderNotPendingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        raise _http_from_db(exc) from exc
 
 
 def list_fills(

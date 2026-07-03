@@ -39,6 +39,15 @@ class BrokerSubmissionOutcome(str, Enum):
     UNKNOWN = "unknown"
 
 
+class BrokerOrderLookupStatus(str, Enum):
+    """Result of asking a broker about the fate of a previously-intended order."""
+
+    FILLED = "filled"
+    REJECTED = "rejected"
+    NOT_FOUND = "not_found"
+    UNAVAILABLE = "unavailable"
+
+
 class PaperCostConfig(BaseModel):
     """Deterministic paper fill cost model (no MT5 constants)."""
 
@@ -143,6 +152,18 @@ class BrokerSubmissionResult(BaseModel):
         return self.outcome == BrokerSubmissionOutcome.FILLED
 
 
+class BrokerOrderState(BaseModel):
+    """Read-only answer to ``lookup_order``; never triggers a (re)submission."""
+
+    model_config = ConfigDict(frozen=True)
+
+    status: BrokerOrderLookupStatus
+    fill: Optional[FillRecord] = None
+    external_order_id: Optional[str] = None
+    external_deal_ids: tuple[str, ...] = ()
+    message: str = ""
+
+
 @runtime_checkable
 class ExecutionBroker(Protocol):
   def health(self) -> BrokerHealth: ...
@@ -153,3 +174,7 @@ class ExecutionBroker(Protocol):
       *,
       cost_config: PaperCostConfig,
   ) -> BrokerSubmissionResult: ...
+
+  def lookup_order(self, request: MarketOrderRequest) -> BrokerOrderState:
+      """Look up an order's outcome by its client order id (read-only)."""
+      ...

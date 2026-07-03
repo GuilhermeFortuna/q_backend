@@ -8,6 +8,8 @@ from typing import Optional
 
 from q_backend.execution.brokers.base import (
     BrokerHealth,
+    BrokerOrderLookupStatus,
+    BrokerOrderState,
     BrokerRejection,
     BrokerRejectionCode,
     BrokerSubmissionOutcome,
@@ -198,4 +200,21 @@ class PaperBroker:
             outcome=BrokerSubmissionOutcome.FILLED,
             fill=fill,
             cost_config=cost_config,
+        )
+
+    def lookup_order(self, request: MarketOrderRequest) -> BrokerOrderState:
+        """The paper broker holds no external order state of its own.
+
+        Paper fills exist only as durable rows in Q's own ledger; the simulator
+        never records anything outside that transaction. So if an order is still
+        unknown, the fill provably never happened, and the authoritative answer
+        is ``NOT_FOUND`` — the reconciler fails the order and the strategy may
+        re-decide on a later bar. It never re-derives a fill from a newer quote.
+        """
+        return BrokerOrderState(
+            status=BrokerOrderLookupStatus.NOT_FOUND,
+            message=(
+                "paper broker keeps no external order state; "
+                "Q ledger is authoritative"
+            ),
         )

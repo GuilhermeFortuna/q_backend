@@ -363,9 +363,148 @@ def test_database_unavailable_returns_503():
     assert "not accepted" in exc.value.detail
 
 
+def _seed_pending_unknown(session):
+    from q_backend.execution.domain import (
+        BrokerMode,
+        DecisionOutcome,
+        ExecutionSide,
+        SignalAction,
+    )
+    from q_backend.storage.db.execution_repositories import (
+        create_execution_decision,
+        create_execution_order_intent,
+        mark_incomplete_orders_unknown,
+    )
+
+    account = create_paper_account(
+        session, name="recon-acct", initial_balance=Decimal("100000")
+    )
+    deployment = create_execution_deployment(
+        session,
+        paper_account_id=account.id,
+        name="recon-dep",
+        identity=StrategyIdentity(
+            strategy_name="MACrossover",
+            strategy_version=1,
+            compiled_config=_identity_payload().compiled_config,
+            config_hash=_identity_payload().config_hash,
+            symbol="WIN$",
+            timeframe="H1",
+            sizing_config={"type": "fixed_quantity", "quantity": 1.0},
+        ),
+        lifecycle=DeploymentLifecycle.RUNNING,
+    )
+    decision = create_execution_decision(
+        session,
+        deployment_id=deployment.id,
+        bar_close_time=datetime(2024, 6, 1, 14, 0, tzinfo=timezone.utc),
+        identity=StrategyIdentity(
+            strategy_name="MACrossover",
+            strategy_version=1,
+            compiled_config=_identity_payload().compiled_config,
+            config_hash=_identity_payload().config_hash,
+            symbol="WIN$",
+            timeframe="H1",
+            sizing_config={"type": "fixed_quantity", "quantity": 1.0},
+        ),
+        signal_action=SignalAction.BUY,
+        outcome=DecisionOutcome.SIGNAL,
+        requested_quantity=Decimal("1"),
+    )
+    order = create_execution_order_intent(
+        session,
+        deployment_id=deployment.id,
+        decision_id=decision.id,
+        broker_mode=BrokerMode.PAPER,
+        side=ExecutionSide.BUY,
+        quantity=Decimal("1"),
+    )
+    mark_incomplete_orders_unknown(session, deployment.id)
+    session.flush()
+    session.refresh(order)
+    return account, deployment, order
+
+
+def test_pending_reconciliation_list_and_manual_resolve(api_db_session: Session):
+    from q_backend.api.schemas.execution import OrderResolutionRequest
+
+    _, deployment, order = _seed_pending_unknown(api_db_session)
+
+    listing = execution_service.list_pending_reconciliation(
+        api_db_session, deployment.id, limit=50, offset=0
+    )
+    assert listing.total == 1
+    assert listing.items[0].id == order.id
+    assert listing.items[0].reconciliation_state == "pending"
+
+    detail = execution_service.get_deployment_detail(api_db_session, deployment.id)
+    assert detail.unknown_order_count == 1
+
+    resolved = execution_service.resolve_order(
+        api_db_session,
+        order.id,
+        OrderResolutionRequest(
+            outcome="filled",
+            actor="operator-9",
+            reason="verified filled in MT5 terminal",
+            price=Decimal("130010"),
+        ),
+    )
+    assert resolved.accepted is True
+    assert resolved.resolution == "filled"
+    assert resolved.order.status == "filled"
+    assert resolved.order.reconciled_by == "operator-9"
+
+    # No longer pending / unknown.
+    after = execution_service.list_pending_reconciliation(
+        api_db_session, deployment.id, limit=50, offset=0
+    )
+    assert after.total == 0
+    detail_after = execution_service.get_deployment_detail(api_db_session, deployment.id)
+    assert detail_after.unknown_order_count == 0
+
+    events, _ = list_audit_events_page(
+        api_db_session, deployment_id=deployment.id, event_type="order_reconciliation_resolved"
+    )
+    assert len(events) == 1
+
+
+def test_manual_resolve_filled_requires_price(api_db_session: Session):
+    from pydantic import ValidationError
+
+    from q_backend.api.schemas.execution import OrderResolutionRequest
+
+    with pytest.raises(ValidationError):
+        OrderResolutionRequest(outcome="filled", actor="op", reason="why")
+
+
+def test_manual_resolve_conflict_when_not_pending(api_db_session: Session):
+    from q_backend.api.schemas.execution import OrderResolutionRequest
+
+    _, _, order = _seed_pending_unknown(api_db_session)
+    execution_service.resolve_order(
+        api_db_session,
+        order.id,
+        OrderResolutionRequest(
+            outcome="not_filled", actor="op", reason="no fill"
+        ),
+    )
+    with pytest.raises(HTTPException) as exc:
+        execution_service.resolve_order(
+            api_db_session,
+            order.id,
+            OrderResolutionRequest(
+                outcome="not_filled", actor="op", reason="again"
+            ),
+        )
+    assert exc.value.status_code == 409
+
+
 def test_openapi_includes_execution_paths():
     from q_backend.api.main import app
 
     paths = {route.path for route in app.routes if hasattr(route, "path")}
     assert "/api/v1/execution/health" in paths
     assert "/api/v1/execution/kill-switch" in paths
+    assert "/api/v1/execution/deployments/{deployment_id}/reconciliation" in paths
+    assert "/api/v1/execution/orders/{order_id}/resolve" in paths

@@ -10,6 +10,8 @@ from uuid import UUID
 
 from q_backend.execution.brokers.base import (
     BrokerHealth,
+    BrokerOrderLookupStatus,
+    BrokerOrderState,
     BrokerRejection,
     BrokerRejectionCode,
     BrokerSubmissionOutcome,
@@ -341,6 +343,50 @@ class MetaTraderBroker:
             raw_response=raw_response,
             metadata={"magic": magic, "comment": comment},
             cost_config=cost_config,
+        )
+
+    def lookup_order(self, request: MarketOrderRequest) -> BrokerOrderState:
+        """Read-only reconciliation of a prior order via deal history.
+
+        Never sends or resends anything. If the terminal cannot be reached the
+        answer is ``UNAVAILABLE`` (fail closed: the deployment stays blocked);
+        otherwise the intent's magic/comment is matched against deal history to
+        report ``FILLED`` (with fill details) or ``NOT_FOUND``.
+        """
+        now = self._clock.now()
+        if self._runtime.is_stub():
+            return BrokerOrderState(
+                status=BrokerOrderLookupStatus.UNAVAILABLE,
+                message="MT5 live adapter unavailable (stub platform)",
+            )
+        if self._runtime.account_info() is None:
+            code, desc = self._runtime.last_error()
+            return BrokerOrderState(
+                status=BrokerOrderLookupStatus.UNAVAILABLE,
+                message=f"MT5 account_info unavailable: {desc}",
+            )
+        magic = intent_magic(request.order_id, base=self._magic_base)
+        comment = intent_comment(request.order_id)
+        reconciled = self._reconcile_fill(
+            request,
+            now=now,
+            magic=magic,
+            comment=comment,
+            external_order_id=None,
+        )
+        if reconciled is None:
+            return BrokerOrderState(
+                status=BrokerOrderLookupStatus.NOT_FOUND,
+                message="no MT5 deal matches the intent magic/comment",
+            )
+        fill, deal_ids = reconciled
+        external_order_id = fill.metadata.get("external_order_id")
+        return BrokerOrderState(
+            status=BrokerOrderLookupStatus.FILLED,
+            fill=fill,
+            external_order_id=external_order_id,
+            external_deal_ids=deal_ids,
+            message="reconciled from MT5 deal history",
         )
 
     def recover_unknown(

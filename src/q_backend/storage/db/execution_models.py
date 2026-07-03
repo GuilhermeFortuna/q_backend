@@ -213,6 +213,16 @@ class ExecutionOrder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     completed_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Reconciliation bookkeeping for orders that entered UNKNOWN/PENDING.
+    reconciliation_attempted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    reconciliation_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reconciled_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    reconciled_by: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    reconciliation_detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     details: Mapped[dict[str, Any]] = mapped_column(
         PortableJSON, nullable=False, default=dict
     )

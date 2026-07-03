@@ -28,9 +28,12 @@ from q_backend.api.schemas.execution import (
     KillSwitchUpdateResponse,
     LedgerEntryListResponse,
     OrderListResponse,
+    OrderResolutionRequest,
+    OrderResolutionResponse,
     PaperAccountCreateRequest,
     PaperAccountListResponse,
     PaperAccountResponse,
+    PendingReconciliationListResponse,
     PositionListResponse,
     RiskEventListResponse,
 )
@@ -173,6 +176,36 @@ def list_deployment_orders(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get(
+    "/api/v1/execution/deployments/{deployment_id}/reconciliation",
+    response_model=PendingReconciliationListResponse,
+)
+def list_deployment_pending_reconciliation(
+    deployment_id: uuid.UUID,
+    session: Session = Depends(_session_or_503),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    return execution_service.list_pending_reconciliation(
+        session,
+        deployment_id,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.post(
+    "/api/v1/execution/orders/{order_id}/resolve",
+    response_model=OrderResolutionResponse,
+)
+def resolve_execution_order(
+    order_id: uuid.UUID,
+    body: OrderResolutionRequest,
+    session: Session = Depends(_session_or_503),
+):
+    return execution_service.resolve_order(session, order_id, body)
 
 
 @router.get(

@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from q_backend.execution.brokers.base import (
+    BrokerOrderLookupStatus,
     BrokerRejectionCode,
     BrokerSubmissionOutcome,
     PaperCostConfig,
@@ -319,6 +320,43 @@ def test_stub_health_reports_unavailable(clock):
     )
     health = broker.health()
     assert health.is_available is False
+
+
+def test_lookup_order_filled_after_deal(clock, cost_config):
+    runtime = FakeMt5Runtime()
+    broker = _broker(runtime, clock)
+    order_id = uuid4()
+    submitted = broker.submit_market_order(
+        market_request(order_id=order_id, side="buy"),
+        cost_config=cost_config,
+    )
+    assert submitted.outcome == BrokerSubmissionOutcome.FILLED
+
+    state = broker.lookup_order(market_request(order_id=order_id, side="buy"))
+    assert state.status == BrokerOrderLookupStatus.FILLED
+    assert state.fill is not None
+    assert state.external_deal_ids
+
+
+def test_lookup_order_not_found_without_deal(clock, cost_config):
+    runtime = FakeMt5Runtime()
+    broker = _broker(runtime, clock)
+    state = broker.lookup_order(market_request(order_id=uuid4()))
+    assert state.status == BrokerOrderLookupStatus.NOT_FOUND
+
+
+def test_lookup_order_unavailable_when_stub(clock):
+    class StubFlagRuntime(FakeMt5Runtime):
+        def is_stub(self) -> bool:
+            return True
+
+    broker = MetaTraderBroker(
+        runtime=StubFlagRuntime(),
+        clock=clock,
+        gates=open_gates(),
+    )
+    state = broker.lookup_order(market_request(order_id=uuid4()))
+    assert state.status == BrokerOrderLookupStatus.UNAVAILABLE
 
 
 def test_default_gates_deny_submission(clock, cost_config):

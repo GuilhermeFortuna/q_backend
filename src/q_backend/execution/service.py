@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -47,6 +48,8 @@ from q_backend.storage.db.execution_repositories import (
     update_deployment_last_bar_close,
     update_execution_decision_outcome,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class CrashInjector:
@@ -474,6 +477,13 @@ class ExecutionService:
             )
             self._commit(session)
         except Exception:
+            # Already-handled by the state machine: the fill may or may not have
+            # reached the broker, so the order becomes UNKNOWN/PENDING for the
+            # WO178 reconciler and we re-raise. Log the traceback first so the
+            # persistence failure is never silent.
+            logger.exception(
+                "Fill persistence failed for order %s; marking UNKNOWN", order.id
+            )
             session.rollback()
             with session.begin():
                 transition_execution_order(

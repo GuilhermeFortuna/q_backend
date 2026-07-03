@@ -223,6 +223,7 @@ class ExecutionLedger:
         fill: FillRecord,
         point_value: Decimal,
         symbol: str,
+        reconciling: bool = False,
     ) -> LedgerApplyResult:
         existing = get_execution_fill_by_external_id(
             session,
@@ -329,18 +330,29 @@ class ExecutionLedger:
             average_entry_price=transition.new_average_entry_price,
             opened_at=fill.filled_at,
         )
-        transition_execution_order(
-            session,
-            order_id,
-            ExecutionOrderStatus.SUBMITTED,
-            submitted_at=fill.filled_at,
-        )
-        transition_execution_order(
-            session,
-            order_id,
-            ExecutionOrderStatus.FILLED,
-            completed_at=fill.filled_at,
-        )
+        if reconciling:
+            # Reconciled orders are already UNKNOWN; go straight to FILLED
+            # (UNKNOWN -> SUBMITTED is not a legal transition).
+            transition_execution_order(
+                session,
+                order_id,
+                ExecutionOrderStatus.FILLED,
+                submitted_at=fill.filled_at,
+                completed_at=fill.filled_at,
+            )
+        else:
+            transition_execution_order(
+                session,
+                order_id,
+                ExecutionOrderStatus.SUBMITTED,
+                submitted_at=fill.filled_at,
+            )
+            transition_execution_order(
+                session,
+                order_id,
+                ExecutionOrderStatus.FILLED,
+                completed_at=fill.filled_at,
+            )
 
         return LedgerApplyResult(
             fill_id=persisted_fill.id,

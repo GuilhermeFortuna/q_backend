@@ -173,6 +173,115 @@ def test_worker_poll_once_processes_new_bar(db_engine, db_session):
         assert len(orders) <= 1
 
 
+def test_worker_reconciles_pending_unknown_before_new_decisions(db_engine, db_session):
+    from q_backend.execution.brokers.base import (
+        BrokerOrderLookupStatus,
+        BrokerOrderState,
+    )
+    from q_backend.execution.brokers.fakes import FakeReconciliationBroker
+    from q_backend.execution.domain import (
+        BrokerMode,
+        DecisionOutcome,
+        ExecutionOrderStatus,
+        ExecutionSide,
+        ReconciliationState,
+        SignalAction,
+    )
+    from q_backend.storage.db.execution_repositories import (
+        create_execution_decision,
+        create_execution_order_intent,
+        get_execution_order,
+        mark_incomplete_orders_unknown,
+    )
+
+    account = create_paper_account(
+        db_session, name="recon-worker", initial_balance=Decimal("100000")
+    )
+    deployment = create_execution_deployment(
+        db_session,
+        paper_account_id=account.id,
+        name="recon-worker-dep",
+        identity=strategy_identity(),
+        lifecycle=DeploymentLifecycle.RUNNING,
+    )
+    decision = create_execution_decision(
+        db_session,
+        deployment_id=deployment.id,
+        bar_close_time=datetime(2024, 6, 1, 14, 0, tzinfo=timezone.utc),
+        identity=strategy_identity(),
+        signal_action=SignalAction.BUY,
+        outcome=DecisionOutcome.SIGNAL,
+        requested_quantity=Decimal("1"),
+    )
+    order = create_execution_order_intent(
+        db_session,
+        deployment_id=deployment.id,
+        decision_id=decision.id,
+        broker_mode=BrokerMode.PAPER,
+        side=ExecutionSide.BUY,
+        quantity=Decimal("1"),
+    )
+    mark_incomplete_orders_unknown(db_session, deployment.id)
+    db_session.commit()
+    order_id = order.id
+
+    frame = _synthetic_ohlcv(80)
+    clock = FixedClock(frame.index[-2].to_pydatetime())
+    quotes = FakeQuoteSource(
+        quotes={"WIN$": (Decimal("130000"), Decimal("130010"))},
+        timestamp=clock.now(),
+    )
+    provider = StaticOhlcvProvider(frame, symbol="WIN$", timeframe="H1")
+    coordinator = BarCoordinator(provider=provider, clock=clock.now)
+    ledger = ExecutionLedger()
+    service = ExecutionService(
+        broker=PaperBroker(quote_source=quotes, clock=clock),
+        quote_source=quotes,
+        ledger=ledger,
+        max_bar_age_seconds=7200.0,
+    )
+    recovery = ExecutionRecovery(
+        coordinator=coordinator,
+        quote_source=quotes,
+        ledger=ledger,
+        point_value=Decimal("0.2"),
+        initial_window_bars=60,
+    )
+    # Worker-level broker only drives reconciliation; report not-found so the
+    # ambiguous order is resolved (and the deployment unblocked) at poll start.
+    recon_broker = FakeReconciliationBroker(
+        default=BrokerOrderState(status=BrokerOrderLookupStatus.NOT_FOUND)
+    )
+    settings = Settings(
+        execution_worker_id="worker-a",
+        execution_lease_ttl_seconds=60,
+        execution_poll_interval_seconds=0.01,
+        execution_initial_window_bars=60,
+        execution_default_point_value=0.2,
+    )
+    factory = sessionmaker(bind=db_engine, expire_on_commit=False)
+    worker = ExecutionWorker(
+        session_factory=factory,
+        coordinator=coordinator,
+        quote_source=quotes,
+        broker=recon_broker,
+        ledger=ledger,
+        service=service,
+        recovery=recovery,
+        settings=settings,
+        clock=clock.now,
+        poll_interval_seconds=0.01,
+    )
+
+    worker.poll_once()
+
+    with factory() as session:
+        resolved = get_execution_order(session, order_id)
+        assert resolved.status == ExecutionOrderStatus.REJECTED.value
+        assert resolved.reconciliation_state == ReconciliationState.RECONCILED.value
+        assert resolved.reconciled_by == "reconciler"
+
+
 BENCHMARK_FIXTURES = (
     ("CCM$", "H1", "h", 400),
     ("WIN$", "H1", "h", 400),

@@ -70,7 +70,7 @@ def _market_data_session() -> Generator[MarketDataService, None, None]:
     finally:
         try:
             md.shutdown()
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort MT5 shutdown; logged
             logger.debug("MT5 shutdown raised", exc_info=True)
 
 

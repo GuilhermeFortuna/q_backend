@@ -669,6 +669,86 @@ def mark_incomplete_orders_unknown(
     return marked
 
 
+def get_execution_order(
+    session: Session, order_id: uuid.UUID
+) -> Optional[ExecutionOrder]:
+    return session.get(ExecutionOrder, order_id)
+
+
+def list_pending_reconciliation_orders(
+    session: Session,
+    *,
+    deployment_id: Optional[uuid.UUID] = None,
+) -> list[ExecutionOrder]:
+    """Orders still awaiting reconciliation (UNKNOWN + PENDING)."""
+    stmt = select(ExecutionOrder).where(
+        ExecutionOrder.status == ExecutionOrderStatus.UNKNOWN.value,
+        ExecutionOrder.reconciliation_state == ReconciliationState.PENDING.value,
+    )
+    if deployment_id is not None:
+        stmt = stmt.where(ExecutionOrder.deployment_id == deployment_id)
+    return list(
+        session.execute(stmt.order_by(ExecutionOrder.created_at)).scalars().all()
+    )
+
+
+def list_pending_reconciliation_orders_page(
+    session: Session,
+    *,
+    deployment_id: uuid.UUID,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[ExecutionOrder], int]:
+    stmt = (
+        select(ExecutionOrder)
+        .where(
+            ExecutionOrder.deployment_id == deployment_id,
+            ExecutionOrder.status == ExecutionOrderStatus.UNKNOWN.value,
+            ExecutionOrder.reconciliation_state == ReconciliationState.PENDING.value,
+        )
+        .order_by(ExecutionOrder.created_at.desc())
+    )
+    return _paginate(session, stmt, limit=limit, offset=offset)
+
+
+def record_reconciliation_attempt(
+    session: Session,
+    order_id: uuid.UUID,
+    *,
+    at: Optional[datetime] = None,
+    error: Optional[str] = None,
+) -> ExecutionOrder:
+    """Record a (failed) reconciliation attempt without resolving the order."""
+    order = session.get(ExecutionOrder, order_id)
+    if order is None:
+        raise ValueError(f"ExecutionOrder {order_id} not found")
+    order.reconciliation_attempted_at = at or _utcnow()
+    order.reconciliation_error = error
+    session.flush()
+    return order
+
+
+def finalize_order_reconciliation(
+    session: Session,
+    order_id: uuid.UUID,
+    *,
+    reconciled_by: str,
+    detail: Optional[str] = None,
+    at: Optional[datetime] = None,
+) -> ExecutionOrder:
+    """Stamp who/when/why on a resolved order and clear its pending state."""
+    order = session.get(ExecutionOrder, order_id)
+    if order is None:
+        raise ValueError(f"ExecutionOrder {order_id} not found")
+    order.reconciliation_state = ReconciliationState.RECONCILED.value
+    order.reconciled_at = at or _utcnow()
+    order.reconciled_by = reconciled_by
+    order.reconciliation_detail = detail
+    order.reconciliation_error = None
+    session.flush()
+    return order
+
+
 def release_expired_leases(session: Session, *, now: Optional[datetime] = None) -> int:
     ts = now or _utcnow()
     leases = list(
@@ -1022,6 +1102,7 @@ __all__ = [
     "get_execution_control_state",
     "get_execution_deployment",
     "get_execution_fill_by_external_id",
+    "get_execution_order",
     "get_open_net_position",
     "get_paper_account",
     "get_paper_account_by_name",
@@ -1044,7 +1125,11 @@ __all__ = [
     "record_audit_event",
     "set_pending_deployment_action",
     "list_orders_for_deployment",
+    "list_pending_reconciliation_orders",
+    "list_pending_reconciliation_orders_page",
     "mark_incomplete_orders_unknown",
+    "record_reconciliation_attempt",
+    "finalize_order_reconciliation",
     "record_risk_event",
     "release_expired_leases",
     "release_worker_lease",

@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Annotated, Any, Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, model_validator
 
 DecimalStr = Annotated[
     Decimal,
@@ -156,11 +156,47 @@ class OrderResponse(BaseModel):
     intent_committed_at: Optional[datetime] = None
     submitted_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    reconciliation_attempted_at: Optional[datetime] = None
+    reconciliation_error: Optional[str] = None
+    reconciled_at: Optional[datetime] = None
+    reconciled_by: Optional[str] = None
+    reconciliation_detail: Optional[str] = None
     created_at: datetime
 
 
 class OrderListResponse(PaginatedResponse):
     items: list[OrderResponse]
+
+
+class PendingReconciliationListResponse(PaginatedResponse):
+    items: list[OrderResponse]
+
+
+class OrderResolutionRequest(BaseModel):
+    """Operator assertion resolving an unknown order. Outcome is mandatory."""
+
+    outcome: Literal["filled", "not_filled"]
+    actor: str = Field(..., min_length=1, max_length=128)
+    reason: str = Field(..., min_length=1)
+    # Required when outcome == "filled".
+    price: Optional[DecimalStr] = None
+    quantity: Optional[DecimalStr] = None
+    fee: Optional[DecimalStr] = None
+    filled_at: Optional[datetime] = None
+    external_fill_id: Optional[str] = Field(default=None, max_length=128)
+
+    @model_validator(mode="after")
+    def _require_fill_details(self) -> "OrderResolutionRequest":
+        if self.outcome == "filled" and self.price is None:
+            raise ValueError("filled resolution requires a price")
+        return self
+
+
+class OrderResolutionResponse(BaseModel):
+    accepted: bool
+    order: OrderResponse
+    resolution: str
+    message: str
 
 
 class FillResponse(BaseModel):

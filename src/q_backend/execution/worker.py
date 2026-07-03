@@ -19,6 +19,7 @@ from q_backend.execution.brokers.base import PaperCostConfig, QuoteSource
 from q_backend.execution.brokers.paper import PaperBroker
 from q_backend.execution.domain import DeploymentLifecycle
 from q_backend.execution.ledger import ExecutionLedger
+from q_backend.execution.reconciliation import OrderReconciler
 from q_backend.execution.recovery import DeploymentRuntime, ExecutionRecovery
 from q_backend.execution.service import ExecutionService
 from q_backend.storage.db.execution_repositories import (
@@ -66,6 +67,7 @@ class ExecutionWorker:
     _lease_tokens: dict[uuid.UUID, str] = field(default_factory=dict, init=False)
     _health: WorkerHealth = field(init=False)
     _running: bool = field(default=False, init=False)
+    _reconciler: Optional[OrderReconciler] = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         self._health = WorkerHealth(
@@ -73,6 +75,16 @@ class ExecutionWorker:
             running=False,
             active_deployments=0,
         )
+
+    def _order_reconciler(self) -> OrderReconciler:
+        if self._reconciler is None:
+            self._reconciler = OrderReconciler(
+                broker=self.broker,
+                ledger=self.ledger,
+                point_value=Decimal(str(self.settings.execution_default_point_value)),
+                clock=self.clock,
+            )
+        return self._reconciler
 
     @property
     def health(self) -> WorkerHealth:
@@ -106,6 +118,14 @@ class ExecutionWorker:
                     result.leases_released,
                     result.unknown_orders_marked,
                 )
+                # Resolve any pending unknowns before the poll loop emits new
+                # decisions, so a restart never trades on top of an ambiguous order.
+                reconciled = self._order_reconciler().reconcile_all_pending(session)
+                session.commit()
+                if reconciled:
+                    logger.info(
+                        "startup reconciliation: resolved=%s", len(reconciled)
+                    )
 
             interval = (
                 self.poll_interval_seconds
@@ -129,6 +149,11 @@ class ExecutionWorker:
         now = self.clock()
         with self.session_factory() as session:
             self._refresh_deployments(session, now=now)
+            # Reconcile pending unknowns for leased deployments before processing
+            # any new bars. reconcile_deployment is a no-op when nothing is pending.
+            reconciler = self._order_reconciler()
+            for runtime in list(self._runtimes.values()):
+                reconciler.reconcile_deployment(session, runtime.deployment)
             consumers = [
                 DeploymentBarConsumer(
                     str(runtime.deployment.id),
