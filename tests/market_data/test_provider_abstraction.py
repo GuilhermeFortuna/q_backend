@@ -111,6 +111,38 @@ def test_acquisition_provider_prefers_native_then_remote_then_raises(
         service.acquisition_provider()
 
 
+def test_data_source_payload_reports_gateway_as_available(
+    runtime_config_file, monkeypatch
+):
+    # On Linux (native MT5 unsupported) with a healthy remote gateway, the
+    # Storage UI's download gate must open: mt5_available means "can acquire",
+    # not "native terminal connected".
+    from q_backend.api.dependencies import _data_source_payload
+
+    service = MarketDataService()
+    monkeypatch.setattr(service.mt5_client, "is_supported", lambda: False)
+
+    class _RemoteUp:
+        def is_available(self) -> bool:
+            return True
+
+        def is_supported(self) -> bool:
+            return True
+
+    service._remote_client = _RemoteUp()
+    assert _data_source_payload(service)["mt5_available"] is True
+
+    class _RemoteDown:
+        def is_available(self) -> bool:
+            return False
+
+        def is_supported(self) -> bool:
+            return False
+
+    service._remote_client = _RemoteDown()
+    assert _data_source_payload(service)["mt5_available"] is False
+
+
 def test_data_source_endpoints_round_trip(runtime_config_file):
     body = get_data_source_setting(mds=market_data_service)
     assert body["source"] in ("auto", "mt5", "local")

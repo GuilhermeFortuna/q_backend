@@ -26,6 +26,31 @@ except ImportError:  # pragma: no cover
     fakeredis = None
 
 
+@pytest.fixture(autouse=True)
+def _isolate_remote_gateway_env(monkeypatch):
+    """Keep a developer's live MT5 gateway out of the test suite.
+
+    MarketDataService loads the repo .env into os.environ, so a configured
+    Q_MT5_GATEWAY_URL (with the gateway actually running) would make the remote
+    provider reachable and flip routing/availability assertions. load_env() is
+    no-oped too, since every MarketDataService() re-reads .env into os.environ.
+    Gateway tests that need a URL set it explicitly after this runs.
+    """
+    monkeypatch.setattr("q_backend.market_data.service.load_env", lambda: None)
+    monkeypatch.delenv("Q_MT5_GATEWAY_URL", raising=False)
+    monkeypatch.delenv("Q_MT5_GATEWAY_TOKEN", raising=False)
+
+    # The api.dependencies singleton was built at import time, when .env may
+    # already have injected the URL — its remote client baked it in. Swap in a
+    # fresh, unconfigured client (constructed after the delenv above).
+    from q_backend.api import dependencies
+    from q_backend.market_data.clients.remote import RemoteMt5Client
+
+    monkeypatch.setattr(
+        dependencies.market_data_service, "_remote_client", RemoteMt5Client()
+    )
+
+
 def pytest_addoption(parser):
     """Register the golden-regeneration flag (see tests/backtesting/test_goldens.py).
 

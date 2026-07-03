@@ -26,7 +26,10 @@ def _data_source_payload(service: MarketDataService | None = None) -> dict:
     service = service or market_data_service
     return {
         "source": get_data_source(),
-        "mt5_available": service.mt5_connected(),
+        # "Can we acquire fresh history?" — native MT5 or the remote gateway.
+        # The Storage UI gates downloads on this, so native-only would wrongly
+        # report offline on Linux even with a healthy gateway.
+        "mt5_available": service.acquisition_available(),
         "active_provider": service.active_provider(),
     }
 

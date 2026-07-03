@@ -145,6 +145,14 @@ class MarketDataService:
     def mt5_available(self) -> bool:
         return self.mt5_client.is_available()
 
+    def acquisition_available(self) -> bool:
+        """Whether fresh history can be acquired right now (native MT5 or gateway)."""
+        try:
+            self.acquisition_provider()
+            return True
+        except ConnectionError:
+            return False
+
     def mt5_connected(self) -> bool:
         """Whether MT5 is connected right now (does not attempt reconnect)."""
         if not self.mt5_client.is_supported():
