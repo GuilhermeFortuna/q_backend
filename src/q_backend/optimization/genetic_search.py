@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import random
 from collections.abc import Callable
@@ -62,8 +63,23 @@ from q_backend.optimization.strategy_search import (
 )
 from q_backend.optimization.hypothesis import FeatureAdmissionResolver
 
+logger = logging.getLogger(__name__)
+
 _NO_RESULT_PROGRESS_BONUS = 0.5
 _EFFICIENCY_LOG_CAP = 2.0
+
+
+class ProbeDataError(RuntimeError):
+    """The run's data provider raised while loading the shared probe frame.
+
+    The probe frame is loaded once per run and reused for gen-0 viability
+    seeding, mutation repair, and the pre-screen. A *raised* provider error
+    (as opposed to an empty/None result, which is a legitimate "no data to
+    probe with" signal) means the run's own data source is broken and would
+    silently degrade seeding/repair/prescreen for the whole population. It is
+    must-surface: it propagates to the job layer so the run is recorded FAILED
+    instead of scoring candidates as if the data never existed.
+    """
 
 
 def _complexity_penalty(genome: Genome, genetic: GeneticSearchConfig) -> float:
@@ -205,8 +221,11 @@ def _resolve_probe_frame(
     )
     try:
         resolved = provider(run_cfg)
-    except Exception:
-        return None
+    except Exception as exc:
+        raise ProbeDataError(
+            "probe-frame data provider failed for "
+            f"{backtest.symbol} {backtest.timeframe}: {exc}"
+        ) from exc
     if resolved is None or len(resolved) == 0:
         return None
     return resolved

@@ -9,7 +9,10 @@ import numpy as np
 try:
     import MetaTrader5 as mt5
     MT5_IMPORTABLE = True
-except Exception:  # ImportError on Linux; DLL errors on misconfigured Windows
+except Exception:  # noqa: BLE001 - optional dep guard: ImportError on Linux, DLL errors on Windows
+    # Best-effort optional-dependency guard. MetaTrader5 is Windows-only and can
+    # fail to import for many reasons (missing module, DLL load errors); we fall
+    # back to the stub and record importability rather than crash at module load.
     mt5 = None  # type: ignore[assignment]
     MT5_IMPORTABLE = False
 
@@ -400,7 +403,9 @@ class MetaTraderClient:
             return False
         try:
             return self.connect()
-        except Exception:
+        except Exception:  # noqa: BLE001 - availability probe reports False on any failure
+            # Best-effort probe: any connection failure means "not available".
+            logger.warning("MT5 availability check failed", exc_info=True)
             return False
 
     def _ensure_connected(self) -> None:

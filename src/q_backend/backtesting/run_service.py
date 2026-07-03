@@ -128,7 +128,7 @@ def serialize_equity_artifact(df: pd.DataFrame) -> List[Dict[str, Any]]:
 def delete_backtest_lake_artifacts(run_id: str) -> None:
     try:
         delete_backtest_artifacts(run_id)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort lake cleanup; logged
         logger.warning(
             "Failed to delete backtest lake artifacts for %s: %s", run_id, exc
         )

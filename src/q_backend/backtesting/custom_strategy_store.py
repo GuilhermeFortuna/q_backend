@@ -1,6 +1,9 @@
 import json
+import logging
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[3]
@@ -16,7 +19,16 @@ def load_custom_strategies() -> list[dict[str, Any]]:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
             return data if isinstance(data, list) else []
-    except Exception:
+    except (OSError, json.JSONDecodeError):
+        # Best-effort: a missing file is normal (handled above), but a corrupt
+        # or unreadable one must not vanish silently — log it and degrade to an
+        # empty list so the strategy listing still works. Narrowed to the two
+        # expected failure modes so genuinely unexpected errors still surface.
+        logger.warning(
+            "Could not read custom strategies at %s; treating as empty",
+            path,
+            exc_info=True,
+        )
         return []
 
 def save_custom_strategies(strategies: list[dict[str, Any]]) -> None:

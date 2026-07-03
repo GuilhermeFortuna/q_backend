@@ -56,7 +56,10 @@ def _clean_description(description: str) -> tuple[str, str | None]:
 def _parse_pub_date(pub_date_str: str) -> str:
     try:
         return email.utils.parsedate_to_datetime(pub_date_str).isoformat()
-    except Exception:
+    except Exception:  # noqa: BLE001 - feed date parsing is best-effort
+        # Best-effort: feeds emit many malformed date formats. Fall back to now()
+        # so the article still renders; log at debug to avoid per-item noise.
+        logger.debug("Unparseable pubDate %r; using now()", pub_date_str)
         return datetime.now(timezone.utc).isoformat()
 
 
@@ -125,8 +128,9 @@ def _find_feed_item_metadata(
         try:
             dt = email.utils.parsedate_to_datetime(pub_date_str)
             pub_date_iso = dt.isoformat()
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - feed date parsing is best-effort
+            # Best-effort: keep the now() fallback set above; log at debug.
+            logger.debug("Unparseable pubDate %r; using now()", pub_date_str)
 
         return title, description, pub_date_iso, image_url
 
@@ -234,7 +238,7 @@ def latest_articles(limit: int = 25, *, fetch: FetchFn = _default_fetch) -> list
             articles.extend(
                 _parse_feed_xml(xml_data, source=feed["source"], seen_urls=seen_urls)
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - best-effort feed fetch/parse; logged
             logger.error("Failed to fetch news from feed %s: %s", feed["url"], exc)
 
     articles.sort(key=lambda item: item["publishedAt"], reverse=True)
@@ -262,7 +266,7 @@ def get_article(article_id: str, *, fetch: FetchFn = _default_fetch) -> dict[str
             if metadata is not None:
                 title, description, pub_date_iso, image_url = metadata
                 break
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - best-effort feed fetch/parse; logged
             logger.error("Error checking RSS metadata during detail fetch: %s", exc)
 
     content = ""
@@ -276,7 +280,7 @@ def get_article(article_id: str, *, fetch: FetchFn = _default_fetch) -> dict[str
             image_url = scraped_image
         if not title:
             title = scraped_title
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort feed fetch/parse; logged
         logger.error("Failed to scrape article content for %s: %s", url, exc)
 
     if not content:

@@ -311,7 +311,7 @@ class WalkForwardRunner:
                     redis_client.rpush(log_key, msg)
                     redis_client.ltrim(log_key, -100, -1)
                     redis_client.expire(log_key, 86400)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - best-effort Redis progress; logged
                     logger.warning("Failed to write trial progress to Redis: %s", e)
 
             callbacks.append(optuna_callback)

@@ -47,6 +47,6 @@ def shutdown_worker_market_data() -> None:
         if _service is not None:
             try:
                 _service.shutdown()
-            except Exception:
+            except Exception:  # noqa: BLE001 - best-effort MT5 shutdown; logged
                 logger.debug("MT5 shutdown raised on worker shutdown", exc_info=True)
             _service = None

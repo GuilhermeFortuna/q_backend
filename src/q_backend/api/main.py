@@ -23,6 +23,8 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
+logger = logging.getLogger(__name__)
+
 app = FastAPI(
     title="QuantLauncher API Backend",
     description="Backend API for fetching market data and executing orders using MetaTrader 5",
@@ -68,7 +70,13 @@ def run_dev():
     else:
         try:
             port = get_settings().port
-        except Exception:
+        except Exception:  # noqa: BLE001 - dev-server port fallback is best-effort
+            # Best-effort: if settings can't be loaded, fall back to the default
+            # dev port rather than refusing to start the local server.
+            logger.warning(
+                "Could not read port from settings; defaulting to 8000",
+                exc_info=True,
+            )
             port = 8000
 
     uvicorn.run(

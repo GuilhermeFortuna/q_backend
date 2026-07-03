@@ -53,7 +53,7 @@ def _persist_progress(job_id: str, payload: dict[str, Any]) -> None:
             payload,
             namespace=PROGRESS_NAMESPACE,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort Redis progress/persistence; logged
         logger.debug("Redis progress unavailable for discovery A/B job %s", job_id)
 
 
@@ -382,7 +382,7 @@ def run_discovery_ab_job(job_id: str, request_json: str) -> None:
 def get_discovery_ab_status_payload(job_id: str) -> Optional[dict[str, Any]]:
     try:
         payload = get_job_progress(get_redis(), job_id, namespace=PROGRESS_NAMESPACE)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort Redis progress/persistence; logged
         logger.debug("Redis progress unavailable for discovery A/B job %s", job_id)
         return None
     if payload is None:
@@ -401,7 +401,7 @@ def reconcile_orphaned_runs() -> int:
     """Mark queued/running discovery A/B jobs failed after a process restart."""
     try:
         client = get_redis()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort Redis progress/persistence; logged
         logger.warning("Failed to reconcile orphaned discovery A/B jobs: %s", exc)
         return 0
 
@@ -418,7 +418,7 @@ def reconcile_orphaned_runs() -> int:
             payload["error"] = "Cancelled after backend restart (job was orphaned)."
             client.set(key, json.dumps(payload), ex=DEFAULT_PROGRESS_TTL_SECONDS)
             count += 1
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort Redis progress/persistence; logged
         logger.warning("Failed to reconcile orphaned discovery A/B jobs: %s", exc)
         return count
 

@@ -12,6 +12,7 @@ the same protocol and reuse ``evaluate_candidate`` unchanged.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal, Protocol
@@ -62,6 +63,8 @@ from q_backend.optimization.walkforward import (
     WalkForwardRunner,
     WalkForwardWindowResult,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class GateConfig(BaseModel):
@@ -604,7 +607,17 @@ def evaluate_candidate(
             run_id=run_id,
             candidate_id=candidate.candidate_id,
         ).run(progress_callback=wf_progress, should_stop=should_stop)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - per-candidate failure is counted/reported
+        # Already-handled: a single candidate's walk-forward blowing up must not
+        # abort the sweep. The failure is recorded on the candidate (status +
+        # error) and rolls up into the run's failure_reasons tally; log it so the
+        # traceback is not lost to the structured status.
+        logger.warning(
+            "Candidate %s walk-forward failed: %s",
+            candidate.candidate_id,
+            exc,
+            exc_info=True,
+        )
         base.status = "error"
         base.error = str(exc)
         return base

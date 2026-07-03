@@ -17,7 +17,7 @@ from q_backend.features.sync import sync_registry_to_db
 from q_backend.features.targets import list_target_specs
 from q_backend.market_data.models import OHLCV
 from q_backend.storage.db.base import Base
-from q_backend.storage.db.models import EvaluationRun, FeatureScoreRow
+from q_backend.storage.db.models import EvaluationRun, FeatureScoreRow, RunStatus
 from q_backend.storage.db.repositories import get_feature_definition
 from q_backend.storage.settings import get_settings
 
@@ -171,3 +171,36 @@ def test_run_evaluation_persists_run_and_scores(
     rsi_after = get_feature_definition(seeded_session, "rsi")
     assert rsi_after is not None
     assert rsi_after.usage_count == usage_before + 1
+
+
+def test_run_evaluation_marks_failed_and_reraises_on_error(
+    seeded_session: Session, sample_market, lake_root_path, monkeypatch
+) -> None:
+    """WO179 must-surface: an evaluation failure records FAILED + message and re-raises."""
+    target = next(
+        spec for spec in list_target_specs([5]) if spec.name == "fwd_return"
+    )
+    feature_set = [FeatureRequest("rsi", None, {"period": 14})]
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("matrix build exploded")
+
+    monkeypatch.setattr(
+        "q_backend.features.evaluation_service.build_feature_matrix", _boom
+    )
+
+    with pytest.raises(RuntimeError, match="matrix build exploded"):
+        run_evaluation(
+            seeded_session,
+            symbol="EURUSD",
+            timeframe="H1",
+            start=sample_market["start"],
+            end=sample_market["end"],
+            target=target,
+            feature_set=feature_set,
+        )
+
+    runs = seeded_session.execute(select(EvaluationRun)).scalars().all()
+    assert len(runs) == 1
+    assert runs[0].status == RunStatus.FAILED.value
+    assert "matrix build exploded" in (runs[0].error_message or "")

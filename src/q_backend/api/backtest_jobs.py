@@ -88,7 +88,7 @@ def _persist_progress(run_id: str, status: str, error: Optional[str] = None) -> 
             {"run_id": run_id, "status": status, "error": error},
             namespace=PROGRESS_NAMESPACE,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.debug("Redis progress unavailable for backtest run %s", run_id)
 
 
@@ -278,7 +278,7 @@ def run_backtest_job(run_id: str, request_json: str) -> None:
             trades_df = pd.DataFrame([t.model_dump() for t in trades_objects])
             lake_paths = write_backtest_artifacts(run_id, trades_df, equity_df)
             lake_paths["result"] = write_backtest_result(run_id, payload)
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
             logger.warning(
                 "Failed to write backtest lake artifacts for %s", run_id, exc_info=True
             )
@@ -315,7 +315,7 @@ def _finish_run(
                 lake_paths=lake_paths,
                 finished_at=_now(),
             )
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.warning(
             "Failed to persist backtest run finish for %s", run_id, exc_info=True
         )
@@ -326,7 +326,14 @@ def get_status_payload(run_id: str) -> Optional[dict[str, Any]]:
     db_status = _db_status(run_id)
     try:
         cached = get_job_progress(get_redis(), run_id, namespace=PROGRESS_NAMESPACE)
-    except Exception:
+    except Exception:  # noqa: BLE001 - Redis progress is a best-effort cache
+        # Best-effort: the live Redis progress is an optimization over the
+        # authoritative DB run row. If Redis is unreachable, fall back to the DB
+        # status rather than failing the status endpoint; log for visibility.
+        logger.warning(
+            "Redis progress unavailable for run %s; using DB status", run_id,
+            exc_info=True,
+        )
         cached = None
 
     if db_status is None:
@@ -358,7 +365,7 @@ def _db_status(run_id: str) -> Optional[dict[str, Any]]:
                 "status": status_map.get(run.status, run.status),
                 "error": run.error_message,
             }
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.warning("Failed to read backtest run %s status", run_id, exc_info=True)
         return None
 
@@ -372,7 +379,7 @@ def reconcile_orphaned_runs() -> int:
                 BacktestRun,
                 error_message="Cancelled after backend restart (run was orphaned).",
             )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.warning("Failed to reconcile orphaned backtest runs: %s", exc)
         return 0
     if count:
@@ -383,5 +390,5 @@ def reconcile_orphaned_runs() -> int:
 def evict_run(run_id: str) -> None:
     try:
         delete_job_progress(get_redis(), run_id, namespace=PROGRESS_NAMESPACE)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.debug("Redis progress delete unavailable for backtest run %s", run_id)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime
 from typing import Any
@@ -48,6 +49,8 @@ from q_backend.storage.lake.artifacts import (
     write_research_acceptance_seed,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def _default_seed_list(config: ResearchAcceptanceConfig, base_seed: int) -> list[int]:
     return [base_seed + index for index in range(config.optimization_seeds)]
@@ -79,7 +82,13 @@ def evaluate_seed_run(
             ohlcv=ohlcv,
             candidate_id=candidate.candidate_id,
         ).run()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - per-seed failure is recorded/reported
+        # Already-handled: one seed's walk-forward failing must not abort the
+        # multi-seed acceptance run. The reason is captured on the record
+        # (status stays "failed" + failure_reason); log so the traceback is kept.
+        logger.warning(
+            "Research acceptance seed %s failed: %s", seed, exc, exc_info=True
+        )
         record.failure_reason = str(exc)
         return record
 

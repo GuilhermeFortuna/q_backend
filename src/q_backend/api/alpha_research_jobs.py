@@ -88,7 +88,11 @@ def _backend_version() -> str:
             )
             .strip()
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 - version stamp is best-effort
+        # Best-effort: a git hash is a diagnostic stamp, not required for the
+        # run. Any failure (not a repo, git missing, timeout) degrades to
+        # "unknown"; log at debug so it is visible without adding noise.
+        logger.debug("Could not resolve backend git revision", exc_info=True)
         return "unknown"
 
 
@@ -100,7 +104,7 @@ def _persist_progress(job_id: str, payload: dict[str, Any]) -> None:
             payload,
             namespace=PROGRESS_NAMESPACE,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.debug("Redis progress unavailable for alpha-research job %s", job_id)
 
 
@@ -818,7 +822,7 @@ def _result_from_dict(payload: dict[str, Any]) -> ResearchAcceptanceResult:
 def get_alpha_research_status_payload(job_id: str) -> Optional[dict[str, Any]]:
     try:
         payload = get_job_progress(get_redis(), job_id, namespace=PROGRESS_NAMESPACE)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.debug("Redis progress unavailable for alpha-research job %s", job_id)
         return None
     if payload is None:
@@ -837,7 +841,7 @@ def reconcile_orphaned_runs() -> int:
     """Resume safe pre-lock-box jobs; fail jobs that already consumed the holdout."""
     try:
         client = get_redis()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.warning("Failed to reconcile orphaned alpha-research jobs: %s", exc)
         return 0
 
@@ -879,7 +883,7 @@ def reconcile_orphaned_runs() -> int:
 
             actors.run_alpha_research.send(job_id, request_json, True)
             resumed += 1
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.warning("Failed to reconcile orphaned alpha-research jobs: %s", exc)
         return resumed + failed
 

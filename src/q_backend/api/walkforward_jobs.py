@@ -119,7 +119,7 @@ def get_job(run_id: str) -> Optional[WalkForwardJob]:
 def evict_run(run_id: str) -> None:
     try:
         delete_job_progress(get_redis(), run_id, namespace=PROGRESS_NAMESPACE)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.debug(
             "Redis progress delete unavailable for walk-forward run %s", run_id
         )
@@ -142,7 +142,7 @@ def _persist_progress(job: WalkForwardJob) -> None:
             status_payload(job),
             namespace=PROGRESS_NAMESPACE,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.debug("Redis progress unavailable for walk-forward run %s", job.run_id)
 
 
@@ -156,7 +156,7 @@ def _persist_run_start(request: WalkForwardRequest) -> tuple[str, Optional[uuid.
                 status=RunStatus.PENDING.value,
             )
             return run.id.hex, run.id
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.warning("Failed to persist walk-forward run start: %s", exc)
         return uuid.uuid4().hex, None
 
@@ -181,7 +181,7 @@ def _persist_run_status(
                 clear_error_message=clear_error_message,
                 started_at=started_at,
             )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.warning("Failed to persist walk-forward run status: %s", exc)
 
 
@@ -238,7 +238,7 @@ def _write_lake_artifacts(
             _build_oos_trades_dataframe(result),
             _build_windows_dataframe(result.windows),
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.warning("Failed to write walk-forward lake artifacts: %s", exc)
         return None
 
@@ -274,7 +274,7 @@ def _persist_run_finish(job: WalkForwardJob, terminal_status: JobStatus) -> None
                 error_message=job.error,
                 finished_at=_now(),
             )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.warning("Failed to persist walk-forward run finish: %s", exc)
 
 
@@ -359,12 +359,12 @@ def _cancel_orphaned_run(run_id: str) -> bool:
                 error_message="Cancelled after backend restart (run was orphaned).",
                 finished_at=_now(),
             )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.warning("Failed to cancel orphaned walk-forward run %s: %s", run_id, exc)
         return False
     try:
         delete_job_progress(get_redis(), run_id, namespace=PROGRESS_NAMESPACE)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.debug(
             "Redis progress delete unavailable for walk-forward run %s", run_id
         )
@@ -384,7 +384,7 @@ def reconcile_orphaned_runs() -> int:
                 WalkForwardRun,
                 error_message="Cancelled after backend restart (run was orphaned).",
             )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.warning("Failed to reconcile orphaned walk-forward runs: %s", exc)
         return 0
     if count:
@@ -643,7 +643,7 @@ def status_payload_from_db(run_id: str) -> dict[str, Any] | None:
     try:
         with session_scope() as session:
             run = get_walkforward_run(session, run_uuid)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.warning("Failed to load walk-forward run %s from DB: %s", run_id, exc)
         return None
 
@@ -677,7 +677,7 @@ def get_status_payload(run_id: str) -> dict[str, Any] | None:
 
     try:
         cached = get_job_progress(get_redis(), run_id, namespace=PROGRESS_NAMESPACE)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.debug("Redis progress read unavailable for walk-forward run %s", run_id)
         cached = None
 
@@ -699,7 +699,7 @@ def get_persisted_run_status(run_id: str) -> Optional[str]:
     try:
         with session_scope() as session:
             run = get_walkforward_run(session, run_uuid)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.warning("Failed to load walk-forward run %s from DB: %s", run_id, exc)
         return None
     return run.status if run is not None else None
@@ -741,7 +741,7 @@ def results_payload_from_db(run_id: str) -> Optional[dict[str, Any]]:
     try:
         with session_scope() as session:
             run = get_walkforward_run(session, run_uuid)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.warning("Failed to load walk-forward run %s from DB: %s", run_id, exc)
         return None
 
@@ -756,7 +756,7 @@ def results_payload_from_db(run_id: str) -> Optional[dict[str, Any]]:
     if run.lake_paths and run.lake_paths.get("oos_equity"):
         try:
             equity_curve = _load_equity_curve_from_lake(run_id)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
             logger.warning("Failed to load walk-forward equity from lake: %s", exc)
 
     summary = run.result_summary or {}
@@ -795,7 +795,7 @@ def run_list_item_from_db(run) -> dict[str, Any]:
 def delete_run_lake_artifacts(run_id: str) -> None:
     try:
         delete_walkforward_artifacts(run_id)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.warning(
             "Failed to delete walk-forward lake artifacts for %s: %s", run_id, exc
         )

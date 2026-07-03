@@ -147,7 +147,7 @@ def get_job(run_id: str) -> Optional[StrategySearchJob]:
 def evict_run(run_id: str) -> None:
     try:
         delete_job_progress(get_redis(), run_id, namespace=PROGRESS_NAMESPACE)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.debug(
             "Redis progress delete unavailable for strategy search run %s", run_id
         )
@@ -212,7 +212,7 @@ def _persist_progress(job: StrategySearchJob) -> None:
             status_payload(job),
             namespace=PROGRESS_NAMESPACE,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.debug(
             "Redis progress unavailable for strategy search run %s", job.run_id
         )
@@ -228,7 +228,7 @@ def _persist_run_start(config: StrategySearchConfig) -> tuple[str, Optional[uuid
                 status=RunStatus.PENDING.value,
             )
             return run.id.hex, run.id
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.warning("Failed to persist strategy search run start: %s", exc)
         return uuid.uuid4().hex, None
 
@@ -253,8 +253,25 @@ def _persist_run_status(
                 clear_error_message=clear_error_message,
                 started_at=started_at,
             )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.warning("Failed to persist strategy search run status: %s", exc)
+
+
+def _failure_reason_counts(candidates: list[CandidateResult]) -> dict[str, int]:
+    """Tally why candidates died so a discovery run reports it, never hides it.
+
+    A candidate that fails to produce a completed walk-forward result carries a
+    non-``completed`` status and an ``error`` string; without this tally those
+    deaths are only visible by scanning the per-candidate list. Grouping by
+    reason surfaces "N candidates died and why" directly in the result summary.
+    """
+    reasons: dict[str, int] = {}
+    for candidate in candidates:
+        if candidate.status == "completed":
+            continue
+        reason = candidate.error or candidate.status
+        reasons[reason] = reasons.get(reason, 0) + 1
+    return reasons
 
 
 def _build_result_summary(result: StrategySearchResult) -> dict[str, Any]:
@@ -268,6 +285,10 @@ def _build_result_summary(result: StrategySearchResult) -> dict[str, Any]:
         "passed_gates_count": sum(
             1 for candidate in result.candidates if candidate.passed_gates
         ),
+        "failed_candidate_count": sum(
+            1 for candidate in result.candidates if candidate.status != "completed"
+        ),
+        "failure_reasons": _failure_reason_counts(result.candidates),
         "best_candidate_id": best.candidate_id if best is not None else None,
         "best_strategy": best.strategy if best is not None else None,
         "best_objective_value": best.objective_value if best is not None else None,
@@ -443,7 +464,7 @@ def _write_lake_artifacts(
                 genetic_summary.lockbox_metrics if genetic_summary is not None else None
             ),
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.warning("Failed to write strategy search lake artifacts: %s", exc)
         return None
 
@@ -513,7 +534,7 @@ def _persist_run_finish(job: StrategySearchJob, terminal_status: JobStatus) -> N
                 error_message=job.error,
                 finished_at=_now(),
             )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.warning("Failed to persist strategy search run finish: %s", exc)
 
 
@@ -603,14 +624,14 @@ def _cancel_orphaned_run(run_id: str) -> bool:
                 error_message="Cancelled after backend restart (run was orphaned).",
                 finished_at=_now(),
             )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.warning(
             "Failed to cancel orphaned strategy search run %s: %s", run_id, exc
         )
         return False
     try:
         delete_job_progress(get_redis(), run_id, namespace=PROGRESS_NAMESPACE)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.debug(
             "Redis progress delete unavailable for strategy search run %s", run_id
         )
@@ -630,7 +651,7 @@ def reconcile_orphaned_runs() -> int:
                 StrategySearchRun,
                 error_message="Cancelled after backend restart (run was orphaned).",
             )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.warning("Failed to reconcile orphaned strategy search runs: %s", exc)
         return 0
     if count:
@@ -1412,7 +1433,7 @@ def status_payload_from_db(run_id: str) -> dict[str, Any] | None:
     try:
         with session_scope() as session:
             run = get_strategy_search_run(session, run_uuid)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.warning("Failed to load strategy search run %s from DB: %s", run_id, exc)
         return None
 
@@ -1445,7 +1466,7 @@ def _get_redis_logs(run_id: str) -> list[str]:
         logs = redis_client.lrange(log_key, 0, -1)
         if logs:
             return [log.decode("utf-8") if isinstance(log, bytes) else log for log in logs]
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.warning("Failed to retrieve trial logs from Redis for run %s: %s", run_id, e)
     return []
 
@@ -1455,7 +1476,7 @@ def get_status_payload(run_id: str) -> dict[str, Any] | None:
 
     try:
         cached = get_job_progress(get_redis(), run_id, namespace=PROGRESS_NAMESPACE)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.debug(
             "Redis progress read unavailable for strategy search run %s", run_id
         )
@@ -1483,7 +1504,7 @@ def get_persisted_run_status(run_id: str) -> Optional[str]:
     try:
         with session_scope() as session:
             run = get_strategy_search_run(session, run_uuid)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.warning("Failed to load strategy search run %s from DB: %s", run_id, exc)
         return None
     return run.status if run is not None else None
@@ -1513,7 +1534,7 @@ def results_payload_from_db(run_id: str) -> Optional[dict[str, Any]]:
     try:
         with session_scope() as session:
             run = get_strategy_search_run(session, run_uuid)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.warning("Failed to load strategy search run %s from DB: %s", run_id, exc)
         return None
 
@@ -1562,7 +1583,7 @@ def run_list_item_from_db(run) -> dict[str, Any]:
 def delete_run_lake_artifacts(run_id: str) -> None:
     try:
         delete_strategy_search_artifacts(run_id)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.warning(
             "Failed to delete strategy search lake artifacts for %s: %s", run_id, exc
         )
@@ -1587,7 +1608,7 @@ def candidate_exists_in_run(run_id: str, candidate_id: str) -> bool:
     try:
         with session_scope() as session:
             run = get_strategy_search_run(session, run_uuid)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         return False
 
     if run is None:
@@ -1612,7 +1633,7 @@ def get_candidate_genome(run_id: str, candidate_id: str) -> dict[str, Any] | Non
             candidate = get_strategy_search_candidate(
                 session, run_id=run_uuid, candidate_id=candidate_id
             )
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         candidate = None
 
     if candidate is not None and candidate.genome is not None:

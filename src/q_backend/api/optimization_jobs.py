@@ -160,7 +160,7 @@ def evict_study(study_id: str) -> None:
     """Remove cached Redis progress and fan-in bookkeeping for a study."""
     try:
         delete_job_progress(get_redis(), study_id)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.debug("Redis progress delete unavailable for study %s", study_id)
     clear_job_keys(study_id)
 
@@ -168,7 +168,7 @@ def evict_study(study_id: str) -> None:
 def _persist_progress(job: OptimizationJob) -> None:
     try:
         set_job_progress(get_redis(), job.study_id, status_payload(job))
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.debug("Redis progress unavailable for study %s", job.study_id)
 
 
@@ -196,7 +196,7 @@ def _persist_study_start(
                 status=RunStatus.PENDING.value,
             )
             return study.id.hex, study.id
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.warning("Failed to persist optimization study start: %s", exc)
         return uuid.uuid4().hex, None
 
@@ -217,7 +217,7 @@ def _persist_study_status(
                 status=status,
                 config=config,
             )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.warning("Failed to persist optimization study status: %s", exc)
 
 
@@ -230,7 +230,7 @@ def _persist_trial(
     try:
         with session_scope() as session:
             _upsert_trial_in_session(session, db_study_id, trial)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.warning(
             "Failed to persist optimization trial %s for study %s: %s",
             trial.number,
@@ -301,7 +301,7 @@ def _persist_study_finish(job: OptimizationJob, terminal_status: JobStatus) -> N
                 status=terminal_status,
                 config=config,
             )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.warning("Failed to persist optimization study finish: %s", exc)
 
 
@@ -331,7 +331,7 @@ def _optimization_config_from_study_config(
         return OptimizationConfig.model_validate(config_for_validation).model_dump(
             mode="json"
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.debug("Invalid optimization config stored for study")
         return None
 
@@ -345,7 +345,7 @@ def status_payload_from_db(study_id: str) -> dict[str, Any] | None:
     try:
         with session_scope() as session:
             study = get_optimization_study(session, study_uuid)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.warning(
             "Failed to load optimization study %s from DB: %s", study_id, exc
         )
@@ -453,7 +453,7 @@ def get_status_payload(study_id: str) -> dict[str, Any] | None:
             return _apply_cancel_overlay(
                 study_id, _enrich_status_with_config(cached, study_id)
             )
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.debug("Redis progress read unavailable for study %s", study_id)
 
     return _apply_cancel_overlay(study_id, db_payload)
@@ -510,7 +510,7 @@ def _mirror_cancelled_in_redis(study_id: str) -> None:
         mirrored = dict(cached)
         mirrored["status"] = "cancelled"
         set_job_progress(get_redis(), study_id, mirrored)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.debug("Redis progress update unavailable for study %s", study_id)
 
 
@@ -537,14 +537,14 @@ def _cancel_orphaned_study(study_id: str) -> bool:
             if study is None or study.status not in ("pending", "running"):
                 return False
             update_optimization_study(session, study_uuid, status="cancelled")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.warning(
             "Failed to cancel orphaned optimization study %s: %s", study_id, exc
         )
         return False
     try:
         delete_job_progress(get_redis(), study_id)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.debug("Redis progress delete unavailable for study %s", study_id)
     return True
 
@@ -558,7 +558,7 @@ def reconcile_orphaned_runs() -> int:
     try:
         with session_scope() as session:
             count = mark_active_runs_cancelled(session, OptimizationStudy)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.warning("Failed to reconcile orphaned optimization studies: %s", exc)
         return 0
     if count:
@@ -790,7 +790,7 @@ def get_persisted_study_status(study_id: str) -> Optional[str]:
     try:
         with session_scope() as session:
             study = get_optimization_study(session, study_uuid)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.warning(
             "Failed to load optimization study %s from DB: %s", study_id, exc
         )
@@ -807,7 +807,7 @@ def results_payload_from_db(study_id: str) -> Optional[dict[str, Any]]:
     try:
         with session_scope() as session:
             study = get_optimization_study(session, study_uuid)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.warning(
             "Failed to load optimization study %s from DB: %s", study_id, exc
         )
@@ -826,7 +826,7 @@ def results_payload_from_db(study_id: str) -> Optional[dict[str, Any]]:
     }
     try:
         opt_config = OptimizationConfig.model_validate(config_for_validation)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.warning("Invalid optimization config stored for study %s", study_id)
         return None
 
@@ -902,7 +902,7 @@ def _load_study_for_analytics(
     for candidate in _optuna_reload_configs(study_id, config):
         try:
             study = load_existing_study(candidate)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
             logger.warning(
                 "Failed to load optuna study for analytics %s: %s", study_id, exc
             )
@@ -951,7 +951,7 @@ def analytics_payload_from_db(study_id: str) -> Optional[dict[str, Any]]:
     try:
         with session_scope() as session:
             study = get_optimization_study(session, study_uuid)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.warning(
             "Failed to load optimization study %s from DB: %s", study_id, exc
         )
@@ -966,7 +966,7 @@ def analytics_payload_from_db(study_id: str) -> Optional[dict[str, Any]]:
     }
     try:
         opt_config = OptimizationConfig.model_validate(config_for_validation)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.warning("Invalid optimization config stored for study %s", study_id)
         return None
 

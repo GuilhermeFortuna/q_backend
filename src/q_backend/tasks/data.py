@@ -45,7 +45,7 @@ def load_ohlcv_frame(
             cached = cached.set_index("time")
             cached.index = pd.to_datetime(cached.index, format="ISO8601")
             return cached
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort OHLCV cache I/O; logged, refetches
             logger.warning("Corrupt OHLCV cache at %s; refetching", path, exc_info=True)
 
     service = get_worker_market_data_service()
@@ -76,7 +76,7 @@ def prime_ohlcv_cache(
             cached = cached.set_index("time")
             cached.index = pd.to_datetime(cached.index, format="ISO8601")
             return cached
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort OHLCV cache I/O; logged, refetches
             logger.warning("Corrupt OHLCV cache at %s; refetching", path, exc_info=True)
 
     df = DefaultBacktestRunner.load_sliced_frame(
@@ -94,7 +94,7 @@ def _write_ohlcv_cache(df: pd.DataFrame, path: Path) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         df.rename_axis("time").reset_index().to_parquet(path, index=False)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort OHLCV cache I/O; logged, refetches
         logger.warning("Failed to write OHLCV cache at %s", path, exc_info=True)
 
 

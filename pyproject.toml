@@ -25,6 +25,7 @@ dependencies = [
     "numba>=0.65.1",
     "pyarrow>=24.0.0",
     "torch>=2.6.0",
+    "httpx>=0.28.1",
 ]
 
 [project.scripts]
@@ -39,6 +40,7 @@ q-execution = "q_backend.cli.q_execution:main"
 dev = [
     "black",
     "fakeredis>=2.26.0",
+    "ruff>=0.9.0",
 ]
 
 [tool.pytest.ini_options]
@@ -53,6 +55,18 @@ build-backend = "hatchling.build"
 
 [tool.black]
 target-version = ["py312"]
+
+# Scoped, deliberately minimal lint config (WO179). We enable only the two
+# silent-failure rules so this stays a policy guard, not a lint-the-world sweep:
+#   BLE001 — blind ``except Exception`` that neither re-raises nor logs
+#   S110   — ``try: ... except: pass`` (swallowed error)
+# Every sanctioned best-effort catch carries a per-line ``# noqa`` + justification.
+[tool.ruff]
+target-version = "py312"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["BLE001", "S110"]
 
 [tool.uv.sources]
 metatrader5 = [

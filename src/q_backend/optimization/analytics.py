@@ -164,7 +164,7 @@ def _compute_param_importances(
             result = {
                 labels[0]: _importance_entries(get_param_importances(study)),
             }
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort importance diagnostic; logged
         # Importance is a best-effort diagnostic — fANOVA/sklearn can raise
         # ValueError on degenerate inputs (e.g. a constant param), ImportError
         # if the evaluator's deps are missing, etc. Never let it 500 the

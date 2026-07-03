@@ -150,8 +150,11 @@ def execute_evaluation_run(
                 feature_set=feature_set,
             )
         except Exception:  # noqa: BLE001 - status persisted; background context
-            # _evaluate_into_run already marked the run FAILED with the message.
-            pass
+            # Already-handled: _evaluate_into_run marked the run FAILED with the
+            # message before re-raising. We swallow here because this is a
+            # background-task boundary (no caller to receive the error), but we
+            # log the traceback so it is never silent.
+            logger.exception("Feature evaluation run %s failed", run_id)
 
 
 def run_evaluation(
@@ -218,7 +221,15 @@ def _evaluate_into_run(
             )
             session.commit()
         except Exception:  # noqa: BLE001 - progress is best-effort
+            # Best-effort: live progress streaming must never break the eval.
+            # Roll back the failed progress write and log; the run continues.
             session.rollback()
+            logger.warning(
+                "Progress update failed for eval run %s (stage=%s)",
+                run.id,
+                stage,
+                exc_info=True,
+            )
 
     try:
         _report_progress("loading_data", 0, len(feature_set))

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Callable, Optional, Protocol
 
 from q_backend.execution.brokers.base import ExecutableQuote, QuoteSource
+
+logger = logging.getLogger(__name__)
 
 
 class TickReader(Protocol):
@@ -64,7 +67,14 @@ def quote_source_from_market_data_service(service) -> QuoteSource:
             return None
         try:
             client._ensure_connected()
-        except Exception:
+        except Exception:  # noqa: BLE001 - no-quote is a handled, fail-closed outcome
+            # Best-effort/fail-closed: if the terminal can't be reached we return
+            # no quote, so the execution worker simply takes no action this poll
+            # and retries next tick. Log so a persistent outage is visible.
+            logger.warning(
+                "MT5 connection failed while reading tick for %s", symbol,
+                exc_info=True,
+            )
             return None
         import MetaTrader5 as mt5  # type: ignore
 

@@ -77,7 +77,12 @@ def _run_backtest_worker(cfg: BacktestRunConfig) -> BacktestWorkerResult:
         return {"status": "pruned", "error": exc.reason}
     except ValueError as exc:
         return {"status": "pruned", "error": str(exc)}
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - trial failure returned as a tagged result
+        # Already-handled: the worker turns any trial error into a structured
+        # ``error`` tag that ``_tell_worker_result`` records (and re-raises when
+        # ``continue_on_trial_error`` is off). Log so the traceback survives the
+        # process boundary instead of collapsing to ``str(exc)``.
+        logger.warning("Backtest worker trial failed: %s", exc, exc_info=True)
         return {"status": "error", "error": str(exc)}
 
     if result.metrics.get("total_trades", 0) == 0:

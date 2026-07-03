@@ -41,7 +41,7 @@ def _persist_progress(job_id: str, payload: dict[str, Any]) -> None:
             payload,
             namespace=PROGRESS_NAMESPACE,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort Redis progress; logged
         logger.debug("Redis progress unavailable for neural training job %s", job_id)
 
 
@@ -139,6 +139,6 @@ def run_training_job(job_id: str, request_json: str) -> None:
 def get_training_status_payload(job_id: str) -> Optional[dict[str, Any]]:
     try:
         return get_job_progress(get_redis(), job_id, namespace=PROGRESS_NAMESPACE)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort Redis progress; logged
         logger.debug("Redis progress unavailable for neural training job %s", job_id)
         return None
