@@ -27,7 +27,7 @@ Environment=WINEPREFIX=%h/.local/share/mt5-gateway-prefix
 Environment=WINEARCH=win64
 Environment=WINEDEBUG=-all
 # %h is the user home; MT5_TERMINAL_EXE is a Wine path (see env example).
-ExecStart=/usr/bin/wine %h/.local/share/mt5-gateway-prefix/drive_c/Program Files/MetaTrader 5/terminal64.exe
+ExecStart=/usr/bin/wine "%h/.local/share/mt5-gateway-prefix/drive_c/Program Files/MetaTrader 5/terminal64.exe"
 Restart=on-failure
 RestartSec=10
 

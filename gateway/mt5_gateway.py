@@ -436,7 +436,9 @@ class GatewayApp:
     """
 
     def __init__(self, token: str | None = None):
-        self.token = token
+        # A blank token (e.g. `MT5_GATEWAY_TOKEN=` left empty in the env file) means
+        # "no auth required", not "require an empty header".
+        self.token = (token or "").strip() or None
         self._lock = threading.Lock()
         self._initialized = False
 

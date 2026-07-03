@@ -412,6 +412,15 @@ def test_token_required_when_configured(gateway, fake_mt5):
     assert with_header == 200
 
 
+def test_blank_token_means_no_auth(gateway, fake_mt5):
+    # `MT5_GATEWAY_TOKEN=` left empty in the systemd env file must not lock the
+    # gateway behind an unsatisfiable empty-string token.
+    with _running_server(gateway, token="") as base:
+        status, _h, _body = _get(base, "/v1/health")
+
+    assert status == 200
+
+
 def test_symbol_info_and_search(gateway, fake_mt5):
     with _running_server(gateway) as base:
         info_status, _h, info_body = _get(
