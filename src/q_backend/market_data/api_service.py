@@ -335,11 +335,12 @@ def fetch_ohlcv_rows(
                 status_code=400,
                 detail="Start datetime must be before end datetime.",
             )
-        client = (
-            service._local_client
-            if ohlcv_source == "local"
-            else service.mt5_client
-        )
+        if ohlcv_source == "local":
+            client = service._local_client
+        elif ohlcv_source == "remote":
+            client = service._remote_client
+        else:
+            client = service.mt5_client
         try:
             return client.get_ohlcv(symbol, mt5_timeframe, start, end)
         except ValueError as ve:
@@ -406,10 +407,11 @@ def fetch_ohlcv_available_range(service: MarketDataService, symbol: str, timefra
             status_code=503, detail="Market data provider is unavailable."
         )
 
+    client = (
+        service._remote_client if ohlcv_source == "remote" else service.mt5_client
+    )
     try:
-        return service.mt5_client.get_available_ohlcv_range(
-            symbol, mt5_timeframe
-        )
+        return client.get_available_ohlcv_range(symbol, mt5_timeframe)
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve)) from ve
     except ConnectionError as ce:

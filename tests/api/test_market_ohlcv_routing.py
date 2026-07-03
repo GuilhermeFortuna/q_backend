@@ -148,3 +148,27 @@ def test_ohlcv_uses_mt5_when_symbol_exists_in_terminal(market_root):
 
     assert len(rows) == 1
     mock_mt5.copy_rates_from_pos.assert_called_once()
+
+
+def test_ohlcv_available_range_uses_remote_client_when_source_is_remote(market_root):
+    # Regression: with the source resolved to "remote", the probe must hit the
+    # gateway client — not the native one, which on Linux (stub) hangs the
+    # threadpool via a self-deadlocking reconnect under its own fetch lock.
+    sentinel = object()
+    remote = MagicMock()
+    remote.get_available_ohlcv_range.return_value = sentinel
+
+    with (
+        patch.object(market_data_service, "_remote_client", remote),
+        patch.object(market_data_service, "is_available", return_value=True),
+        patch(
+            "q_backend.market_data.api_service.resolve_ohlcv_source",
+            return_value="remote",
+        ),
+    ):
+        available = market_service.fetch_ohlcv_available_range(
+            market_data_service, "WIN$", "M5"
+        )
+
+    assert available is sentinel
+    remote.get_available_ohlcv_range.assert_called_once_with("WIN$", "M5")

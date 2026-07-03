@@ -318,7 +318,10 @@ class MetaTraderClient:
         self.password = password
         self.server = server
         self._is_initialized = False
-        self._lock = threading.Lock()
+        # Reentrant: locked fetch paths call _ensure_connected -> connect, which
+        # takes the lock again; a plain Lock self-deadlocks and starves the API
+        # threadpool.
+        self._lock = threading.RLock()
 
     def _run_locked(self, fn: Callable[[], T]) -> T:
         with self._lock:
