@@ -49,7 +49,8 @@
 Heavy jobs — backtests (via `POST /api/v1/backtest`), Optuna studies, walk-forward runs, and strategy discovery — execute in a **Dramatiq worker pool** backed by Redis, not inside the API process. The API enqueues work, tracks progress in Redis (24h TTL) and Postgres, and serves results from the Parquet lake. Start the worker with `uv run worker` alongside the API (see [Running the Worker Pool](#6-running-the-worker-pool)).
 
 ### 1. Market Data Routing & Ingestion (`market_data`)
-* **Provider abstraction:** `MarketDataService` routes all reads through a pluggable provider (`MarketDataProvider` protocol). **MetaTrader 5** (`MetaTraderClient`) is used when available; **local parquet** (`LocalParquetClient`, WO48) is the offline fallback. The active provider is chosen from a persisted runtime setting (`auto` | `mt5` | `local`) in `data/runtime_config.json` (`Q_RUNTIME_CONFIG_PATH` overrides the file path). `GET`/`PUT /api/v1/system/data-source` expose and change the setting; `GET /api/v1/system/health` reports `mt5_available` and `active_provider`.
+* **Provider abstraction:** `MarketDataService` routes all reads through a pluggable provider (`MarketDataProvider` protocol). **MetaTrader 5** (`MetaTraderClient`) is used when available; the **remote MT5 gateway** (`RemoteMt5Client`, WO183/WO184) fetches fresh futures data over HTTP from an MT5 terminal running under Wine or on another box; **local parquet** (`LocalParquetClient`, WO48) is the offline fallback. The active provider is chosen from a persisted runtime setting (`auto` | `mt5` | `remote` | `local`) in `data/runtime_config.json` (`Q_RUNTIME_CONFIG_PATH` overrides the file path). `GET`/`PUT /api/v1/system/data-source` expose and change the setting; `GET /api/v1/system/health` reports `mt5_available` and `active_provider`.
+* **Remote MT5 gateway (WO183/WO184):** `RemoteMt5Client` speaks the gateway's versioned `/v1/` wire contract (JSON metadata + `np.savez_compressed` `.npz` bulk payloads) and returns the same naive-Brasília datetimes as `MetaTraderClient`. Gateway base URL and optional shared-secret token resolve from the runtime config keys `remote_gateway_url` / `remote_gateway_token`, with env vars `Q_MT5_GATEWAY_URL` / `Q_MT5_GATEWAY_TOKEN` taking precedence. `is_available()` health-probes `/v1/health` (~1s timeout, 30s cache) and refuses a mismatched schema major version. Service/routing wiring lands in WO185.
 * **Linux / no-MT5 development:** `MetaTrader5` is optional — on non-Windows platforms `uv sync` installs a no-op stub so the API and worker boot without the real terminal. With `data_source=auto` and MT5 absent, reads resolve to the local provider (empty until WO48 fills the store).
 * **MetaTrader 5 Integration:** High-speed client (`MetaTraderClient`) communicating directly with a running MT5 Windows terminal when installed (`metatrader5` is installed automatically on Windows via `uv sync`; on Linux use the stub or set `data_source=local`).
 * **Asset Support:** Tailored to ingestion of **B3 (Bovespa)** symbols (e.g. `PETR4`, `VALE3`, `ITUB4`) and liquid **B3 Futures** contracts (e.g. `WIN$` Mini-Index, `WDO$` Mini-Dollar, and `CCM$` Corn Futures).
@@ -275,6 +276,149 @@ Phase 1–2 platform for first-class features: registry, point-in-time computati
 
 Lifecycle statuses: `experimental` → `candidate` → `production` (per feature version).
 
+### Exception policy (silent-failure policy)
+
+The failure mode this codebase fears most is not a crash but a **silently wrong number** — a
+swallowed exception in a research/execution path that degrades results without anyone knowing
+(WO179). Every `except Exception` site must fit one of three sanctioned, deliberate patterns:
+
+1. **must-surface** — research/execution correctness depends on it. Raise a typed error that
+   propagates to the job/run record (failed status + message), never just a log.
+
+   ```python
+   raise ProbeDataError(...) from exc   # reaches the job layer; the run is recorded FAILED
+   ```
+
+2. **best-effort** — optional enrichment where absence is acceptable (news, health probes,
+   Redis progress caches, version stamps). Always log; **never a bare `except: pass`**.
+
+   ```python
+   logger.warning("news enrichment failed for %s: %s", symbol, exc)  # logged, then degrade
+   ```
+
+3. **already-handled** — a state machine or structured result absorbs the failure (e.g. an
+   UNKNOWN order in WO178, or a per-candidate `status="error"` that rolls up into the run's
+   `failure_reasons`). Log the traceback in addition to the existing transition.
+
+   ```python
+   logger.exception(...)   # plus the existing transition / structured failure record
+   ```
+
+**Enforcement:** `ruff` rules `BLE001` (blind `except`) and `S110` (`try`/`except`/`pass`) are
+enabled for `src/q_backend` in `pyproject.toml` (scoped to just those two rules to stay a policy
+guard, not a lint-the-world sweep). BLE001 permits handlers that re-raise (pattern 1); every
+sanctioned best-effort/already-handled catch carries a per-line `# noqa: BLE001` with a one-line
+justification. Run it with:
+
+```bash
+uv run ruff check src
+```
+
+### Golden backtest regressions (backtest↔live parity lock-down)
+
+The backtest engine's numbers are the foundation every other system (optimization, discovery,
+research acceptance, paper trading) builds on. A subtle change to indicator warm-up, exit-evaluation
+order, sizing, or cost handling would pass the rest of the suite while silently shifting every
+result. The golden suite (`tests/backtesting/test_goldens.py`, WO180) pins current behavior so drift
+becomes a **loud, reviewable diff** instead of silent corruption.
+
+**What the goldens cover.** Each canonical case runs a strategy config on committed-deterministic
+synthetic OHLCV (fixed seed, generated in-test — no data files, no network) and compares the
+*complete* output — every trade's entry/exit time, price, direction, size, pnl, commission, plus the
+summary metrics — field-for-field against `tests/backtesting/goldens/<case>.json`:
+
+* `ma_crossover_baseline` — classic MA crossover, long+short, next-bar-open fill timing.
+* `ma_crossover_fixed_stops` / `ma_crossover_atr_exits` — stop + target families (percent and ATR).
+* `ma_crossover_trailing` / `ma_crossover_donchian_stop` — trailing family (percent and Donchian).
+* `ma_crossover_time_stop` — time family (max bars in trade).
+* `rsi_mean_reversion_baseline` — a second registered strategy category (mean reversion).
+* `composite_or_macd_macrossover` / `composite_and_macd_macrossover` / `composite_majority_three` —
+  multi-entry OR/AND/Majority composition via the signal manager.
+* `genome_ma_session_gate` — a `CompositeStrategy` genome with a context feature
+  (`feature.session_window` gating an MA crossover through `logic.and`).
+* `ma_crossover_safety_margin_sizing` — a position-sizing variant (contracts derived from capital).
+* `tick_ma_breakout` — the tick engine through `tick_backtest_runner` (pins its summary metrics).
+
+The suite also asserts **determinism** (each case run twice in-process is byte-identical), a **tamper
+guard** (mutating one trade field fails with a readable diff), and **backtest↔live parity**: every
+golden candle strategy is driven bar-by-bar through the forward `StrategyEvaluator` and its queued
+entry/exit signals must match the engine's section-D reference extractor at every bar close — with
+and without an open position (the latter exercises the stateful exit rules).
+
+**Regenerating goldens is a deliberate act.** Golden files are committed and reviewed like code. Only
+regenerate when you *intend* to change engine behavior, and justify the resulting diff in the
+commit/WO message:
+
+```bash
+uv run pytest tests/backtesting/test_goldens.py --regen-goldens
+```
+
+### Causality invariants (no-lookahead lock-down)
+
+A lookahead bug is the most dangerous failure in the whole system: it produces beautiful
+backtests and dead paper strategies. Two properties are enforced as **invariants** across
+every computable feature source, so the coverage cannot silently rot as new sources are
+added (WO181):
+
+* **Feature specs are causal.** `tests/features/test_leakage.py` enumerates *every*
+  `FeatureSpec` in the catalog and drives it through `assert_causal`: a value at bar `t`
+  must be byte-identical whether computed on the full frame or on the `[:t+1]` prefix
+  (removing future bars cannot change a present value).
+* **Genome node kinds are causal.** `tests/backtesting/genome/test_node_causality.py`
+  enumerates *all* `NODE_SPECS` kinds (indicators, transforms, comparators, logic gates,
+  sources, `exit.middle_band`, context features) and asserts the same prefix-stability per
+  output port — not just the `feature.*` family that was covered before.
+* **Neural latents are OOS-only.** `tests/features/test_leakage_invariants.py` trains a
+  model through the torch-free **PCA encoder path**, then runs `assert_causal` with the
+  `train_end` semantics on each registered neural spec and on the `ind.latent` genome node.
+* **Exogenous features respect publish time.** Exogenous specs are re-aligned on every
+  prefix through the real backward as-of join, and a planted-spike test asserts a future
+  observation is visible only *after* its bar has closed ("published-at", not
+  "effective-at").
+* **Targets are point-in-time.** `tests/features/test_targets.py` asserts each target at
+  bar `t` depends only on bars up to its stated horizon (perturbing anything beyond
+  `t + horizon` cannot move it) and that rows within `horizon` of `train_end` are purged
+  from the training-eligible set, so labels never bleed across the split.
+
+Each harness ships a **deliberately leaky fixture** (a `shift(-1)` feature/node/target)
+proving the check actually fails when a leak is present.
+
+**Exemptions live in exactly one place.** `tests/leakage_exemptions.py` holds
+`EXEMPT_SPECS` and `EXEMPT_NODE_KINDS` — dicts mapping a name to the reason it is exempt.
+This is the **only** place an exclusion may live; silent per-file filters are forbidden.
+Hygiene meta-tests fail the suite if an exemption names something that no longer exists
+(drift) or if any spec/node kind is neither tested nor exempted (a new source that slipped
+through). To exempt something, add an entry with a real reason and get it reviewed; a
+confirmed leak that cannot be fixed immediately is exempted with a `LEAK-CONFIRMED:` reason
+and reported, never silently re-filtered. Current node exemptions: `ind.latent` (needs a
+model — covered by the latent-node test), the `source.exog.*` family (pre-aligned columns —
+covered by the exogenous invariant), and the `exit.fixed_holding` / `exit.opposite_signal`
+/ `exit.rebalance` policy nodes (emit no data-derived series; pinned by the golden
+backtests). There are currently no feature-spec exemptions.
+
+### Discovery smoke suite (end-to-end pipeline health)
+
+**What it proves.** `tests/integration_smoke/test_discovery_smoke.py` (WO182) exercises the *full*
+production discovery path as one deterministic artifact — `start_job` → coordinator → per-candidate
+genetic workers → generation barrier/breeding → finalizer → DB + lake persistence → results payload —
+so cross-cutting wiring bugs (run records, the latents seam, cancellation, orphan reconciliation,
+failure accounting) surface in one place. It covers: a run completes and persists a sane, non-empty
+leaderboard with every genome valid and all metrics finite, and is **bit-identical across two runs
+with the same seed**; a registered PRODUCTION PCA model seeds `ind.latent` genome nodes that survive
+into the persisted population while `latents_enabled=False` (the WO153 seam) produces none; a
+mid-generation cancellation ends the run `cancelled` with consistent partial results and no zombie
+threads; every job family wired in `lifespan.py` moves an orphaned *running* job off `running` on
+startup (parametrized over all seven `*_jobs` reconcilers); and injected per-candidate data-provider
+failures are counted into the result summary's `failed_candidate_count` / `failure_reasons`.
+
+**Determinism contract.** The production path evaluates each candidate in its own worker message and
+merges via an order-independent fan-in (results are re-ordered by the stashed population, not arrival
+order), so it is fully deterministic and does not exercise `genetic_parallel`'s process pool — that
+lives only in the in-process orchestrator.
+
+**How to run it.** `uv run pytest tests/integration_smoke/test_discovery_smoke.py` (~25s). It uses the
+same in-process job harness (`run_jobs_sync`), in-memory SQLite, and `fakeredis` as the persistence
+suites — no Postgres, Redis, MT5, or network — so it stays in the default suite.
 
 * **Core Runtime:** Python `>=3.12`
 * **API Framework:** FastAPI, Uvicorn (ASGI web server), CORS Middleware
@@ -362,8 +506,12 @@ Q_DATA_LAKE_ROOT=data/lake
 Q_MARKET_DATA_ROOT=data/market
 Q_TICK_CACHE_DIR=data/tick_cache
 Q_RUNTIME_CONFIG_PATH=data/runtime_config.json
+Q_MT5_GATEWAY_URL=http://127.0.0.1:18812
+Q_MT5_GATEWAY_TOKEN=
 Q_WORKER_PROCESSES=14
 ```
+
+`Q_MT5_GATEWAY_URL` / `Q_MT5_GATEWAY_TOKEN` (WO184) point the `remote` data source at an MT5 gateway (WO183); both override the `remote_gateway_url` / `remote_gateway_token` runtime-config keys and are unset by default. To stand up that gateway under Wine on Linux (setup script + systemd user units + manual E2E checklist), see [`docs/mt5-wine-gateway.md`](docs/mt5-wine-gateway.md).
 
 Optional paths above default under `data/` when unset. `Q_WORKER_PROCESSES` defaults to **28** in code (`Settings.worker_processes`); the example value `14` suits a 16-core machine.
 
