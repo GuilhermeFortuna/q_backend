@@ -78,6 +78,39 @@ def test_resolve_provider_respects_runtime_config(tmp_path, monkeypatch):
     assert service._resolve_provider() is service.mt5_client
 
 
+def test_acquisition_provider_prefers_native_then_remote_then_raises(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("Q_RUNTIME_CONFIG_PATH", str(tmp_path / "runtime_config.json"))
+    service = MarketDataService()
+
+    # Native supported + available -> native client.
+    monkeypatch.setattr(service.mt5_client, "is_supported", lambda: True)
+    monkeypatch.setattr(service, "mt5_available", lambda: True)
+    assert service.acquisition_provider() is service.mt5_client
+
+    # Native down, remote reachable -> remote client.
+    monkeypatch.setattr(service.mt5_client, "is_supported", lambda: False)
+
+    class _RemoteUp:
+        def is_available(self) -> bool:
+            return True
+
+    remote_up = _RemoteUp()
+    service._remote_client = remote_up
+    assert service.acquisition_provider() is remote_up
+
+    # Neither reachable -> ConnectionError with an actionable message.
+    class _RemoteDown:
+        def is_available(self) -> bool:
+            return False
+
+    service._remote_client = _RemoteDown()
+    monkeypatch.setattr(service, "mt5_available", lambda: False)
+    with pytest.raises(ConnectionError, match="no acquisition provider"):
+        service.acquisition_provider()
+
+
 def test_data_source_endpoints_round_trip(runtime_config_file):
     body = get_data_source_setting(mds=market_data_service)
     assert body["source"] in ("auto", "mt5", "local")

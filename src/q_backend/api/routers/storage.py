@@ -28,14 +28,16 @@ def start_storage_ingest(
     request: IngestJobRequest,
     mds: MarketDataService = Depends(get_market_data_service),
 ):
-    if not mds.mt5_available():
+    try:
+        mds.acquisition_provider()
+    except ConnectionError as exc:
         raise HTTPException(
             status_code=503,
             detail=(
-                "Ingestion requires MetaTrader 5 as the source. "
-                "MT5 is not available on this machine."
+                "Ingestion requires a reachable acquisition provider "
+                f"(native MT5 or remote gateway): {exc}"
             ),
-        )
+        ) from exc
     try:
         if request.kind == "bars":
             storage_jobs.validate_timeframes(request.timeframes)

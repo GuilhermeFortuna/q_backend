@@ -43,11 +43,26 @@ def _slug_symbol(symbol: str) -> str:
     return re.sub(r"[^\w.$-]+", "_", symbol)
 
 
-def make_cache_key(symbol: str, start: datetime, end: datetime, flags: int) -> str:
-    payload = f"{symbol}|{start.isoformat()}|{end.isoformat()}|{flags}"
+def make_cache_key(
+    symbol: str,
+    start: datetime,
+    end: datetime,
+    flags: int,
+    provider: str | None = None,
+) -> str:
+    """Build a tick-cache key.
+
+    ``provider`` namespaces the key (and the digest) so entries fetched by different
+    providers never collide — e.g. native ``mt5`` vs the ``remote`` gateway (WO184).
+    When ``provider`` is ``None`` the legacy (native) key format is preserved so
+    existing cache entries stay valid.
+    """
+    prefix = f"{provider}|" if provider else ""
+    payload = f"{prefix}{symbol}|{start.isoformat()}|{end.isoformat()}|{flags}"
     digest = hashlib.sha256(payload.encode()).hexdigest()[:12]
     slug = _slug_symbol(symbol)
-    return f"{slug}_{digest}"
+    key = f"{slug}_{digest}"
+    return f"{provider}_{key}" if provider else key
 
 
 def _cache_path(key: str) -> Path:
@@ -68,7 +83,7 @@ def load(key: str) -> dict[str, np.ndarray] | None:
             arr = table[col].to_numpy(zero_copy_only=False)
             result[col] = arr.astype(_TICK_DTYPE_MAP[col], copy=False)
         return result
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort tick-cache read; logged, returns None
         logger.warning("Failed to load tick cache %s: %s", path, exc)
         return None
 

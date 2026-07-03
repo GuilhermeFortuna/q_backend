@@ -132,7 +132,7 @@ def _read_catalog() -> list[dict[str, Any]]:
             return [_normalize_catalog_entry(row) for row in data]
         logger.warning("Catalog %s is not a JSON array", path)
         return []
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort catalog read; logged, returns empty
         logger.warning("Failed to read catalog %s: %s", path, exc)
         return []
 

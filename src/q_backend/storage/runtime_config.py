@@ -6,9 +6,15 @@ from typing import Literal
 
 logger = logging.getLogger(__name__)
 
-DataSource = Literal["auto", "mt5", "local"]
-_VALID_SOURCES: frozenset[str] = frozenset({"auto", "mt5", "local"})
+DataSource = Literal["auto", "mt5", "remote", "local"]
+_VALID_SOURCES: frozenset[str] = frozenset({"auto", "mt5", "remote", "local"})
 _DEFAULT_SOURCE: DataSource = "auto"
+
+# Runtime-config keys + env overrides for the remote MT5 gateway (WO184).
+_REMOTE_GATEWAY_URL_KEY = "remote_gateway_url"
+_REMOTE_GATEWAY_URL_ENV = "Q_MT5_GATEWAY_URL"
+_REMOTE_GATEWAY_TOKEN_KEY = "remote_gateway_token"
+_REMOTE_GATEWAY_TOKEN_ENV = "Q_MT5_GATEWAY_TOKEN"
 
 
 def _project_root() -> Path:
@@ -34,7 +40,7 @@ def _read_config() -> dict:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
         return data if isinstance(data, dict) else {}
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort config read; logged, returns {}
         logger.warning("Failed to read runtime config %s: %s", path, exc)
         return {}
 
@@ -62,4 +68,53 @@ def set_data_source(value: str) -> None:
         )
     config = _read_config()
     config["data_source"] = normalized
+    _write_config(config)
+
+
+def _get_env_or_config(env_var: str, config_key: str) -> str | None:
+    """Env value takes precedence over the JSON config; blank env is ignored."""
+    env_value = os.getenv(env_var)
+    if env_value is not None and env_value.strip():
+        return env_value.strip()
+    value = _read_config().get(config_key)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def get_remote_gateway_url() -> str | None:
+    """Resolve the remote MT5 gateway base URL.
+
+    Precedence: ``Q_MT5_GATEWAY_URL`` env var, then the ``remote_gateway_url`` key in
+    the runtime JSON config, else ``None`` (no gateway configured).
+    """
+    return _get_env_or_config(_REMOTE_GATEWAY_URL_ENV, _REMOTE_GATEWAY_URL_KEY)
+
+
+def set_remote_gateway_url(value: str | None) -> None:
+    """Persist (or clear, when ``None``/blank) the gateway URL in the JSON config."""
+    config = _read_config()
+    if value is None or not value.strip():
+        config.pop(_REMOTE_GATEWAY_URL_KEY, None)
+    else:
+        config[_REMOTE_GATEWAY_URL_KEY] = value.strip()
+    _write_config(config)
+
+
+def get_remote_gateway_token() -> str | None:
+    """Resolve the optional shared secret for the remote MT5 gateway.
+
+    Precedence: ``Q_MT5_GATEWAY_TOKEN`` env var, then the ``remote_gateway_token`` key
+    in the runtime JSON config, else ``None``.
+    """
+    return _get_env_or_config(_REMOTE_GATEWAY_TOKEN_ENV, _REMOTE_GATEWAY_TOKEN_KEY)
+
+
+def set_remote_gateway_token(value: str | None) -> None:
+    """Persist (or clear, when ``None``/blank) the gateway token in the JSON config."""
+    config = _read_config()
+    if value is None or not value.strip():
+        config.pop(_REMOTE_GATEWAY_TOKEN_KEY, None)
+    else:
+        config[_REMOTE_GATEWAY_TOKEN_KEY] = value.strip()
     _write_config(config)

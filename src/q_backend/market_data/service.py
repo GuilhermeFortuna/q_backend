@@ -1,21 +1,29 @@
 import os
 import logging
 from datetime import datetime
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Union
 from pathlib import Path
 
 import numpy as np
 
+from q_backend.market_data import local_store
 from q_backend.market_data.clients.local import LocalParquetClient
 from q_backend.market_data.clients.metatrader import (
     MetaTraderClient,
     OhlcvAvailableRange,
 )
+from q_backend.market_data.clients.remote import RemoteMt5Client
 from q_backend.market_data.models import OHLCV, Tick
 from q_backend.market_data.routing import resolve_ohlcv_source
 from q_backend.storage.runtime_config import get_data_source
 
 logger = logging.getLogger(__name__)
+
+_REMOTE_NOT_CONFIGURED = (
+    "data_source is 'remote' but no gateway URL is configured. Set "
+    "Q_MT5_GATEWAY_URL (or the 'remote_gateway_url' runtime-config key) or switch "
+    "to 'auto'/'local'."
+)
 
 
 def load_env():
@@ -73,6 +81,7 @@ class MarketDataService:
         self.mt5_client = MetaTraderClient(
             path=path, login=login, password=password, server=server
         )
+        self._remote_client = RemoteMt5Client()
         self._local_client = LocalParquetClient()
 
     def _resolve_provider(self):
@@ -89,23 +98,49 @@ class MarketDataService:
             # The terminal may still be disconnected — let the MT5 call surface that
             # as a ConnectionError rather than silently serving local data.
             return self.mt5_client
-        # auto: use MT5 only when the terminal is actually connected; otherwise
-        # serve from local parquet (Linux / Docker / offline Windows setups).
+        if source == "remote":
+            if not self._remote_client.is_supported():
+                raise ConnectionError(_REMOTE_NOT_CONFIGURED)
+            # Configured but possibly unhealthy — let the call surface the
+            # ConnectionError rather than silently serving local data.
+            return self._remote_client
+        # auto: native MT5 → remote gateway → local parquet.
         if self.mt5_client.is_supported() and self.mt5_available():
             return self.mt5_client
+        if self._remote_client.is_available():
+            return self._remote_client
         return self._local_client
 
-    def active_provider(self) -> Literal["mt5", "local"]:
+    def active_provider(self) -> Literal["mt5", "remote", "local"]:
         # Mirror _resolve_provider's intent without raising (callers like the
-        # data-source endpoint must not 500 on an explicit-'mt5' misconfig).
+        # data-source endpoint must not 500 on an explicit misconfig).
         source = get_data_source()
         if source == "local":
             return "local"
         if source == "mt5":
             return "mt5"
+        if source == "remote":
+            return "remote"
         if self.mt5_client.is_supported() and self.mt5_available():
             return "mt5"
+        if self._remote_client.is_available():
+            return "remote"
         return "local"
+
+    def acquisition_provider(self) -> Union[MetaTraderClient, RemoteMt5Client]:
+        """Provider used to *acquire* fresh history for ingestion.
+
+        Preference: native MT5 (supported + available) → remote gateway (reachable).
+        Raises ``ConnectionError`` when neither is reachable.
+        """
+        if self.mt5_client.is_supported() and self.mt5_available():
+            return self.mt5_client
+        if self._remote_client.is_available():
+            return self._remote_client
+        raise ConnectionError(
+            "no acquisition provider: MetaTrader5 not installed and no reachable "
+            "gateway"
+        )
 
     def mt5_available(self) -> bool:
         return self.mt5_client.is_available()
@@ -131,7 +166,7 @@ class MarketDataService:
         logger.info("Initializing MetaTrader client connection (best-effort)...")
         try:
             return self.mt5_client.connect()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - startup connect probe; logged, returns False
             logger.warning("MetaTrader connect failed on startup: %s", exc)
             return False
 
@@ -146,6 +181,10 @@ class MarketDataService:
         source = resolve_ohlcv_source(self, symbol, timeframe)
         if source == "local":
             return self._local_client
+        if source == "remote":
+            if not self._remote_client.is_supported():
+                raise ConnectionError(_REMOTE_NOT_CONFIGURED)
+            return self._remote_client
         if not self.mt5_client.is_supported():
             raise ConnectionError(
                 "data_source is 'mt5' but MetaTrader5 is not installed on this "
@@ -154,15 +193,49 @@ class MarketDataService:
             )
         return self.mt5_client
 
+    def _fetch_through_ohlcv(
+        self, symbol: str, timeframe: str, bars: List[OHLCV]
+    ) -> None:
+        """Write-behind persist of gateway-fetched bars into the local store.
+
+        Best-effort: a parquet write failure must never fail or alter the read.
+        """
+        try:
+            local_store.write_ohlcv(symbol, timeframe, bars)
+        except Exception:  # noqa: BLE001 - fetch-through is best-effort; read must not fail
+            logger.warning(
+                "Fetch-through write_ohlcv failed for %s/%s; serving remote bars "
+                "without caching.",
+                symbol,
+                timeframe,
+                exc_info=True,
+            )
+
+    def _fetch_through_ticks(
+        self, symbol: str, arrays: dict[str, np.ndarray]
+    ) -> None:
+        """Write-behind persist of gateway-fetched ticks into the local store."""
+        try:
+            local_store.write_ticks(symbol, arrays)
+        except Exception:  # noqa: BLE001 - fetch-through is best-effort; read must not fail
+            logger.warning(
+                "Fetch-through write_ticks failed for %s; serving remote ticks "
+                "without caching.",
+                symbol,
+                exc_info=True,
+            )
+
     def get_symbol_info(self, symbol: str) -> Optional[dict]:
         return self._resolve_provider().get_symbol_info(symbol)
 
     def get_ohlcv(
         self, symbol: str, timeframe: str, start: datetime, end: datetime
     ) -> List[OHLCV]:
-        return self._resolve_ohlcv_provider(symbol, timeframe).get_ohlcv(
-            symbol, timeframe, start, end
-        )
+        provider = self._resolve_ohlcv_provider(symbol, timeframe)
+        bars = provider.get_ohlcv(symbol, timeframe, start, end)
+        if provider is self._remote_client and bars:
+            self._fetch_through_ohlcv(symbol, timeframe, bars)
+        return bars
 
     def get_available_ohlcv_range(
         self, symbol: str, timeframe: str
@@ -182,9 +255,13 @@ class MarketDataService:
         flags: int | None = None,
         use_cache: bool = True,
     ) -> dict[str, np.ndarray]:
-        return self._resolve_provider().get_ticks_columnar(
+        provider = self._resolve_provider()
+        arrays = provider.get_ticks_columnar(
             symbol, start, end, flags=flags, use_cache=use_cache
         )
+        if provider is self._remote_client and len(arrays.get("time_msc", [])) > 0:
+            self._fetch_through_ticks(symbol, arrays)
+        return arrays
 
     def get_recent_ticks(self, symbol: str, limit: int = 200) -> List[Tick]:
         return self._resolve_provider().get_recent_ticks(symbol, limit)

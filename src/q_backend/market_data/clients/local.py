@@ -5,11 +5,8 @@ from typing import Any, Optional
 import numpy as np
 
 from q_backend.market_data import local_store
-from q_backend.market_data.clients.metatrader import (
-    OhlcvAvailableRange,
-    _empty_ticks_columnar,
-    _time_msc_to_naive_local,
-)
+from q_backend.market_data.clients.metatrader import OhlcvAvailableRange
+from q_backend.market_data.columnar import columnar_to_ticks
 from q_backend.market_data.models import OHLCV, Tick
 
 logger = logging.getLogger(__name__)
@@ -39,22 +36,7 @@ class LocalParquetClient:
 
     def get_ticks(self, symbol: str, start: datetime, end: datetime) -> list[Tick]:
         arrays = local_store.read_ticks_columnar(symbol, start, end)
-        if len(arrays["time_msc"]) == 0:
-            return []
-        ticks: list[Tick] = []
-        for i in range(len(arrays["time_msc"])):
-            ticks.append(
-                Tick(
-                    time=_time_msc_to_naive_local(int(arrays["time_msc"][i])),
-                    bid=float(arrays["bid"][i]),
-                    ask=float(arrays["ask"][i]),
-                    last=float(arrays["last"][i]),
-                    volume=float(arrays["volume"][i]),
-                    flags=int(arrays["flags"][i]),
-                    time_msc=int(arrays["time_msc"][i]),
-                )
-            )
-        return ticks
+        return columnar_to_ticks(arrays)
 
     def get_ticks_columnar(
         self,

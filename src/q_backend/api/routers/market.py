@@ -44,7 +44,7 @@ def get_symbol_info(
         return info
     except ConnectionError as ce:
         raise HTTPException(status_code=503, detail=str(ce))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - surfaced to client as HTTPException; logged
         logger.error(f"Error fetching info for {symbol}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -86,7 +86,7 @@ def get_ohlcv(
         raise HTTPException(status_code=400, detail=str(ve))
     except ConnectionError as ce:
         raise HTTPException(status_code=503, detail=str(ce))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - surfaced to client as HTTPException; logged
         logger.error(f"Error fetching OHLCV for {symbol}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -120,7 +120,7 @@ def get_ticks(
         return ticks_data
     except ConnectionError as ce:
         raise HTTPException(status_code=503, detail=str(ce))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - surfaced to client as HTTPException; logged
         logger.error(f"Error fetching ticks for {symbol}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 

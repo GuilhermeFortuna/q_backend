@@ -1,0 +1,35 @@
+# mt5-terminal.service — systemd USER unit that keeps the MetaTrader 5 terminal
+# running under the dedicated Wine prefix. The gateway (mt5-gateway.service) is
+# ordered After this and reads market data from the live terminal.
+#
+# Install (per-user, no root):
+#   mkdir -p ~/.config/systemd/user ~/.config/mt5-gateway
+#   cp gateway/systemd/mt5-terminal.service ~/.config/systemd/user/
+#   cp gateway/systemd/mt5-gateway.service  ~/.config/systemd/user/
+#   cp gateway/systemd/mt5-gateway.env.example ~/.config/mt5-gateway/mt5-gateway.env
+#   # edit the env file, then:
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now mt5-gateway.service   # pulls in the terminal too
+#   loginctl enable-linger "$USER"   # start on boot without an active login session
+#
+# NOTE: the broker login is done ONCE by hand in the terminal GUI; it lives in the
+# Wine prefix. This unit never handles credentials.
+
+[Unit]
+Description=MetaTrader 5 terminal (Wine, market-data gateway prefix)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/mt5-gateway/mt5-gateway.env
+Environment=WINEPREFIX=%h/.local/share/mt5-gateway-prefix
+Environment=WINEARCH=win64
+Environment=WINEDEBUG=-all
+# %h is the user home; MT5_TERMINAL_EXE is a Wine path (see env example).
+ExecStart=/usr/bin/wine %h/.local/share/mt5-gateway-prefix/drive_c/Program Files/MetaTrader 5/terminal64.exe
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,39 @@
+# mt5-gateway.service — systemd USER unit that runs WO183's HTTP data gateway
+# (mt5_gateway.py) under the Wine Python, after the MT5 terminal is up.
+#
+# PRODUCTION TRIGGER (cutover guardrail): THIS UNIT IS the production trigger for the
+# WO183 gateway server. There is no other launcher in production — enabling this unit
+# (systemctl --user enable --now mt5-gateway.service) is what puts the gateway live,
+# and the Linux backend on data_source=auto/remote then consumes it.
+#
+# Config comes entirely from the EnvironmentFile (see mt5-gateway.env.example):
+#   Q_BACKEND_DIR        absolute path to the q_backend checkout (host filesystem)
+#   MT5_GATEWAY_PREFIX   Wine prefix dir
+#   MT5_WINE_PYTHON      Windows path to python.exe inside the prefix
+#   MT5_GATEWAY_HOST     bind host (default 127.0.0.1) — read by mt5_gateway.py
+#   MT5_GATEWAY_PORT     bind port (default 18812)     — read by mt5_gateway.py
+#   MT5_GATEWAY_TOKEN    optional shared secret        — read by mt5_gateway.py
+
+[Unit]
+Description=MT5 remote data gateway (Wine, WO183)
+After=network-online.target mt5-terminal.service
+Wants=network-online.target
+Requires=mt5-terminal.service
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/mt5-gateway/mt5-gateway.env
+Environment=WINEARCH=win64
+Environment=WINEDEBUG=-all
+# WINEPREFIX must match the terminal unit; sourced from the env file value.
+Environment=WINEPREFIX=%h/.local/share/mt5-gateway-prefix
+# Health-wait loop: give the terminal a chance to come up + log in before we start
+# serving. Never fails the start (the gateway also retries MT5 init lazily per request).
+ExecStartPre=/usr/bin/env bash -c 'for _ in $(seq 1 30); do pgrep -f terminal64.exe >/dev/null 2>&1 && exit 0; sleep 2; done; echo "terminal64.exe not detected after 60s; starting gateway with lazy MT5 init"; exit 0'
+# Run the gateway; winepath -w converts the host script path to the Windows form.
+ExecStart=/usr/bin/env bash -c 'exec wine "${MT5_WINE_PYTHON}" "$(winepath -w "${Q_BACKEND_DIR}/gateway/mt5_gateway.py")"'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

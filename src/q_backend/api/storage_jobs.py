@@ -91,7 +91,7 @@ def _persist_progress(job_id: str, payload: dict[str, Any]) -> None:
             payload,
             namespace=PROGRESS_NAMESPACE,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort Redis progress; logged
         logger.debug("Redis progress unavailable for storage ingest job %s", job_id)
 
 
@@ -115,16 +115,22 @@ def start_job(request: IngestJobRequest) -> str:
     return job_id
 
 
+def _provider_label(provider: Any) -> str:
+    """Human name for ingest source, for progress/error messages."""
+    return type(provider).__name__.replace("Client", "") or "provider"
+
+
 def _run_bars_ingest(
     job_id: str,
     symbol: str,
     timeframes: list[str],
     start: datetime,
     end: datetime,
-    service: Any,
+    provider: Any,
 ) -> tuple[list[dict[str, Any]], str, str, Optional[str]]:
     results: list[dict[str, Any]] = []
     total = len(timeframes)
+    source_label = _provider_label(provider)
 
     for index, timeframe in enumerate(timeframes):
         detail = f"Ingesting {symbol} {timeframe} bars ({index + 1}/{total})"
@@ -140,10 +146,11 @@ def _run_bars_ingest(
             },
         )
         try:
-            bars = service.mt5_client.get_ohlcv(symbol, timeframe, start, end)
+            bars = provider.get_ohlcv(symbol, timeframe, start, end)
             if not bars:
                 raise ValueError(
-                    f"No OHLCV bars returned from MT5 for {symbol}/{timeframe}."
+                    f"No OHLCV bars returned from {source_label} for "
+                    f"{symbol}/{timeframe}."
                 )
             catalog_entry = local_store.write_ohlcv(symbol, timeframe, bars)
             results.append(
@@ -186,9 +193,10 @@ def _run_ticks_ingest(
     symbol: str,
     start: datetime,
     end: datetime,
-    service: Any,
+    provider: Any,
 ) -> tuple[list[dict[str, Any]], str, str, Optional[str]]:
     results: list[dict[str, Any]] = []
+    source_label = _provider_label(provider)
     month_chunks = _iter_month_chunks(start, end)
     total = len(month_chunks)
     if total == 0:
@@ -208,12 +216,13 @@ def _run_ticks_ingest(
             },
         )
         try:
-            arrays = service.mt5_client.get_ticks_columnar(
+            arrays = provider.get_ticks_columnar(
                 symbol, chunk_start, chunk_end, use_cache=False
             )
             if len(arrays.get("time_msc", [])) == 0:
                 raise ValueError(
-                    f"No ticks returned from MT5 for {symbol} in {month_label}."
+                    f"No ticks returned from {source_label} for {symbol} in "
+                    f"{month_label}."
                 )
             catalog_entry = local_store.write_ticks(symbol, arrays)
             results.append(
@@ -275,19 +284,21 @@ def run_ingest_job(job_id: str, request_json: str) -> None:
             },
         )
 
-        if not service.mt5_available():
+        try:
+            provider = service.acquisition_provider()
+        except ConnectionError as exc:
             raise RuntimeError(
-                "Ingestion requires MetaTrader 5; MT5 is not available on this machine."
-            )
+                f"Ingestion requires a reachable acquisition provider: {exc}"
+            ) from exc
 
         if request.kind == "ticks":
             results, detail, status, terminal_error = _run_ticks_ingest(
-                job_id, symbol, start, end, service
+                job_id, symbol, start, end, provider
             )
         else:
             timeframes = validate_timeframes(request.timeframes)
             results, detail, status, terminal_error = _run_bars_ingest(
-                job_id, symbol, timeframes, start, end, service
+                job_id, symbol, timeframes, start, end, provider
             )
 
         _persist_progress(
@@ -319,6 +330,6 @@ def run_ingest_job(job_id: str, request_json: str) -> None:
 def get_status_payload(job_id: str) -> Optional[dict[str, Any]]:
     try:
         return get_job_progress(get_redis(), job_id, namespace=PROGRESS_NAMESPACE)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort Redis progress; logged
         logger.debug("Redis progress unavailable for storage ingest job %s", job_id)
         return None

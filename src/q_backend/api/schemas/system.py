@@ -20,16 +20,16 @@ class SystemHealthResponse(BaseModel):
     lastSyncAt: str
     storageStatus: StorageStatusResponse
     mt5_available: bool
-    active_provider: Literal["mt5", "local"]
+    active_provider: Literal["mt5", "remote", "local"]
     market_data_root: str
     market_data_inventory_count: int
 
 
 class DataSourceResponse(BaseModel):
-    source: Literal["auto", "mt5", "local"]
+    source: Literal["auto", "mt5", "remote", "local"]
     mt5_available: bool
-    active_provider: Literal["mt5", "local"]
+    active_provider: Literal["mt5", "remote", "local"]
 
 
 class DataSourceUpdateRequest(BaseModel):
-    source: Literal["auto", "mt5", "local"]
+    source: Literal["auto", "mt5", "remote", "local"]

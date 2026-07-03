@@ -113,13 +113,13 @@ def search_instrument_sources(service: MarketDataService, query: str) -> list[di
 
     try:
         add_hits(service._local_client.search_symbols(needle))
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort market-data read; logged
         logger.error("Error searching local storage for query '%s': %s", needle, exc)
 
     if mt5_up and source != "local":
         try:
             add_hits(service.mt5_client.search_symbols(needle))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - best-effort market-data read; logged
             logger.error("Error searching MT5 for query '%s': %s", needle, exc)
 
     return list(merged.values())[:50]
