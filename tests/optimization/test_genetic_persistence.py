@@ -187,6 +187,8 @@ REGISTRY_SUMMARY_KEYS = {
     "candidate_count",
     "ranked_count",
     "passed_gates_count",
+    "failed_candidate_count",
+    "failure_reasons",
     "best_candidate_id",
     "best_strategy",
     "best_objective_value",

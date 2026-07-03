@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
+import pytest
 
 import q_backend.backtesting.strategies  # noqa: F401
 from q_backend.backtesting.genome.registry_fixtures import REGISTRY_GENOME_FIXTURES
@@ -15,6 +16,8 @@ from q_backend.optimization.backtest_runner import DefaultBacktestRunner
 from q_backend.optimization.genetic_search import (
     GeneticCandidateProvider,
     GeneticStrategySearchOrchestrator,
+    ProbeDataError,
+    _resolve_probe_frame,
     candidate_fitness,
     select_search_orchestrator,
 )
@@ -257,3 +260,26 @@ def test_prescreen_determinism_same_seed_same_prescreen_decisions():
         ]
 
     assert run_once() == run_once()
+
+
+def test_resolve_probe_frame_raises_on_provider_failure():
+    """WO179 must-surface: a raising probe data provider fails the run, not silently None."""
+    def _boom(_cfg):
+        raise RuntimeError("probe data source down")
+
+    runner = DefaultBacktestRunner(data_provider=_boom)
+    config = _config(start=_dt(2024, 1, 1), end=_dt(2024, 1, 31))
+
+    with pytest.raises(ProbeDataError) as excinfo:
+        _resolve_probe_frame(runner, config)
+
+    assert "probe data source down" in str(excinfo.value)
+    assert isinstance(excinfo.value.__cause__, RuntimeError)
+
+
+def test_resolve_probe_frame_returns_none_when_provider_yields_empty():
+    """A legitimately empty/None provider result still degrades to None (no data to probe)."""
+    runner = DefaultBacktestRunner(data_provider=lambda _cfg: None)
+    config = _config(start=_dt(2024, 1, 1), end=_dt(2024, 1, 31))
+
+    assert _resolve_probe_frame(runner, config) is None
