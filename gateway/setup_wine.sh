@@ -185,10 +185,15 @@ fi
 # --------------------------------------------------------------------------------------
 # 4. MetaTrader 5 terminal.
 # --------------------------------------------------------------------------------------
-TERMINAL_EXE_REL="${PREFIX}/drive_c/Program Files/MetaTrader 5/terminal64.exe"
+# Accept broker-branded installs too (e.g. "Genial Investimentos MetaTrader 5") —
+# any terminal64.exe under Program Files counts as installed.
+TERMINAL_EXE_REL="$(find "${PREFIX}/drive_c/Program Files" -maxdepth 2 -name terminal64.exe 2>/dev/null | head -n1)"
+if [[ -z "${TERMINAL_EXE_REL}" ]]; then
+    TERMINAL_EXE_REL="${PREFIX}/drive_c/Program Files/MetaTrader 5/terminal64.exe"
+fi
 readonly TERMINAL_EXE_REL
 if [[ -f "${TERMINAL_EXE_REL}" ]]; then
-    log "MetaTrader 5 terminal already installed."
+    log "MetaTrader 5 terminal already installed (${TERMINAL_EXE_REL})."
 else
     mt5_installer="${DOWNLOAD_DIR}/mt5setup.exe"
     download "${MT5_SETUP_URL}" "${mt5_installer}"
