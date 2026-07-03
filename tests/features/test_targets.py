@@ -111,6 +111,108 @@ def test_align_feature_target_drops_warmup_and_horizon_tail():
     assert len(aligned_feature) < len(bars)
 
 
+def _varied_bars(n: int = 120) -> pd.DataFrame:
+    """Non-monotonic close so forward perturbations reliably move the target."""
+    rng = np.random.default_rng(1181)
+    close = 100.0 + np.cumsum(rng.normal(0.0, 1.0, size=n))
+    open_ = close - 0.1
+    high = np.maximum(open_, close) + 0.5
+    low = np.minimum(open_, close) - 0.5
+    volume = np.full(n, 1000.0)
+    times = pd.date_range("2023-01-01", periods=n, freq="h", tz="UTC")
+    return pd.DataFrame(
+        {"time": times, "open": open_, "high": high, "low": low, "close": close, "volume": volume}
+    )
+
+
+def _perturb_close(bars: pd.DataFrame, index: int, delta: float) -> pd.DataFrame:
+    perturbed = bars.copy()
+    perturbed.loc[perturbed.index[index], "close"] = bars["close"].iloc[index] + delta
+    return perturbed
+
+
+@pytest.mark.parametrize("name", ["fwd_return", "fwd_log_return", "fwd_vol_adj_return", "fwd_direction"])
+def test_target_does_not_depend_on_bars_beyond_horizon(name: str) -> None:
+    """A target at bar t must be forward-looking only *up to* its horizon (no bleed).
+
+    Perturbing any bar strictly beyond ``t + horizon`` must leave target[t] unchanged.
+    """
+    bars = _varied_bars()
+    horizon = 5
+    t = 60
+    spec = TargetSpec(name, horizon, _TARGET_KIND(name))
+    base = compute_target(bars, spec).iloc[t]
+
+    for beyond in (t + horizon + 1, t + horizon + 10, len(bars) - 1):
+        perturbed = _perturb_close(bars, beyond, delta=25.0)
+        after = compute_target(perturbed, spec).iloc[t]
+        if pd.isna(base):
+            assert pd.isna(after)
+        else:
+            assert after == pytest.approx(base), (
+                f"{name}[{t}] changed after perturbing bar {beyond} > t+horizon"
+            )
+
+
+@pytest.mark.parametrize("name", ["fwd_return", "fwd_log_return"])
+def test_target_depends_on_the_horizon_bar(name: str) -> None:
+    """The forward window genuinely reaches the horizon bar (t + horizon)."""
+    bars = _varied_bars()
+    horizon = 5
+    t = 60
+    spec = TargetSpec(name, horizon, _TARGET_KIND(name))
+    base = compute_target(bars, spec).iloc[t]
+    moved = compute_target(_perturb_close(bars, t + horizon, delta=25.0), spec).iloc[t]
+    assert moved != pytest.approx(base)
+
+
+def _TARGET_KIND(name: str) -> str:
+    return "classification" if name == "fwd_direction" else "regression"
+
+
+def test_training_eligible_labels_do_not_bleed_past_train_end() -> None:
+    """Rows within ``horizon`` of the split are purged, so no train label reaches test.
+
+    With ``embargo == horizon``, every training-eligible bar t satisfies
+    ``t + horizon < split_point`` — the label window never crosses the train/test boundary.
+    """
+    bars = _varied_bars(160)
+    horizon = 6
+    split_point = 100
+    embargo = horizon
+    times = pd.Index(bars["time"])
+    train_idx, test_idx = purge_embargo(times, split_point, embargo)
+
+    position = {ts: pos for pos, ts in enumerate(times)}
+    train_positions = [position[ts] for ts in train_idx]
+    assert train_positions, "expected a non-empty training-eligible set"
+    for t in train_positions:
+        assert t + horizon < split_point, (
+            f"train label at bar {t} reaches {t + horizon} >= split_point {split_point}"
+        )
+
+    first_test_pos = position[test_idx[0]]
+    assert first_test_pos >= split_point + embargo
+
+
+def test_forward_window_checker_catches_a_beyond_horizon_leak() -> None:
+    """A deliberately leaky target (peeks past its horizon) fails the forward-window rule."""
+    bars = _varied_bars()
+    horizon = 5
+    t = 60
+
+    def _leaky_target(frame: pd.DataFrame) -> pd.Series:
+        # Peeks one bar past the stated horizon — the target equivalent of shift(-1) leak.
+        close = frame.sort_values("time")["close"].reset_index(drop=True)
+        values = close.shift(-(horizon + 1)) / close - 1.0
+        return pd.Series(values.to_numpy(), index=frame["time"])
+
+    base = _leaky_target(bars).iloc[t]
+    beyond = t + horizon + 1  # inside the leaky window, beyond the declared horizon
+    after = _leaky_target(_perturb_close(bars, beyond, delta=25.0)).iloc[t]
+    assert after != pytest.approx(base), "leaky target should react to a beyond-horizon bar"
+
+
 def test_list_target_specs_expands_horizons():
     specs = list_target_specs([1, 5])
     names = {spec.name for spec in specs}
