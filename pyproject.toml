@@ -47,6 +47,7 @@ dev = [
 pythonpath = ["tests/api", "tests"]
 markers = [
     "integration: requires running Postgres and Redis (docker compose)",
+    "live_gateway: requires a reachable Q_MT5_GATEWAY_URL (WO190 live pass)",
 ]
 
 [build-system]
