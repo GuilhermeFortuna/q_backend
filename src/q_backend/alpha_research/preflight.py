@@ -9,7 +9,7 @@ from typing import Any, Literal
 import pandas as pd
 
 from q_backend.features.split_manifest import SplitManifest, build_split_manifest
-from q_backend.market_data.local_store import read_ohlcv
+from q_backend.market_data.read_through import read_ohlcv_fresh
 from q_backend.optimization.hypothesis import RESEARCH_PROFILES, InstrumentResearchProfile
 
 PreflightVerdict = Literal["ok", "inconclusive"]
@@ -116,7 +116,7 @@ def run_data_preflight(
             coverage={"symbol": profile.symbol, "timeframe": profile.timeframe},
         )
 
-    records = read_ohlcv(profile.symbol, profile.timeframe, start, end)
+    records = read_ohlcv_fresh(profile.symbol, profile.timeframe, start, end)
     coverage = {
         "symbol": profile.symbol,
         "timeframe": profile.timeframe,

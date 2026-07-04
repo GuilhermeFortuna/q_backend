@@ -17,7 +17,11 @@ from q_backend.features.evidence import (
     merge_evidence_thresholds,
     permutation_null_floor,
 )
-from q_backend.features.evidence_service import load_feature_evidence, persist_feature_evidence
+from q_backend.features.evidence_service import (
+    load_feature_evidence,
+    persist_feature_evidence,
+    run_profile_feature_evidence,
+)
 from q_backend.features.matrix import FeatureMatrix
 from q_backend.features.registry import feature_id, get_feature_spec
 from q_backend.features.scoring import cluster_redundant
@@ -27,6 +31,7 @@ from q_backend.features.split_manifest import (
     slice_segment,
 )
 from q_backend.features.targets import TargetSpec, compute_target
+from q_backend.market_data.models import OHLCV
 from q_backend.optimization.feature_admission import ProfileFeatureAdmissionResolver
 from q_backend.optimization.hypothesis import (
     FailClosedFeatureAdmissionResolver,
@@ -43,6 +48,58 @@ from q_backend.optimization.strategy_search import StrategySearchConfig
 from q_backend.optimization.walkforward import WalkForwardConfig
 from q_backend.storage.db.models import FeatureEvidenceRow
 from q_backend.storage.lake.artifacts import read_feature_evidence
+
+
+def test_run_profile_feature_evidence_uses_read_through_seam(monkeypatch):
+    """WO189: evidence_service loads bars through read_ohlcv_fresh."""
+    calls: list[tuple[str, str]] = []
+    bars = _synthetic_bars(120)
+    ohlcv = [
+        OHLCV(
+            time=row.time.to_pydatetime(),
+            open=float(row.open),
+            high=float(row.high),
+            low=float(row.low),
+            close=float(row.close),
+            tick_volume=int(row.volume),
+        )
+        for row in bars.itertuples(index=False)
+    ]
+
+    def _spy(symbol, timeframe, start, end, *, service=None):
+        calls.append((symbol, timeframe))
+        return ohlcv
+
+    monkeypatch.setattr(
+        "q_backend.features.evidence_service.read_ohlcv_fresh",
+        _spy,
+    )
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from q_backend.storage.db.base import Base
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    try:
+        run_profile_feature_evidence(
+            session,
+            profile_id="ccm_h1_swing",
+            start=datetime(2023, 1, 1),
+            end=datetime(2023, 1, 10),
+            feature_requests=[],
+        )
+    finally:
+        session.close()
+        engine.dispose()
+
+    assert calls == [("CCM$", "H1")]
 
 
 def _search_config(symbol: str = "CCM$", timeframe: str = "H1", strategies: list[str] | None = None):

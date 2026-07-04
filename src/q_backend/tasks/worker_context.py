@@ -33,6 +33,15 @@ def init_worker_market_data() -> None:
             logger.exception("MT5 initialization raised on worker boot")
 
 
+def peek_worker_market_data_service() -> Optional[MarketDataService]:
+    """Return the worker MarketDataService if already initialized, else None.
+
+    Does not trigger lazy creation — use ``get_worker_market_data_service`` when
+    the caller needs a guaranteed instance.
+    """
+    return _service
+
+
 def get_worker_market_data_service() -> MarketDataService:
     """Return this process's MarketDataService, initializing it lazily if needed."""
     if _service is None:

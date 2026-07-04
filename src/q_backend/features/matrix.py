@@ -21,7 +21,7 @@ from q_backend.features.compute import compute_feature
 from q_backend.features.registry import feature_id, get_feature_spec, resolve_params
 from q_backend.market_data.exogenous_config import ExogenousSeriesConfig
 from q_backend.market_data.exogenous_context import attach_exogenous_context
-from q_backend.market_data.local_store import read_ohlcv
+from q_backend.market_data.read_through import read_ohlcv_fresh
 from q_backend.market_data.models import OHLCV
 from q_backend.storage.lake.artifacts import (
     feature_matrix_exists,
@@ -65,7 +65,9 @@ def _ohlcv_to_indexed_frame(bars: list[OHLCV]) -> pd.DataFrame:
 def _load_ohlcv_indexed(
     symbol: str, timeframe: str, start: datetime, end: datetime
 ) -> pd.DataFrame:
-    return _ohlcv_to_indexed_frame(read_ohlcv(symbol, timeframe, start, end))
+    return _ohlcv_to_indexed_frame(
+        read_ohlcv_fresh(symbol, timeframe, start, end)
+    )
 
 
 def _attach_exogenous_to_bars(
@@ -239,7 +241,7 @@ def build_feature_matrix(
             manifest=cached.manifest,
         )
 
-    bars = read_ohlcv(symbol, timeframe, start, end)
+    bars = read_ohlcv_fresh(symbol, timeframe, start, end)
     bars_df = _ohlcv_to_compute_bars(bars)
     if exogenous_series:
         bars_df = _attach_exogenous_to_bars(

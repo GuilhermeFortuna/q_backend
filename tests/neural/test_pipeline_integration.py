@@ -98,8 +98,8 @@ def stub_ohlcv(monkeypatch):
         hi = _strip_tz(end_dt)
         return [bar for bar in bars if lo <= pd.Timestamp(bar.time) <= hi]
 
-    monkeypatch.setattr("q_backend.features.matrix.read_ohlcv", _read_ohlcv)
-    monkeypatch.setattr("q_backend.neural.gate.read_ohlcv", _read_ohlcv)
+    monkeypatch.setattr("q_backend.features.matrix.read_ohlcv_fresh", _read_ohlcv)
+    monkeypatch.setattr("q_backend.neural.gate.read_ohlcv_fresh", _read_ohlcv)
     return bars
 
 

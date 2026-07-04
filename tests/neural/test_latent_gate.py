@@ -135,7 +135,7 @@ def sample_market(monkeypatch):
         "q_backend.features.evaluation_service",
         "q_backend.neural.gate",
     ):
-        monkeypatch.setattr(f"{module}.read_ohlcv", _read_ohlcv)
+        monkeypatch.setattr(f"{module}.read_ohlcv_fresh", _read_ohlcv)
     return bars_df
 
 
@@ -196,6 +196,32 @@ def _patch_latent_frame(monkeypatch, bars_df: pd.DataFrame, *, correlate: bool):
         "q_backend.features.compute._get_or_compute_latent_frame",
         _fake,
     )
+
+
+def test_evaluate_latents_uses_read_through_seam(
+    seeded_session: Session, sample_market, lake_root_path, monkeypatch
+) -> None:
+    """WO189: neural gate loads bars through read_ohlcv_fresh."""
+    calls: list[tuple[str, str, datetime, datetime]] = []
+
+    def _spy(symbol, timeframe, start_dt, end_dt, *, service=None):
+        calls.append((symbol, timeframe, start_dt, end_dt))
+        ohlcv = _bars_to_ohlcv(sample_market)
+        return [bar for bar in ohlcv if start_dt <= bar.time <= end_dt]
+
+    monkeypatch.setattr("q_backend.neural.gate.read_ohlcv_fresh", _spy)
+    version, keys = _train_version(seeded_session, sample_market)
+    _patch_latent_frame(monkeypatch, sample_market, correlate=True)
+    try:
+        evaluate_latents(
+            seeded_session,
+            version,
+            target_name="fwd_return",
+            horizon=5,
+        )
+        assert any(call[0] == "SYN" and call[1] == "H1" for call in calls)
+    finally:
+        unregister_neural_model_features(keys)
 
 
 def test_latent_feature_set_one_request_per_latent(

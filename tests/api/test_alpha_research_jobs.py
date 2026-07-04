@@ -177,9 +177,32 @@ def lake_root_path(tmp_path, monkeypatch):
     get_settings.cache_clear()
 
 
+def test_preflight_uses_read_through_seam():
+    """WO189: alpha-research preflight loads bars through read_ohlcv_fresh."""
+    calls: list[tuple[str, str, datetime, datetime]] = []
+
+    def _spy(symbol, timeframe, start, end, *, service=None):
+        calls.append((symbol, timeframe, start, end))
+        return []
+
+    with patch(
+        "q_backend.alpha_research.preflight.read_ohlcv_fresh",
+        side_effect=_spy,
+    ):
+        run_data_preflight(
+            profile_id="ccm_h1_swing",
+            start=datetime(2024, 1, 1),
+            end=datetime(2024, 2, 1),
+        )
+
+    assert len(calls) == 1
+    assert calls[0][0] == "CCM$"
+    assert calls[0][1] == "H1"
+
+
 def test_preflight_insufficient_data_returns_inconclusive():
     with patch(
-        "q_backend.alpha_research.preflight.read_ohlcv",
+        "q_backend.alpha_research.preflight.read_ohlcv_fresh",
         return_value=[],
     ):
         result = run_data_preflight(
@@ -229,7 +252,7 @@ def test_alpha_research_inconclusive_before_expensive_stages(
         alpha_session_scope,
     )
     with patch(
-        "q_backend.alpha_research.preflight.read_ohlcv",
+        "q_backend.alpha_research.preflight.read_ohlcv_fresh",
         return_value=[],
     ):
         started = alpha_research_jobs.start_alpha_research_job(
@@ -283,7 +306,7 @@ def test_alpha_research_ready_for_paper_planted_edge(
         )
 
     with (
-        patch("q_backend.alpha_research.preflight.read_ohlcv", side_effect=_mock_read_ohlcv),
+        patch("q_backend.alpha_research.preflight.read_ohlcv_fresh", side_effect=_mock_read_ohlcv),
         patch(
             "q_backend.api.alpha_research_jobs.run_profile_feature_evidence",
             return_value=[],
@@ -343,7 +366,7 @@ def test_alpha_research_no_edge_returns_rejected(
 
     with (
         patch(
-            "q_backend.alpha_research.preflight.read_ohlcv",
+            "q_backend.alpha_research.preflight.read_ohlcv_fresh",
             return_value=_synthetic_ohlcv_records(),
         ),
         patch(
@@ -391,7 +414,7 @@ def test_alpha_research_cancellation(
 
     with (
         patch(
-            "q_backend.alpha_research.preflight.read_ohlcv",
+            "q_backend.alpha_research.preflight.read_ohlcv_fresh",
             return_value=_synthetic_ohlcv_records(),
         ),
         patch(
@@ -495,7 +518,7 @@ def test_alpha_research_route_smoke(
     )
     with (
         patch(
-            "q_backend.alpha_research.preflight.read_ohlcv",
+            "q_backend.alpha_research.preflight.read_ohlcv_fresh",
             return_value=[],
         ),
     ):

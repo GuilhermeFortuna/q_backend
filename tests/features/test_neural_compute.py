@@ -165,7 +165,7 @@ def test_build_feature_matrix_neural_columns(neural_setup, monkeypatch) -> None:
 
     # build_feature_matrix reads OHLCV from lake; stub with our synthetic bars.
     monkeypatch.setattr(
-        "q_backend.features.matrix.read_ohlcv",
+        "q_backend.features.matrix.read_ohlcv_fresh",
         lambda symbol, timeframe, s, e: [],
     )
     monkeypatch.setattr(

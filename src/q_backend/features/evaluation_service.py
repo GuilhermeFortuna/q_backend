@@ -25,7 +25,7 @@ from q_backend.features.scoring import (
     score_features,
 )
 from q_backend.features.targets import TargetSpec, compute_target
-from q_backend.market_data.local_store import read_ohlcv
+from q_backend.market_data.read_through import read_ohlcv_fresh
 from q_backend.storage.db.engine import session_scope
 from q_backend.storage.db.models import EvaluationRun, RunStatus
 from q_backend.storage.db.repositories import (
@@ -236,7 +236,7 @@ def _evaluate_into_run(
         matrix = build_feature_matrix(
             symbol, timeframe, start, end, feature_set
         )
-        bars = read_ohlcv(symbol, timeframe, start, end)
+        bars = read_ohlcv_fresh(symbol, timeframe, start, end)
         bars_df = _ohlcv_to_compute_bars(bars)
         target_series = compute_target(bars_df, target)
         close: pd.Series | None = None

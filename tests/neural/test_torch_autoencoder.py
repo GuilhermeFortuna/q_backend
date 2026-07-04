@@ -201,7 +201,7 @@ def test_torch_autoencoder_oos_contract_via_compute_path(
 
     import q_backend.features.compute as compute_mod
 
-    monkeypatch.setattr("q_backend.features.matrix.read_ohlcv", _read_ohlcv)
+    monkeypatch.setattr("q_backend.features.matrix.read_ohlcv_fresh", _read_ohlcv)
 
     def _stub_input_window(df, input_features):
         out = feature_window.reindex(df["time"])

@@ -25,7 +25,7 @@ from q_backend.features.registry import feature_id, get_feature_spec
 from q_backend.features.scoring import cluster_redundant, score_features
 from q_backend.features.split_manifest import SplitManifest, build_split_manifest, slice_segment
 from q_backend.features.targets import TargetSpec, compute_target
-from q_backend.market_data.local_store import read_ohlcv
+from q_backend.market_data.read_through import read_ohlcv_fresh
 from q_backend.optimization.hypothesis import RESEARCH_PROFILES
 from q_backend.storage.db.models import FeatureEvidenceRow, RunStatus
 from q_backend.storage.db.repositories import (
@@ -104,7 +104,9 @@ def run_profile_feature_evidence(
     if profile is None:
         raise ValueError(f"Unknown profile_id '{profile_id}'.")
 
-    bars = _ohlcv_to_bars(read_ohlcv(profile.symbol, profile.timeframe, start, end))
+    bars = _ohlcv_to_bars(
+        read_ohlcv_fresh(profile.symbol, profile.timeframe, start, end)
+    )
     manifest = build_split_manifest(
         bars,
         symbol=profile.symbol,

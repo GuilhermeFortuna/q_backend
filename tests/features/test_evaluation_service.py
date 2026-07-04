@@ -116,14 +116,47 @@ def sample_market(monkeypatch):
         return [bar for bar in ohlcv if start_dt <= bar.time <= end_dt]
 
     monkeypatch.setattr(
-        "q_backend.features.matrix.read_ohlcv",
+        "q_backend.features.matrix.read_ohlcv_fresh",
         _read_ohlcv,
     )
     monkeypatch.setattr(
-        "q_backend.features.evaluation_service.read_ohlcv",
+        "q_backend.features.evaluation_service.read_ohlcv_fresh",
         _read_ohlcv,
     )
     return {"start": start, "end": end}
+
+
+def test_run_evaluation_uses_read_through_seam(
+    seeded_session: Session, sample_market, lake_root_path, monkeypatch
+) -> None:
+    """WO189: evaluation_service loads bars through read_ohlcv_fresh."""
+    calls: list[tuple[str, str, datetime, datetime]] = []
+
+    def _spy(symbol, timeframe, start_dt, end_dt, *, service=None):
+        calls.append((symbol, timeframe, start_dt, end_dt))
+        return [
+            bar
+            for bar in _bars_to_ohlcv(_synthetic_bars())
+            if start_dt <= bar.time <= end_dt
+        ]
+
+    monkeypatch.setattr(
+        "q_backend.features.evaluation_service.read_ohlcv_fresh",
+        _spy,
+    )
+    target = next(
+        spec for spec in list_target_specs([5]) if spec.name == "fwd_return"
+    )
+    run_evaluation(
+        seeded_session,
+        symbol="EURUSD",
+        timeframe="H1",
+        start=sample_market["start"],
+        end=sample_market["end"],
+        target=target,
+        feature_set=[FeatureRequest("rsi", None, {"period": 14})],
+    )
+    assert ("EURUSD", "H1", sample_market["start"], sample_market["end"]) in calls
 
 
 def test_run_evaluation_persists_run_and_scores(

@@ -80,7 +80,7 @@ def sample_market(monkeypatch):
         return filtered
 
     monkeypatch.setattr(
-        "q_backend.features.matrix.read_ohlcv",
+        "q_backend.features.matrix.read_ohlcv_fresh",
         _read_ohlcv,
     )
     return {
@@ -88,6 +88,46 @@ def sample_market(monkeypatch):
         "start": start,
         "end": end,
     }
+
+
+def test_build_feature_matrix_uses_read_through_seam(
+    sample_market, lake_root_path, monkeypatch
+):
+    """WO189: matrix loads bars through read_ohlcv_fresh, not local_store."""
+    calls: list[tuple[str, str, datetime, datetime]] = []
+
+    def _spy(symbol, timeframe, start_dt, end_dt, *, service=None):
+        calls.append((symbol, timeframe, start_dt, end_dt))
+        return sample_market["bars_df"].pipe(
+            lambda df: [
+                OHLCV(
+                    time=row.time.to_pydatetime(),
+                    open=float(row.open),
+                    high=float(row.high),
+                    low=float(row.low),
+                    close=float(row.close),
+                    tick_volume=int(row.volume),
+                )
+                for row in df.itertuples(index=False)
+                if start_dt <= row.time.to_pydatetime() <= end_dt
+            ]
+        )
+
+    monkeypatch.setattr(
+        "q_backend.features.matrix.read_ohlcv_fresh",
+        _spy,
+    )
+    build_feature_matrix(
+        "EURUSD",
+        "H1",
+        sample_market["start"],
+        sample_market["end"],
+        [FeatureRequest("rsi", None, {"period": 14})],
+        use_cache=False,
+    )
+    assert calls == [
+        ("EURUSD", "H1", sample_market["start"], sample_market["end"])
+    ]
 
 
 def test_build_feature_matrix_two_features_valid_from(sample_market, lake_root_path):

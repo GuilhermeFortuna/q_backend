@@ -127,11 +127,11 @@ def sample_market(monkeypatch):
         return [bar for bar in ohlcv if start_dt <= bar.time <= end_dt]
 
     monkeypatch.setattr(
-        "q_backend.features.matrix.read_ohlcv",
+        "q_backend.features.matrix.read_ohlcv_fresh",
         _read_ohlcv,
     )
     monkeypatch.setattr(
-        "q_backend.features.evaluation_service.read_ohlcv",
+        "q_backend.features.evaluation_service.read_ohlcv_fresh",
         _read_ohlcv,
     )
     return {"start": start, "end": end}

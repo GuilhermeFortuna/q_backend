@@ -25,7 +25,7 @@ from q_backend.features.registry import (
     register_neural_model_features,
 )
 from q_backend.features.targets import TargetSpec, _TARGET_KINDS
-from q_backend.market_data.local_store import read_ohlcv
+from q_backend.market_data.read_through import read_ohlcv_fresh
 from q_backend.storage.db.models import EvaluationRun, FeatureScoreRow, NeuralModelStatus
 from q_backend.storage.db.models import NeuralModelVersion, RunStatus
 from q_backend.storage.db.repositories import (
@@ -91,7 +91,7 @@ def resolve_oos_evaluation_range(
 
     train_end_ts = _to_utc_timestamp(version.train_end)
     query_end = _to_utc_timestamp(end or datetime.now(timezone.utc))
-    bars = read_ohlcv(
+    bars = read_ohlcv_fresh(
         version.model.symbol,
         version.model.timeframe,
         train_end_ts.to_pydatetime(),
