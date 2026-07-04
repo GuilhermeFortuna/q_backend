@@ -14,6 +14,7 @@ from q_backend.market_data.clients.metatrader import (
 )
 from q_backend.market_data.clients.remote import RemoteMt5Client
 from q_backend.market_data.models import OHLCV, Tick
+from q_backend.market_data.coverage import envelope_covers, plan_ohlcv_read
 from q_backend.market_data.routing import resolve_ohlcv_source
 from q_backend.storage.runtime_config import get_data_source
 
@@ -203,13 +204,15 @@ class MarketDataService:
 
     def _fetch_through_ohlcv(
         self, symbol: str, timeframe: str, bars: List[OHLCV]
-    ) -> None:
+    ) -> bool:
         """Write-behind persist of gateway-fetched bars into the local store.
 
-        Best-effort: a parquet write failure must never fail or alter the read.
+        Best-effort: a parquet write failure must never fail the caller, but
+        returns ``False`` so coverage-aware reads can stitch in memory.
         """
         try:
             local_store.write_ohlcv(symbol, timeframe, bars)
+            return True
         except Exception:  # noqa: BLE001 - fetch-through is best-effort; read must not fail
             logger.warning(
                 "Fetch-through write_ohlcv failed for %s/%s; serving remote bars "
@@ -218,6 +221,49 @@ class MarketDataService:
                 timeframe,
                 exc_info=True,
             )
+            return False
+
+    @staticmethod
+    def _merge_ohlcv_bars(
+        start: datetime, end: datetime, *groups: List[OHLCV]
+    ) -> List[OHLCV]:
+        by_time: dict[datetime, OHLCV] = {}
+        for bars in groups:
+            for bar in bars:
+                if start <= bar.time <= end:
+                    by_time[bar.time] = bar
+        return [by_time[t] for t in sorted(by_time)]
+
+    def _get_ohlcv_auto_remote(
+        self, symbol: str, timeframe: str, start: datetime, end: datetime
+    ) -> List[OHLCV]:
+        plan = plan_ohlcv_read(symbol, timeframe, start, end)
+        if plan.serve_from == "local":
+            return local_store.read_ohlcv(symbol, timeframe, start, end)
+
+        fetched_segments: list[List[OHLCV]] = []
+        persist_ok = True
+        try:
+            for seg_start, seg_end in plan.missing:
+                if envelope_covers(symbol, timeframe, start, end):
+                    break
+                segment_bars = self._remote_client.get_ohlcv(
+                    symbol, timeframe, seg_start, seg_end
+                )
+                if segment_bars:
+                    fetched_segments.append(segment_bars)
+                    if not self._fetch_through_ohlcv(symbol, timeframe, segment_bars):
+                        persist_ok = False
+        except ConnectionError:
+            if envelope_covers(symbol, timeframe, start, end):
+                return local_store.read_ohlcv(symbol, timeframe, start, end)
+            raise
+
+        if persist_ok and envelope_covers(symbol, timeframe, start, end):
+            return local_store.read_ohlcv(symbol, timeframe, start, end)
+
+        local_bars = local_store.read_ohlcv(symbol, timeframe, start, end)
+        return self._merge_ohlcv_bars(start, end, local_bars, *fetched_segments)
 
     def _fetch_through_ticks(
         self, symbol: str, arrays: dict[str, np.ndarray]
@@ -239,6 +285,12 @@ class MarketDataService:
     def get_ohlcv(
         self, symbol: str, timeframe: str, start: datetime, end: datetime
     ) -> List[OHLCV]:
+        if (
+            get_data_source() == "auto"
+            and resolve_ohlcv_source(self, symbol, timeframe) == "remote"
+        ):
+            return self._get_ohlcv_auto_remote(symbol, timeframe, start, end)
+
         provider = self._resolve_ohlcv_provider(symbol, timeframe)
         bars = provider.get_ohlcv(symbol, timeframe, start, end)
         if provider is self._remote_client and bars:

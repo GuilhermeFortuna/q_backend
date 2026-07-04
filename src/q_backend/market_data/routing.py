@@ -5,6 +5,12 @@ Native MT5 wins when the terminal is connected and the symbol is selectable; oth
 the remote gateway wins when it is reachable; otherwise local parquet when data exists.
 A symbol with no local data and no reachable provider resolves to the best available
 acquirer so the downstream error is honest rather than a silent empty result.
+
+When `auto` resolves to the remote gateway, ``MarketDataService.get_ohlcv`` applies
+coverage planning (WO188): local parquet is the fast path when its envelope already
+covers the requested range; otherwise only missing head/tail segments are fetched
+from the gateway, persisted via fetch-through, and the full range is served from
+local parquet. Explicit ``remote`` source always performs a full-range gateway fetch.
 """
 
 from __future__ import annotations

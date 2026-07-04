@@ -120,6 +120,13 @@ def test_auto_both_down_with_local_data_prefers_local(market_root, monkeypatch):
         lambda svc, symbol: False,
     )
     assert resolve_ohlcv_source(service, "VALE3", "H1") == "local"
+    bars = service.get_ohlcv(
+        "VALE3",
+        "H1",
+        datetime(2024, 1, 1, 10),
+        datetime(2024, 1, 2, 10),
+    )
+    assert len(bars) == 1
 
 
 def test_explicit_remote_without_url_raises(market_root):
