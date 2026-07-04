@@ -15,6 +15,7 @@ from q_backend.strategy_builder.interpret_parser import AiParseError, parse_ai_i
 from q_backend.strategy_builder.interpret_prompt import build_system_prompt, build_user_prompt
 from q_backend.strategy_builder.providers.base import StrategyInterpreterProvider
 from q_backend.strategy_builder.providers.openai_compatible import ProviderRequestError
+from q_backend.storage.settings import Settings, get_settings
 from q_backend.strategy_builder.registry import build_capability_registry
 from q_backend.strategy_builder.validator import validate_strategy_spec_payload
 
@@ -27,6 +28,7 @@ def interpret_strategy_request(
     provider: StrategyInterpreterProvider,
     capabilities: CapabilityRegistry | None = None,
     model: str | None = None,
+    settings: Settings | None = None,
 ) -> AiStrategyResponse:
     registry = capabilities or build_capability_registry()
     if request.capabilities_version != registry.schema_version:
@@ -36,8 +38,13 @@ def interpret_strategy_request(
             registry.schema_version,
         )
 
+    prompt_settings = settings or get_settings()
     system_prompt = build_system_prompt(registry)
-    user_prompt = build_user_prompt(request)
+    user_prompt = build_user_prompt(
+        request,
+        max_conversation_turns=prompt_settings.ai_strategy_max_conversation_turns,
+        conversation_char_budget=prompt_settings.ai_strategy_conversation_char_budget,
+    )
     interpret_kwargs: dict[str, str] = {}
     if model is not None:
         interpret_kwargs["model"] = model
@@ -76,6 +83,7 @@ def interpret_strategy_request(
         assumptions=parsed.assumptions,
         questions=parsed.questions,
         unsupported_requests=parsed.unsupported_requests,
+        change_notes=parsed.change_notes,
         strategy_spec=strategy_spec,
         validation=validation,
         compiled_strategy=compiled,

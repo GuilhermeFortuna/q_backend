@@ -170,7 +170,11 @@ def get_strategy_builder_models() -> AiStrategyModelsResponse:
 def interpret_strategy_builder_request(
     request: StrategyInterpretRequest,
 ) -> AiStrategyResponse:
-    """Interpret a natural-language request into a validated StrategySpec draft."""
+    """Interpret a natural-language request into a validated StrategySpec draft.
+
+  Returns ``change_notes``: short, concrete edits the model made to the draft on
+  this turn (empty for a first draft).
+    """
     settings = get_settings()
     try:
         provider = _build_ai_provider()

@@ -19,6 +19,9 @@ class ConversationMessage(BaseModel):
 class StrategyInterpretRequest(BaseModel):
     message: str = Field(min_length=1)
     model: str | None = None
+    # Prior turns for multi-turn refinement. The current user turn may appear as
+    # the last entry; the server dedupes it against ``message`` when building the
+    # prompt so it is not repeated in the history section.
     conversation: list[ConversationMessage] = Field(default_factory=list)
     current_spec: dict[str, Any] | None = None
     capabilities_version: str = CAPABILITIES_SCHEMA_VERSION
@@ -30,6 +33,7 @@ class AiStrategyResponse(BaseModel):
     assumptions: list[str] = Field(default_factory=list)
     questions: list[str] = Field(default_factory=list)
     unsupported_requests: list[str] = Field(default_factory=list)
+    change_notes: list[str] = Field(default_factory=list)
     strategy_spec: dict[str, Any] | None = None
     validation: ValidationResult | None = None
     compiled_strategy: CompiledStrategy | None = None
@@ -64,5 +68,6 @@ class ParsedAiInterpreterPayload(BaseModel):
     assumptions: list[str] = Field(default_factory=list)
     questions: list[str] = Field(default_factory=list)
     unsupported_requests: list[str] = Field(default_factory=list)
+    change_notes: list[str] = Field(default_factory=list)
     strategy_spec: dict[str, Any] | None = None
     confidence: float = Field(ge=0.0, le=1.0)

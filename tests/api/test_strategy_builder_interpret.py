@@ -384,3 +384,42 @@ def test_openai_compatible_provider_list_models_parses_response():
 
     with patch("urllib.request.urlopen", return_value=_FakeResponse(payload)):
         assert provider.list_models() == ["gemma-4-e4b-it", "qwythos-9b"]
+
+
+def test_change_notes_parser_round_trips():
+    parsed = parse_ai_interpreter_response(
+        json.dumps(
+            _ai_response_payload(
+                change_notes=["tightened stop_loss_points 200 -> 150"],
+            )
+        )
+    )
+
+    assert parsed.change_notes == ["tightened stop_loss_points 200 -> 150"]
+
+
+def test_change_notes_missing_defaults_to_empty_list():
+    parsed = parse_ai_interpreter_response(json.dumps(_ai_response_payload()))
+
+    assert parsed.change_notes == []
+
+
+def test_interpret_endpoint_surfaces_change_notes(ai_enabled_settings):
+    provider = FakeInterpreterProvider(
+        content=json.dumps(
+            _ai_response_payload(
+                change_notes=["set timeframe D1 -> H1"],
+            )
+        )
+    )
+
+    with patch(
+        "q_backend.api.routers.strategy_builder.build_strategy_interpreter_provider",
+        return_value=provider,
+    ):
+        response = interpret_strategy_builder_request(
+            StrategyInterpretRequest(message="Switch to hourly bars.")
+        )
+
+    assert response.change_notes == ["set timeframe D1 -> H1"]
+    assert response.model_dump(mode="json")["change_notes"] == ["set timeframe D1 -> H1"]

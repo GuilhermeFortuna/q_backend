@@ -44,6 +44,7 @@ def parse_ai_interpreter_response(raw_text: str) -> ParsedAiInterpreterPayload:
                 "assumptions": payload.get("assumptions", []),
                 "questions": payload.get("questions", []),
                 "unsupported_requests": payload.get("unsupported_requests", []),
+                "change_notes": payload.get("change_notes", []),
                 "strategy_spec": payload.get("strategy_spec"),
                 "confidence": payload.get("confidence", 0.0),
             }
