@@ -99,9 +99,15 @@ def search_instrument_sources(service: MarketDataService, query: str) -> list[di
 
     source = get_data_source()
     mt5_up = service.mt5_available()
+    remote_up = service._remote_client.is_available()
+
     if not mt5_up and source == "mt5":
         raise HTTPException(
             status_code=503, detail="MetaTrader 5 terminal is offline."
+        )
+    if not remote_up and source == "remote":
+        raise HTTPException(
+            status_code=503, detail="Remote MetaTrader 5 gateway is offline."
         )
 
     merged: dict[str, dict] = {}
@@ -116,11 +122,17 @@ def search_instrument_sources(service: MarketDataService, query: str) -> list[di
     except Exception as exc:  # noqa: BLE001 - best-effort market-data read; logged
         logger.error("Error searching local storage for query '%s': %s", needle, exc)
 
-    if mt5_up and source != "local":
-        try:
-            add_hits(service.mt5_client.search_symbols(needle))
-        except Exception as exc:  # noqa: BLE001 - best-effort market-data read; logged
-            logger.error("Error searching MT5 for query '%s': %s", needle, exc)
+    if source != "local":
+        if mt5_up:
+            try:
+                add_hits(service.mt5_client.search_symbols(needle))
+            except Exception as exc:  # noqa: BLE001 - best-effort market-data read; logged
+                logger.error("Error searching MT5 for query '%s': %s", needle, exc)
+        elif remote_up:
+            try:
+                add_hits(service._remote_client.search_symbols(needle))
+            except Exception as exc:  # noqa: BLE001 - best-effort market-data read; logged
+                logger.error("Error searching remote MT5 for query '%s': %s", needle, exc)
 
     return list(merged.values())[:50]
 def utc_iso_seconds(dt: datetime) -> str:
@@ -309,6 +321,40 @@ def normalize_market_timeframe(timeframe: str) -> str:
     return mapping.get(timeframe.upper(), "D1")
 
 
+def estimate_start_time(end_time: datetime, timeframe: str, count: int) -> datetime:
+    """Estimate a start time going back far enough to contain at least `count` bars.
+
+    Uses a 3x buffer to account for weekends, holidays, and low-activity periods.
+    """
+    seconds_map = {
+        "M1": 60,
+        "M2": 120,
+        "M3": 180,
+        "M4": 240,
+        "M5": 300,
+        "M6": 360,
+        "M10": 600,
+        "M12": 720,
+        "M15": 900,
+        "M20": 1200,
+        "M30": 1800,
+        "H1": 3600,
+        "H2": 7200,
+        "H3": 10800,
+        "H4": 14400,
+        "H6": 21600,
+        "H8": 28800,
+        "H12": 43200,
+        "D1": 86400,
+        "W1": 604800,
+        "MN1": 2592000,
+    }
+    seconds_per_bar = seconds_map.get(timeframe.upper(), 86400)
+    delta_seconds = count * seconds_per_bar * 3
+    from datetime import timedelta
+    return end_time - timedelta(seconds=delta_seconds)
+
+
 def fetch_ohlcv_rows(
     service: MarketDataService,
     symbol: str,
@@ -357,6 +403,33 @@ def fetch_ohlcv_rows(
         )
         return bars[-count:] if len(bars) > count else bars
 
+    if ohlcv_source == "remote":
+        try:
+            available = service._remote_client.get_available_ohlcv_range(symbol, mt5_timeframe)
+            if available is not None:
+                start_est = estimate_start_time(available.end, mt5_timeframe, count)
+                if start_est < available.start:
+                    start_est = available.start
+                try:
+                    bars = service._remote_client.get_ohlcv(
+                        symbol, mt5_timeframe, start_est, available.end
+                    )
+                    return bars[-count:] if len(bars) > count else bars
+                except ValueError as ve:
+                    raise HTTPException(status_code=400, detail=str(ve)) from ve
+        except Exception:
+            pass
+
+        # Fallback to local if remote was unavailable or returned None for available range
+        available_loc = local_store.available_range(symbol, mt5_timeframe)
+        if available_loc is not None:
+            bars = service._local_client.get_ohlcv(
+                symbol, mt5_timeframe, available_loc.start, available_loc.end
+            )
+            return bars[-count:] if len(bars) > count else bars
+        return []
+
+
     if not service.mt5_available():
         if get_data_source() == "mt5":
             raise HTTPException(
@@ -402,16 +475,25 @@ def fetch_ohlcv_available_range(service: MarketDataService, symbol: str, timefra
     if ohlcv_source == "local":
         return local_store.available_range(symbol, mt5_timeframe)
 
+    if ohlcv_source == "remote":
+        try:
+            available = service._remote_client.get_available_ohlcv_range(symbol, mt5_timeframe)
+            if available is not None:
+                return available
+        except Exception:
+            pass
+        available_loc = local_store.available_range(symbol, mt5_timeframe)
+        if available_loc is not None:
+            return available_loc
+        return None
+
     if not service.is_available():
         raise HTTPException(
             status_code=503, detail="Market data provider is unavailable."
         )
 
-    client = (
-        service._remote_client if ohlcv_source == "remote" else service.mt5_client
-    )
     try:
-        return client.get_available_ohlcv_range(symbol, mt5_timeframe)
+        return service.mt5_client.get_available_ohlcv_range(symbol, mt5_timeframe)
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve)) from ve
     except ConnectionError as ce:

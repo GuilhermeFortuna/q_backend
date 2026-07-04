@@ -172,3 +172,72 @@ def test_ohlcv_available_range_uses_remote_client_when_source_is_remote(market_r
 
     assert available is sentinel
     remote.get_available_ohlcv_range.assert_called_once_with("WIN$", "M5")
+
+
+def test_ohlcv_uses_remote_client_when_source_is_remote_without_dates(market_root):
+    available_sentinel = MagicMock()
+    available_sentinel.start = datetime(2024, 3, 1)
+    available_sentinel.end = datetime(2024, 3, 10)
+
+    bars_sentinel = [object()]
+    remote = MagicMock()
+    remote.get_available_ohlcv_range.return_value = available_sentinel
+    remote.get_ohlcv.return_value = bars_sentinel
+
+    with (
+        patch.object(market_data_service, "_remote_client", remote),
+        patch(
+            "q_backend.market_data.api_service.resolve_ohlcv_source",
+            return_value="remote",
+        ),
+    ):
+        rows = market_service.fetch_ohlcv_rows(
+            market_data_service, "WIN$", "M5", count=100, start=None, end=None
+        )
+
+    assert rows is bars_sentinel
+    remote.get_available_ohlcv_range.assert_called_once_with("WIN$", "M5")
+    remote.get_ohlcv.assert_called_once()
+    # Check that it called get_ohlcv with estimated start time and available end time
+    args, kwargs = remote.get_ohlcv.call_args
+    assert args[0] == "WIN$"
+    assert args[1] == "M5"
+    assert args[3] == available_sentinel.end
+    assert args[2] <= available_sentinel.end
+
+
+def test_ohlcv_remote_falls_back_to_local_when_remote_returns_none(market_root):
+    # Setup mock remote client returning None for available range
+    remote = MagicMock()
+    remote.get_available_ohlcv_range.return_value = None
+
+    # Setup mock local client returning some bars
+    local_available = MagicMock()
+    local_available.start = datetime(2024, 3, 1)
+    local_available.end = datetime(2024, 3, 10)
+    
+    local_bars = [object()]
+    local_client = MagicMock()
+    local_client.get_ohlcv.return_value = local_bars
+
+    with (
+        patch.object(market_data_service, "_remote_client", remote),
+        patch.object(market_data_service, "_local_client", local_client),
+        patch(
+            "q_backend.market_data.api_service.resolve_ohlcv_source",
+            return_value="remote",
+        ),
+        patch(
+            "q_backend.market_data.local_store.available_range",
+            return_value=local_available,
+        ),
+    ):
+        rows = market_service.fetch_ohlcv_rows(
+            market_data_service, "WIN$", "M5", count=100, start=None, end=None
+        )
+
+    assert rows is local_bars
+    remote.get_available_ohlcv_range.assert_called_once_with("WIN$", "M5")
+    local_client.get_ohlcv.assert_called_once_with("WIN$", "M5", local_available.start, local_available.end)
+
+
