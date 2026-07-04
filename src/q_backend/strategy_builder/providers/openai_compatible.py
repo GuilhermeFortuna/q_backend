@@ -10,16 +10,10 @@ from typing import Any
 
 from q_backend.strategy_builder.capability_models import CapabilityRegistry
 from q_backend.strategy_builder.interpret_models import StrategyInterpretRequest
-from q_backend.strategy_builder.providers.base import RawAiResponse
+from q_backend.strategy_builder.providers.base import RawAiResponse, ProviderRequestError
 
 logger = logging.getLogger(__name__)
 
-
-class ProviderRequestError(RuntimeError):
-    def __init__(self, message: str, *, detail: str | None = None) -> None:
-        super().__init__(message)
-        self.message = message
-        self.detail = detail
 
 
 class OpenAICompatibleInterpreterProvider:

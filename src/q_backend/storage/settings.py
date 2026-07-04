@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     # delimiter avoids colliding with the colon in Ollama "name:tag" model ids.
     ai_strategy_models: str = ""
     ai_strategy_api_key: str = ""
+    ai_strategy_gemini_api_key: str = ""
+    ai_strategy_gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
     ai_strategy_timeout_seconds: int = 60
     ai_strategy_max_output_tokens: int = 4096
     # Forward execution worker (standalone process — not Dramatiq, not API lifespan).

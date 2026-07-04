@@ -31,7 +31,6 @@ from q_backend.strategy_builder.providers.factory import (
     build_strategy_interpreter_provider,
 )
 from q_backend.strategy_builder.providers.openai_compatible import (
-    OpenAICompatibleInterpreterProvider,
     ProviderRequestError,
 )
 from q_backend.strategy_builder.registry import build_capability_registry
@@ -134,8 +133,9 @@ def get_strategy_builder_models() -> AiStrategyModelsResponse:
         raise _ai_service_error_response(exc) from exc
 
     provider_model_ids: list[str] = []
-    if isinstance(provider, OpenAICompatibleInterpreterProvider):
-        provider_model_ids = provider.list_models()
+    list_models = getattr(provider, "list_models", None)
+    if callable(list_models):
+        provider_model_ids = list_models()
 
     curated = build_curated_model_options(settings)
     models = [

@@ -515,6 +515,30 @@ Q_WORKER_PROCESSES=14
 
 Optional paths above default under `data/` when unset. `Q_WORKER_PROCESSES` defaults to **28** in code (`Settings.worker_processes`); the example value `14` suits a 16-core machine.
 
+#### AI Strategy Builder Settings
+
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `Q_AI_STRATEGY_ENABLED` | `false` | Enable the AI strategy builder |
+| `Q_AI_STRATEGY_PROVIDER` | `openai_compatible` | Choice of provider (`openai_compatible`, `gemini`) |
+| `Q_AI_STRATEGY_BASE_URL` | `http://localhost:11434/v1` | Base URL for OpenAI-compatible API |
+| `Q_AI_STRATEGY_MODEL` | `qwen2.5-coder:14b` | Default model ID used for interpretation |
+| `Q_AI_STRATEGY_MODELS` | empty | Comma-separated list of allowlisted model ID\|Label pairs |
+| `Q_AI_STRATEGY_API_KEY` | empty | API key for OpenAI-compatible provider |
+| `Q_AI_STRATEGY_GEMINI_API_KEY` | empty | API key for Gemini provider |
+| `Q_AI_STRATEGY_GEMINI_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta` | Base URL for Gemini API |
+| `Q_AI_STRATEGY_TIMEOUT_SECONDS` | `60` | Request timeout in seconds |
+| `Q_AI_STRATEGY_MAX_OUTPUT_TOKENS` | `4096` | Maximum output tokens from the model |
+
+Worked `.env` example for Gemini:
+```ini
+Q_AI_STRATEGY_ENABLED=true
+Q_AI_STRATEGY_PROVIDER=gemini
+Q_AI_STRATEGY_MODEL=gemini-2.5-flash
+Q_AI_STRATEGY_MODELS=gemini-2.5-flash|Gemini 2.5 Flash,gemini-2.5-pro|Gemini 2.5 Pro
+Q_AI_STRATEGY_GEMINI_API_KEY="AIzaSyYourActualKeyHere"
+```
+
 ### 2. Install Dependencies
 ```bash
 uv sync --group dev

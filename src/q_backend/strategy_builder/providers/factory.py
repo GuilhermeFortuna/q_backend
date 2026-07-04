@@ -31,14 +31,27 @@ def build_strategy_interpreter_provider(
         )
 
     provider = resolved.ai_strategy_provider.strip().lower()
-    if provider != "openai_compatible":
+    if provider not in ("openai_compatible", "gemini"):
         raise AiMisconfiguredError(
             f"Unsupported AI strategy provider '{resolved.ai_strategy_provider}'. "
-            "Supported providers: openai_compatible."
+            "Supported providers: openai_compatible, gemini."
         )
 
     if not resolved.ai_strategy_model.strip():
         raise AiMisconfiguredError("Q_AI_STRATEGY_MODEL must be set.")
+
+    if provider == "gemini":
+        if not resolved.ai_strategy_gemini_api_key.strip():
+            raise AiMisconfiguredError("Q_AI_STRATEGY_GEMINI_API_KEY must be set.")
+        from q_backend.strategy_builder.providers.gemini import GeminiInterpreterProvider
+        return GeminiInterpreterProvider(
+            base_url=resolved.ai_strategy_gemini_base_url,
+            model=resolved.ai_strategy_model,
+            api_key=resolved.ai_strategy_gemini_api_key,
+            timeout_seconds=resolved.ai_strategy_timeout_seconds,
+            max_output_tokens=resolved.ai_strategy_max_output_tokens,
+        )
+
     if not resolved.ai_strategy_base_url.strip():
         raise AiMisconfiguredError("Q_AI_STRATEGY_BASE_URL must be set.")
 
@@ -49,3 +62,4 @@ def build_strategy_interpreter_provider(
         timeout_seconds=resolved.ai_strategy_timeout_seconds,
         max_output_tokens=resolved.ai_strategy_max_output_tokens,
     )
+

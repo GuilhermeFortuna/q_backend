@@ -118,3 +118,76 @@ def test_get_strategy_builder_models_when_ai_disabled(monkeypatch):
     assert exc_info.value.status_code == 503
     assert exc_info.value.detail["status"] == "ai_disabled"
     get_settings.cache_clear()
+
+
+def test_get_strategy_builder_models_gemini_provider(monkeypatch):
+    monkeypatch.setenv("Q_AI_STRATEGY_ENABLED", "true")
+    monkeypatch.setenv("Q_AI_STRATEGY_PROVIDER", "gemini")
+    monkeypatch.setenv("Q_AI_STRATEGY_MODEL", "gemini-2.5-flash")
+    monkeypatch.setenv("Q_AI_STRATEGY_GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv(
+        "Q_AI_STRATEGY_MODELS",
+        "gemini-2.5-flash|Gemini 2.5 Flash,gemini-2.5-pro|Gemini 2.5 Pro",
+    )
+    get_settings.cache_clear()
+
+    from q_backend.strategy_builder.providers.gemini import GeminiInterpreterProvider
+    provider = GeminiInterpreterProvider(
+        base_url="https://generativelanguage.googleapis.com/v1beta",
+        model="gemini-2.5-flash",
+        api_key="test-key",
+    )
+
+    with patch.object(provider, "list_models", return_value=["gemini-2.5-flash"]):
+        with patch(
+            "q_backend.api.routers.strategy_builder.build_strategy_interpreter_provider",
+            return_value=provider,
+        ):
+            response = get_strategy_builder_models()
+
+    assert response.provider == "gemini"
+    assert response.default_model == "gemini-2.5-flash"
+    assert len(response.models) == 2
+    assert response.models[0].id == "gemini-2.5-flash"
+    assert response.models[0].available is True
+    assert response.models[1].id == "gemini-2.5-pro"
+    assert response.models[1].available is False
+    get_settings.cache_clear()
+
+
+def test_factory_gemini_missing_api_key(monkeypatch):
+    monkeypatch.setenv("Q_AI_STRATEGY_ENABLED", "true")
+    monkeypatch.setenv("Q_AI_STRATEGY_PROVIDER", "gemini")
+    monkeypatch.setenv("Q_AI_STRATEGY_MODEL", "gemini-2.5-flash")
+    monkeypatch.setenv("Q_AI_STRATEGY_GEMINI_API_KEY", "")
+    get_settings.cache_clear()
+
+    from q_backend.strategy_builder.providers.factory import (
+        build_strategy_interpreter_provider,
+        AiMisconfiguredError,
+    )
+
+    with pytest.raises(AiMisconfiguredError) as exc_info:
+        build_strategy_interpreter_provider()
+
+    assert "Q_AI_STRATEGY_GEMINI_API_KEY" in str(exc_info.value)
+    get_settings.cache_clear()
+
+
+def test_factory_unsupported_provider_lists_both(monkeypatch):
+    monkeypatch.setenv("Q_AI_STRATEGY_ENABLED", "true")
+    monkeypatch.setenv("Q_AI_STRATEGY_PROVIDER", "unknown_provider")
+    get_settings.cache_clear()
+
+    from q_backend.strategy_builder.providers.factory import (
+        build_strategy_interpreter_provider,
+        AiMisconfiguredError,
+    )
+
+    with pytest.raises(AiMisconfiguredError) as exc_info:
+        build_strategy_interpreter_provider()
+
+    assert "openai_compatible" in str(exc_info.value)
+    assert "gemini" in str(exc_info.value)
+    get_settings.cache_clear()
+
