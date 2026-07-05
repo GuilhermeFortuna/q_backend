@@ -1,10 +1,14 @@
 """AI strategy interpreter providers."""
 
 from q_backend.strategy_builder.providers.base import RawAiResponse, StrategyInterpreterProvider
-from q_backend.strategy_builder.providers.factory import build_strategy_interpreter_provider
+from q_backend.strategy_builder.providers.factory import (
+    build_strategy_interpreter_provider,
+    build_strategy_interpreter_providers,
+)
 
 __all__ = [
     "RawAiResponse",
     "StrategyInterpreterProvider",
     "build_strategy_interpreter_provider",
+    "build_strategy_interpreter_providers",
 ]

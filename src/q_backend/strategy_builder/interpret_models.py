@@ -19,6 +19,7 @@ class ConversationMessage(BaseModel):
 class StrategyInterpretRequest(BaseModel):
     message: str = Field(min_length=1)
     model: str | None = None
+    provider: str | None = None
     # Prior turns for multi-turn refinement. The current user turn may appear as
     # the last entry; the server dedupes it against ``message`` when building the
     # prompt so it is not repeated in the history section.
@@ -55,11 +56,18 @@ class AiModelOption(BaseModel):
     id: str
     label: str
     available: bool = False
+    provider: str
+
+
+class AiProviderOption(BaseModel):
+    id: str
+    label: str
 
 
 class AiStrategyModelsResponse(BaseModel):
     provider: str
     default_model: str
+    providers: list[AiProviderOption] = Field(default_factory=list)
     models: list[AiModelOption] = Field(default_factory=list)
 
 

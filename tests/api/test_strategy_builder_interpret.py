@@ -273,8 +273,8 @@ def test_timeout_provider_errors_return_frontend_renderable_service_error(ai_ena
     provider.interpret = _raise_timeout  # type: ignore[method-assign]
 
     with patch(
-        "q_backend.api.routers.strategy_builder.build_strategy_interpreter_provider",
-        return_value=provider,
+        "q_backend.api.routers.strategy_builder.build_strategy_interpreter_providers",
+        return_value={"openai_compatible": provider},
     ):
         with pytest.raises(HTTPException) as exc_info:
             interpret_strategy_builder_request(
@@ -291,8 +291,8 @@ def test_interpret_endpoint_uses_registry_backed_prompt(ai_enabled_settings):
     capabilities = build_capability_registry()
 
     with patch(
-        "q_backend.api.routers.strategy_builder.build_strategy_interpreter_provider",
-        return_value=provider,
+        "q_backend.api.routers.strategy_builder.build_strategy_interpreter_providers",
+        return_value={"openai_compatible": provider},
     ):
         response = interpret_strategy_builder_request(
             StrategyInterpretRequest(
@@ -335,8 +335,8 @@ def test_interpret_request_model_override_is_passed_to_provider(ai_enabled_setti
     provider.interpret = _capture_interpret  # type: ignore[method-assign]
 
     with patch(
-        "q_backend.api.routers.strategy_builder.build_strategy_interpreter_provider",
-        return_value=provider,
+        "q_backend.api.routers.strategy_builder.build_strategy_interpreter_providers",
+        return_value={"openai_compatible": provider},
     ):
         interpret_strategy_builder_request(
             StrategyInterpretRequest(
@@ -346,6 +346,50 @@ def test_interpret_request_model_override_is_passed_to_provider(ai_enabled_setti
         )
 
     assert captured["model"] == "test-model-b"
+
+
+def test_interpret_explicit_gemini_provider_routes_to_gemini(
+    ai_enabled_settings, monkeypatch
+):
+    monkeypatch.setenv("Q_AI_STRATEGY_GEMINI_API_KEY", "test-key")
+    get_settings.cache_clear()
+    local = FakeInterpreterProvider(
+        content=json.dumps(_ai_response_payload()),
+        provider_name="openai_compatible",
+    )
+    gemini = FakeInterpreterProvider(
+        content=json.dumps(_ai_response_payload()),
+        provider_name="gemini",
+    )
+
+    with patch(
+        "q_backend.api.routers.strategy_builder.build_strategy_interpreter_providers",
+        return_value={"openai_compatible": local, "gemini": gemini},
+    ):
+        response = interpret_strategy_builder_request(
+            StrategyInterpretRequest(
+                message="Create an EMA strategy.",
+                provider="gemini",
+                model="gemini-2.5-flash",
+            )
+        )
+
+    assert response.compiled_strategy is not None
+    assert gemini.calls == 1
+    assert local.calls == 0
+
+
+def test_interpret_unknown_explicit_provider_returns_422(ai_enabled_settings):
+    with pytest.raises(HTTPException) as exc_info:
+        interpret_strategy_builder_request(
+            StrategyInterpretRequest(
+                message="Create an EMA strategy.",
+                provider="unknown-provider",
+            )
+        )
+
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail["status"] == "invalid_provider"
 
 
 def test_interpret_unknown_model_returns_misconfigured(ai_enabled_settings):
@@ -414,8 +458,8 @@ def test_interpret_endpoint_surfaces_change_notes(ai_enabled_settings):
     )
 
     with patch(
-        "q_backend.api.routers.strategy_builder.build_strategy_interpreter_provider",
-        return_value=provider,
+        "q_backend.api.routers.strategy_builder.build_strategy_interpreter_providers",
+        return_value={"openai_compatible": provider},
     ):
         response = interpret_strategy_builder_request(
             StrategyInterpretRequest(message="Switch to hourly bars.")

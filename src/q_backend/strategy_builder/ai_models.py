@@ -7,6 +7,10 @@ from dataclasses import dataclass
 from q_backend.storage.settings import Settings
 from q_backend.strategy_builder.providers.factory import AiMisconfiguredError
 
+DEFAULT_GEMINI_MODELS = (
+    "gemini-2.5-flash|Gemini 2.5 Flash,gemini-2.5-pro|Gemini 2.5 Pro"
+)
+
 
 @dataclass(frozen=True)
 class CuratedModelOption:
@@ -38,35 +42,81 @@ def parse_ai_strategy_models(raw: str) -> list[CuratedModelOption]:
     return options
 
 
-def build_curated_model_options(settings: Settings) -> list[CuratedModelOption]:
-    parsed = parse_ai_strategy_models(settings.ai_strategy_models)
+def _curated_models_raw(settings: Settings, provider_id: str) -> str:
+    if provider_id == "gemini":
+        raw = settings.ai_strategy_gemini_models.strip()
+        return raw or DEFAULT_GEMINI_MODELS
+    return settings.ai_strategy_models
+
+
+def build_curated_model_options(
+    settings: Settings,
+    provider_id: str = "openai_compatible",
+) -> list[CuratedModelOption]:
+    parsed = parse_ai_strategy_models(_curated_models_raw(settings, provider_id))
     if parsed:
         return parsed
     default_model = settings.ai_strategy_model.strip()
-    if not default_model:
-        return []
-    return [CuratedModelOption(id=default_model, label=default_model)]
+    if (
+        provider_id == settings.ai_strategy_provider.strip().lower()
+        and default_model
+    ):
+        return [CuratedModelOption(id=default_model, label=default_model)]
+    return []
 
 
-def build_model_allowlist(settings: Settings) -> list[str]:
+def build_model_allowlist(
+    settings: Settings,
+    provider_id: str = "openai_compatible",
+) -> list[str]:
     allowlist: list[str] = []
     seen: set[str] = set()
-    for option in build_curated_model_options(settings):
+    for option in build_curated_model_options(settings, provider_id):
         if option.id not in seen:
             seen.add(option.id)
             allowlist.append(option.id)
-    default_model = settings.ai_strategy_model.strip()
-    if default_model and default_model not in seen:
-        allowlist.insert(0, default_model)
+    if provider_id == settings.ai_strategy_provider.strip().lower():
+        default_model = settings.ai_strategy_model.strip()
+        if default_model and default_model not in seen:
+            allowlist.insert(0, default_model)
     return allowlist
 
 
-def resolve_interpret_model(request_model: str | None, settings: Settings) -> str:
-    allowlist = build_model_allowlist(settings)
+def resolve_provider_default_model(settings: Settings, provider_id: str) -> str:
+    allowlist = build_model_allowlist(settings, provider_id)
     if not allowlist:
-        raise AiMisconfiguredError("Q_AI_STRATEGY_MODEL must be set.")
+        if provider_id == settings.ai_strategy_provider.strip().lower():
+            default_model = settings.ai_strategy_model.strip()
+            if default_model:
+                return default_model
+        raise AiMisconfiguredError(
+            f"No curated models configured for provider '{provider_id}'."
+        )
 
-    selected = (request_model or settings.ai_strategy_model).strip()
+    if provider_id == settings.ai_strategy_provider.strip().lower():
+        selected = settings.ai_strategy_model.strip()
+        if selected in allowlist:
+            return selected
+    return allowlist[0]
+
+
+def resolve_interpret_model(
+    request_model: str | None,
+    settings: Settings,
+    provider_id: str | None = None,
+) -> str:
+    resolved_provider = (provider_id or settings.ai_strategy_provider).strip().lower()
+    allowlist = build_model_allowlist(settings, resolved_provider)
+    if not allowlist:
+        raise AiMisconfiguredError(
+            f"No curated models configured for provider '{resolved_provider}'."
+        )
+
+    if request_model is None or not request_model.strip():
+        selected = resolve_provider_default_model(settings, resolved_provider)
+    else:
+        selected = request_model.strip()
+
     if not selected:
         raise AiMisconfiguredError("Q_AI_STRATEGY_MODEL must be set.")
     if selected not in allowlist:

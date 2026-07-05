@@ -16,6 +16,9 @@ from q_backend.strategy_builder.ai_models import (
     resolve_interpret_model,
 )
 from q_backend.strategy_builder.providers.factory import AiMisconfiguredError
+from q_backend.strategy_builder.providers.factory import (
+    build_strategy_interpreter_providers,
+)
 from q_backend.strategy_builder.providers.openai_compatible import (
     OpenAICompatibleInterpreterProvider,
 )
@@ -79,8 +82,8 @@ def test_get_strategy_builder_models_marks_provider_availability(ai_enabled_sett
     )
     with patch.object(provider, "list_models", return_value=["gemma4-e4b:latest"]):
         with patch(
-            "q_backend.api.routers.strategy_builder.build_strategy_interpreter_provider",
-            return_value=provider,
+            "q_backend.api.routers.strategy_builder.build_strategy_interpreter_providers",
+            return_value={"openai_compatible": provider},
         ):
             response = get_strategy_builder_models()
 
@@ -99,8 +102,8 @@ def test_get_strategy_builder_models_when_provider_unreachable(ai_enabled_settin
     )
     with patch.object(provider, "list_models", return_value=[]):
         with patch(
-            "q_backend.api.routers.strategy_builder.build_strategy_interpreter_provider",
-            return_value=provider,
+            "q_backend.api.routers.strategy_builder.build_strategy_interpreter_providers",
+            return_value={"openai_compatible": provider},
         ):
             response = get_strategy_builder_models()
 
@@ -125,8 +128,9 @@ def test_get_strategy_builder_models_gemini_provider(monkeypatch):
     monkeypatch.setenv("Q_AI_STRATEGY_PROVIDER", "gemini")
     monkeypatch.setenv("Q_AI_STRATEGY_MODEL", "gemini-2.5-flash")
     monkeypatch.setenv("Q_AI_STRATEGY_GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("Q_AI_STRATEGY_BASE_URL", "")
     monkeypatch.setenv(
-        "Q_AI_STRATEGY_MODELS",
+        "Q_AI_STRATEGY_GEMINI_MODELS",
         "gemini-2.5-flash|Gemini 2.5 Flash,gemini-2.5-pro|Gemini 2.5 Pro",
     )
     get_settings.cache_clear()
@@ -138,10 +142,10 @@ def test_get_strategy_builder_models_gemini_provider(monkeypatch):
         api_key="test-key",
     )
 
-    with patch.object(provider, "list_models", return_value=["gemini-2.5-flash"]):
+    with patch.object(provider, "list_models") as list_models:
         with patch(
-            "q_backend.api.routers.strategy_builder.build_strategy_interpreter_provider",
-            return_value=provider,
+            "q_backend.api.routers.strategy_builder.build_strategy_interpreter_providers",
+            return_value={"gemini": provider},
         ):
             response = get_strategy_builder_models()
 
@@ -151,7 +155,8 @@ def test_get_strategy_builder_models_gemini_provider(monkeypatch):
     assert response.models[0].id == "gemini-2.5-flash"
     assert response.models[0].available is True
     assert response.models[1].id == "gemini-2.5-pro"
-    assert response.models[1].available is False
+    assert response.models[1].available is True
+    list_models.assert_not_called()
     get_settings.cache_clear()
 
 
@@ -170,8 +175,81 @@ def test_factory_gemini_missing_api_key(monkeypatch):
     with pytest.raises(AiMisconfiguredError) as exc_info:
         build_strategy_interpreter_provider()
 
-    assert "Q_AI_STRATEGY_GEMINI_API_KEY" in str(exc_info.value)
+    assert "not configured" in str(exc_info.value)
     get_settings.cache_clear()
+
+
+def test_provider_registry_builds_both_configured_providers(ai_enabled_settings, monkeypatch):
+    monkeypatch.setenv("Q_AI_STRATEGY_GEMINI_API_KEY", "test-key")
+    get_settings.cache_clear()
+
+    providers = build_strategy_interpreter_providers(get_settings())
+
+    assert list(providers) == ["openai_compatible", "gemini"]
+
+
+def test_models_aggregates_default_first_and_isolates_local_probe_failure(
+    ai_enabled_settings, monkeypatch
+):
+    monkeypatch.setenv("Q_AI_STRATEGY_GEMINI_API_KEY", "test-key")
+    get_settings.cache_clear()
+    providers = build_strategy_interpreter_providers(get_settings())
+    local = providers["openai_compatible"]
+    gemini = providers["gemini"]
+
+    with patch.object(local, "list_models", side_effect=RuntimeError("offline")):
+        with patch.object(gemini, "list_models") as gemini_list_models:
+            with patch(
+                "q_backend.api.routers.strategy_builder.build_strategy_interpreter_providers",
+                return_value=providers,
+            ):
+                response = get_strategy_builder_models()
+
+    assert [provider.id for provider in response.providers] == [
+        "openai_compatible",
+        "gemini",
+    ]
+    assert [model.id for model in response.models] == [
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+    ]
+    assert all(model.provider == "gemini" and model.available for model in response.models)
+    gemini_list_models.assert_not_called()
+
+
+def test_single_provider_models_preserves_core_shape_with_additive_fields(
+    ai_enabled_settings,
+):
+    provider = OpenAICompatibleInterpreterProvider(
+        base_url="http://localhost:11434/v1",
+        model="gemma4-e4b:latest",
+    )
+    with patch.object(provider, "list_models", return_value=["gemma4-e4b:latest"]):
+        with patch(
+            "q_backend.api.routers.strategy_builder.build_strategy_interpreter_providers",
+            return_value={"openai_compatible": provider},
+        ):
+            payload = get_strategy_builder_models().model_dump(mode="json")
+
+    assert {
+        "provider": payload["provider"],
+        "default_model": payload["default_model"],
+        "models": [
+            {key: model[key] for key in ("id", "label", "available")}
+            for model in payload["models"]
+        ],
+    } == {
+        "provider": "openai_compatible",
+        "default_model": "gemma4-e4b:latest",
+        "models": [
+            {"id": "gemma4-e4b:latest", "label": "Gemma 4 E4B", "available": True},
+            {"id": "qwen3.6:27b", "label": "Qwen 3.6 27B", "available": False},
+        ],
+    }
+    assert payload["providers"] == [
+        {"id": "openai_compatible", "label": "Local (Ollama)"}
+    ]
+    assert all(model["provider"] == "openai_compatible" for model in payload["models"])
 
 
 def test_factory_unsupported_provider_lists_both(monkeypatch):
@@ -190,4 +268,3 @@ def test_factory_unsupported_provider_lists_both(monkeypatch):
     assert "openai_compatible" in str(exc_info.value)
     assert "gemini" in str(exc_info.value)
     get_settings.cache_clear()
-
