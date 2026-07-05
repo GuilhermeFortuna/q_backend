@@ -161,3 +161,9 @@ def test_system_prompt_lists_change_notes_output_key():
     assert "- change_notes (array of strings" in prompt
     assert "11. When a Current StrategySpec draft is provided" in prompt
     assert "13. When the conversation shows the user answering" in prompt
+
+
+def test_system_prompt_length_budget():
+    prompt = build_system_prompt(build_capability_registry())
+    baseline = 39138
+    assert len(prompt) <= baseline + 500, f"System prompt length {len(prompt)} exceeds budget of {baseline + 500}"

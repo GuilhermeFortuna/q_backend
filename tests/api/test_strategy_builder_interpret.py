@@ -467,3 +467,113 @@ def test_interpret_endpoint_surfaces_change_notes(ai_enabled_settings):
 
     assert response.change_notes == ["set timeframe D1 -> H1"]
     assert response.model_dump(mode="json")["change_notes"] == ["set timeframe D1 -> H1"]
+
+
+def test_golden_two_turn_momentum_collaborator_flow():
+    # Turn 1: Vague opener
+    turn1_payload = {
+        "summary": "Drafted momentum strategy based on standard assumptions.",
+        "assumptions": [
+            "Assumed timeframe is D1.",
+            "Assumed universe is PETR4."
+        ],
+        "questions": [
+            "What specific momentum indicator do you want to use (e.g. EMA crossover)?",
+            "What timeframe would you like?"
+        ],
+        "unsupported_requests": [],
+        "strategy_spec": {
+            "schema_version": "strategy_spec.v1",
+            "name": "Momentum Strategy",
+            "universe": ["PETR4"],
+            "market": "B3",
+            "timeframe": "D1",
+            "indicators": [],
+            "entry": {"all": []},
+            "exit": {"any": []},
+            "risk": {"position_sizing": "fixed_quantity", "quantity": 1.0},
+            "execution_assumptions": {
+                "signal_timing": "closed_bar",
+                "entry_timing": "next_bar_open",
+                "allow_short": False,
+            },
+        },
+        "confidence": 0.6,
+    }
+    
+    provider_turn1 = FakeInterpreterProvider(content=json.dumps(turn1_payload))
+    request_turn1 = StrategyInterpretRequest(
+        message="I want something that rides momentum"
+    )
+    
+    response_turn1 = interpret_strategy_request(
+        request_turn1,
+        provider=provider_turn1,
+    )
+    
+    assert response_turn1.strategy_spec is not None
+    assert response_turn1.strategy_spec["name"] == "Momentum Strategy"
+    assert len(response_turn1.assumptions) >= 1
+    assert 1 <= len(response_turn1.questions) <= 3
+    assert response_turn1.questions[0] == "What specific momentum indicator do you want to use (e.g. EMA crossover)?"
+
+    # Turn 2: Incorporate answer
+    turn2_payload = {
+        "summary": "Updated strategy to use EMA crossover.",
+        "assumptions": [
+            "Assumed timeframe is D1.",
+            "Assumed universe is PETR4."
+        ],
+        "questions": [
+            "What timeframe would you like?"
+        ],
+        "unsupported_requests": [],
+        "strategy_spec": {
+            **EMA_CROSS_SPEC,
+            "name": "EMA Crossover Momentum",
+        },
+        "confidence": 0.85,
+    }
+    provider_turn2 = FakeInterpreterProvider(content=json.dumps(turn2_payload))
+    
+    from q_backend.strategy_builder.interpret_models import ConversationMessage
+    request_turn2 = StrategyInterpretRequest(
+        message="Use an EMA crossover of 20 and 50 periods.",
+        conversation=[
+            ConversationMessage(role="user", content="I want something that rides momentum"),
+            ConversationMessage(role="assistant", content=response_turn1.summary + "\nQuestions: " + ", ".join(response_turn1.questions)),
+            ConversationMessage(role="user", content="Use an EMA crossover of 20 and 50 periods."),
+        ],
+        current_spec=response_turn1.strategy_spec,
+    )
+    
+    response_turn2 = interpret_strategy_request(
+        request_turn2,
+        provider=provider_turn2,
+    )
+    
+    assert response_turn2.strategy_spec is not None
+    assert response_turn2.strategy_spec["name"] == "EMA Crossover Momentum"
+    assert "What specific momentum indicator do you want to use" not in response_turn2.questions
+
+
+def test_live_ai_interpreter_vague_opener():
+    import os
+    if not os.getenv("Q_TEST_LIVE_AI"):
+        pytest.skip("Q_TEST_LIVE_AI environment variable not set to run live AI tests")
+    
+    from q_backend.storage.settings import get_settings
+    from q_backend.strategy_builder.providers.factory import build_strategy_interpreter_provider
+    
+    settings = get_settings()
+    provider = build_strategy_interpreter_provider(settings)
+    
+    request = StrategyInterpretRequest(
+        message="I want something that rides momentum"
+    )
+    
+    response = interpret_strategy_request(request, provider=provider)
+    
+    assert response.summary
+    assert len(response.questions) >= 1
+    assert response.strategy_spec is not None or response.questions
