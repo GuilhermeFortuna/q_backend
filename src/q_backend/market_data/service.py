@@ -172,6 +172,13 @@ class MarketDataService:
         Best-effort MT5 connect on startup. Failure does not crash the API;
         auto mode falls back to the local provider.
         """
+        if not self.mt5_client.is_supported():
+            logger.info(
+                "MetaTrader5 is not supported on this platform (Linux stub); "
+                "skipping native MT5 connect and falling back to the remote gateway "
+                "or local data."
+            )
+            return False
         logger.info("Initializing MetaTrader client connection (best-effort)...")
         try:
             return self.mt5_client.connect()

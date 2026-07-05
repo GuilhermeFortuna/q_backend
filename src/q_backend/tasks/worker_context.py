@@ -27,7 +27,7 @@ def init_worker_market_data() -> None:
         if _service is None:
             _service = MarketDataService()
         try:
-            if not _service.initialize():
+            if not _service.initialize() and _service.mt5_client.is_supported():
                 logger.error("MT5 initialization returned False on worker boot")
         except Exception:
             logger.exception("MT5 initialization raised on worker boot")
