@@ -517,27 +517,37 @@ Optional paths above default under `data/` when unset. `Q_WORKER_PROCESSES` defa
 
 #### AI Strategy Builder Settings
 
+All providers whose credentials are present are registered and returned together from
+`GET /api/v1/strategy-builder/models`. `Q_AI_STRATEGY_PROVIDER` names the **default**
+provider used by `POST /interpret` when the request omits `provider`. Gemini curated
+models are marked available without a remote probe; local Ollama models are probed via
+`list_models()` as before.
+
 | Setting | Default | Purpose |
 |---------|---------|---------|
 | `Q_AI_STRATEGY_ENABLED` | `false` | Enable the AI strategy builder |
-| `Q_AI_STRATEGY_PROVIDER` | `openai_compatible` | Choice of provider (`openai_compatible`, `gemini`) |
+| `Q_AI_STRATEGY_PROVIDER` | `openai_compatible` | Default provider (`openai_compatible`, `gemini`) |
 | `Q_AI_STRATEGY_BASE_URL` | `http://localhost:11434/v1` | Base URL for OpenAI-compatible API |
 | `Q_AI_STRATEGY_MODEL` | `qwen2.5-coder:14b` | Default model ID used for interpretation |
-| `Q_AI_STRATEGY_MODELS` | empty | Comma-separated list of allowlisted model ID\|Label pairs |
+| `Q_AI_STRATEGY_MODELS` | empty | OpenAI-compatible curated list: model ID\|Label pairs |
+| `Q_AI_STRATEGY_GEMINI_MODELS` | empty (code default) | Gemini curated list: model ID\|Label pairs |
 | `Q_AI_STRATEGY_API_KEY` | empty | API key for OpenAI-compatible provider |
 | `Q_AI_STRATEGY_GEMINI_API_KEY` | empty | API key for Gemini provider |
 | `Q_AI_STRATEGY_GEMINI_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta` | Base URL for Gemini API |
 | `Q_AI_STRATEGY_TIMEOUT_SECONDS` | `60` | Request timeout in seconds |
 | `Q_AI_STRATEGY_MAX_OUTPUT_TOKENS` | `4096` | Maximum output tokens from the model |
 
-Worked `.env` example for Gemini:
+Worked `.env` example for Gemini-only:
 ```ini
 Q_AI_STRATEGY_ENABLED=true
 Q_AI_STRATEGY_PROVIDER=gemini
 Q_AI_STRATEGY_MODEL=gemini-2.5-flash
-Q_AI_STRATEGY_MODELS=gemini-2.5-flash|Gemini 2.5 Flash,gemini-2.5-pro|Gemini 2.5 Pro
+Q_AI_STRATEGY_GEMINI_MODELS=gemini-2.5-flash|Gemini 2.5 Flash,gemini-2.5-pro|Gemini 2.5 Pro
 Q_AI_STRATEGY_GEMINI_API_KEY="AIzaSyYourActualKeyHere"
 ```
+
+Both providers (local + Gemini) can be configured in one `.env`; set
+`Q_AI_STRATEGY_PROVIDER` to whichever should be the default for `/interpret`.
 
 ### 2. Install Dependencies
 ```bash
@@ -608,6 +618,10 @@ it alongside the API:
 ```bash
 uv run worker
 ```
+
+The worker uses the same optional `Q_SENTRY_DSN` configuration as the API. When
+set, final actor failures are reported with safe actor and trading-ID tags; when
+unset, worker telemetry remains dormant.
 
 This launches `dramatiq q_backend.tasks --processes $Q_WORKER_PROCESSES --threads 1`.
 The pool is the single CPU budget shared by every job: a job fans its work out into

@@ -2,12 +2,16 @@ import argparse
 import sys
 from pathlib import Path
 
+import sentry_sdk
+
+from q_backend.observability.sentry import init_sentry
 from q_backend.optimization import (
     DefaultBacktestRunner,
     OptimizationRunner,
     export_results,
     load_optimization_config,
 )
+from q_backend.storage.settings import get_settings
 
 
 def _project_root() -> Path:
@@ -15,6 +19,8 @@ def _project_root() -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
+    init_sentry(get_settings(), component="cli")
+    sentry_sdk.set_tag("cli_command", "q_optimize")
     parser = argparse.ArgumentParser(description="Run strategy parameter optimization")
     parser.add_argument(
         "--config",

@@ -18,6 +18,7 @@ from q_backend.api.schemas.backtest import (
 )
 from q_backend.api.schemas.common import BulkDeleteBacktestsRequest, BulkDeleteResponse
 from q_backend.backtesting import run_service as backtest_run_service
+from q_backend.observability.sentry import trading_context
 from q_backend.storage.lake import read_backtest_result
 
 router = APIRouter(tags=["backtest"])
@@ -31,7 +32,8 @@ def start_backtest(request: BacktestJobRequest):
             status_code=400,
             detail="Multi-entry backtests are only supported for the candle engine.",
         )
-    run_id = backtest_jobs.start_job(request)
+    with trading_context(symbol=request.symbol, strategy=request.strategy):
+        run_id = backtest_jobs.start_job(request)
     return {"run_id": run_id, "status": "running"}
 
 

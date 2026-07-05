@@ -14,13 +14,17 @@ from q_backend.api.dependencies import market_data_service
 from q_backend.features.evaluation_service import reconcile_orphaned_eval_runs
 from q_backend.features.sync import sync_registry_to_db
 from q_backend.neural.sync import sync_neural_models_to_db
+from q_backend.observability.sentry import init_sentry
 from q_backend.storage.db.engine import session_scope
+from q_backend.storage.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Production trigger: API process startup, before any fallible startup work.
+    init_sentry(get_settings(), component="api")
     # Startup: Connect to MetaTrader 5
     logger.info("Starting up API, initializing market data providers...")
     success = market_data_service.initialize()

@@ -6,12 +6,16 @@ import argparse
 import sys
 from datetime import datetime, timezone
 
+import sentry_sdk
+
 from q_backend.neural.training import default_train_encoder_config
 from q_backend.neural.training_pipeline import (
     TrainEncoderEvaluateSpec,
     run_train_encoder_pipeline,
 )
 from q_backend.storage.db.engine import session_scope
+from q_backend.observability.sentry import init_sentry
+from q_backend.storage.settings import get_settings
 
 _DEFAULT_INPUT_FEATURES: tuple[str, ...] = (
     "rsi",
@@ -32,6 +36,8 @@ def _parse_datetime(value: str) -> datetime:
 
 
 def main(argv: list[str] | None = None) -> int:
+    init_sentry(get_settings(), component="cli")
+    sentry_sdk.set_tag("cli_command", "q_train_encoder")
     parser = argparse.ArgumentParser(description="Train a neural encoder")
     parser.add_argument(
         "--kind",

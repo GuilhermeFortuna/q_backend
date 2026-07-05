@@ -18,6 +18,7 @@ from q_backend.api.schemas.optimization import (
 )
 from q_backend.market_data.service import MarketDataService
 from q_backend.optimization import OptimizationConfig
+from q_backend.observability.sentry import trading_context
 from q_backend.storage.db.repositories import (
     delete_optimization_studies,
     delete_optimization_study,
@@ -41,7 +42,8 @@ def start_optimization(
     progress and fetch results once the study is done.
     """
     try:
-        job = optimization_jobs.start_job(config, market_data_service=mds)
+        with trading_context(symbol=config.backtest.symbol):
+            job = optimization_jobs.start_job(config, market_data_service=mds)
     except Exception as exc:
         logger.error("Error starting optimization: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc

@@ -19,6 +19,7 @@ from q_backend.api.schemas.strategy_search import (
 from q_backend.backtesting.run_service import serialize_equity_artifact
 from q_backend.market_data.service import MarketDataService
 from q_backend.optimization.strategy_search import StrategySearchConfig
+from q_backend.observability.sentry import trading_context
 from q_backend.storage.db.repositories import (
     delete_strategy_search_run,
     list_strategy_search_runs,
@@ -37,7 +38,8 @@ def start_strategy_search(
 ):
     """Launch an asynchronous strategy search run."""
     try:
-        job = strategy_search_jobs.start_job(body, market_data_service=mds)
+        with trading_context(symbol=body.backtest.symbol):
+            job = strategy_search_jobs.start_job(body, market_data_service=mds)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:

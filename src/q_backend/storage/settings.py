@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     ai_strategy_api_key: str = ""
     ai_strategy_gemini_api_key: str = ""
     ai_strategy_gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    # Comma-separated Gemini curated list (same "model_id|Label" format as
+    # Q_AI_STRATEGY_MODELS). Defaults in code when unset.
+    ai_strategy_gemini_models: str = ""
     ai_strategy_timeout_seconds: int = 60
     ai_strategy_max_output_tokens: int = 4096
     # Cap how much prior chat is embedded in the interpret user prompt. Local
@@ -34,6 +37,10 @@ class Settings(BaseSettings):
     # capability registry and the current StrategySpec draft.
     ai_strategy_max_conversation_turns: int = 12
     ai_strategy_conversation_char_budget: int = 8000
+    sentry_dsn: str = ""
+    sentry_environment: str = "local"
+    sentry_traces_sample_rate: float = 0.2
+    sentry_profiles_sample_rate: float = 0.1
     # Forward execution worker (standalone process — not Dramatiq, not API lifespan).
     execution_worker_id: str = "execution-worker-1"
     execution_lease_ttl_seconds: int = 30

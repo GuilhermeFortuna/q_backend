@@ -14,10 +14,22 @@ budget instead of oversubscribing the machine.
 import os
 import sys
 
+from sentry_sdk.integrations.dramatiq import DramatiqIntegration
+
+from q_backend.observability.sentry import init_sentry
 from q_backend.storage.settings import get_settings
 
 
 def main() -> None:
+    settings = get_settings()
+    init_sentry(
+        settings,
+        component="worker",
+        extra_integrations=[DramatiqIntegration()],
+    )
+    # execv replaces this process; the marker makes the Dramatiq process repeat
+    # initialization before broker construction, while API imports stay inert.
+    os.environ["Q_DRAMATIQ_WORKER"] = "1"
     # Pin numeric libraries to one thread per worker process before the worker pool
     # boots; parallelism comes from the processes, not from BLAS/OpenMP threads.
     # (q_backend.tasks sets these too, but doing it here covers the master process
@@ -31,7 +43,7 @@ def main() -> None:
     ):
         os.environ.setdefault(var, "1")
 
-    processes = str(get_settings().worker_processes)
+    processes = str(settings.worker_processes)
     argv = [
         sys.executable,
         "-m",

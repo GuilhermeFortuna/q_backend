@@ -14,11 +14,16 @@ GIL-bound — only separate processes give real parallelism.
 """
 
 import logging
+import os
 
 import dramatiq
+import sentry_sdk
 from dramatiq.brokers.redis import RedisBroker
 from dramatiq.middleware import Middleware
+from sentry_sdk.integrations.dramatiq import DramatiqIntegration, SentryMiddleware
 
+from q_backend.observability.sentry import init_sentry
+from q_backend.observability.worker import SentryTradingContextMiddleware
 from q_backend.storage.settings import get_settings
 from q_backend.tasks.worker_context import shutdown_worker_market_data
 
@@ -46,11 +51,32 @@ class MarketDataMiddleware(Middleware):
 
     def before_worker_shutdown(self, broker, worker):  # noqa: D401 - dramatiq hook
         shutdown_worker_market_data()
+        sentry_sdk.flush(timeout=2)
 
 
 def _build_broker() -> RedisBroker:
     settings = get_settings()
+    worker_sentry_enabled = False
+    if os.environ.get("Q_DRAMATIQ_WORKER") == "1":
+        worker_sentry_enabled = init_sentry(
+            settings,
+            component="worker",
+            extra_integrations=[DramatiqIntegration()],
+        )
     redis_broker = RedisBroker(url=settings.redis_url)
+    trading_context_middleware = SentryTradingContextMiddleware(
+        enabled=worker_sentry_enabled,
+        worker_id=settings.execution_worker_id,
+    )
+    if worker_sentry_enabled:
+        # ``after_*`` hooks run in reverse. Placing our scope before Sentry's
+        # middleware keeps tags alive until Sentry captures the failure.
+        redis_broker.add_middleware(
+            trading_context_middleware,
+            before=SentryMiddleware,
+        )
+    else:
+        redis_broker.add_middleware(trading_context_middleware)
     redis_broker.add_middleware(MarketDataMiddleware())
     return redis_broker
 

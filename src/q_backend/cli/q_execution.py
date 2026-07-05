@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Generator
 
+import sentry_sdk
+
 from q_backend.execution.bar_coordinator import BarCoordinator
 from q_backend.execution.brokers.base import PaperCostConfig
 from q_backend.execution.brokers.paper import PaperBroker
@@ -23,6 +25,7 @@ from q_backend.execution.recovery import ExecutionRecovery
 from q_backend.execution.service import ExecutionService
 from q_backend.execution.worker import ExecutionWorker
 from q_backend.market_data.service import MarketDataService
+from q_backend.observability.sentry import init_sentry
 from q_backend.storage.db.engine import create_session_factory, session_scope
 from q_backend.storage.db.execution_repositories import (
     acquire_worker_lease,
@@ -255,6 +258,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
+    init_sentry(get_settings(), component="cli")
+    sentry_sdk.set_tag("cli_command", "q_execution")
     parser = build_parser()
     args = parser.parse_args(argv)
     _configure_logging(args.log_level)
