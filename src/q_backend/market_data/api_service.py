@@ -417,7 +417,7 @@ def fetch_ohlcv_rows(
                     return bars[-count:] if len(bars) > count else bars
                 except ValueError as ve:
                     raise HTTPException(status_code=400, detail=str(ve)) from ve
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 - fallback to local store if remote fails
             pass
 
         # Fallback to local if remote was unavailable or returned None for available range
@@ -480,7 +480,7 @@ def fetch_ohlcv_available_range(service: MarketDataService, symbol: str, timefra
             available = service._remote_client.get_available_ohlcv_range(symbol, mt5_timeframe)
             if available is not None:
                 return available
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 - fallback to local store if remote fails
             pass
         available_loc = local_store.available_range(symbol, mt5_timeframe)
         if available_loc is not None:

@@ -79,7 +79,7 @@ def get_git_sha() -> str:
             sha = res.stdout.strip()
             if sha:
                 return sha
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 - git resolution is best-effort fallback
         pass
     return "unknown"
 
