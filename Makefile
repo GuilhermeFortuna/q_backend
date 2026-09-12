@@ -23,4 +23,4 @@ contracts-check:
 		uv run --project "$$contracts_tmp/q_contracts" python "$$contracts_tmp/q_contracts/tools/generate.py" \
 			--language python --out "$$generated_tmp"; \
 	fi; \
-	diff -ru contracts "$$generated_tmp/python/q_contracts"
+	diff -ru --exclude='__pycache__' --exclude='*.pyc' contracts "$$generated_tmp/python/q_contracts"
