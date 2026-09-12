@@ -136,6 +136,7 @@ def test_get_strategy_builder_models_gemini_provider(monkeypatch):
     get_settings.cache_clear()
 
     from q_backend.strategy_builder.providers.gemini import GeminiInterpreterProvider
+
     provider = GeminiInterpreterProvider(
         base_url="https://generativelanguage.googleapis.com/v1beta",
         model="gemini-2.5-flash",
@@ -165,6 +166,7 @@ def test_factory_gemini_missing_api_key(monkeypatch):
     monkeypatch.setenv("Q_AI_STRATEGY_PROVIDER", "gemini")
     monkeypatch.setenv("Q_AI_STRATEGY_MODEL", "gemini-2.5-flash")
     monkeypatch.setenv("Q_AI_STRATEGY_GEMINI_API_KEY", "")
+    monkeypatch.setenv("Q_AI_STRATEGY_MODELS", "qwen2.5-coder:14b")
     get_settings.cache_clear()
 
     from q_backend.strategy_builder.providers.factory import (
@@ -188,9 +190,7 @@ def test_provider_registry_builds_both_configured_providers(ai_enabled_settings,
     assert list(providers) == ["openai_compatible", "gemini"]
 
 
-def test_models_aggregates_default_first_and_isolates_local_probe_failure(
-    ai_enabled_settings, monkeypatch
-):
+def test_models_aggregates_default_first_and_isolates_local_probe_failure(ai_enabled_settings, monkeypatch):
     monkeypatch.setenv("Q_AI_STRATEGY_GEMINI_API_KEY", "test-key")
     get_settings.cache_clear()
     providers = build_strategy_interpreter_providers(get_settings())
@@ -234,10 +234,7 @@ def test_single_provider_models_preserves_core_shape_with_additive_fields(
     assert {
         "provider": payload["provider"],
         "default_model": payload["default_model"],
-        "models": [
-            {key: model[key] for key in ("id", "label", "available")}
-            for model in payload["models"]
-        ],
+        "models": [{key: model[key] for key in ("id", "label", "available")} for model in payload["models"]],
     } == {
         "provider": "openai_compatible",
         "default_model": "gemma4-e4b:latest",
@@ -246,9 +243,7 @@ def test_single_provider_models_preserves_core_shape_with_additive_fields(
             {"id": "qwen3.6:27b", "label": "Qwen 3.6 27B", "available": False},
         ],
     }
-    assert payload["providers"] == [
-        {"id": "openai_compatible", "label": "Local (Ollama)"}
-    ]
+    assert payload["providers"] == [{"id": "openai_compatible", "label": "Local (Ollama)"}]
     assert all(model["provider"] == "openai_compatible" for model in payload["models"])
 
 

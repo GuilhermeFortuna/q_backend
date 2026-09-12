@@ -178,12 +178,8 @@ def test_strategy_search_graceful_degradation_when_persistence_unavailable(run_j
     assert status["status"] == "completed"
 
 
-def test_strategy_search_graceful_degradation_when_lake_unwritable(
-    run_jobs_sync, monkeypatch
-):
-    monkeypatch.setattr(
-        strategy_search_jobs, "_write_lake_artifacts", lambda *_a, **_k: None
-    )
+def test_strategy_search_graceful_degradation_when_lake_unwritable(run_jobs_sync, monkeypatch):
+    monkeypatch.setattr(strategy_search_jobs, "_write_lake_artifacts", lambda *_a, **_k: None)
     job = strategy_search_jobs.start_job(_request(n_trials=2))
     status = strategy_search_jobs.get_status_payload(job.run_id)
     assert status is not None
@@ -212,9 +208,7 @@ def test_strategy_search_results_rebuild_after_restart(run_jobs_sync, api_sessio
     assert len(rebuilt["candidates"]) == 2
 
 
-def test_strategy_search_cancel_skips_candidates(
-    run_jobs_sync, api_db_session, api_session_scope
-):
+def test_strategy_search_cancel_skips_candidates(run_jobs_sync, api_db_session, api_session_scope):
     # A run cancelled before its candidates execute finalizes as cancelled.
     with (
         patch("q_backend.api.strategy_search_jobs.session_scope", api_session_scope),
@@ -230,7 +224,7 @@ def test_strategy_search_cancel_skips_candidates(
     assert run.status == "cancelled"
 
 
-def test_cancel_orphaned_strategy_search_run(api_db_session, api_session_scope):
+def test_cancel_orphaned_strategy_search_run(api_db_session, api_session_scope, run_jobs_sync):
     # A run left "running" in the DB by a previous process: a DB row exists but no
     # worker is processing it.
     with patch("q_backend.api.strategy_search_jobs.session_scope", api_session_scope):
@@ -258,15 +252,9 @@ def test_reconcile_orphaned_strategy_search_runs(api_db_session, api_session_sco
     config = _request().model_dump(mode="json")
     with patch("q_backend.api.strategy_search_jobs.session_scope", api_session_scope):
         with api_session_scope() as session:
-            running = create_strategy_search_run(
-                session, name="r", config=config, status="running"
-            )
-            pending = create_strategy_search_run(
-                session, name="p", config=config, status="pending"
-            )
-            done = create_strategy_search_run(
-                session, name="d", config=config, status="completed"
-            )
+            running = create_strategy_search_run(session, name="r", config=config, status="running")
+            pending = create_strategy_search_run(session, name="p", config=config, status="pending")
+            done = create_strategy_search_run(session, name="d", config=config, status="completed")
             running_id, pending_id, done_id = running.id, pending.id, done.id
 
         count = strategy_search_jobs.reconcile_orphaned_runs()
@@ -278,9 +266,7 @@ def test_reconcile_orphaned_strategy_search_runs(api_db_session, api_session_sco
     assert get_strategy_search_run(api_db_session, done_id).status == "completed"
 
 
-def test_list_and_delete_strategy_search(
-    run_jobs_sync, api_db_session, api_session_scope, lake_root_path
-):
+def test_list_and_delete_strategy_search(run_jobs_sync, api_db_session, api_session_scope, lake_root_path):
     job = _start_persisted_job(api_session_scope, n_trials=2)
     api_db_session.expire_all()
 
@@ -300,12 +286,8 @@ def test_start_strategy_search_returns_422_for_short_range():
     request = _request(n_trials=1)
     request = request.model_copy(
         update={
-            "backtest": request.backtest.model_copy(
-                update={"end": datetime(2024, 2, 1)}
-            ),
-            "walkforward": request.walkforward.model_copy(
-                update={"train_days": 30, "test_days": 30, "min_windows": 2}
-            ),
+            "backtest": request.backtest.model_copy(update={"end": datetime(2024, 2, 1)}),
+            "walkforward": request.walkforward.model_copy(update={"train_days": 30, "test_days": 30, "min_windows": 2}),
         }
     )
 
@@ -322,9 +304,7 @@ def test_start_strategy_search_returns_422_for_multi_objective():
                 "start": "2024-01-01T00:00:00",
                 "end": "2024-06-01T00:00:00",
             },
-            objective=ObjectiveConfig(
-                mode=ObjectiveMode.MULTI_OBJECTIVE_RETURN_DRAWDOWN
-            ),
+            objective=ObjectiveConfig(mode=ObjectiveMode.MULTI_OBJECTIVE_RETURN_DRAWDOWN),
             walkforward=WalkForwardConfig(train_days=10, test_days=5),
             study=StudyConfig(name="multi", n_trials=1),
         )
@@ -371,28 +351,19 @@ def test_strategy_search_exit_quality_persists_and_rebuilds(
 
     api_db_session.expire_all()
     run = get_strategy_search_run(api_db_session, uuid.UUID(hex=job.run_id))
-    completed = [
-        item for item in run.candidates if item.status == "completed" and item.diagnostics
-    ]
+    completed = [item for item in run.candidates if item.status == "completed" and item.diagnostics]
     assert completed, "expected at least one completed candidate with diagnostics"
     persisted = completed[0]
     assert persisted.diagnostics is not None
     assert persisted.diagnostics.get("exit_quality") is not None
 
     trades_path = (
-        lake_root_path
-        / "strategy_search"
-        / job.run_id
-        / "candidates"
-        / persisted.candidate_id
-        / "oos_trades.parquet"
+        lake_root_path / "strategy_search" / job.run_id / "candidates" / persisted.candidate_id / "oos_trades.parquet"
     )
     assert trades_path.is_file()
 
 
-def test_strategy_search_old_candidate_without_exit_quality_serializes(
-    api_db_session, api_session_scope
-):
+def test_strategy_search_old_candidate_without_exit_quality_serializes(api_db_session, api_session_scope):
     from q_backend.storage.db.repositories import create_strategy_search_candidate
 
     with api_session_scope() as session:
@@ -424,9 +395,7 @@ def test_strategy_search_old_candidate_without_exit_quality_serializes(
     assert candidate.get("exit_quality") is None
 
 
-def test_strategy_search_old_candidate_without_exit_policy_metadata_serializes(
-    api_db_session, api_session_scope
-):
+def test_strategy_search_old_candidate_without_exit_policy_metadata_serializes(api_db_session, api_session_scope):
     from q_backend.storage.db.repositories import create_strategy_search_candidate
 
     with api_session_scope() as session:
@@ -460,9 +429,7 @@ def test_strategy_search_old_candidate_without_exit_policy_metadata_serializes(
     assert candidate.get("last_exit_mutation_op") is None
 
 
-def test_strategy_search_exit_preset_metadata_persists(
-    run_jobs_sync, api_db_session, api_session_scope
-):
+def test_strategy_search_exit_preset_metadata_persists(run_jobs_sync, api_db_session, api_session_scope):
     request = _request(n_trials=2, strategies=["MACrossover"]).model_copy(
         update={
             "exit_presets": ExitPresetSearchConfig(
@@ -490,9 +457,7 @@ def test_strategy_search_exit_preset_metadata_persists(
     assert persisted.exit_param_names == ["stop_loss_pct", "take_profit_pct"]
 
 
-def test_strategy_search_results_without_exit_metadata(
-    run_jobs_sync, api_session_scope
-):
+def test_strategy_search_results_without_exit_metadata(run_jobs_sync, api_session_scope):
     job = _start_persisted_job(api_session_scope, n_trials=2)
     with patch("q_backend.api.strategy_search_jobs.session_scope", api_session_scope):
         results = get_strategy_search_results(job.run_id)

@@ -119,9 +119,7 @@ def _start_persisted_job(api_session_scope, n_trials: int = 3):
     return job
 
 
-def test_optimization_persists_study_and_trials(
-    run_jobs_sync, api_db_session, api_session_scope
-):
+def test_optimization_persists_study_and_trials(run_jobs_sync, api_db_session, api_session_scope):
     job = _start_persisted_job(api_session_scope, n_trials=3)
     api_db_session.expire_all()
 
@@ -134,9 +132,7 @@ def test_optimization_persists_study_and_trials(
     assert len(study.trials) == 3
 
 
-def test_optimization_results_rebuild_after_restart(
-    run_jobs_sync, api_db_session, api_session_scope
-):
+def test_optimization_results_rebuild_after_restart(run_jobs_sync, api_db_session, api_session_scope):
     job = _start_persisted_job(api_session_scope, n_trials=3)
 
     with patch("q_backend.api.optimization_jobs.session_scope", api_session_scope):
@@ -147,9 +143,7 @@ def test_optimization_results_rebuild_after_restart(
     assert rebuilt["objective_mode"] == "maximize_net_profit"
 
 
-def test_list_optimizations_returns_persisted_studies(
-    run_jobs_sync, api_db_session, api_session_scope
-):
+def test_list_optimizations_returns_persisted_studies(run_jobs_sync, api_db_session, api_session_scope):
     job = _start_persisted_job(api_session_scope, n_trials=2)
     api_db_session.expire_all()
 
@@ -178,9 +172,7 @@ def test_optimization_status_rebuild_after_restart(run_jobs_sync, api_session_sc
     assert status["backtest_config"]["symbol"] == "WIN$"
 
 
-def test_delete_optimization_removes_study_from_history(
-    run_jobs_sync, api_db_session, api_session_scope
-):
+def test_delete_optimization_removes_study_from_history(run_jobs_sync, api_db_session, api_session_scope):
     job = _start_persisted_job(api_session_scope, n_trials=2)
     api_db_session.expire_all()
 
@@ -207,7 +199,7 @@ def test_bulk_delete_optimizations(run_jobs_sync, api_db_session, api_session_sc
     assert list_payload["total"] == 0
 
 
-def test_cancel_orphaned_optimization_study(api_db_session, api_session_scope):
+def test_cancel_orphaned_optimization_study(api_db_session, api_session_scope, run_jobs_sync):
     config = _config(n_trials=250).model_dump(mode="json")
     with patch("q_backend.api.optimization_jobs.session_scope", api_session_scope):
         with api_session_scope() as session:
@@ -253,9 +245,7 @@ def test_optimization_graceful_degradation_when_persistence_unavailable(run_jobs
 
 
 @pytest.mark.parametrize("attempt", range(5))
-def test_optimization_status_rebuild_shows_terminal_not_running(
-    run_jobs_sync, api_session_scope, attempt
-):
+def test_optimization_status_rebuild_shows_terminal_not_running(run_jobs_sync, api_session_scope, attempt):
     config = _config(n_trials=3)
     config.study.max_workers = 2
     with patch("q_backend.api.optimization_jobs.session_scope", api_session_scope):
