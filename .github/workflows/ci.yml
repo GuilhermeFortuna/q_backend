@@ -2,12 +2,56 @@ name: CI
 
 on:
   push:
+    branches:
+      - development
+      - staging
+      - main
   pull_request:
+    branches:
+      - development
+      - staging
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  check:
-    name: Check
+  ci:
+    name: Validate
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: q_storage
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      CI: "true"
+      Q_DATABASE_URL: "postgresql://postgres:password@localhost:5434/q_storage"
+      Q_REDIS_URL: "redis://localhost:6380/0"
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -26,5 +70,5 @@ jobs:
       - name: Check vendored contracts
         run: make contracts-check
 
-      - name: Run tests
-        run: uv run pytest
+      - name: Run CI Pipeline
+        run: ./scripts/ci.sh

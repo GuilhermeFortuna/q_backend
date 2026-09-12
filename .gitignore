@@ -1,5 +1,5 @@
+
 docs/
-scripts/
 
 # Local MT5 tick cache and Parquet data lake (see Q_TICK_CACHE_DIR / Q_DATA_LAKE_ROOT)
 data/

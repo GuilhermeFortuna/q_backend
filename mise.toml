@@ -17,3 +17,16 @@ run = "uv run q-optimize"
 [tasks.contracts-check]
 description = "Check vendored contract code against the pinned contracts commit"
 run = "make contracts-check"
+
+[tasks.check]
+description = "Run linter (ruff) and formatter check (black)"
+run = "uv run ruff check . && uv run black --check ."
+
+[tasks.ci]
+description = "Run the full CI pipeline (migrations, lint, format check, tests)"
+run = "./scripts/ci.sh"
+
+[tasks.hooks]
+description = "Install and configure Git hooks"
+run = "./scripts/install-hooks.sh"
+
