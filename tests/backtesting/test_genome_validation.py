@@ -142,10 +142,7 @@ def test_rejects_shift_bars_not_one():
 
 
 def test_rejects_node_count_cap():
-    nodes = [
-        {"id": f"n{i}", "kind": "source.close", "params": {}, "inputs": []}
-        for i in range(25)
-    ]
+    nodes = [{"id": f"n{i}", "kind": "source.close", "params": {}, "inputs": []} for i in range(25)]
     genome = _genome(
         {
             "version": 1,

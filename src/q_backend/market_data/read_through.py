@@ -59,8 +59,7 @@ def read_ohlcv_fresh(
         return svc.get_ohlcv(symbol, timeframe, start, end)
     except ConnectionError:
         logger.warning(
-            "read_ohlcv_fresh: gateway unreachable for %s/%s [%s, %s]; "
-            "falling back to local parquet",
+            "read_ohlcv_fresh: gateway unreachable for %s/%s [%s, %s]; " "falling back to local parquet",
             symbol,
             timeframe,
             start,

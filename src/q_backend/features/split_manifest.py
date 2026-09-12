@@ -17,7 +17,6 @@ from typing import Any
 
 import pandas as pd
 
-
 DEFAULT_EVIDENCE_FRACTION = 0.40
 DEFAULT_WALKFORWARD_FRACTION = 0.40
 DEFAULT_LOCKBOX_FRACTION = 0.20
@@ -126,9 +125,7 @@ def build_split_manifest(
     ordered = bars.sort_values("time").reset_index(drop=True)
     times = pd.to_datetime(ordered["time"], utc=True)
     n = len(ordered)
-    evidence_end, walkforward_end = _split_edges(
-        n, (evidence_fraction, walkforward_fraction, lockbox_fraction)
-    )
+    evidence_end, walkforward_end = _split_edges(n, (evidence_fraction, walkforward_fraction, lockbox_fraction))
 
     evidence = SplitSegment(
         name="evidence",
@@ -205,6 +202,4 @@ def assert_segments_disjoint(manifest: SplitManifest) -> None:
             if left.name == right.name:
                 continue
             if left.end >= right.start and right.end >= left.start:
-                raise ValueError(
-                    f"Split segments '{left.name}' and '{right.name}' overlap."
-                )
+                raise ValueError(f"Split segments '{left.name}' and '{right.name}' overlap.")

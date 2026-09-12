@@ -257,16 +257,12 @@ def test_walkforward_runner_end_to_end():
     end = datetime(2024, 4, 30)
     full_df = _make_intraday_ohlcv_df(start, 120)
     config = _walkforward_optimization_config(start=start, end=end, n_trials=3)
-    wf_config = WalkForwardConfig(
-        train_days=30, test_days=15, mode="rolling", min_windows=2
-    )
+    wf_config = WalkForwardConfig(train_days=30, test_days=15, mode="rolling", min_windows=2)
 
     runner = DefaultBacktestRunner(data_provider=_sliced_data_provider(full_df))
     progress: list[WalkForwardProgress] = []
 
-    result = WalkForwardRunner(config, wf_config, runner).run(
-        progress_callback=progress.append
-    )
+    result = WalkForwardRunner(config, wf_config, runner).run(progress_callback=progress.append)
 
     completed = [window for window in result.windows if window.status == "completed"]
     assert len(completed) >= 2
@@ -280,9 +276,7 @@ def test_walkforward_runner_end_to_end():
             assert trade.exit_time is not None
             assert window.test_start <= trade.exit_time <= window.test_end
 
-    assert result.oos_equity_curve.iloc[0] == pytest.approx(
-        config.backtest.initial_capital
-    )
+    assert result.oos_equity_curve.iloc[0] == pytest.approx(config.backtest.initial_capital)
     assert result.oos_metrics.get("total_trades", 0) > 0
     assert result.efficiency is not None
 
@@ -292,9 +286,7 @@ def test_walkforward_runner_skips_no_result_window_without_aborting():
     end = datetime(2024, 4, 30)
     full_df = _make_intraday_ohlcv_df(start, 120)
     config = _walkforward_optimization_config(start=start, end=end, n_trials=2)
-    wf_config = WalkForwardConfig(
-        train_days=30, test_days=15, mode="rolling", min_windows=2
-    )
+    wf_config = WalkForwardConfig(train_days=30, test_days=15, mode="rolling", min_windows=2)
     windows = split_windows(start, end, wf_config)
     fail_train_start = windows[0].train_start
     fail_train_end = windows[0].train_end
@@ -320,9 +312,7 @@ def test_walkforward_runner_skips_no_result_window_without_aborting():
 
     assert result.windows[0].status == "no_result"
     assert any(window.status == "completed" for window in result.windows[1:])
-    assert result.oos_equity_curve.iloc[0] == pytest.approx(
-        config.backtest.initial_capital
-    )
+    assert result.oos_equity_curve.iloc[0] == pytest.approx(config.backtest.initial_capital)
 
 
 def test_from_market_data_sliced_single_fetch_across_walkforward_run():
@@ -362,9 +352,7 @@ def test_from_market_data_sliced_single_fetch_across_walkforward_run():
         end=end,
     )
     config = _walkforward_optimization_config(start=start, end=end, n_trials=2)
-    wf_config = WalkForwardConfig(
-        train_days=30, test_days=15, mode="rolling", min_windows=2
-    )
+    wf_config = WalkForwardConfig(train_days=30, test_days=15, mode="rolling", min_windows=2)
 
     WalkForwardRunner(config, wf_config, backtest_runner).run()
 
@@ -379,20 +367,14 @@ def test_walkforward_max_workers_is_inert():
     end = datetime(2024, 4, 30)
     full_df = _make_intraday_ohlcv_df(start, 120)
     config = _walkforward_optimization_config(start=start, end=end, n_trials=3)
-    wf_one = WalkForwardConfig(
-        train_days=30, test_days=15, mode="rolling", min_windows=2, max_workers=1
-    )
-    wf_many = WalkForwardConfig(
-        train_days=30, test_days=15, mode="rolling", min_windows=2, max_workers=2
-    )
+    wf_one = WalkForwardConfig(train_days=30, test_days=15, mode="rolling", min_windows=2, max_workers=1)
+    wf_many = WalkForwardConfig(train_days=30, test_days=15, mode="rolling", min_windows=2, max_workers=2)
 
     runner = DefaultBacktestRunner(data_provider=_sliced_data_provider(full_df))
     seq = WalkForwardRunner(config, wf_one, runner).run()
 
     progress: list[WalkForwardProgress] = []
-    other = WalkForwardRunner(config, wf_many, runner, ohlcv=full_df).run(
-        progress_callback=progress.append
-    )
+    other = WalkForwardRunner(config, wf_many, runner, ohlcv=full_df).run(progress_callback=progress.append)
 
     assert [w.index for w in other.windows] == [w.index for w in seq.windows]
     assert [w.status for w in other.windows] == [w.status for w in seq.windows]

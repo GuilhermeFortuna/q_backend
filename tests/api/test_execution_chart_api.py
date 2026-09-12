@@ -46,9 +46,7 @@ def api_db_session() -> Session:
         poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
-    session = sessionmaker(
-        bind=engine, autoflush=False, autocommit=False, expire_on_commit=False
-    )()
+    session = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)()
     try:
         yield session
         session.commit()
@@ -130,12 +128,8 @@ def test_endpoint_indicator_parity_with_evaluator(api_db_session: Session):
     strategy = build_strategy_from_compiled(compiled, symbol="WIN$")
 
     bars = 30
-    with patch.object(
-        chart_service, "fetch_ohlcv_rows", return_value=_frame_to_ohlcv(frame)
-    ):
-        payload = chart_service.get_deployment_chart(
-            api_db_session, MagicMock(), deployment.id, bars=bars
-        )
+    with patch.object(chart_service, "fetch_ohlcv_rows", return_value=_frame_to_ohlcv(frame)):
+        payload = chart_service.get_deployment_chart(api_db_session, MagicMock(), deployment.id, bars=bars)
 
     evaluator = StrategyEvaluator(
         deployment_id="dep-parity",
@@ -178,12 +172,8 @@ def test_chart_payload_shape_and_trim(api_db_session: Session):
     frame = _synthetic_frame(130)
     strategy = build_strategy_from_compiled(_compiled(), symbol="WIN$")
 
-    with patch.object(
-        chart_service, "fetch_ohlcv_rows", return_value=_frame_to_ohlcv(frame)
-    ):
-        payload = chart_service.get_deployment_chart(
-            api_db_session, MagicMock(), deployment.id, bars=30
-        )
+    with patch.object(chart_service, "fetch_ohlcv_rows", return_value=_frame_to_ohlcv(frame)):
+        payload = chart_service.get_deployment_chart(api_db_session, MagicMock(), deployment.id, bars=30)
 
     assert payload.symbol == "WIN$"
     assert payload.timeframe == "H1"
@@ -217,30 +207,23 @@ def test_chart_cache_recomputes_only_on_new_bar(api_db_session: Session):
     def _fetch(*_args, **_kwargs):
         return rows["value"]
 
-    with patch.object(chart_service, "fetch_ohlcv_rows", side_effect=_fetch), patch.object(
-        chart_service, "augment_indicator_frame", spy
+    with (
+        patch.object(chart_service, "fetch_ohlcv_rows", side_effect=_fetch),
+        patch.object(chart_service, "augment_indicator_frame", spy),
     ):
-        chart_service.get_deployment_chart(
-            api_db_session, MagicMock(), deployment.id, bars=30
-        )
-        chart_service.get_deployment_chart(
-            api_db_session, MagicMock(), deployment.id, bars=30
-        )
+        chart_service.get_deployment_chart(api_db_session, MagicMock(), deployment.id, bars=30)
+        chart_service.get_deployment_chart(api_db_session, MagicMock(), deployment.id, bars=30)
         assert spy.call_count == 1  # unchanged last bar → served from cache
 
         extended = _synthetic_frame(131)
         rows["value"] = _frame_to_ohlcv(extended)
-        chart_service.get_deployment_chart(
-            api_db_session, MagicMock(), deployment.id, bars=30
-        )
+        chart_service.get_deployment_chart(api_db_session, MagicMock(), deployment.id, bars=30)
         assert spy.call_count == 2  # new completed bar invalidates the cache
 
 
 def test_chart_unknown_deployment_returns_404(api_db_session: Session):
     with pytest.raises(HTTPException) as exc:
-        chart_service.get_deployment_chart(
-            api_db_session, MagicMock(), uuid.uuid4(), bars=30
-        )
+        chart_service.get_deployment_chart(api_db_session, MagicMock(), uuid.uuid4(), bars=30)
     assert exc.value.status_code == 404
 
 
@@ -248,9 +231,7 @@ def test_chart_market_data_empty_returns_503(api_db_session: Session):
     deployment = _make_deployment(api_db_session)
     with patch.object(chart_service, "fetch_ohlcv_rows", return_value=[]):
         with pytest.raises(HTTPException) as exc:
-            chart_service.get_deployment_chart(
-                api_db_session, MagicMock(), deployment.id, bars=30
-            )
+            chart_service.get_deployment_chart(api_db_session, MagicMock(), deployment.id, bars=30)
     assert exc.value.status_code == 503
 
 
@@ -262,9 +243,7 @@ def test_chart_market_data_provider_error_returns_503(api_db_session: Session):
         side_effect=ConnectionError("MetaTrader 5 terminal is offline."),
     ):
         with pytest.raises(HTTPException) as exc:
-            chart_service.get_deployment_chart(
-                api_db_session, MagicMock(), deployment.id, bars=30
-            )
+            chart_service.get_deployment_chart(api_db_session, MagicMock(), deployment.id, bars=30)
     assert exc.value.status_code == 503
 
 

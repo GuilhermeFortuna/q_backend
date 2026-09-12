@@ -60,9 +60,7 @@ def _version_detail(version: FeatureVersion) -> FeatureVersionDetail:
     )
 
 
-def _passport_from_definition(
-    definition: FeatureDefinition, session: Session
-) -> FeaturePassportResponse:
+def _passport_from_definition(definition: FeatureDefinition, session: Session) -> FeaturePassportResponse:
     versions = sorted(definition.versions, key=lambda version: version.version, reverse=True)
     latest_scores = get_latest_global_scores(session)
     return FeaturePassportResponse(
@@ -76,19 +74,13 @@ def _passport_from_definition(
     )
 
 
-def _list_item_from_definition(
-    definition: FeatureDefinition, *, score: Optional[float] = None
-) -> FeatureListItem:
+def _list_item_from_definition(definition: FeatureDefinition, *, score: Optional[float] = None) -> FeatureListItem:
     latest = _latest_version(definition.versions)
     return FeatureListItem(
         name=definition.name,
         category=definition.category,
         latest_version=latest.version if latest is not None else 0,
-        status=(
-            latest.status
-            if latest is not None
-            else FeatureStatus.EXPERIMENTAL.value
-        ),
+        status=(latest.status if latest is not None else FeatureStatus.EXPERIMENTAL.value),
         usage_count=definition.usage_count,
         score=score,
     )
@@ -135,9 +127,7 @@ def _clusters_from_run(run) -> list[FeatureEvalClusterItem]:
     clusters: list[FeatureEvalClusterItem] = []
     for cluster_id in sorted(by_cluster):
         members = sorted(by_cluster[cluster_id], key=lambda row: row.feature_id)
-        representative = next(
-            row.feature_id for row in members if row.is_representative
-        )
+        representative = next(row.feature_id for row in members if row.is_representative)
         clusters.append(
             FeatureEvalClusterItem(
                 cluster_id=cluster_id,
@@ -198,15 +188,11 @@ def list_features(
     status: Optional[str] = Query(None),
 ):
     """Return Feature Store rows for the catalog table."""
-    definitions = list_feature_definitions(
-        session, category=category, status=status
-    )
+    definitions = list_feature_definitions(session, category=category, status=status)
     latest_scores = get_latest_global_scores(session)
     return {
         "features": [
-            _list_item_from_definition(
-                definition, score=latest_scores.get(definition.name)
-            )
+            _list_item_from_definition(definition, score=latest_scores.get(definition.name))
             for definition in definitions
         ],
     }
@@ -234,9 +220,7 @@ def get_feature_passport(name: str, session: Session = Depends(get_session)):
     """Return the Feature Passport for a single feature."""
     definition = get_feature_definition(session, name)
     if definition is None:
-        raise HTTPException(
-            status_code=404, detail=f"Feature '{name}' not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Feature '{name}' not found.")
     return _passport_from_definition(definition, session)
 
 
@@ -263,9 +247,7 @@ def update_feature_status(
 
     definition = get_feature_definition(session, name)
     if definition is None:
-        raise HTTPException(
-            status_code=404, detail=f"Feature '{name}' not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Feature '{name}' not found.")
     return _passport_from_definition(definition, session)
 
 
@@ -286,10 +268,7 @@ def start_feature_evaluation(
     """
     try:
         target = _resolve_target_spec(body.target.name, body.target.horizon)
-        feature_set = [
-            FeatureRequest(item.name, item.version, dict(item.params))
-            for item in body.features
-        ]
+        feature_set = [FeatureRequest(item.name, item.version, dict(item.params)) for item in body.features]
         with session_scope() as session:
             run = create_pending_evaluation_run(
                 session,
@@ -328,13 +307,9 @@ def get_feature_evaluation(run_id: str, session: Session = Depends(get_session))
     try:
         parsed_id = uuid.UUID(run_id)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=404, detail=f"Feature evaluation run '{run_id}' not found."
-        ) from exc
+        raise HTTPException(status_code=404, detail=f"Feature evaluation run '{run_id}' not found.") from exc
 
     run = get_evaluation_run(session, parsed_id)
     if run is None:
-        raise HTTPException(
-            status_code=404, detail=f"Feature evaluation run '{run_id}' not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Feature evaluation run '{run_id}' not found.")
     return _run_response(run)

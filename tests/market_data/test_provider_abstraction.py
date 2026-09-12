@@ -37,9 +37,7 @@ def test_market_data_service_without_mt5(monkeypatch):
 @pytest.mark.skipif(not metatrader.MT5_IMPORTABLE, reason="MetaTrader5 not installed")
 def test_mt5_timeframe_matches_constants():
     for name in metatrader.TIMEFRAME_NAMES:
-        assert metatrader._mt5_timeframe(name) == getattr(
-            metatrader.mt5, f"TIMEFRAME_{name}"
-        )
+        assert metatrader._mt5_timeframe(name) == getattr(metatrader.mt5, f"TIMEFRAME_{name}")
 
 
 def test_resolve_provider_respects_runtime_config(tmp_path, monkeypatch):
@@ -78,9 +76,7 @@ def test_resolve_provider_respects_runtime_config(tmp_path, monkeypatch):
     assert service._resolve_provider() is service.mt5_client
 
 
-def test_acquisition_provider_prefers_native_then_remote_then_raises(
-    tmp_path, monkeypatch
-):
+def test_acquisition_provider_prefers_native_then_remote_then_raises(tmp_path, monkeypatch):
     monkeypatch.setenv("Q_RUNTIME_CONFIG_PATH", str(tmp_path / "runtime_config.json"))
     service = MarketDataService()
 
@@ -111,9 +107,7 @@ def test_acquisition_provider_prefers_native_then_remote_then_raises(
         service.acquisition_provider()
 
 
-def test_data_source_payload_reports_gateway_as_available(
-    runtime_config_file, monkeypatch
-):
+def test_data_source_payload_reports_gateway_as_available(runtime_config_file, monkeypatch):
     # On Linux (native MT5 unsupported) with a healthy remote gateway, the
     # Storage UI's download gate must open: mt5_available means "can acquire",
     # not "native terminal connected".

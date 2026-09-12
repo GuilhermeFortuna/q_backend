@@ -196,9 +196,7 @@ REGISTRY_SUMMARY_KEYS = {
 }
 
 
-def test_registry_sweep_backward_compatible_summary(
-    run_jobs_sync, api_session_scope, lake_root_path
-):
+def test_registry_sweep_backward_compatible_summary(run_jobs_sync, api_session_scope, lake_root_path):
     with patch("q_backend.api.strategy_search_jobs.session_scope", api_session_scope):
         job = strategy_search_jobs.start_job(_registry_request(n_trials=2))
 
@@ -245,11 +243,7 @@ def test_genetic_exit_policy_metadata_persists_and_reloads(
 
     api_db_session.expire_all()
     run = get_strategy_search_run(api_db_session, uuid.UUID(hex=job.run_id))
-    persisted = next(
-        candidate
-        for candidate in run.candidates
-        if candidate.candidate_id == live["candidate_id"]
-    )
+    persisted = next(candidate for candidate in run.candidates if candidate.candidate_id == live["candidate_id"])
     assert persisted.exit_policy_id == "atr_stop_chandelier"
     assert persisted.exit_policy_label == "ATR stop + Chandelier trail"
     assert persisted.exit_param_names == live["exit_param_names"]
@@ -258,18 +252,14 @@ def test_genetic_exit_policy_metadata_persists_and_reloads(
         reloaded = get_strategy_search_results(job.run_id)
 
     reloaded_candidate = next(
-        candidate
-        for candidate in reloaded["candidates"]
-        if candidate["candidate_id"] == live["candidate_id"]
+        candidate for candidate in reloaded["candidates"] if candidate["candidate_id"] == live["candidate_id"]
     )
     assert reloaded_candidate["exit_policy_id"] == live["exit_policy_id"]
     assert reloaded_candidate["exit_policy_label"] == live["exit_policy_label"]
     assert reloaded_candidate["exit_param_names"] == live["exit_param_names"]
 
 
-def test_genetic_run_persists_metadata(
-    run_jobs_sync, api_db_session, api_session_scope, lake_root_path
-):
+def test_genetic_run_persists_metadata(run_jobs_sync, api_db_session, api_session_scope, lake_root_path):
     with patch("q_backend.api.strategy_search_jobs.session_scope", api_session_scope):
         job = strategy_search_jobs.start_job(_genetic_request(n_trials=2))
 
@@ -328,18 +318,14 @@ def test_genetic_graceful_degradation_postgres_stopped(run_jobs_sync):
 
 
 def test_genetic_graceful_degradation_lake_unwritable(run_jobs_sync, monkeypatch):
-    monkeypatch.setattr(
-        strategy_search_jobs, "_write_lake_artifacts", lambda *_a, **_k: None
-    )
+    monkeypatch.setattr(strategy_search_jobs, "_write_lake_artifacts", lambda *_a, **_k: None)
     job = strategy_search_jobs.start_job(_genetic_request(n_trials=1))
     status = strategy_search_jobs.get_status_payload(job.run_id)
     assert status is not None
     assert status["status"] == "completed"
 
 
-def test_genome_endpoint_returns_stored_genome(
-    run_jobs_sync, api_session_scope, lake_root_path
-):
+def test_genome_endpoint_returns_stored_genome(run_jobs_sync, api_session_scope, lake_root_path):
     with patch("q_backend.api.strategy_search_jobs.session_scope", api_session_scope):
         job = strategy_search_jobs.start_job(_genetic_request(n_trials=1))
         results = get_strategy_search_results(job.run_id)

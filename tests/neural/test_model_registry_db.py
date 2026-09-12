@@ -61,9 +61,7 @@ def test_create_model_and_version_round_trip(db_session: Session, lake_root_path
     assert fetched.artifact_path.startswith("neural_models/")
 
 
-def test_set_neural_model_status_sticks_across_resync(
-    db_session: Session, lake_root_path
-) -> None:
+def test_set_neural_model_status_sticks_across_resync(db_session: Session, lake_root_path) -> None:
     version = _train_version(db_session, lake_root_path, model_key="pca_status_h1")
     set_neural_model_status(
         db_session,
@@ -78,9 +76,7 @@ def test_set_neural_model_status_sticks_across_resync(
     assert refreshed.status == NeuralModelStatus.PRODUCTION.value
 
 
-def test_sync_neural_models_to_db_is_idempotent(
-    db_session: Session, lake_root_path
-) -> None:
+def test_sync_neural_models_to_db_is_idempotent(db_session: Session, lake_root_path) -> None:
     _train_version(db_session, lake_root_path, model_key="pca_sync_h1")
 
     sync_neural_models_to_db(db_session)
@@ -93,9 +89,7 @@ def test_sync_neural_models_to_db_is_idempotent(
     assert _count_rows(db_session, NeuralModelVersion) == version_count
 
 
-def test_list_neural_model_versions_filters_status(
-    db_session: Session, lake_root_path
-) -> None:
+def test_list_neural_model_versions_filters_status(db_session: Session, lake_root_path) -> None:
     version = _train_version(db_session, lake_root_path, model_key="pca_list_h1")
     set_neural_model_status(
         db_session,
@@ -103,9 +97,7 @@ def test_list_neural_model_versions_filters_status(
         status=NeuralModelStatus.CANDIDATE.value,
     )
 
-    candidates = list_neural_model_versions(
-        db_session, status=NeuralModelStatus.CANDIDATE.value
-    )
+    candidates = list_neural_model_versions(db_session, status=NeuralModelStatus.CANDIDATE.value)
     assert any(row.model_hash == version.model_hash for row in candidates)
 
 

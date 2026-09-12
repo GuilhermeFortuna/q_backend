@@ -89,9 +89,7 @@ class PositionSizer(ABC):
         pass
 
     @abstractmethod
-    def max_position_size(
-        self, current_price: float, current_capital: float
-    ) -> Optional[float]:
+    def max_position_size(self, current_price: float, current_capital: float) -> Optional[float]:
         """
         Maximum absolute position size (in units/contracts) this risk model
         permits to be open per symbol at any one time.
@@ -128,9 +126,7 @@ class FixedQuantitySizer(PositionSizer):
         if signal.action == SignalAction.CLOSE:
             return None
 
-        action = (
-            OrderAction.BUY if signal.action == SignalAction.BUY else OrderAction.SELL
-        )
+        action = OrderAction.BUY if signal.action == SignalAction.BUY else OrderAction.SELL
 
         qty = self.quantity
         if self.scale_by_signal_strength:
@@ -148,9 +144,7 @@ class FixedQuantitySizer(PositionSizer):
             quantity=qty,
         )
 
-    def max_position_size(
-        self, current_price: float, current_capital: float
-    ) -> Optional[float]:
+    def max_position_size(self, current_price: float, current_capital: float) -> Optional[float]:
         return self.quantity
 
 
@@ -171,9 +165,7 @@ class FixedSafetyMarginSizer(PositionSizer):
         if min_contracts < 0:
             raise ValueError("min_contracts must be greater than or equal to 0")
         if max_contracts is not None and max_contracts < min_contracts:
-            raise ValueError(
-                "max_contracts must be greater than or equal to min_contracts"
-            )
+            raise ValueError("max_contracts must be greater than or equal to min_contracts")
 
         self.safety_margin_per_contract = safety_margin_per_contract
         self.max_contracts = max_contracts
@@ -218,9 +210,7 @@ class FixedSafetyMarginSizer(PositionSizer):
             if qty <= 0.0:
                 return None
 
-        action = (
-            OrderAction.BUY if signal.action == SignalAction.BUY else OrderAction.SELL
-        )
+        action = OrderAction.BUY if signal.action == SignalAction.BUY else OrderAction.SELL
 
         return Order(
             id=str(uuid.uuid4()),
@@ -230,9 +220,7 @@ class FixedSafetyMarginSizer(PositionSizer):
             quantity=qty,
         )
 
-    def max_position_size(
-        self, current_price: float, current_capital: float
-    ) -> Optional[float]:
+    def max_position_size(self, current_price: float, current_capital: float) -> Optional[float]:
         return float(self._target_contracts(current_capital))
 
 
@@ -260,9 +248,7 @@ class InverseVolatilitySizer(PositionSizer):
         if min_contracts < 0:
             raise ValueError("min_contracts must be greater than or equal to 0")
         if max_contracts is not None and max_contracts < min_contracts:
-            raise ValueError(
-                "max_contracts must be greater than or equal to min_contracts"
-            )
+            raise ValueError("max_contracts must be greater than or equal to min_contracts")
 
         self.target_volatility_pct = target_volatility_pct
         self.point_value = point_value
@@ -298,11 +284,7 @@ class InverseVolatilitySizer(PositionSizer):
         if notional_per_contract <= 0:
             return None
 
-        raw = math.floor(
-            (self.target_volatility_pct / 100.0)
-            * current_capital
-            / notional_per_contract
-        )
+        raw = math.floor((self.target_volatility_pct / 100.0) * current_capital / notional_per_contract)
         if self.max_contracts is not None:
             raw = min(raw, self.max_contracts)
         raw = max(raw, self.min_contracts)
@@ -329,9 +311,7 @@ class InverseVolatilitySizer(PositionSizer):
             if qty <= 0.0:
                 return None
 
-        action = (
-            OrderAction.BUY if signal.action == SignalAction.BUY else OrderAction.SELL
-        )
+        action = OrderAction.BUY if signal.action == SignalAction.BUY else OrderAction.SELL
         return Order(
             id=str(uuid.uuid4()),
             symbol=signal.symbol,
@@ -340,9 +320,7 @@ class InverseVolatilitySizer(PositionSizer):
             quantity=qty,
         )
 
-    def max_position_size(
-        self, current_price: float, current_capital: float
-    ) -> Optional[float]:
+    def max_position_size(self, current_price: float, current_capital: float) -> Optional[float]:
         quantity = self._target_contracts(current_price, current_capital, None)
         if quantity is not None:
             return float(quantity)
@@ -353,9 +331,7 @@ class InverseVolatilitySizer(PositionSizer):
 
 def build_position_sizer(
     config: Optional[
-        FixedQuantityPositionSizing
-        | FixedSafetyMarginPositionSizing
-        | InverseVolatilityPositionSizing
+        FixedQuantityPositionSizing | FixedSafetyMarginPositionSizing | InverseVolatilityPositionSizing
     ] = None,
     *,
     point_value: float = 1.0,

@@ -54,12 +54,8 @@ def _genetic_request(*, population_size: int) -> StrategySearchConfig:
             "strategy": "CompositeStrategy",
         },
         objective=ObjectiveConfig(mode=ObjectiveMode.MAXIMIZE_NET_PROFIT),
-        walkforward=WalkForwardConfig(
-            train_days=30, test_days=15, mode="rolling", min_windows=2
-        ),
-        study=StudyConfig(
-            name="Genetic WIN$ search", n_trials=2, seed=42, storage={"type": "memory"}
-        ),
+        walkforward=WalkForwardConfig(train_days=30, test_days=15, mode="rolling", min_windows=2),
+        study=StudyConfig(name="Genetic WIN$ search", n_trials=2, seed=42, storage={"type": "memory"}),
         include_risk_search=False,
         gates=GateConfig(min_completed_windows=1, min_oos_trades=1),
         genetic=GeneticSearchConfig(
@@ -92,12 +88,8 @@ def _capture_dispatch(monkeypatch, provider, *, dead_ids, capture_meta=False):
 
     monkeypatch.setattr(sj, "genome_signal_activity", fake_activity)
     monkeypatch.setattr(sj, "clear_partials", lambda *a, **k: None)
-    monkeypatch.setattr(
-        sj, "stash_partial", lambda run_id, index, payload: stashed.append(index)
-    )
-    monkeypatch.setattr(
-        sj, "init_counter", lambda run_id, n: captured.__setitem__("counter", n)
-    )
+    monkeypatch.setattr(sj, "stash_partial", lambda run_id, index, payload: stashed.append(index))
+    monkeypatch.setattr(sj, "init_counter", lambda run_id, n: captured.__setitem__("counter", n))
     monkeypatch.setattr(sj, "_persist_genetic_progress", lambda *a, **k: None)
     monkeypatch.setattr(
         sj,
@@ -136,9 +128,7 @@ def test_dispatch_prescreens_dead_genomes(monkeypatch):
 
     captured, stashed, sent, _meta = _capture_dispatch(monkeypatch, provider, dead_ids=dead_ids)
 
-    sj._dispatch_generation(
-        "run-1", "", request.model_dump_json(), provider, generation=0
-    )
+    sj._dispatch_generation("run-1", "", request.model_dump_json(), provider, generation=0)
 
     alive_indices = [i for i, g in enumerate(population) if g.genome_id not in dead_ids]
     # Two dead genomes: partials staged for them, only the alive ones dispatched.
@@ -157,9 +147,7 @@ def test_dispatch_all_dead_generation_finalizes(monkeypatch):
 
     captured, stashed, sent, _meta = _capture_dispatch(monkeypatch, provider, dead_ids=dead_ids)
 
-    sj._dispatch_generation(
-        "run-2", "", request.model_dump_json(), provider, generation=0
-    )
+    sj._dispatch_generation("run-2", "", request.model_dump_json(), provider, generation=0)
 
     # Whole generation pre-screened out: everyone staged, nobody dispatched, and the
     # barrier (counter 0) is resolved by finalizing directly rather than hanging.
@@ -179,9 +167,7 @@ def test_dispatch_prescreen_stashes_exit_policy_metadata(monkeypatch):
         monkeypatch, provider, dead_ids=dead_ids, capture_meta=True
     )
 
-    sj._dispatch_generation(
-        "run-exit-meta", "", request.model_dump_json(), provider, generation=0
-    )
+    sj._dispatch_generation("run-exit-meta", "", request.model_dump_json(), provider, generation=0)
 
     assert len(stashed_meta) == 1
     meta = stashed_meta[0][genome.genome_id]
@@ -220,9 +206,7 @@ def test_run_genetic_candidate_stashes_exit_policy_metadata(monkeypatch):
     monkeypatch.setattr(sj, "decrement", lambda run_id: 1)
     monkeypatch.setattr(sj, "_persist_genetic_progress", lambda *a, **k: None)
 
-    sj.run_genetic_candidate(
-        "run-worker-meta", "", request.model_dump_json(), generation=0, candidate_index=1
-    )
+    sj.run_genetic_candidate("run-worker-meta", "", request.model_dump_json(), generation=0, candidate_index=1)
 
     assert len(stashed_meta) == 1
     meta = stashed_meta[0][genome.genome_id]

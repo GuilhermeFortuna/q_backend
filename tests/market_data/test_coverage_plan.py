@@ -192,9 +192,7 @@ def test_tail_gap_single_remote_call_and_persist(market_root, monkeypatch):
     assert len(remote.calls) == 1
     assert remote.calls[0][2:] == (tail_start, tail_end)
     assert len(bars) == 7
-    stored = local_store.read_ohlcv(
-        "PETR4", "H1", datetime(2024, 1, 11, 10), tail_end
-    )
+    stored = local_store.read_ohlcv("PETR4", "H1", datetime(2024, 1, 11, 10), tail_end)
     assert len(stored) == 7
 
 
@@ -248,9 +246,7 @@ def test_empty_local_full_range_remote_fetch(market_root, monkeypatch):
     assert bars == full_bars
 
 
-def test_connection_error_mid_tail_skipped_when_head_fills_envelope(
-    market_root, monkeypatch
-):
+def test_connection_error_mid_tail_skipped_when_head_fills_envelope(market_root, monkeypatch):
     _seed_local("PETR4", "H1", range(10, 15))
     local = local_store.available_range("PETR4", "H1")
     assert local is not None
@@ -322,9 +318,7 @@ def test_connection_error_serves_local_when_envelope_covers(market_root, monkeyp
     assert len(remote.calls) == 1
 
 
-def test_connection_error_mid_fetch_serves_local_when_already_covered(
-    market_root, monkeypatch
-):
+def test_connection_error_mid_fetch_serves_local_when_already_covered(market_root, monkeypatch):
     _seed_local("PETR4", "H1", range(10, 16))
     remote = _CountingRemote()
     call_count = 0

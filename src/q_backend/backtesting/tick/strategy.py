@@ -39,7 +39,7 @@ class TickStrategy(ABC):
     * Indicator periods are tick-native: a ``period`` parameter counts **ticks**
       (rolling over the last N tick prices), not milliseconds. Time-window rolls
       must be derived explicitly from ``time_msc`` if needed.
-  """
+    """
 
     def __init__(self, **kwargs):
         self.parameters = kwargs

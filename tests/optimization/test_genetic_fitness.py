@@ -128,15 +128,9 @@ def test_top_band_preserved_for_passing_genomes():
         oos_trades=1,
     )
 
-    assert candidate_fitness(passing_a, simple, genetic) > candidate_fitness(
-        passing_b, simple, genetic
-    )
-    assert candidate_fitness(passing_a, simple, genetic) > candidate_fitness(
-        passing_a, complex_genome, genetic
-    )
-    assert candidate_fitness(high_robustness_failing, simple, genetic) > candidate_fitness(
-        passing_a, simple, genetic
-    )
+    assert candidate_fitness(passing_a, simple, genetic) > candidate_fitness(passing_b, simple, genetic)
+    assert candidate_fitness(passing_a, simple, genetic) > candidate_fitness(passing_a, complex_genome, genetic)
+    assert candidate_fitness(high_robustness_failing, simple, genetic) > candidate_fitness(passing_a, simple, genetic)
 
 
 def test_champion_honesty_ignores_high_failing_graded_fitness():
@@ -176,11 +170,15 @@ def test_champion_honesty_ignores_high_failing_graded_fitness():
         passed_gates=True,
     )
     full_results = [
-        passing if genome.genome_id == passing_id else CandidateResult(
-            candidate_id=genome.genome_id,
-            strategy="CompositeStrategy",
-            status="error",
-            error="x",
+        (
+            passing
+            if genome.genome_id == passing_id
+            else CandidateResult(
+                candidate_id=genome.genome_id,
+                strategy="CompositeStrategy",
+                status="error",
+                error="x",
+            )
         )
         for genome in provider.population
     ]
@@ -215,18 +213,12 @@ def test_selection_pressure_climbs_with_graded_fitness():
                     oos_trades=max(1, index + generation),
                 )
             )
-        fitnesses = [
-            candidate_fitness(result, provider.population[i], genetic)
-            for i, result in enumerate(results)
-        ]
+        fitnesses = [candidate_fitness(result, provider.population[i], genetic) for i, result in enumerate(results)]
         mean_fitness.append(sum(fitnesses) / len(fitnesses))
         provider.report(results)
 
     assert mean_fitness[-1] >= mean_fitness[0]
-    assert any(
-        later > earlier
-        for earlier, later in zip(mean_fitness, mean_fitness[1:], strict=False)
-    )
+    assert any(later > earlier for earlier, later in zip(mean_fitness, mean_fitness[1:], strict=False))
 
     def cliff_fitness(score: float) -> float:
         return float("-inf")
@@ -234,9 +226,7 @@ def test_selection_pressure_climbs_with_graded_fitness():
     cliff_means: list[float] = []
     for generation in range(5):
         scores = [float(index + generation * 2) for index in range(10)]
-        cliff_means.append(
-            sum(cliff_fitness(score) for score in scores) / len(scores)
-        )
+        cliff_means.append(sum(cliff_fitness(score) for score in scores) / len(scores))
     assert cliff_means[-1] == cliff_means[0]
 
 
@@ -266,10 +256,7 @@ def test_determinism_same_seed_same_fitness_and_population_ids():
                 for index, candidate in enumerate(candidates)
             ]
             fitness_history.append(
-                [
-                    candidate_fitness(result, provider.population[i], genetic)
-                    for i, result in enumerate(results)
-                ]
+                [candidate_fitness(result, provider.population[i], genetic) for i, result in enumerate(results)]
             )
             provider.report(results)
             id_history.append([g.genome_id for g in provider.population])

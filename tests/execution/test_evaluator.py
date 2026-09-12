@@ -94,18 +94,14 @@ def test_builtin_strategy_decision_parity(strategy_name: str):
     compiled = _compiled_for_strategy(strategy_name)
     data = _synthetic_ohlcv()
     strategy = build_strategy(strategy_name, compiled["strategy_params"], "WIN$")
-    reference = reference_queued_signals_by_close(
-        strategy, data, timeframe="H1"
-    )
+    reference = reference_queued_signals_by_close(strategy, data, timeframe="H1")
 
     evaluator = _evaluator_for(compiled)
     evaluator.seed_window(data.iloc[:-1])
     last = data.iloc[-1:]
     result = evaluator.ingest_completed_bars(last)[0]
     close_time = bar_close_time(last.index[-1].to_pydatetime(), "H1")
-    ref_exits, ref_entries = next(
-        row for row in reference if row[0] == close_time
-    )[1:]
+    ref_exits, ref_entries = next(row for row in reference if row[0] == close_time)[1:]
     fwd_exits, fwd_entries = _queued_from_result(result)
     assert signals_equal(ref_exits, fwd_exits)
     assert signals_equal(ref_entries, fwd_entries)
@@ -159,9 +155,7 @@ def test_stateful_trailing_exit_parity_with_open_trade():
         entry_time=data.index[10].to_pydatetime(),
         entry_price=float(data.iloc[10]["close"]),
     )
-    reference = reference_queued_signals_by_close(
-        strategy, data, timeframe="H1", open_trade=trade
-    )
+    reference = reference_queued_signals_by_close(strategy, data, timeframe="H1", open_trade=trade)
 
     evaluator = _evaluator_for(compiled)
     evaluator.set_open_trade(trade)
@@ -264,9 +258,7 @@ def test_recovery_replay_restores_trailing_state_without_emitting_orders():
     assert result.emits_decision
 
     strategy = build_strategy("MACrossover", params, "WIN$")
-    reference = reference_queued_signals_by_close(
-        strategy, data, timeframe="H1", open_trade=trade
-    )
+    reference = reference_queued_signals_by_close(strategy, data, timeframe="H1", open_trade=trade)
     close_time = bar_close_time(data.index[-1].to_pydatetime(), "H1")
     ref_exits, _ref_entries = next(row for row in reference if row[0] == close_time)[1:]
     assert signals_equal(ref_exits, _queued_from_result(result)[0])

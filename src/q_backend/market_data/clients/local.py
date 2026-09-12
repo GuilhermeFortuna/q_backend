@@ -24,14 +24,10 @@ class LocalParquetClient:
     def disconnect(self) -> None:
         return None
 
-    def get_ohlcv(
-        self, symbol: str, timeframe: str, start: datetime, end: datetime
-    ) -> list[OHLCV]:
+    def get_ohlcv(self, symbol: str, timeframe: str, start: datetime, end: datetime) -> list[OHLCV]:
         return local_store.read_ohlcv(symbol, timeframe, start, end)
 
-    def get_available_ohlcv_range(
-        self, symbol: str, timeframe: str
-    ) -> Optional[OhlcvAvailableRange]:
+    def get_available_ohlcv_range(self, symbol: str, timeframe: str) -> Optional[OhlcvAvailableRange]:
         return local_store.available_range(symbol, timeframe)
 
     def get_ticks(self, symbol: str, start: datetime, end: datetime) -> list[Tick]:
@@ -48,8 +44,7 @@ class LocalParquetClient:
     ) -> dict[str, np.ndarray]:
         if flags is not None:
             logger.debug(
-                "LocalParquetClient serves all stored ticks for %s "
-                "(requested flags=%s ignored in local mode)",
+                "LocalParquetClient serves all stored ticks for %s " "(requested flags=%s ignored in local mode)",
                 symbol,
                 flags,
             )
@@ -68,11 +63,7 @@ class LocalParquetClient:
         needle = query.strip().upper()
         if not needle:
             return []
-        return [
-            entry
-            for entry in local_store.stored_symbols()
-            if needle in entry["name"].upper()
-        ]
+        return [entry for entry in local_store.stored_symbols() if needle in entry["name"].upper()]
 
     def get_symbol_info(self, symbol: str) -> dict[str, Any] | None:
         symbol = symbol.upper()

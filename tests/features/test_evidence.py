@@ -220,11 +220,7 @@ def test_split_segments_are_disjoint():
     assert manifest.lockbox.bar_count > 0
     assert manifest.evidence.end < manifest.walkforward.start
     assert manifest.walkforward.end < manifest.lockbox.start
-    assert len(bars) == (
-        manifest.evidence.bar_count
-        + manifest.walkforward.bar_count
-        + manifest.lockbox.bar_count
-    )
+    assert len(bars) == (manifest.evidence.bar_count + manifest.walkforward.bar_count + manifest.lockbox.bar_count)
 
 
 def test_planted_causal_feature_can_be_admitted():
@@ -311,12 +307,8 @@ def test_too_short_range_is_inconclusive():
 
 
 def test_deflated_score_decreases_as_search_budget_grows():
-    score_small = deflated_ic_score(
-        0.12, num_trials=5, n_obs=300, null_floor=0.01
-    )
-    score_large = deflated_ic_score(
-        0.12, num_trials=500, n_obs=300, null_floor=0.01
-    )
+    score_small = deflated_ic_score(0.12, num_trials=5, n_obs=300, null_floor=0.01)
+    score_large = deflated_ic_score(0.12, num_trials=500, n_obs=300, null_floor=0.01)
     assert score_large < score_small
 
 
@@ -327,12 +319,8 @@ def test_permutation_null_floor_rises_with_attempted_feature_count():
     target = compute_target(evidence_bars, TargetSpec("fwd_return", 6, "regression"))
     target.index = times
 
-    floor_small, _ = permutation_null_floor(
-        feature, target, num_trials=5, n_permutations=20, block_size=30, seed=1
-    )
-    floor_large, _ = permutation_null_floor(
-        feature, target, num_trials=500, n_permutations=20, block_size=30, seed=1
-    )
+    floor_small, _ = permutation_null_floor(feature, target, num_trials=5, n_permutations=20, block_size=30, seed=1)
+    floor_large, _ = permutation_null_floor(feature, target, num_trials=500, n_permutations=20, block_size=30, seed=1)
     assert floor_large > floor_small
 
 

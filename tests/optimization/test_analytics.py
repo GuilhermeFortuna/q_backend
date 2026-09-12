@@ -82,9 +82,7 @@ def _seed_multi_objective_study() -> optuna.Study:
         study.add_trial(
             optuna.trial.create_trial(
                 params={"weight": float(index)},
-                distributions={
-                    "weight": optuna.distributions.FloatDistribution(0.0, 10.0)
-                },
+                distributions={"weight": optuna.distributions.FloatDistribution(0.0, 10.0)},
                 values=[ret, drawdown],
                 state=TrialState.COMPLETE,
             )
@@ -222,11 +220,7 @@ def test_single_objective_pareto_picks_best_completed_trial():
     points = payload["pareto_front"]["points"]
 
     assert len(points) == 1
-    best_value = max(
-        trial.value
-        for trial in study.trials
-        if trial.state == TrialState.COMPLETE
-    )
+    best_value = max(trial.value for trial in study.trials if trial.state == TrialState.COMPLETE)
     assert points[0]["values"] == [best_value]
 
 

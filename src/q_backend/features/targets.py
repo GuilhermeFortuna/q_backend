@@ -61,9 +61,7 @@ def list_target_specs(horizons: list[int]) -> list[TargetSpec]:
         if horizon <= 0:
             raise ValueError(f"horizon must be positive, got {horizon}")
         for name in _TARGET_KINDS:
-            specs.append(
-                TargetSpec(name=name, horizon=horizon, kind=_TARGET_KINDS[name])
-            )
+            specs.append(TargetSpec(name=name, horizon=horizon, kind=_TARGET_KINDS[name]))
     return specs
 
 
@@ -114,9 +112,7 @@ def purge_embargo(
     if embargo < 0:
         raise ValueError(f"embargo must be non-negative, got {embargo}")
     if split_point < 0 or split_point > len(index):
-        raise ValueError(
-            f"split_point {split_point} out of range for index length {len(index)}"
-        )
+        raise ValueError(f"split_point {split_point} out of range for index length {len(index)}")
 
     train_end = max(0, split_point - embargo)
     test_start = min(len(index), split_point + embargo)

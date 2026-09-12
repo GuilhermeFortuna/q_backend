@@ -21,5 +21,4 @@ class SignalManager(ABC):
         return []
 
     @abstractmethod
-    def combine(self, stances: list[Stance]) -> Stance:
-        ...
+    def combine(self, stances: list[Stance]) -> Stance: ...

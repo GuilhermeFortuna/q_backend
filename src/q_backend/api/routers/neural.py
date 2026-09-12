@@ -46,9 +46,7 @@ def _list_item(version: NeuralModelVersion) -> NeuralModelListItem:
     )
 
 
-def _gate_result_response(
-    session: Session, version: NeuralModelVersion
-) -> Optional[LatentGateResultResponse]:
+def _gate_result_response(session: Session, version: NeuralModelVersion) -> Optional[LatentGateResultResponse]:
     gate = read_latest_latent_gate_result(session, version)
     if gate is None or gate.evaluation_run_id is None:
         return None

@@ -44,12 +44,8 @@ class MACDStrategy(TradingStrategy):
         df["prev_macd"] = df["macd"].shift(1)
         df["prev_macd_signal"] = df["macd_signal"].shift(1)
 
-        df["buy_signal"] = (df["prev_macd"] <= df["prev_macd_signal"]) & (
-            df["macd"] > df["macd_signal"]
-        )
-        df["sell_signal"] = (df["prev_macd"] >= df["prev_macd_signal"]) & (
-            df["macd"] < df["macd_signal"]
-        )
+        df["buy_signal"] = (df["prev_macd"] <= df["prev_macd_signal"]) & (df["macd"] > df["macd_signal"])
+        df["sell_signal"] = (df["prev_macd"] >= df["prev_macd_signal"]) & (df["macd"] < df["macd_signal"])
         return df
 
     def get_chart_indicators(self) -> List[ChartIndicatorSpec]:
@@ -83,9 +79,7 @@ class MACDStrategy(TradingStrategy):
             signals.append(Signal(symbol=symbol, action=SignalAction.SELL))
         return signals
 
-    def check_exit_conditions(
-        self, current_data: pd.Series, open_trades: List[Trade]
-    ) -> List[Signal]:
+    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
         symbol = resolve_symbol(current_data, self.symbol)
         if not open_trades:
             return []

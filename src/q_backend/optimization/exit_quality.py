@@ -16,10 +16,7 @@ def _normalize_trades(trades: list[Trade] | pd.DataFrame) -> list[dict[str, Any]
             return []
         records = trades.to_dict(orient="records")
     else:
-        records = [
-            trade.model_dump() if hasattr(trade, "model_dump") else dict(trade)
-            for trade in trades
-        ]
+        records = [trade.model_dump() if hasattr(trade, "model_dump") else dict(trade) for trade in trades]
 
     closed: list[dict[str, Any]] = []
     for record in records:
@@ -126,11 +123,7 @@ def summarize_holding_periods(
         return {}
 
     if bars is not None and not bars.empty:
-        bar_counts = [
-            count
-            for record in closed
-            if (count := _holding_bars(record, bars)) is not None
-        ]
+        bar_counts = [count for record in closed if (count := _holding_bars(record, bars)) is not None]
         if not bar_counts:
             return {}
         return {
@@ -138,11 +131,7 @@ def summarize_holding_periods(
             "p90_bars": int(round(_percentile(bar_counts, 0.9) or 0)),
         }
 
-    durations = [
-        duration
-        for record in closed
-        if (duration := _holding_duration_seconds(record)) is not None
-    ]
+    durations = [duration for record in closed if (duration := _holding_duration_seconds(record)) is not None]
     if not durations:
         return {}
     return {
@@ -221,9 +210,7 @@ def summarize_trade_path_quality(
 
     summary: dict[str, Any] = {}
     if mfe_capture_ratios:
-        summary["avg_mfe_capture_ratio"] = sum(mfe_capture_ratios) / len(
-            mfe_capture_ratios
-        )
+        summary["avg_mfe_capture_ratio"] = sum(mfe_capture_ratios) / len(mfe_capture_ratios)
     if profit_givebacks:
         summary["avg_profit_giveback"] = sum(profit_givebacks) / len(profit_givebacks)
     if mae_values:
@@ -272,15 +259,8 @@ def score_exit_quality(
             flags.append("low_mfe_capture")
 
     giveback = path_quality.get("avg_profit_giveback")
-    total_pnl = sum(
-        bucket.get("total_pnl", 0.0)
-        for bucket in (exit_quality.get("by_reason") or {}).values()
-    )
-    if (
-        max_profit_giveback_pct is not None
-        and giveback is not None
-        and total_pnl > 0
-    ):
+    total_pnl = sum(bucket.get("total_pnl", 0.0) for bucket in (exit_quality.get("by_reason") or {}).values())
+    if max_profit_giveback_pct is not None and giveback is not None and total_pnl > 0:
         threshold = total_pnl * max_profit_giveback_pct
         passed = giveback <= threshold
         score["profit_giveback_passed"] = passed

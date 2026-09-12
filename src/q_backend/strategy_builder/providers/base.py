@@ -23,7 +23,6 @@ class ProviderRequestError(RuntimeError):
         self.detail = detail
 
 
-
 class StrategyInterpreterProvider(Protocol):
     provider_name: str
     model: str

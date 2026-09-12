@@ -46,9 +46,7 @@ def _isolate_remote_gateway_env(monkeypatch):
     from q_backend.api import dependencies
     from q_backend.market_data.clients.remote import RemoteMt5Client
 
-    monkeypatch.setattr(
-        dependencies.market_data_service, "_remote_client", RemoteMt5Client()
-    )
+    monkeypatch.setattr(dependencies.market_data_service, "_remote_client", RemoteMt5Client())
 
 
 def pytest_addoption(parser):
@@ -147,17 +145,13 @@ def run_jobs_sync(monkeypatch, tmp_path):
     monkeypatch.setattr("q_backend.tasks.data.load_ohlcv_frame", _synthetic_ohlcv)
     for module in (wj, sj):
         if hasattr(module, "load_ohlcv_frame"):
-            monkeypatch.setattr(
-                module, "load_ohlcv_frame", _synthetic_ohlcv, raising=False
-            )
+            monkeypatch.setattr(module, "load_ohlcv_frame", _synthetic_ohlcv, raising=False)
 
     # Distributed Optuna needs storage that persists across the trial workers and the
     # finalizer; a temp SQLite file gives that without Postgres.
     def _sqlite_config(config, study_id):
         worker_config = config.model_copy(deep=True)
-        worker_config.study.storage = StorageConfig(
-            type="sqlite", path=str(tmp_path / f"{study_id}.db")
-        )
+        worker_config.study.storage = StorageConfig(type="sqlite", path=str(tmp_path / f"{study_id}.db"))
         worker_config.study.name = f"opt-{study_id}"
         return worker_config
 
@@ -195,41 +189,23 @@ def run_jobs_sync(monkeypatch, tmp_path):
         def send(self, *args, **kwargs):
             return self._fn(*args, **kwargs)
 
-    monkeypatch.setattr(
-        actors, "optimization_coordinator", _SyncActor(oj.dispatch_study)
-    )
-    monkeypatch.setattr(
-        actors, "run_optimization_trials", _SyncActor(oj.run_trials_chunk)
-    )
-    monkeypatch.setattr(
-        actors, "walkforward_coordinator", _SyncActor(wj.dispatch_windows)
-    )
+    monkeypatch.setattr(actors, "optimization_coordinator", _SyncActor(oj.dispatch_study))
+    monkeypatch.setattr(actors, "run_optimization_trials", _SyncActor(oj.run_trials_chunk))
+    monkeypatch.setattr(actors, "walkforward_coordinator", _SyncActor(wj.dispatch_windows))
     monkeypatch.setattr(actors, "run_walkforward_window", _SyncActor(wj.run_window))
-    monkeypatch.setattr(
-        actors, "discovery_coordinator", _SyncActor(sj.dispatch_candidates)
-    )
-    monkeypatch.setattr(
-        actors, "evaluate_discovery_candidate", _SyncActor(sj.run_candidate)
-    )
-    monkeypatch.setattr(
-        actors, "evaluate_genetic_candidate", _SyncActor(sj.run_genetic_candidate)
-    )
+    monkeypatch.setattr(actors, "discovery_coordinator", _SyncActor(sj.dispatch_candidates))
+    monkeypatch.setattr(actors, "evaluate_discovery_candidate", _SyncActor(sj.run_candidate))
+    monkeypatch.setattr(actors, "evaluate_genetic_candidate", _SyncActor(sj.run_genetic_candidate))
     monkeypatch.setattr(actors, "run_backtest", _SyncActor(bj.run_backtest_job))
-    monkeypatch.setattr(
-        actors, "run_neural_training", _SyncActor(nj.run_training_job)
-    )
-    monkeypatch.setattr(
-        actors, "run_encoder_ablation", _SyncActor(eaj.run_encoder_ablation_job)
-    )
-    monkeypatch.setattr(
-        actors, "run_discovery_ab", _SyncActor(dab.run_discovery_ab_job)
-    )
+    monkeypatch.setattr(actors, "run_neural_training", _SyncActor(nj.run_training_job))
+    monkeypatch.setattr(actors, "run_encoder_ablation", _SyncActor(eaj.run_encoder_ablation_job))
+    monkeypatch.setattr(actors, "run_discovery_ab", _SyncActor(dab.run_discovery_ab_job))
     monkeypatch.setattr(
         actors,
         "run_alpha_research",
-        _SyncActor(lambda job_id, request_json, resume=False: arj.run_alpha_research_job(
-            job_id, request_json, resume=resume
-        )),
+        _SyncActor(
+            lambda job_id, request_json, resume=False: arj.run_alpha_research_job(job_id, request_json, resume=resume)
+        ),
     )
 
     return fake

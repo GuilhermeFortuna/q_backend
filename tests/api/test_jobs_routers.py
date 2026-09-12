@@ -73,11 +73,7 @@ STRATEGY_SEARCH_OPENAPI_PATHS: list[str] = [
 ]
 
 ALL_JOB_ROUTES = OPTIMIZATION_ROUTES + WALKFORWARD_ROUTES + STRATEGY_SEARCH_ROUTES
-ALL_JOB_OPENAPI_PATHS = (
-    OPTIMIZATION_OPENAPI_PATHS
-    + WALKFORWARD_OPENAPI_PATHS
-    + STRATEGY_SEARCH_OPENAPI_PATHS
-)
+ALL_JOB_OPENAPI_PATHS = OPTIMIZATION_OPENAPI_PATHS + WALKFORWARD_OPENAPI_PATHS + STRATEGY_SEARCH_OPENAPI_PATHS
 
 
 def _route_inventory() -> set[tuple[str, str]]:
@@ -141,6 +137,6 @@ def test_main_has_no_job_domain_routes():
     import q_backend.api.main as main_module
 
     source = inspect.getsource(main_module)
-    assert "@app.post(\"/api/v1/optimize\"" not in source
-    assert "@app.post(\"/api/v1/walkforward\"" not in source
-    assert "@app.post(\"/api/v1/strategy-search\"" not in source
+    assert '@app.post("/api/v1/optimize"' not in source
+    assert '@app.post("/api/v1/walkforward"' not in source
+    assert '@app.post("/api/v1/strategy-search"' not in source

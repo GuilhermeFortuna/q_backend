@@ -205,15 +205,9 @@ def compute_session_context_bundle(
     d1_vol_mapped = sessions.map(d1_vol.to_dict())
 
     columns = {
-        CTX_PREV_SESSION_HIGH: _map_previous_session_values(
-            df, session_stats, "session_high"
-        ),
-        CTX_PREV_SESSION_LOW: _map_previous_session_values(
-            df, session_stats, "session_low"
-        ),
-        CTX_PREV_SESSION_CLOSE: _map_previous_session_values(
-            df, session_stats, "session_close"
-        ),
+        CTX_PREV_SESSION_HIGH: _map_previous_session_values(df, session_stats, "session_high"),
+        CTX_PREV_SESSION_LOW: _map_previous_session_values(df, session_stats, "session_low"),
+        CTX_PREV_SESSION_CLOSE: _map_previous_session_values(df, session_stats, "session_close"),
         CTX_SESSION_GAP: compute_session_gap(df, session_stats),
         CTX_D1_PREV_HIGH: _map_previous_trading_day(df, daily, "high"),
         CTX_D1_PREV_LOW: _map_previous_trading_day(df, daily, "low"),

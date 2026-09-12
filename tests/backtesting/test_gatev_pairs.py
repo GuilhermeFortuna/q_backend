@@ -52,7 +52,7 @@ class TestGatevPairsStrategy:
         # A remains flat at 100.0, B has variation
         closes_a = [100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
         closes_b = [100.0, 101.0, 99.0, 100.0, 98.0, 100.0]
-        
+
         df = _ohlc_pairs_frame(closes_a, closes_b)
         res = strategy.compute_indicators(df)
 
@@ -71,7 +71,7 @@ class TestGatevPairsStrategy:
         # Index 3: normalized a = 1.0, b = 1.00 -> spread = 0.00
         # Mean = 0.0. Variance = (0.0^2 + 0.01^2 + 0.01^2 + 0.0^2)/4 = 0.00005. SD = sqrt(0.00005) = 0.007071
         # Threshold = 2 * 0.007071 = 0.01414
-        
+
         # Index 4: normalized a = 1.0, b = 0.98 -> spread = 0.02
         # Since 0.02 > 0.01414, it should trigger sell_signal (short spread)
         assert res["spread"].iloc[4] == pytest.approx(0.02)
@@ -105,7 +105,7 @@ class TestGatevPairsStrategy:
 
         closes_a = [100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
         closes_b = [100.0, 99.0, 101.0, 100.0, 102.0, 100.0]
-        
+
         df = _ohlc_pairs_frame(closes_a, closes_b)
         res = strategy.compute_indicators(df)
 
@@ -120,7 +120,6 @@ class TestGatevPairsStrategy:
         # Exit trigger since spread crosses zero.
         assert res["spread"].iloc[5] == pytest.approx(0.0)
         assert res["exit_signal"].iloc[5]
-
 
 
 class TestGatevPairsIntegration:
@@ -144,18 +143,18 @@ class TestGatevPairsIntegration:
         # Generate a synthetic converging/diverging dataset of 30 bars
         closes_a = [100.0] * 30
         closes_b = [100.0] * 30
-        
+
         # Cycle 1: Formation 0..9. We make B fluctuate around 100
         for i in range(10):
             if i % 2 == 1:
                 closes_b[i] = 101.0
             else:
                 closes_b[i] = 99.0
-                
+
         # Cycle 1: Trading 10..19. We make B diverge heavily, then converge
         closes_b[11] = 95.0  # Divergence: B underperforms. Spread = 1.0 - 0.95 = 0.05. Trigger sell spread.
         closes_b[12] = 95.0
-        closes_b[13] = 100.0 # Convergence: Spread = 0.0. Trigger exit.
+        closes_b[13] = 100.0  # Convergence: Spread = 0.0. Trigger exit.
 
         # Cycle 2: Formation 20..29. B fluctuates.
         for i in range(20, 30):
@@ -166,9 +165,7 @@ class TestGatevPairsIntegration:
 
         df = _ohlc_pairs_frame(closes_a, closes_b)
 
-        sizer = build_position_sizer(
-            FixedQuantityPositionSizing(quantity=2.0)
-        )
+        sizer = build_position_sizer(FixedQuantityPositionSizing(quantity=2.0))
 
         engine = BacktestEngine(
             strategy,
@@ -181,7 +178,7 @@ class TestGatevPairsIntegration:
         trades = registry.get_all_trades()
 
         assert len(trades) > 0, "Expected at least one trade to execute"
-        
+
         for trade in trades:
             assert trade.quantity.is_integer()
             assert trade.quantity == 2.0

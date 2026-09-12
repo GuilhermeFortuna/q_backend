@@ -22,9 +22,7 @@ class DummyStrategy(TradingStrategy):
             return [Signal(symbol="DUMMY", action=SignalAction.BUY)]
         return []
 
-    def check_exit_conditions(
-        self, current_data: pd.Series, open_trades: List[Trade]
-    ) -> List[Signal]:
+    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
         if current_data.get("close", 0) == 110.0:
             return [Signal(symbol="DUMMY", action=SignalAction.CLOSE)]
         return []
@@ -56,9 +54,7 @@ def test_side_cost_per_contract():
 
 def test_side_cost_bps():
     config = TransactionCostConfig(cost_bps=100.0)
-    assert side_cost(config, price=100.0, quantity=1.0, point_value=1.0) == pytest.approx(
-        1.0
-    )
+    assert side_cost(config, price=100.0, quantity=1.0, point_value=1.0) == pytest.approx(1.0)
 
 
 def test_round_trip_cost_per_contract_reduces_pnl(swing_trade_data):
@@ -97,9 +93,9 @@ def test_zero_costs_match_baseline(swing_trade_data):
     baseline = BacktestEngine(strategy, sizer, initial_capital=1000).run(
         swing_trade_data, parallel_mode=ParallelMode.SEQUENTIAL
     )
-    with_none = BacktestEngine(
-        strategy, sizer, initial_capital=1000, costs=None
-    ).run(swing_trade_data, parallel_mode=ParallelMode.SEQUENTIAL)
+    with_none = BacktestEngine(strategy, sizer, initial_capital=1000, costs=None).run(
+        swing_trade_data, parallel_mode=ParallelMode.SEQUENTIAL
+    )
     with_zero = BacktestEngine(
         strategy,
         sizer,

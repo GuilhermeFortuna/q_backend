@@ -72,9 +72,7 @@ class FakeReconciliationBroker:
         default: Optional[BrokerOrderState] = None,
         broker_mode: BrokerMode = BrokerMode.PAPER,
     ) -> None:
-        self._default = default or BrokerOrderState(
-            status=BrokerOrderLookupStatus.NOT_FOUND
-        )
+        self._default = default or BrokerOrderState(status=BrokerOrderLookupStatus.NOT_FOUND)
         self._states: dict[UUID, BrokerOrderState] = {}
         self._broker_mode = broker_mode
         self.lookups: list[UUID] = []
@@ -100,9 +98,7 @@ class FakeReconciliationBroker:
         *,
         cost_config: PaperCostConfig,
     ) -> BrokerSubmissionResult:
-        raise NotImplementedError(
-            "FakeReconciliationBroker does not submit orders"
-        )
+        raise NotImplementedError("FakeReconciliationBroker does not submit orders")
 
     def lookup_order(self, request: MarketOrderRequest) -> BrokerOrderState:
         self.lookups.append(request.order_id)
@@ -110,9 +106,7 @@ class FakeReconciliationBroker:
 
 
 def ledger_row_count(session: Session) -> int:
-    return session.execute(
-        select(func.count()).select_from(ExecutionLedgerEntry)
-    ).scalar_one()
+    return session.execute(select(func.count()).select_from(ExecutionLedgerEntry)).scalar_one()
 
 
 def fill_row_count(session: Session) -> int:

@@ -43,6 +43,4 @@ def mt5_datetime_to_utc_iso(dt: datetime) -> str:
     """
     if dt.tzinfo is not None:
         dt = dt.astimezone(BRASILIA_TZ).replace(tzinfo=None)
-    return dt.replace(tzinfo=BRASILIA_TZ).astimezone(timezone.utc).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
+    return dt.replace(tzinfo=BRASILIA_TZ).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

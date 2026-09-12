@@ -57,9 +57,7 @@ class ExecutionWorker:
     service: ExecutionService
     recovery: ExecutionRecovery
     settings: Settings = field(default_factory=get_settings)
-    clock: Callable[[], datetime] = field(
-        default_factory=lambda: lambda: datetime.now(timezone.utc)
-    )
+    clock: Callable[[], datetime] = field(default_factory=lambda: lambda: datetime.now(timezone.utc))
     poll_interval_seconds: Optional[float] = None
     shutdown_event: threading.Event = field(default_factory=threading.Event)
 
@@ -123,9 +121,7 @@ class ExecutionWorker:
                 reconciled = self._order_reconciler().reconcile_all_pending(session)
                 session.commit()
                 if reconciled:
-                    logger.info(
-                        "startup reconciliation: resolved=%s", len(reconciled)
-                    )
+                    logger.info("startup reconciliation: resolved=%s", len(reconciled))
 
             interval = (
                 self.poll_interval_seconds
@@ -237,9 +233,7 @@ class ExecutionWorker:
                         cost_config=cost_config,
                         point_value=point_value,
                     )
-                    timing_log = process_result.timing.model_copy(
-                        update={"bar_detection_ms": bar_detection_ms}
-                    )
+                    timing_log = process_result.timing.model_copy(update={"bar_detection_ms": bar_detection_ms})
                     if process_result.timing.total_ms > 0:
                         logger.info(
                             "bar processed deployment=%s outcome=%s timing=%s",
@@ -286,9 +280,7 @@ class ExecutionWorker:
                     )
                     continue
                 account = get_paper_account(session, deployment.paper_account_id)
-                initial_capital = (
-                    float(account.initial_balance) if account is not None else 100_000.0
-                )
+                initial_capital = float(account.initial_balance) if account is not None else 100_000.0
                 runtime = self.recovery.build_runtime(
                     session,
                     deployment,
@@ -307,9 +299,7 @@ class ExecutionWorker:
             if deployment_id not in active_ids:
                 self._release_deployment(session, deployment_id)
 
-    def _heartbeat_lease(
-        self, session: Session, deployment_id: uuid.UUID, *, now: datetime
-    ) -> None:
+    def _heartbeat_lease(self, session: Session, deployment_id: uuid.UUID, *, now: datetime) -> None:
         token = self._lease_tokens.get(deployment_id)
         if token is None:
             return
@@ -347,9 +337,7 @@ class ExecutionWorker:
         return PaperCostConfig(
             point_value=Decimal(str(self.settings.execution_default_point_value)),
             slippage_points=Decimal(str(self.settings.execution_paper_slippage_points)),
-            cost_per_contract=Decimal(
-                str(self.settings.execution_paper_cost_per_contract)
-            ),
+            cost_per_contract=Decimal(str(self.settings.execution_paper_cost_per_contract)),
             cost_bps=Decimal(str(self.settings.execution_paper_cost_bps)),
             max_quote_age_seconds=self.settings.execution_max_quote_age_seconds,
         )

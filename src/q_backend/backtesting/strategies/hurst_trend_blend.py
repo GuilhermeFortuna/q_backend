@@ -16,12 +16,12 @@ VOL_ESTIMATOR_CHOICES = ["yang_zhang", "close_to_close"]
 class HurstTrendBlendStrategy(TradingStrategy):
     """
     Hurst, Ooi & Pedersen (2017) Trend Blend strategy.
-    
+
     Blends momentum signals across three different horizons (e.g., 1-month, 3-month,
     and 12-month) and takes the equal-weighted average of their return signs.
     The signal strength is proportional to the alignment of the trends (1.0 if all agree,
     0.33 if 2 vs 1 agree).
-    
+
     Positions can be rebalanced monthly (on every bar) or held until the direction flips.
     """
 
@@ -40,9 +40,7 @@ class HurstTrendBlendStrategy(TradingStrategy):
         **kwargs,
     ):
         if vol_estimator not in VOL_ESTIMATOR_CHOICES:
-            raise ValueError(
-                f"vol_estimator must be one of {VOL_ESTIMATOR_CHOICES}, got {vol_estimator!r}"
-            )
+            raise ValueError(f"vol_estimator must be one of {VOL_ESTIMATOR_CHOICES}, got {vol_estimator!r}")
         self.lookback_1 = lookback_1
         self.lookback_2 = lookback_2
         self.lookback_3 = lookback_3
@@ -71,9 +69,7 @@ class HurstTrendBlendStrategy(TradingStrategy):
         has_ohlc = all(col in df.columns for col in ("open", "high", "low", "close"))
         use_yz = self.vol_estimator == "yang_zhang" and has_ohlc
         if use_yz:
-            return compute_yang_zhang(
-                df["open"], df["high"], df["low"], df["close"], self.vol_window
-            )
+            return compute_yang_zhang(df["open"], df["high"], df["low"], df["close"], self.vol_window)
         return compute_realized_vol(df["close"], self.vol_window)
 
     def compute_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -123,12 +119,8 @@ class HurstTrendBlendStrategy(TradingStrategy):
         prev_sign.loc[rebalance_index] = prev_rebalance_sign.to_numpy()
 
         mom = df["momentum"]
-        df["buy_signal"] = (
-            rebalance & (mom > 0) & (prev_sign <= 0) & mom.notna()
-        )
-        df["sell_signal"] = (
-            rebalance & (mom < 0) & (prev_sign >= 0) & mom.notna()
-        )
+        df["buy_signal"] = rebalance & (mom > 0) & (prev_sign <= 0) & mom.notna()
+        df["sell_signal"] = rebalance & (mom < 0) & (prev_sign >= 0) & mom.notna()
         return df
 
     def get_chart_indicators(self) -> List[ChartIndicatorSpec]:
@@ -171,9 +163,7 @@ class HurstTrendBlendStrategy(TradingStrategy):
                 signals.append(Signal(symbol=symbol, action=SignalAction.SELL, strength=strength))
         return signals
 
-    def check_exit_conditions(
-        self, current_data: pd.Series, open_trades: List[Trade]
-    ) -> List[Signal]:
+    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
         symbol = resolve_symbol(current_data, self.symbol)
         if not open_trades:
             return []

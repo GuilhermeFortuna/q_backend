@@ -32,18 +32,14 @@ def ping(note: str = "") -> None:
 
 
 @dramatiq.actor(**_ACTOR_OPTS)
-def optimization_coordinator(
-    study_id: str, db_study_id_hex: str, config_json: str
-) -> None:
+def optimization_coordinator(study_id: str, db_study_id_hex: str, config_json: str) -> None:
     from q_backend.api import optimization_jobs
 
     optimization_jobs.dispatch_study(study_id, db_study_id_hex, config_json)
 
 
 @dramatiq.actor(**_ACTOR_OPTS)
-def run_optimization_trials(
-    study_id: str, db_study_id_hex: str, config_json: str, n_trials: int
-) -> None:
+def run_optimization_trials(study_id: str, db_study_id_hex: str, config_json: str, n_trials: int) -> None:
     from q_backend.api import optimization_jobs
 
     optimization_jobs.run_trials_chunk(study_id, db_study_id_hex, config_json, n_trials)
@@ -69,9 +65,7 @@ def run_walkforward_window(
 ) -> None:
     from q_backend.api import walkforward_jobs
 
-    walkforward_jobs.run_window(
-        run_id, db_run_id_hex, request_json, window_index, total_windows
-    )
+    walkforward_jobs.run_window(run_id, db_run_id_hex, request_json, window_index, total_windows)
 
 
 # --- discovery (strategy search) --------------------------------------------------
@@ -85,14 +79,10 @@ def discovery_coordinator(run_id: str, db_run_id_hex: str, config_json: str) -> 
 
 
 @dramatiq.actor(**_ACTOR_OPTS)
-def evaluate_discovery_candidate(
-    run_id: str, db_run_id_hex: str, config_json: str, candidate_index: int
-) -> None:
+def evaluate_discovery_candidate(run_id: str, db_run_id_hex: str, config_json: str, candidate_index: int) -> None:
     from q_backend.api import strategy_search_jobs
 
-    strategy_search_jobs.run_candidate(
-        run_id, db_run_id_hex, config_json, candidate_index
-    )
+    strategy_search_jobs.run_candidate(run_id, db_run_id_hex, config_json, candidate_index)
 
 
 @dramatiq.actor(**_ACTOR_OPTS)
@@ -105,9 +95,7 @@ def evaluate_genetic_candidate(
 ) -> None:
     from q_backend.api import strategy_search_jobs
 
-    strategy_search_jobs.run_genetic_candidate(
-        run_id, db_run_id_hex, config_json, generation, candidate_index
-    )
+    strategy_search_jobs.run_genetic_candidate(run_id, db_run_id_hex, config_json, generation, candidate_index)
 
 
 # --- backtest ---------------------------------------------------------------------

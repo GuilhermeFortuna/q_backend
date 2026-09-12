@@ -32,12 +32,12 @@ def build_strategy(name: str, params: dict[str, Any], symbol: str) -> TradingStr
     entry = get_registered_strategy(name)
     merged = merge_strategy_params(name, params)
     strategy = entry.build(merged, symbol)
-    
+
     # Centralized hydration of full parameters and exit strategy
     strategy.parameters.update(merged)
-    
+
     from q_backend.backtesting.exit_strategy import ExitStrategy
 
     strategy.exit_strategy = ExitStrategy(merged)
-    
+
     return strategy

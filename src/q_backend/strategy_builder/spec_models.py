@@ -109,9 +109,7 @@ class StrategySpec(BaseModel):
     entry: ConditionGroup
     exit: ConditionGroup
     risk: RiskSpec
-    execution_assumptions: ExecutionAssumptionsSpec = Field(
-        default_factory=ExecutionAssumptionsSpec
-    )
+    execution_assumptions: ExecutionAssumptionsSpec = Field(default_factory=ExecutionAssumptionsSpec)
     data_requirements: DataRequirements | None = None
 
 

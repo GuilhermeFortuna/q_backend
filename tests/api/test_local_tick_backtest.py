@@ -89,9 +89,7 @@ def local_tick_market(tmp_path, monkeypatch):
     yield
 
 
-def test_tick_backtest_local_mode_without_mt5(
-    run_jobs_sync, local_tick_market, api_session_scope, lake_root_path
-):
+def test_tick_backtest_local_mode_without_mt5(run_jobs_sync, local_tick_market, api_session_scope, lake_root_path):
     request = BacktestJobRequest(
         symbol="WIN$",
         engine="tick",

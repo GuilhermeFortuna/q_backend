@@ -274,9 +274,7 @@ def test_provider_elitism_is_monotonic():
         results = []
         for index, candidate in enumerate(candidates):
             score = float(index + generation)
-            results.append(
-                _completed_result(candidate.candidate_id, robustness_score=score)
-            )
+            results.append(_completed_result(candidate.candidate_id, robustness_score=score))
         best_scores.append(max(candidate_fitness(r, provider.population[i], genetic) for i, r in enumerate(results)))
         provider.report(results)
 
@@ -288,17 +286,13 @@ def test_operators_preserve_validity():
     import random
 
     rng = random.Random(5)
-    population = build_initial_population(
-        rng, population_size=6, max_nodes=12, max_depth=8
-    )
+    population = build_initial_population(rng, population_size=6, max_nodes=12, max_depth=8)
     for _ in range(20):
         parent_a = rng.choice(population)
         parent_b = rng.choice(population)
         child = draw_valid_child(
             rng,
-            lambda: crossover_genomes(
-                rng, parent_a, parent_b, max_nodes=12, max_depth=8
-            ),
+            lambda: crossover_genomes(rng, parent_a, parent_b, max_nodes=12, max_depth=8),
         )
         validate_genome(child, max_depth=8, max_node_count=12)
         child = draw_valid_child(
@@ -434,7 +428,7 @@ def test_deterministic_population_after_reports():
 
     def run_once() -> list[list[str]]:
         provider = GeneticCandidateProvider(genetic, search)
-        history: list[list[str]] = [ [g.genome_id for g in provider.population] ]
+        history: list[list[str]] = [[g.genome_id for g in provider.population]]
         for _ in range(2):
             candidates = provider.candidates()
             results = [
@@ -443,11 +437,13 @@ def test_deterministic_population_after_reports():
             ]
             provider.report(results)
             history.append([g.genome_id for g in provider.population])
+
     assert run_once() == run_once()
 
 
 def test_composite_strategy_param_merging():
     from q_backend.backtesting.strategy_registry import merge_strategy_params
+
     params = {"genome": {"nodes": []}, "custom_param": 42}
     merged = merge_strategy_params("CompositeStrategy", params)
     assert merged == params
@@ -576,5 +572,3 @@ def test_trend_blend_compilation():
     assert "g_n2" in res.columns
     assert "g_n2__volatility" in res.columns
     assert "entry_long_signal" in res.columns
-
-

@@ -134,19 +134,13 @@ def test_run_evaluation_uses_read_through_seam(
 
     def _spy(symbol, timeframe, start_dt, end_dt, *, service=None):
         calls.append((symbol, timeframe, start_dt, end_dt))
-        return [
-            bar
-            for bar in _bars_to_ohlcv(_synthetic_bars())
-            if start_dt <= bar.time <= end_dt
-        ]
+        return [bar for bar in _bars_to_ohlcv(_synthetic_bars()) if start_dt <= bar.time <= end_dt]
 
     monkeypatch.setattr(
         "q_backend.features.evaluation_service.read_ohlcv_fresh",
         _spy,
     )
-    target = next(
-        spec for spec in list_target_specs([5]) if spec.name == "fwd_return"
-    )
+    target = next(spec for spec in list_target_specs([5]) if spec.name == "fwd_return")
     run_evaluation(
         seeded_session,
         symbol="EURUSD",
@@ -159,14 +153,8 @@ def test_run_evaluation_uses_read_through_seam(
     assert ("EURUSD", "H1", sample_market["start"], sample_market["end"]) in calls
 
 
-def test_run_evaluation_persists_run_and_scores(
-    seeded_session: Session, sample_market, lake_root_path
-) -> None:
-    target = next(
-        spec
-        for spec in list_target_specs([5])
-        if spec.name == "fwd_return"
-    )
+def test_run_evaluation_persists_run_and_scores(seeded_session: Session, sample_market, lake_root_path) -> None:
+    target = next(spec for spec in list_target_specs([5]) if spec.name == "fwd_return")
     feature_set = [
         FeatureRequest("rsi", None, {"period": 14}),
         FeatureRequest("ma", None, {"period": 20, "ma_type": "sma"}),
@@ -195,9 +183,7 @@ def test_run_evaluation_persists_run_and_scores(
     assert "cluster_count" in run.result_summary
     assert run.result_summary["cluster_count"] >= 1
 
-    score_rows = seeded_session.execute(
-        select(FeatureScoreRow).where(FeatureScoreRow.run_id == run.id)
-    ).scalars().all()
+    score_rows = seeded_session.execute(select(FeatureScoreRow).where(FeatureScoreRow.run_id == run.id)).scalars().all()
     assert len(score_rows) == 2
     assert {row.feature_name for row in score_rows} == {"rsi", "ma"}
 
@@ -210,17 +196,13 @@ def test_run_evaluation_marks_failed_and_reraises_on_error(
     seeded_session: Session, sample_market, lake_root_path, monkeypatch
 ) -> None:
     """WO179 must-surface: an evaluation failure records FAILED + message and re-raises."""
-    target = next(
-        spec for spec in list_target_specs([5]) if spec.name == "fwd_return"
-    )
+    target = next(spec for spec in list_target_specs([5]) if spec.name == "fwd_return")
     feature_set = [FeatureRequest("rsi", None, {"period": 14})]
 
     def _boom(*_args, **_kwargs):
         raise RuntimeError("matrix build exploded")
 
-    monkeypatch.setattr(
-        "q_backend.features.evaluation_service.build_feature_matrix", _boom
-    )
+    monkeypatch.setattr("q_backend.features.evaluation_service.build_feature_matrix", _boom)
 
     with pytest.raises(RuntimeError, match="matrix build exploded"):
         run_evaluation(

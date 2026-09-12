@@ -94,15 +94,9 @@ def test_archived_cannot_transition(db_session, lake_root_path) -> None:
         )
 
 
-def test_production_demotes_prior_production_same_instrument(
-    db_session, lake_root_path
-) -> None:
-    first = _train_version(
-        db_session, lake_root_path, model_key="promote_first_a", train_end_day=10
-    )
-    second = _train_version(
-        db_session, lake_root_path, model_key="promote_first_b", train_end_day=11
-    )
+def test_production_demotes_prior_production_same_instrument(db_session, lake_root_path) -> None:
+    first = _train_version(db_session, lake_root_path, model_key="promote_first_a", train_end_day=10)
+    second = _train_version(db_session, lake_root_path, model_key="promote_first_b", train_end_day=11)
 
     for version in (first, second):
         set_neural_model_status(
@@ -130,15 +124,9 @@ def test_production_demotes_prior_production_same_instrument(
     assert refreshed_second.status == NeuralModelStatus.PRODUCTION.value
 
 
-def test_production_leaves_other_instrument_untouched(
-    db_session, lake_root_path
-) -> None:
-    test_a = _train_version(
-        db_session, lake_root_path, model_key="promote_a", symbol="AAA"
-    )
-    test_b = _train_version(
-        db_session, lake_root_path, model_key="promote_b", symbol="BBB"
-    )
+def test_production_leaves_other_instrument_untouched(db_session, lake_root_path) -> None:
+    test_a = _train_version(db_session, lake_root_path, model_key="promote_a", symbol="AAA")
+    test_b = _train_version(db_session, lake_root_path, model_key="promote_b", symbol="BBB")
 
     for version in (test_a, test_b):
         set_neural_model_status(

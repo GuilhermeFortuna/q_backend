@@ -120,9 +120,7 @@ def evict_run(run_id: str) -> None:
     try:
         delete_job_progress(get_redis(), run_id, namespace=PROGRESS_NAMESPACE)
     except Exception:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
-        logger.debug(
-            "Redis progress delete unavailable for walk-forward run %s", run_id
-        )
+        logger.debug("Redis progress delete unavailable for walk-forward run %s", run_id)
     clear_partials(run_id)
     clear_job_keys(run_id)
 
@@ -190,9 +188,7 @@ def _build_result_summary(result: WalkForwardResult) -> dict[str, Any]:
         "oos_metrics": result.oos_metrics,
         "efficiency": result.efficiency,
         "window_count": len(result.windows),
-        "completed_windows": sum(
-            1 for window in result.windows if window.status == "completed"
-        ),
+        "completed_windows": sum(1 for window in result.windows if window.status == "completed"),
     }
 
 
@@ -228,9 +224,7 @@ def _build_oos_equity_dataframe(result: WalkForwardResult) -> pd.DataFrame:
     return pd.DataFrame({"time": series.index, "equity": series.values})
 
 
-def _write_lake_artifacts(
-    run_id: str, result: WalkForwardResult
-) -> Optional[dict[str, str]]:
+def _write_lake_artifacts(run_id: str, result: WalkForwardResult) -> Optional[dict[str, str]]:
     try:
         return write_walkforward_artifacts(
             run_id,
@@ -280,14 +274,9 @@ def _persist_run_finish(job: WalkForwardJob, terminal_status: JobStatus) -> None
 
 def validate_walkforward_request(request: WalkForwardRequest) -> None:
     if request.optimization.is_multi_objective():
-        raise ValueError(
-            "Walk-forward analysis does not support multi-objective studies"
-        )
+        raise ValueError("Walk-forward analysis does not support multi-objective studies")
     if request.optimization.backtest.engine == "tick":
-        raise ValueError(
-            "Walk-forward analysis supports candle engine only (engine='tick' "
-            "is not supported yet)"
-        )
+        raise ValueError("Walk-forward analysis supports candle engine only (engine='tick' " "is not supported yet)")
     split_windows(
         request.optimization.backtest.start,
         request.optimization.backtest.end,
@@ -365,9 +354,7 @@ def _cancel_orphaned_run(run_id: str) -> bool:
     try:
         delete_job_progress(get_redis(), run_id, namespace=PROGRESS_NAMESPACE)
     except Exception:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
-        logger.debug(
-            "Redis progress delete unavailable for walk-forward run %s", run_id
-        )
+        logger.debug("Redis progress delete unavailable for walk-forward run %s", run_id)
     return True
 
 
@@ -396,9 +383,7 @@ def _window_runner(request: WalkForwardRequest) -> DefaultBacktestRunner:
     """Build a runner that slices the run's cached OHLCV frame per window."""
     backtest = request.optimization.backtest
     return DefaultBacktestRunner.from_frame_sliced(
-        load_ohlcv_frame(
-            backtest.symbol, backtest.timeframe, backtest.start, backtest.end
-        )
+        load_ohlcv_frame(backtest.symbol, backtest.timeframe, backtest.start, backtest.end)
     )
 
 
@@ -461,9 +446,7 @@ def dispatch_windows(run_id: str, db_run_id_hex: str, request_json: str) -> None
     from q_backend.tasks import actors
 
     for window in windows:
-        actors.run_walkforward_window.send(
-            run_id, db_run_id_hex, request_json, window.index, total
-        )
+        actors.run_walkforward_window.send(run_id, db_run_id_hex, request_json, window.index, total)
 
 
 def run_window(
@@ -477,26 +460,16 @@ def run_window(
     request = WalkForwardRequest.model_validate_json(request_json)
     db_run_id = uuid.UUID(db_run_id_hex) if db_run_id_hex else None
     backtest = request.optimization.backtest
-    window = split_windows(backtest.start, backtest.end, request.walkforward)[
-        window_index
-    ]
+    window = split_windows(backtest.start, backtest.end, request.walkforward)[window_index]
 
     if not is_cancelled(run_id):
         try:
             runner = _window_runner(request)
-            wf_runner = WalkForwardRunner(
-                request.optimization, request.walkforward, runner
-            )
-            result, is_objective = wf_runner._run_single_window(
-                window, total_windows, runner
-            )
-            stash_partial(
-                run_id, window_index, window_partial_to_dict(result, is_objective)
-            )
+            wf_runner = WalkForwardRunner(request.optimization, request.walkforward, runner)
+            result, is_objective = wf_runner._run_single_window(window, total_windows, runner)
+            stash_partial(run_id, window_index, window_partial_to_dict(result, is_objective))
         except Exception:  # noqa: BLE001 - one window failing shouldn't strand the run
-            logger.exception(
-                "Walk-forward window %d failed for run %s", window_index, run_id
-            )
+            logger.exception("Walk-forward window %d failed for run %s", window_index, run_id)
             stash_partial(
                 run_id,
                 window_index,
@@ -543,13 +516,9 @@ def finalize_walkforward(run_id: str, db_run_id_hex: str, request_json: str) -> 
         window_results = [result for result, _ in pairs]
         is_objectives = [obj for _, obj in pairs if obj is not None]
         job.total_windows = len(window_results)
-        job.windows_completed = sum(
-            1 for result in window_results if result.status == "completed"
-        )
+        job.windows_completed = sum(1 for result in window_results if result.status == "completed")
         # Reuse the runner's aggregation (OOS equity stitching, efficiency).
-        agg_runner = WalkForwardRunner(
-            request.optimization, request.walkforward, DefaultBacktestRunner()
-        )
+        agg_runner = WalkForwardRunner(request.optimization, request.walkforward, DefaultBacktestRunner())
         job.result = agg_runner._finalize_result(window_results, is_objectives)
         job.lake_paths = _write_lake_artifacts(run_id, job.result)
         if is_cancelled(run_id):
@@ -607,11 +576,7 @@ def _serialize_window(window: WalkForwardWindowResult) -> dict[str, Any]:
 def serialize_equity_points(series: pd.Series) -> list[dict[str, Any]]:
     points: list[dict[str, Any]] = []
     for timestamp, equity in series.items():
-        ts = (
-            timestamp.to_pydatetime()
-            if isinstance(timestamp, pd.Timestamp)
-            else timestamp
-        )
+        ts = timestamp.to_pydatetime() if isinstance(timestamp, pd.Timestamp) else timestamp
         points.append({"time": _isoformat(ts), "equity": float(equity)})
     return points
 
@@ -666,9 +631,7 @@ def status_payload_from_db(run_id: str) -> dict[str, Any] | None:
         "error": run.error_message,
         "optimization_config": optimization_config,
         "walkforward_config": walkforward_config,
-        "backtest_config": (
-            optimization_config.get("backtest") if optimization_config else None
-        ),
+        "backtest_config": (optimization_config.get("backtest") if optimization_config else None),
     }
 
 
@@ -796,6 +759,4 @@ def delete_run_lake_artifacts(run_id: str) -> None:
     try:
         delete_walkforward_artifacts(run_id)
     except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
-        logger.warning(
-            "Failed to delete walk-forward lake artifacts for %s: %s", run_id, exc
-        )
+        logger.warning("Failed to delete walk-forward lake artifacts for %s: %s", run_id, exc)

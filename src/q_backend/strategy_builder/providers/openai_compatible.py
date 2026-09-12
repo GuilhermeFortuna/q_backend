@@ -15,7 +15,6 @@ from q_backend.strategy_builder.providers.base import RawAiResponse, ProviderReq
 logger = logging.getLogger(__name__)
 
 
-
 class OpenAICompatibleInterpreterProvider:
     provider_name = "openai_compatible"
 

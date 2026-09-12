@@ -8,7 +8,6 @@ from q_backend.backtesting.costs import TransactionCostConfig
 from q_backend.backtesting.entry_models import EntryInstance, EntryManagerConfig
 from q_backend.backtesting.position_sizing import PositionSizingConfig
 
-
 # Re-exported for API consumers importing from this module.
 __all__ = [
     "EntryInstance",

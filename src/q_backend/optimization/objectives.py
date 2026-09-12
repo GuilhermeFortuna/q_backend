@@ -3,9 +3,7 @@ from typing import Any
 from q_backend.optimization.models import ObjectiveMode
 
 
-def resolve_objective(
-    metrics: dict[str, Any], mode: ObjectiveMode
-) -> float | list[float]:
+def resolve_objective(metrics: dict[str, Any], mode: ObjectiveMode) -> float | list[float]:
     if mode == ObjectiveMode.MAXIMIZE_NET_PROFIT:
         return float(metrics.get("total_pnl", 0.0))
     if mode == ObjectiveMode.MAXIMIZE_SHARPE:

@@ -83,9 +83,7 @@ def compute_extended_metrics(
     return_drawdown_ratio = total_return_pct / max(max_drawdown_pct, DRAWDOWN_FLOOR)
 
     sharpe_ratio: float | None = None
-    trade_sharpe_ratio = _trade_sharpe_ratio(
-        closed_trades, initial_capital, backtest_days
-    )
+    trade_sharpe_ratio = _trade_sharpe_ratio(closed_trades, initial_capital, backtest_days)
 
     if equity_curve is not None and len(equity_curve) >= 2:
         daily_equity = equity_curve.resample("D").last().ffill()

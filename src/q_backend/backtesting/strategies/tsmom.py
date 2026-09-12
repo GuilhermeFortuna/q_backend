@@ -17,9 +17,7 @@ TRADING_RULE_CHOICES = ["sign", "trend"]
 
 
 @njit(cache=True)
-def compute_rolling_newey_west_t_stat(
-    returns: np.ndarray, window: int, lags: int
-) -> np.ndarray:
+def compute_rolling_newey_west_t_stat(returns: np.ndarray, window: int, lags: int) -> np.ndarray:
     n = len(returns)
     out = np.full(n, np.nan, dtype=np.float64)
     if n < window:
@@ -91,13 +89,9 @@ class TSMOMStrategy(TradingStrategy):
         **kwargs,
     ):
         if vol_estimator not in VOL_ESTIMATOR_CHOICES:
-            raise ValueError(
-                f"vol_estimator must be one of {VOL_ESTIMATOR_CHOICES}, got {vol_estimator!r}"
-            )
+            raise ValueError(f"vol_estimator must be one of {VOL_ESTIMATOR_CHOICES}, got {vol_estimator!r}")
         if trading_rule not in TRADING_RULE_CHOICES:
-            raise ValueError(
-                f"trading_rule must be one of {TRADING_RULE_CHOICES}, got {trading_rule!r}"
-            )
+            raise ValueError(f"trading_rule must be one of {TRADING_RULE_CHOICES}, got {trading_rule!r}")
         self.lookback_bars = lookback_bars
         self.rebalance_bars = rebalance_bars
         self.vol_window = vol_window
@@ -124,9 +118,7 @@ class TSMOMStrategy(TradingStrategy):
         has_ohlc = all(col in df.columns for col in ("open", "high", "low", "close"))
         use_yz = self.vol_estimator == "yang_zhang" and has_ohlc
         if use_yz:
-            return compute_yang_zhang(
-                df["open"], df["high"], df["low"], df["close"], self.vol_window
-            )
+            return compute_yang_zhang(df["open"], df["high"], df["low"], df["close"], self.vol_window)
         return compute_realized_vol(df["close"], self.vol_window)
 
     def compute_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -135,7 +127,9 @@ class TSMOMStrategy(TradingStrategy):
             raise ValueError("Data must contain a 'close' column for the TSMOM strategy.")
 
         if self.trading_rule == "trend":
-            log_ret = np.log(df["close"] / df["close"].shift(1)).replace([np.inf, -np.inf], np.nan).fillna(0.0).to_numpy()
+            log_ret = (
+                np.log(df["close"] / df["close"].shift(1)).replace([np.inf, -np.inf], np.nan).fillna(0.0).to_numpy()
+            )
             df["t_stat"] = compute_rolling_newey_west_t_stat(log_ret, self.lookback_bars, self.nw_lags)
             df["momentum"] = df["t_stat"]
             df["signal_strength"] = np.minimum(np.abs(df["t_stat"]), self.trend_signal_cap) / self.trend_signal_cap
@@ -163,16 +157,16 @@ class TSMOMStrategy(TradingStrategy):
         prev_sign.loc[rebalance_index] = prev_rebalance_sign.to_numpy()
 
         mom = df["momentum"]
-        df["buy_signal"] = (
-            rebalance & (mom > 0) & (prev_sign <= 0) & mom.notna()
-        )
-        df["sell_signal"] = (
-            rebalance & (mom < 0) & (prev_sign >= 0) & mom.notna()
-        )
+        df["buy_signal"] = rebalance & (mom > 0) & (prev_sign <= 0) & mom.notna()
+        df["sell_signal"] = rebalance & (mom < 0) & (prev_sign >= 0) & mom.notna()
         return df
 
     def get_chart_indicators(self) -> List[ChartIndicatorSpec]:
-        label = f"Newey-West t-stat ({self.lookback_bars})" if self.trading_rule == "trend" else f"Momentum ({self.lookback_bars})"
+        label = (
+            f"Newey-West t-stat ({self.lookback_bars})"
+            if self.trading_rule == "trend"
+            else f"Momentum ({self.lookback_bars})"
+        )
         return [
             ChartIndicatorSpec(
                 key="momentum",
@@ -212,9 +206,7 @@ class TSMOMStrategy(TradingStrategy):
                 signals.append(Signal(symbol=symbol, action=SignalAction.SELL, strength=strength))
         return signals
 
-    def check_exit_conditions(
-        self, current_data: pd.Series, open_trades: List[Trade]
-    ) -> List[Signal]:
+    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
         symbol = resolve_symbol(current_data, self.symbol)
         if not open_trades:
             return []

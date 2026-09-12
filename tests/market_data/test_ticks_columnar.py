@@ -47,10 +47,7 @@ def _make_ticks(count: int, base_time: int = 1_700_000_000) -> np.ndarray:
 
 
 def _make_minimal_ticks(count: int, base_time: int = 1_700_000_000) -> np.ndarray:
-    rows = [
-        (base_time + i, 10.0 + i, 10.1 + i)
-        for i in range(count)
-    ]
+    rows = [(base_time + i, 10.0 + i, 10.1 + i) for i in range(count)]
     return np.array(rows, dtype=_TICK_DTYPE_MINIMAL)
 
 
@@ -65,9 +62,7 @@ def test_ticks_structured_to_columnar_dtypes_and_mapping():
     assert result["volume"].dtype == np.float64
     assert result["flags"].dtype == np.int32
 
-    assert list(result["time_msc"]) == [
-        (1_700_000_000 + i) * 1000 for i in range(3)
-    ]
+    assert list(result["time_msc"]) == [(1_700_000_000 + i) * 1000 for i in range(3)]
     assert result["last"][1] == 41.08
     assert result["flags"][0] == 32
 
@@ -77,9 +72,7 @@ def test_ticks_structured_to_columnar_synthesizes_optional_fields():
     result = _ticks_structured_to_columnar(ticks)
 
     assert len(result["time_msc"]) == 2
-    assert list(result["time_msc"]) == [
-        (1_700_000_000 + i) * 1000 for i in range(2)
-    ]
+    assert list(result["time_msc"]) == [(1_700_000_000 + i) * 1000 for i in range(2)]
     assert np.all(result["last"] == 0.0)
     assert np.all(result["volume"] == 0.0)
     assert np.all(result["flags"] == 0)
@@ -115,9 +108,7 @@ def test_get_ticks_columnar_concatenates_chunks(mock_mt5):
 
     start = unix_seconds_to_brasilia_naive(1_700_000_000)
     end = unix_seconds_to_brasilia_naive(1_700_000_020)
-    result = client.get_ticks_columnar(
-        "PETR4", start, end, flags=7, use_cache=False
-    )
+    result = client.get_ticks_columnar("PETR4", start, end, flags=7, use_cache=False)
 
     assert len(result["time_msc"]) == 4
     assert mock_mt5.copy_ticks_range.call_count >= 2
@@ -170,9 +161,7 @@ def test_get_ticks_columnar_raises_past_max_ticks(mock_mt5):
 @patch("q_backend.market_data.clients.metatrader.store_tick_cache")
 @patch("q_backend.market_data.clients.metatrader.load_tick_cache")
 @patch("q_backend.market_data.clients.metatrader.mt5")
-def test_get_ticks_columnar_use_cache_false_always_fetches(
-    mock_mt5, mock_load, mock_store
-):
+def test_get_ticks_columnar_use_cache_false_always_fetches(mock_mt5, mock_load, mock_store):
     mock_mt5.symbol_select.return_value = True
     mock_mt5.COPY_TICKS_ALL = 7
     mock_mt5.copy_ticks_range.return_value = _make_ticks(2)
@@ -197,9 +186,7 @@ def test_get_ticks_columnar_use_cache_false_always_fetches(
 @patch("q_backend.market_data.clients.metatrader.store_tick_cache")
 @patch("q_backend.market_data.clients.metatrader.load_tick_cache")
 @patch("q_backend.market_data.clients.metatrader.mt5")
-def test_get_ticks_columnar_uses_cache_on_hit(
-    mock_mt5, mock_load, mock_store
-):
+def test_get_ticks_columnar_uses_cache_on_hit(mock_mt5, mock_load, mock_store):
     cached = _ticks_structured_to_columnar(_make_ticks(2))
     mock_load.return_value = cached
 
@@ -222,9 +209,7 @@ def test_get_ticks_columnar_uses_cache_on_hit(
 @patch("q_backend.market_data.clients.metatrader.store_tick_cache")
 @patch("q_backend.market_data.clients.metatrader.load_tick_cache")
 @patch("q_backend.market_data.clients.metatrader.mt5")
-def test_get_ticks_columnar_corrupt_cache_refetches(
-    mock_mt5, mock_load, mock_store
-):
+def test_get_ticks_columnar_corrupt_cache_refetches(mock_mt5, mock_load, mock_store):
     mock_load.return_value = None
     mock_mt5.symbol_select.return_value = True
     mock_mt5.COPY_TICKS_ALL = 7

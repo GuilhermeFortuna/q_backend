@@ -47,9 +47,7 @@ def market_root(tmp_path, monkeypatch):
     return root
 
 
-def test_read_ohlcv_fresh_connection_error_falls_back_to_local(
-    market_root, caplog
-):
+def test_read_ohlcv_fresh_connection_error_falls_back_to_local(market_root, caplog):
     start = datetime(2024, 1, 1, 12, tzinfo=timezone.utc)
     end = datetime(2024, 1, 1, 13, tzinfo=timezone.utc)
     local_store.write_ohlcv("WIN$", "H1", [_bar(start), _bar(end)])
@@ -127,9 +125,6 @@ def test_no_direct_local_store_reads_outside_market_data():
         if "market_data" in path.parts:
             continue
         text = path.read_text(encoding="utf-8")
-        if (
-            "local_store import read_ohlcv" in text
-            or "local_store.read_ohlcv" in text
-        ):
+        if "local_store import read_ohlcv" in text or "local_store.read_ohlcv" in text:
             offenders.append(str(path.relative_to(src_root)))
     assert offenders == []

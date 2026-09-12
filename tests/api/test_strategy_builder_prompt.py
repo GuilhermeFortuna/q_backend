@@ -28,10 +28,7 @@ def test_empty_conversation_prompt_matches_pre_wo_shape():
 
 
 def test_conversation_over_turn_limit_drops_oldest_whole_turns():
-    conversation = [
-        _message("user", f"turn-{index}")
-        for index in range(15)
-    ]
+    conversation = [_message("user", f"turn-{index}") for index in range(15)]
     request = StrategyInterpretRequest(
         message="latest user turn",
         conversation=conversation,

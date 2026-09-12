@@ -21,9 +21,7 @@ def _sample_ohlcv_df(length: int = 20) -> pd.DataFrame:
 
 
 def test_macrossover_get_chart_indicators():
-    strategy = MACrossoverStrategy(
-        short_period=2, long_period=4, threshold=1.0, symbol="BTCUSDT"
-    )
+    strategy = MACrossoverStrategy(short_period=2, long_period=4, threshold=1.0, symbol="BTCUSDT")
     specs = strategy.get_chart_indicators()
 
     assert len(specs) == 3
@@ -37,9 +35,7 @@ def test_macrossover_get_chart_indicators():
 
 
 def test_serialize_chart_data_shape_and_alignment():
-    strategy = MACrossoverStrategy(
-        short_period=2, long_period=4, threshold=1.0, symbol="BTCUSDT"
-    )
+    strategy = MACrossoverStrategy(short_period=2, long_period=4, threshold=1.0, symbol="BTCUSDT")
     df = _sample_ohlcv_df(20)
     df_with_indicators = strategy.compute_indicators(df)
     chart_data = serialize_chart_data(df_with_indicators, strategy)

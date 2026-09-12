@@ -40,11 +40,7 @@ def sync_neural_models_to_db(session: Session) -> None:
         )
 
         existing = get_neural_model_version(session, model_hash)
-        status = (
-            existing.status
-            if existing is not None
-            else NeuralModelStatus.TRAINED.value
-        )
+        status = existing.status if existing is not None else NeuralModelStatus.TRAINED.value
 
         create_neural_model_version(
             session,

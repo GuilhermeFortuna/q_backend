@@ -30,7 +30,6 @@ from q_backend.storage.db.models import (
     WalkForwardWindow,
 )
 
-
 _ACTIVE_RUN_STATUSES = (RunStatus.PENDING.value, RunStatus.RUNNING.value)
 
 
@@ -52,11 +51,7 @@ def mark_active_runs_cancelled(
         values["error_message"] = error_message
     if hasattr(model, "finished_at"):
         values["finished_at"] = datetime.now(timezone.utc)
-    result = session.execute(
-        update(model)
-        .where(model.status.in_(_ACTIVE_RUN_STATUSES))
-        .values(**values)
-    )
+    result = session.execute(update(model).where(model.status.in_(_ACTIVE_RUN_STATUSES)).values(**values))
     return int(result.rowcount or 0)
 
 
@@ -73,9 +68,7 @@ def create_strategy(
 
 
 def get_or_create_strategy(session: Session, *, name: str) -> Strategy:
-    strategy = session.execute(
-        select(Strategy).where(Strategy.name == name)
-    ).scalar_one_or_none()
+    strategy = session.execute(select(Strategy).where(Strategy.name == name)).scalar_one_or_none()
     if strategy is None:
         strategy = create_strategy(session, name=name)
     return strategy
@@ -85,15 +78,10 @@ def get_backtest_run(session: Session, run_id: uuid.UUID) -> Optional[BacktestRu
     return session.get(BacktestRun, run_id)
 
 
-def find_backtest_run_by_config(
-    session: Session, config: dict[str, Any]
-) -> Optional[BacktestRun]:
+def find_backtest_run_by_config(session: Session, config: dict[str, Any]) -> Optional[BacktestRun]:
     """Return the newest persisted run whose stored config matches exactly."""
     return session.execute(
-        select(BacktestRun)
-        .where(BacktestRun.config == config)
-        .order_by(desc(BacktestRun.created_at))
-        .limit(1)
+        select(BacktestRun).where(BacktestRun.config == config).order_by(desc(BacktestRun.created_at)).limit(1)
     ).scalar_one_or_none()
 
 
@@ -106,9 +94,7 @@ def delete_backtest_run(session: Session, run_id: uuid.UUID) -> bool:
     return True
 
 
-def delete_backtest_runs(
-    session: Session, run_ids: list[uuid.UUID]
-) -> tuple[int, list[uuid.UUID]]:
+def delete_backtest_runs(session: Session, run_ids: list[uuid.UUID]) -> tuple[int, list[uuid.UUID]]:
     deleted = 0
     not_found: list[uuid.UUID] = []
     for run_id in run_ids:
@@ -123,9 +109,7 @@ def delete_backtest_runs(
     return deleted, not_found
 
 
-def delete_optimization_studies(
-    session: Session, study_ids: list[uuid.UUID]
-) -> tuple[int, list[uuid.UUID]]:
+def delete_optimization_studies(session: Session, study_ids: list[uuid.UUID]) -> tuple[int, list[uuid.UUID]]:
     deleted = 0
     not_found: list[uuid.UUID] = []
     for study_id in study_ids:
@@ -168,14 +152,10 @@ def list_backtest_runs(
     if saved_only:
         base = base.where(BacktestRun.is_saved.is_(True))
 
-    total = session.execute(
-        select(func.count()).select_from(base.subquery())
-    ).scalar_one()
+    total = session.execute(select(func.count()).select_from(base.subquery())).scalar_one()
 
     order_clauses = _backtest_run_order(sort)
-    runs = session.execute(
-        base.order_by(*order_clauses).limit(limit).offset(offset)
-    ).scalars().all()
+    runs = session.execute(base.order_by(*order_clauses).limit(limit).offset(offset)).scalars().all()
     return list(runs), total
 
 
@@ -343,9 +323,7 @@ def update_optimization_trial(
     return trial
 
 
-def get_optimization_study(
-    session: Session, study_id: uuid.UUID
-) -> Optional[OptimizationStudy]:
+def get_optimization_study(session: Session, study_id: uuid.UUID) -> Optional[OptimizationStudy]:
     return session.execute(
         select(OptimizationStudy)
         .where(OptimizationStudy.id == study_id)
@@ -369,15 +347,17 @@ def list_optimization_studies(
     offset: int = 0,
 ) -> tuple[list[OptimizationStudy], int]:
     base = select(OptimizationStudy)
-    total = session.execute(
-        select(func.count()).select_from(base.subquery())
-    ).scalar_one()
-    studies = session.execute(
-        base.order_by(desc(OptimizationStudy.created_at))
-        .limit(limit)
-        .offset(offset)
-        .options(selectinload(OptimizationStudy.trials))
-    ).scalars().all()
+    total = session.execute(select(func.count()).select_from(base.subquery())).scalar_one()
+    studies = (
+        session.execute(
+            base.order_by(desc(OptimizationStudy.created_at))
+            .limit(limit)
+            .offset(offset)
+            .options(selectinload(OptimizationStudy.trials))
+        )
+        .scalars()
+        .all()
+    )
     return list(studies), total
 
 
@@ -532,13 +512,9 @@ def create_walkforward_window(
     return window
 
 
-def get_walkforward_run(
-    session: Session, run_id: uuid.UUID
-) -> Optional[WalkForwardRun]:
+def get_walkforward_run(session: Session, run_id: uuid.UUID) -> Optional[WalkForwardRun]:
     return session.execute(
-        select(WalkForwardRun)
-        .where(WalkForwardRun.id == run_id)
-        .options(selectinload(WalkForwardRun.windows))
+        select(WalkForwardRun).where(WalkForwardRun.id == run_id).options(selectinload(WalkForwardRun.windows))
     ).scalar_one_or_none()
 
 
@@ -549,15 +525,17 @@ def list_walkforward_runs(
     offset: int = 0,
 ) -> tuple[list[WalkForwardRun], int]:
     base = select(WalkForwardRun)
-    total = session.execute(
-        select(func.count()).select_from(base.subquery())
-    ).scalar_one()
-    runs = session.execute(
-        base.order_by(desc(WalkForwardRun.created_at))
-        .limit(limit)
-        .offset(offset)
-        .options(selectinload(WalkForwardRun.windows))
-    ).scalars().all()
+    total = session.execute(select(func.count()).select_from(base.subquery())).scalar_one()
+    runs = (
+        session.execute(
+            base.order_by(desc(WalkForwardRun.created_at))
+            .limit(limit)
+            .offset(offset)
+            .options(selectinload(WalkForwardRun.windows))
+        )
+        .scalars()
+        .all()
+    )
     return list(runs), total
 
 
@@ -700,9 +678,7 @@ def create_strategy_search_candidate(
     return candidate
 
 
-def get_strategy_search_run(
-    session: Session, run_id: uuid.UUID
-) -> Optional[StrategySearchRun]:
+def get_strategy_search_run(session: Session, run_id: uuid.UUID) -> Optional[StrategySearchRun]:
     return session.execute(
         select(StrategySearchRun)
         .where(StrategySearchRun.id == run_id)
@@ -717,15 +693,17 @@ def list_strategy_search_runs(
     offset: int = 0,
 ) -> tuple[list[StrategySearchRun], int]:
     base = select(StrategySearchRun)
-    total = session.execute(
-        select(func.count()).select_from(base.subquery())
-    ).scalar_one()
-    runs = session.execute(
-        base.order_by(desc(StrategySearchRun.created_at))
-        .limit(limit)
-        .offset(offset)
-        .options(selectinload(StrategySearchRun.candidates))
-    ).scalars().all()
+    total = session.execute(select(func.count()).select_from(base.subquery())).scalar_one()
+    runs = (
+        session.execute(
+            base.order_by(desc(StrategySearchRun.created_at))
+            .limit(limit)
+            .offset(offset)
+            .options(selectinload(StrategySearchRun.candidates))
+        )
+        .scalars()
+        .all()
+    )
     return list(runs), total
 
 
@@ -770,9 +748,7 @@ def upsert_feature_definition(
     category: str,
     description: Optional[str] = None,
 ) -> FeatureDefinition:
-    definition = session.execute(
-        select(FeatureDefinition).where(FeatureDefinition.name == name)
-    ).scalar_one_or_none()
+    definition = session.execute(select(FeatureDefinition).where(FeatureDefinition.name == name)).scalar_one_or_none()
     if definition is None:
         definition = FeatureDefinition(
             name=name,
@@ -833,9 +809,7 @@ def upsert_feature_version(
     return feature_version
 
 
-def get_feature_definition(
-    session: Session, name: str
-) -> Optional[FeatureDefinition]:
+def get_feature_definition(session: Session, name: str) -> Optional[FeatureDefinition]:
     return session.execute(
         select(FeatureDefinition)
         .where(FeatureDefinition.name == name)
@@ -849,18 +823,12 @@ def list_feature_definitions(
     category: Optional[str] = None,
     status: Optional[str] = None,
 ) -> list[FeatureDefinition]:
-    stmt = select(FeatureDefinition).options(
-        selectinload(FeatureDefinition.versions)
-    )
+    stmt = select(FeatureDefinition).options(selectinload(FeatureDefinition.versions))
     if category is not None:
         stmt = stmt.where(FeatureDefinition.category == category)
     if status is not None:
-        stmt = stmt.where(
-            FeatureDefinition.versions.any(FeatureVersion.status == status)
-        )
-    definitions = session.execute(
-        stmt.order_by(FeatureDefinition.name)
-    ).scalars().all()
+        stmt = stmt.where(FeatureDefinition.versions.any(FeatureVersion.status == status))
+    definitions = session.execute(stmt.order_by(FeatureDefinition.name)).scalars().all()
     return list(definitions)
 
 
@@ -871,9 +839,7 @@ def set_feature_status(
     version: int,
     status: str,
 ) -> FeatureVersion:
-    definition = session.execute(
-        select(FeatureDefinition).where(FeatureDefinition.name == name)
-    ).scalar_one_or_none()
+    definition = session.execute(select(FeatureDefinition).where(FeatureDefinition.name == name)).scalar_one_or_none()
     if definition is None:
         raise ValueError(f"FeatureDefinition '{name}' not found")
     feature_version = session.execute(
@@ -903,9 +869,7 @@ def increment_feature_usage(
     if not result.rowcount:
         raise ValueError(f"FeatureDefinition '{name}' not found")
     session.flush()
-    definition = session.execute(
-        select(FeatureDefinition).where(FeatureDefinition.name == name)
-    ).scalar_one()
+    definition = session.execute(select(FeatureDefinition).where(FeatureDefinition.name == name)).scalar_one()
     return definition
 
 
@@ -982,13 +946,9 @@ def update_evaluation_run(
     return run
 
 
-def get_evaluation_run(
-    session: Session, run_id: uuid.UUID
-) -> Optional[EvaluationRun]:
+def get_evaluation_run(session: Session, run_id: uuid.UUID) -> Optional[EvaluationRun]:
     return session.execute(
-        select(EvaluationRun)
-        .where(EvaluationRun.id == run_id)
-        .options(selectinload(EvaluationRun.scores))
+        select(EvaluationRun).where(EvaluationRun.id == run_id).options(selectinload(EvaluationRun.scores))
     ).scalar_one_or_none()
 
 
@@ -1037,8 +997,7 @@ def get_latest_global_scores(session: Session) -> dict[str, float]:
         .subquery()
     )
     rows = session.execute(
-        select(FeatureScoreRow.feature_name, FeatureScoreRow.global_score)
-        .join(
+        select(FeatureScoreRow.feature_name, FeatureScoreRow.global_score).join(
             latest,
             (FeatureScoreRow.feature_name == latest.c.feature_name)
             & (FeatureScoreRow.created_at == latest.c.max_created),
@@ -1071,9 +1030,7 @@ def create_neural_model(
     symbol: str,
     timeframe: str,
 ) -> NeuralModel:
-    model = session.execute(
-        select(NeuralModel).where(NeuralModel.model_key == model_key)
-    ).scalar_one_or_none()
+    model = session.execute(select(NeuralModel).where(NeuralModel.model_key == model_key)).scalar_one_or_none()
     if model is None:
         model = NeuralModel(
             model_key=model_key,
@@ -1092,9 +1049,7 @@ def create_neural_model(
 
 def _next_neural_model_version(session: Session, model_id: uuid.UUID) -> int:
     current = session.execute(
-        select(func.max(NeuralModelVersion.version)).where(
-            NeuralModelVersion.model_id == model_id
-        )
+        select(func.max(NeuralModelVersion.version)).where(NeuralModelVersion.model_id == model_id)
     ).scalar_one_or_none()
     return int(current or 0) + 1
 
@@ -1132,11 +1087,7 @@ def create_neural_model_version(
         session.flush()
         return existing
 
-    resolved_version = (
-        version
-        if version is not None
-        else _next_neural_model_version(session, model_id)
-    )
+    resolved_version = version if version is not None else _next_neural_model_version(session, model_id)
     model_version = NeuralModelVersion(
         model_id=model_id,
         model_hash=model_hash,
@@ -1156,9 +1107,7 @@ def create_neural_model_version(
     return model_version
 
 
-def get_neural_model_version(
-    session: Session, model_hash: str
-) -> Optional[NeuralModelVersion]:
+def get_neural_model_version(session: Session, model_hash: str) -> Optional[NeuralModelVersion]:
     return session.execute(
         select(NeuralModelVersion)
         .where(NeuralModelVersion.model_hash == model_hash)
@@ -1174,9 +1123,7 @@ def list_neural_model_versions(
     stmt = select(NeuralModelVersion).options(selectinload(NeuralModelVersion.model))
     if status is not None:
         stmt = stmt.where(NeuralModelVersion.status == status)
-    versions = session.execute(
-        stmt.order_by(desc(NeuralModelVersion.created_at))
-    ).scalars().all()
+    versions = session.execute(stmt.order_by(desc(NeuralModelVersion.created_at))).scalars().all()
     return list(versions)
 
 

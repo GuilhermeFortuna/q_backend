@@ -47,9 +47,7 @@ def test_explicit_sampler_override():
 
 def test_pruner_mapping():
     assert isinstance(create_pruner(StudyConfig(name="s")), NopPruner)
-    assert isinstance(
-        create_pruner(StudyConfig(name="s", pruner="median")), MedianPruner
-    )
+    assert isinstance(create_pruner(StudyConfig(name="s", pruner="median")), MedianPruner)
 
 
 def test_create_sampler_and_pruner_returns_pair():

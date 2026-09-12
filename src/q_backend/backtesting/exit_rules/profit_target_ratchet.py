@@ -14,9 +14,7 @@ class ProfitTargetRatchetRule(ExitRule):
     id = "profit_target_ratchet"
     exit_group = "target"
     label = "Profit Target Ratchet"
-    description = (
-        "Arms a trailing profit floor once price reaches entry plus or minus an ATR multiple."
-    )
+    description = "Arms a trailing profit floor once price reaches entry plus or minus an ATR multiple."
     enable_param = "target_ratchet_atr"
     enable_value = 2.0
 

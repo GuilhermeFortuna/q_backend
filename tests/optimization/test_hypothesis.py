@@ -36,7 +36,9 @@ from q_backend.optimization.strategy_search import StrategySearchConfig, Candida
 from q_backend.optimization.genetic_search import GeneticCandidateProvider
 
 
-def _search_config(symbol: str = "CCM$", timeframe: str = "H1", strategies: list[str] | None = None) -> StrategySearchConfig:
+def _search_config(
+    symbol: str = "CCM$", timeframe: str = "H1", strategies: list[str] | None = None
+) -> StrategySearchConfig:
     return StrategySearchConfig(
         backtest=BacktestConfig(
             symbol=symbol,
@@ -108,14 +110,14 @@ def test_profiles_snapshot():
 def test_hypothesis_catalog_snapshot():
     """Snapshot validation of hypothesis catalog IDs, expected horizons, rationales, features, and hashes."""
     assert len(HYPOTHESIS_CATALOG) >= 4
-    
+
     # Verify hashes and basic properties
     for hyp_id, hyp in HYPOTHESIS_CATALOG.items():
         assert hyp.hypothesis_id == hyp_id
         assert len(hyp.rationale) > 10
         assert len(hyp.required_features) >= 1
         assert len(hyp.expected_holding_horizon) > 0
-        
+
         # Verify template hash computation matches
         expected_hash = compute_template_hash(hyp.genome_template)
         assert len(expected_hash) == 64  # SHA-256 length hex
@@ -133,7 +135,7 @@ def test_backtest_templates_on_synthetic_data():
     """Verify that every template runs and computes signals on B3-context-prepared synthetic data."""
     ohlcv = _make_intraday_ohlcv(datetime(2026, 1, 1, 9, 0), periods=200)
     prepared_frame = prepare_evaluation_frame(ohlcv)
-    
+
     # We must mock default parameter values because the templates use parameter references
     # that normally get filled by the optimizer/provider.
     default_params = {
@@ -164,11 +166,11 @@ def test_missing_feature_evidence_throws_structured_error():
     """Verify that requesting an ineligible hypothesis throws a structured MissingFeatureEvidenceError."""
     resolver = FailClosedFeatureAdmissionResolver()
     config = _search_config(symbol="CCM$", timeframe="H1", strategies=["ccm_h1_swing_v1_breakout"])
-    
+
     provider = HypothesisCandidateProvider(config, resolver)
     with pytest.raises(MissingFeatureEvidenceError) as exc_info:
         list(provider.candidates())
-    
+
     assert exc_info.value.hypothesis_id == "ccm_h1_swing_v1_breakout"
     assert "feature.vol_regime" in exc_info.value.missing_features
 
@@ -176,14 +178,14 @@ def test_missing_feature_evidence_throws_structured_error():
 def test_incompatible_profile_throws_structured_error():
     """Verify that requesting a hypothesis for a mismatching profile throws IncompatibleProfileError."""
     resolver = AdmittedAllFeatureAdmissionResolver()
-    
+
     # Requesting WIN$ hypothesis on WDO$ instrument profile
     config = _search_config(symbol="WDO$", timeframe="M15", strategies=["win_h1_swing_v1_trend"])
     provider = HypothesisCandidateProvider(config, resolver)
-    
+
     with pytest.raises(IncompatibleProfileError) as exc_info:
         list(provider.candidates())
-        
+
     assert exc_info.value.hypothesis_id == "win_h1_swing_v1_trend"
     assert exc_info.value.symbol == "WDO$"
     assert exc_info.value.timeframe == "M15"
@@ -193,13 +195,13 @@ def test_provider_determinism_and_seed_stability():
     """Verify that the candidate provider produces identical outputs given the same seed and config."""
     resolver = AdmittedAllFeatureAdmissionResolver()
     config = _search_config(symbol="CCM$", timeframe="H1")
-    
+
     p1 = HypothesisCandidateProvider(config, resolver, seed=42)
     p2 = HypothesisCandidateProvider(config, resolver, seed=42)
-    
+
     c1 = list(p1.candidates())
     c2 = list(p2.candidates())
-    
+
     assert len(c1) == len(c2)
     for cand1, cand2 in zip(c1, c2):
         assert cand1.candidate_id == cand2.candidate_id
@@ -215,24 +217,25 @@ def test_genetic_seeding_preserves_diversity():
     config.genetic = StudyConfig(name="test_genetic_study", n_trials=10, seed=42)
     # Mock GeneticSearchConfig fields
     from q_backend.optimization.strategy_search import GeneticSearchConfig
+
     config.genetic = GeneticSearchConfig(
         population_size=10,
         generations=2,
         seed_hypotheses=True,
     )
-    
+
     # Build provider
     provider = resolve_candidate_provider(config, resolver)
     assert isinstance(provider, GeneticCandidateProvider)
-    
+
     # Check population
     pop = provider.population
     assert len(pop) == 10
-    
+
     # Count seeded hypotheses
     seeded = [g for g in pop if g.metadata.get("hypothesis") is not None]
     assert len(seeded) >= 1  # We should have seeded at least one admitted hypothesis
-    
+
     # Count random/registry genomes (no hypothesis metadata)
     unseeded = [g for g in pop if g.metadata.get("hypothesis") is None]
     assert len(unseeded) >= 5  # Half of pop should remain registry/random to retain diversity

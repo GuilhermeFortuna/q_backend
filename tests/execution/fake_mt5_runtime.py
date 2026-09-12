@@ -71,9 +71,7 @@ class FakeMt5Runtime:
     last_error_desc: str = ""
     on_order_send: Optional[Callable[[dict[str, Any]], Any]] = None
     send_returns_none: bool = False
-    now_fn: Callable[[], datetime] = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    now_fn: Callable[[], datetime] = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def _now_ts(self) -> int:
         return int(self.now_fn().timestamp())
@@ -161,11 +159,7 @@ class FakeMt5Runtime:
         return []
 
     def history_deals_get(self, start: datetime, end: datetime, *, group: str = "") -> list[FakeDeal]:
-        return [
-            deal
-            for deal in self.deals
-            if start.timestamp() <= deal.time <= end.timestamp()
-        ]
+        return [deal for deal in self.deals if start.timestamp() <= deal.time <= end.timestamp()]
 
 
 def seed_symbol(

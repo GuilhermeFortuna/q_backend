@@ -34,9 +34,7 @@ def _cache_path(symbol: str, timeframe: str, start: datetime, end: datetime) -> 
     return _cache_dir() / f"{safe_symbol}_{timeframe}_{digest}.parquet"
 
 
-def load_ohlcv_frame(
-    symbol: str, timeframe: str, start: datetime, end: datetime
-) -> pd.DataFrame:
+def load_ohlcv_frame(symbol: str, timeframe: str, start: datetime, end: datetime) -> pd.DataFrame:
     """Return the naive-local OHLCV frame for a range, using the parquet cache."""
     path = _cache_path(symbol, timeframe, start, end)
     if path.is_file():
@@ -49,9 +47,7 @@ def load_ohlcv_frame(
             logger.warning("Corrupt OHLCV cache at %s; refetching", path, exc_info=True)
 
     service = get_worker_market_data_service()
-    df = DefaultBacktestRunner.load_sliced_frame(
-        service, symbol=symbol, timeframe=timeframe, start=start, end=end
-    )
+    df = DefaultBacktestRunner.load_sliced_frame(service, symbol=symbol, timeframe=timeframe, start=start, end=end)
     _write_ohlcv_cache(df, path)
     return df
 
@@ -112,10 +108,6 @@ def load_evaluation_frame(request: StrategySearchConfig) -> pd.DataFrame:
     return frame
 
 
-def sliced_runner(
-    symbol: str, timeframe: str, start: datetime, end: datetime
-) -> DefaultBacktestRunner:
+def sliced_runner(symbol: str, timeframe: str, start: datetime, end: datetime) -> DefaultBacktestRunner:
     """Build a backtest runner that slices a cached OHLCV frame per run."""
-    return DefaultBacktestRunner.from_frame_sliced(
-        load_ohlcv_frame(symbol, timeframe, start, end)
-    )
+    return DefaultBacktestRunner.from_frame_sliced(load_ohlcv_frame(symbol, timeframe, start, end))

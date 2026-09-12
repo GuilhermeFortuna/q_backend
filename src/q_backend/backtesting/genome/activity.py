@@ -43,10 +43,7 @@ class ActivityStats:
 
 
 def default_trial_params(genome: Genome) -> dict[str, Any]:
-    return {
-        key: GENOME_PARAM_BOUNDS[key].default
-        for key in sorted(collect_genome_param_keys(genome))
-    }
+    return {key: GENOME_PARAM_BOUNDS[key].default for key in sorted(collect_genome_param_keys(genome))}
 
 
 def _count_rising_edges(series: pd.Series) -> int:

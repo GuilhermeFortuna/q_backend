@@ -83,10 +83,7 @@ def test_get_recent_ticks_widens_window_when_too_few(mock_mt5):
 
     # Windows must widen: each call's look-back span grows.
     spans = [
-        end - start
-        for (_, start, end, _flags) in (
-            call.args for call in mock_mt5.copy_ticks_range.call_args_list
-        )
+        end - start for (_, start, end, _flags) in (call.args for call in mock_mt5.copy_ticks_range.call_args_list)
     ]
     assert spans[0] < spans[1] < spans[2]
 

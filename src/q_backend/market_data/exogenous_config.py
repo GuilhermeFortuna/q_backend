@@ -44,9 +44,7 @@ class ExogenousSeriesConfig(BaseModel):
     def validate_resampling(self) -> ExogenousSeriesConfig:
         if self.resampling_rule == "last_completed":
             if not self.target_timeframe:
-                raise ValueError(
-                    "target_timeframe is required when resampling_rule is last_completed"
-                )
+                raise ValueError("target_timeframe is required when resampling_rule is last_completed")
         elif self.target_timeframe is not None:
             raise ValueError("target_timeframe is only valid with last_completed resampling")
         if not self.recipes:
@@ -65,16 +63,13 @@ def validate_exogenous_for_primary(
     if not exogenous_series:
         return
     if allowed is None:
-        raise ValueError(
-            f"Exogenous context is not enabled for {primary_symbol} {primary_timeframe} in v1"
-        )
+        raise ValueError(f"Exogenous context is not enabled for {primary_symbol} {primary_timeframe} in v1")
     for spec in exogenous_series:
         if spec.symbol == primary_symbol:
             raise ValueError("Exogenous symbol must differ from the traded instrument")
         if spec.symbol not in allowed:
             raise ValueError(
-                f"Exogenous symbol {spec.symbol} is not allowed for "
-                f"{primary_symbol} {primary_timeframe}"
+                f"Exogenous symbol {spec.symbol} is not allowed for " f"{primary_symbol} {primary_timeframe}"
             )
         if spec.availability_lag_bars < 0:
             raise ValueError("availability_lag_bars cannot be negative")

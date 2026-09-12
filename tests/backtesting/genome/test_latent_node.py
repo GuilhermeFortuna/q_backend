@@ -132,9 +132,7 @@ def production_model(db_session, lake_root_path):
     clear_model_output_cache()
     version, bars = _train_production_model(db_session)
     yield version, bars
-    unregister_neural_model_features(
-        [f"{name}@{version.model_hash[:8]}" for name in version.latent_names]
-    )
+    unregister_neural_model_features([f"{name}@{version.model_hash[:8]}" for name in version.latent_names])
     clear_model_output_cache()
 
 

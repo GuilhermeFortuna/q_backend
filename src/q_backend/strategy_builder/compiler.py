@@ -189,9 +189,7 @@ def _match_rsi_mean_reversion(spec: StrategySpec) -> CompiledStrategy | None:
         return None
     if not _refs_equal(exit_cond.left, spec.indicators[0].id):
         return None
-    if not isinstance(entry.right, (int, float)) or not isinstance(
-        exit_cond.right, (int, float)
-    ):
+    if not isinstance(entry.right, (int, float)) or not isinstance(exit_cond.right, (int, float)):
         return None
 
     strategy_params = {
@@ -367,9 +365,7 @@ class _GenomeBuilder:
 
     def _add_node(self, *, kind: str, params: dict[str, Any], inputs: list[str]) -> str:
         node_id = self._next_id()
-        self.nodes.append(
-            {"id": node_id, "kind": kind, "params": params, "inputs": inputs}
-        )
+        self.nodes.append({"id": node_id, "kind": kind, "params": params, "inputs": inputs})
         return node_id
 
     def _build_indicators(self) -> None:
@@ -490,9 +486,7 @@ class _GenomeBuilder:
         kind = _OPERATOR_TO_CMP_KIND[condition.op]
         left_ref = self._resolve_operand(condition.left)
 
-        if condition.op in {"crosses_above", "crosses_below"} and isinstance(
-            condition.right, (int, float)
-        ):
+        if condition.op in {"crosses_above", "crosses_below"} and isinstance(condition.right, (int, float)):
             left_node, left_port = _split_ref(left_ref)
             inputs = [left_node if left_port == "out" else left_ref]
             return self._add_node(
@@ -576,9 +570,7 @@ class _GenomeBuilder:
         mode = "all" if group.all is not None else "any"
         combined = self._combine_bool_nodes(compiled_refs, mode=mode)
         summary_joiner = " AND " if mode == "all" else " OR "
-        summary = summary_joiner.join(
-            f"{item.left} {item.op} {item.right}" for item in comparisons
-        )
+        summary = summary_joiner.join(f"{item.left} {item.op} {item.right}" for item in comparisons)
         if path_label == "entry":
             self.entry_summary = summary
         else:
@@ -618,12 +610,8 @@ class _GenomeBuilder:
             if stop_loss.mode == "percent" and take_profit.mode == "percent":
                 preset = _preset_by_id("fixed_pct_bracket")
                 policy = build_exit_rule_policy(preset)
-                self.strategy_params[genome_exit_param_ref("stop_loss_pct")] = (
-                    stop_loss.value
-                )
-                self.strategy_params[genome_exit_param_ref("take_profit_pct")] = (
-                    take_profit.value
-                )
+                self.strategy_params[genome_exit_param_ref("stop_loss_pct")] = stop_loss.value
+                self.strategy_params[genome_exit_param_ref("take_profit_pct")] = take_profit.value
                 return policy
 
             raise StrategyCompileError(
@@ -636,9 +624,7 @@ class _GenomeBuilder:
             preset = _preset_by_id("fixed_pct_bracket")
             policy = build_exit_rule_policy(preset)
             self.strategy_params[genome_exit_param_ref("stop_loss_pct")] = 0.0
-            self.strategy_params[genome_exit_param_ref("take_profit_pct")] = (
-                take_profit.value
-            )
+            self.strategy_params[genome_exit_param_ref("take_profit_pct")] = take_profit.value
             return policy
 
         assert stop_loss is not None
@@ -671,11 +657,7 @@ def _comparison_conditions(group: ConditionGroup) -> list[ComparisonCondition]:
 
 def _exit_rule_conditions(group: ConditionGroup) -> list[ExitStopLossCondition | ExitTakeProfitCondition]:
     raw = group.all if group.all is not None else group.any or []
-    return [
-        item
-        for item in raw
-        if isinstance(item, (ExitStopLossCondition, ExitTakeProfitCondition))
-    ]
+    return [item for item in raw if isinstance(item, (ExitStopLossCondition, ExitTakeProfitCondition))]
 
 
 def _refs_equal(left: str, right: str | float | int) -> bool:

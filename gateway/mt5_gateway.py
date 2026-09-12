@@ -201,21 +201,9 @@ def _ticks_structured_to_columnar(ticks: np.ndarray) -> dict[str, np.ndarray]:
 
     bid = ticks["bid"].astype(np.float64, copy=False)
     ask = ticks["ask"].astype(np.float64, copy=False)
-    last = (
-        ticks["last"].astype(np.float64, copy=False)
-        if has_last
-        else np.zeros(count, dtype=np.float64)
-    )
-    volume = (
-        ticks["volume"].astype(np.float64, copy=False)
-        if has_volume
-        else np.zeros(count, dtype=np.float64)
-    )
-    flags = (
-        ticks["flags"].astype(np.int32, copy=False)
-        if has_flags
-        else np.zeros(count, dtype=np.int32)
-    )
+    last = ticks["last"].astype(np.float64, copy=False) if has_last else np.zeros(count, dtype=np.float64)
+    volume = ticks["volume"].astype(np.float64, copy=False) if has_volume else np.zeros(count, dtype=np.float64)
+    flags = ticks["flags"].astype(np.int32, copy=False) if has_flags else np.zeros(count, dtype=np.int32)
 
     return {
         "time_msc": time_msc,
@@ -282,9 +270,7 @@ def _get_chunk_days(mt5_timeframe: int) -> int:
     return 365
 
 
-def _fetch_ohlcv_chunked(
-    symbol: str, mt5_timeframe: int, start: datetime, end: datetime
-) -> np.ndarray:
+def _fetch_ohlcv_chunked(symbol: str, mt5_timeframe: int, start: datetime, end: datetime) -> np.ndarray:
     """Reimplementation of MetaTraderClient._fetch_ohlcv_range_chunked (gateway-side).
 
     Must be called with the MT5 lock held. Returns a concatenated structured rates
@@ -328,9 +314,7 @@ def _fetch_ohlcv_chunked(
     return np.concatenate(chunks) if len(chunks) > 1 else chunks[0]
 
 
-def _fetch_ticks_chunked(
-    symbol: str, start: datetime, end: datetime, flags: int
-) -> dict[str, np.ndarray]:
+def _fetch_ticks_chunked(symbol: str, start: datetime, end: datetime, flags: int) -> dict[str, np.ndarray]:
     """Reimplementation of MetaTraderClient._fetch_ticks_range_chunked (gateway-side).
 
     Must be called with the MT5 lock held. Returns columnar tick arrays with raw
@@ -489,14 +473,10 @@ class GatewayApp:
         with self._lock:
             self._require_ready()
             if not mt5.symbol_select(symbol, True):
-                raise GatewayError(
-                    404, "symbol_not_found", f"Symbol '{symbol}' is not selectable."
-                )
+                raise GatewayError(404, "symbol_not_found", f"Symbol '{symbol}' is not selectable.")
             info = mt5.symbol_info(symbol)
             if info is None:
-                raise GatewayError(
-                    404, "symbol_not_found", f"No symbol_info for '{symbol}'."
-                )
+                raise GatewayError(404, "symbol_not_found", f"No symbol_info for '{symbol}'.")
             return _to_plain_dict(info)
 
     def search_symbols(self, query: str) -> list[dict]:
@@ -521,9 +501,7 @@ class GatewayApp:
         with self._lock:
             self._require_ready()
             if not mt5.symbol_select(symbol, True):
-                raise GatewayError(
-                    404, "symbol_not_found", f"Symbol '{symbol}' is not selectable."
-                )
+                raise GatewayError(404, "symbol_not_found", f"Symbol '{symbol}' is not selectable.")
 
             earliest = _probe_earliest_bar(symbol, mt5_timeframe)
             latest = _probe_latest_bar(symbol, mt5_timeframe)
@@ -543,28 +521,20 @@ class GatewayApp:
             "bar_count": bar_count,
         }
 
-    def ohlcv(
-        self, symbol: str, timeframe: str, start: datetime, end: datetime
-    ) -> bytes:
+    def ohlcv(self, symbol: str, timeframe: str, start: datetime, end: datetime) -> bytes:
         mt5_timeframe = _resolve_timeframe(timeframe)
         with self._lock:
             self._require_ready()
             if not mt5.symbol_select(symbol, True):
-                raise GatewayError(
-                    404, "symbol_not_found", f"Symbol '{symbol}' is not selectable."
-                )
+                raise GatewayError(404, "symbol_not_found", f"Symbol '{symbol}' is not selectable.")
             rates = _fetch_ohlcv_chunked(symbol, mt5_timeframe, start, end)
         return _ohlcv_to_npz_bytes(rates)
 
-    def ticks(
-        self, symbol: str, start: datetime, end: datetime, flags: int
-    ) -> bytes:
+    def ticks(self, symbol: str, start: datetime, end: datetime, flags: int) -> bytes:
         with self._lock:
             self._require_ready()
             if not mt5.symbol_select(symbol, True):
-                raise GatewayError(
-                    404, "symbol_not_found", f"Symbol '{symbol}' is not selectable."
-                )
+                raise GatewayError(404, "symbol_not_found", f"Symbol '{symbol}' is not selectable.")
             columnar = _fetch_ticks_chunked(symbol, start, end, flags)
         return _savez_bytes(columnar)
 
@@ -622,9 +592,7 @@ def _probe_earliest_bar(symbol: str, mt5_timeframe: int) -> datetime | None:
         rates = mt5.copy_rates_range(symbol, mt5_timeframe, cursor, chunk_end)
         if rates is not None and len(rates) > 0:
             chunk_earliest = _epoch_to_naive(int(rates[0]["time"]))
-            earliest = (
-                chunk_earliest if earliest is None else min(earliest, chunk_earliest)
-            )
+            earliest = chunk_earliest if earliest is None else min(earliest, chunk_earliest)
 
         if chunk_end >= now:
             break
@@ -633,9 +601,7 @@ def _probe_earliest_bar(symbol: str, mt5_timeframe: int) -> datetime | None:
     return earliest
 
 
-def _count_bars_between(
-    symbol: str, mt5_timeframe: int, start: datetime, end: datetime
-) -> int:
+def _count_bars_between(symbol: str, mt5_timeframe: int, start: datetime, end: datetime) -> int:
     total = 0
     cursor = start
     chunk_days = _get_chunk_days(mt5_timeframe)
@@ -672,9 +638,7 @@ class _GatewayHandler(BaseHTTPRequestHandler):
             params = parse_qs(parsed.query)
             handler = self._ROUTES.get(parsed.path)
             if handler is None:
-                raise GatewayError(
-                    404, "not_found", f"Unknown endpoint '{parsed.path}'."
-                )
+                raise GatewayError(404, "not_found", f"Unknown endpoint '{parsed.path}'.")
             handler(self, params)
         except GatewayError as exc:
             self._send_json(exc.status, {"error": exc.message, "code": exc.code})
@@ -730,9 +694,7 @@ class _GatewayHandler(BaseHTTPRequestHandler):
         if token is None:
             return
         if self.headers.get("X-Gateway-Token") != token:
-            raise GatewayError(
-                401, "unauthorized", "Missing or invalid X-Gateway-Token header."
-            )
+            raise GatewayError(401, "unauthorized", "Missing or invalid X-Gateway-Token header.")
 
     def _send_json(self, status: int, payload) -> None:
         body = json.dumps(payload, default=_json_default).encode("utf-8")
@@ -753,9 +715,7 @@ class _GatewayHandler(BaseHTTPRequestHandler):
 def _require_param(params: dict[str, list[str]], name: str) -> str:
     values = params.get(name)
     if not values or not values[0]:
-        raise GatewayError(
-            400, "missing_parameter", f"Missing required query parameter '{name}'."
-        )
+        raise GatewayError(400, "missing_parameter", f"Missing required query parameter '{name}'.")
     return values[0]
 
 
@@ -822,9 +782,7 @@ def main(argv: list[str] | None = None) -> None:
     if app.try_initialize():
         logger.info("Connected to MT5 terminal at startup.")
     else:
-        logger.warning(
-            "MT5 not initialized at startup; will retry lazily per request."
-        )
+        logger.warning("MT5 not initialized at startup; will retry lazily per request.")
 
     def _handle_signal(signum, _frame) -> None:
         logger.info("Received signal %s; shutting down.", signum)

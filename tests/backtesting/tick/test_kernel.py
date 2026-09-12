@@ -190,4 +190,3 @@ def test_fixed_safety_margin_sizing_and_compounding():
     assert out["quantity"][0] == 2.0
     # First trade: long 10->10 flat pnl; second sizes from same capital -> still 2
     assert out["quantity"][1] == 2.0
-

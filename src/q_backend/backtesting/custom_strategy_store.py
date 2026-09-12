@@ -5,11 +5,14 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
+
 def custom_strategies_path() -> Path:
     return _project_root() / "data" / "custom_strategies.json"
+
 
 def load_custom_strategies() -> list[dict[str, Any]]:
     path = custom_strategies_path()
@@ -30,6 +33,7 @@ def load_custom_strategies() -> list[dict[str, Any]]:
             exc_info=True,
         )
         return []
+
 
 def save_custom_strategies(strategies: list[dict[str, Any]]) -> None:
     path = custom_strategies_path()

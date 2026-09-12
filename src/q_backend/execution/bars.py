@@ -10,7 +10,6 @@ import pandas as pd
 from q_backend.market_data.exogenous_context import bar_duration
 from q_backend.market_data.models import OHLCV
 
-
 _OHLCV_COLUMNS = ("open", "high", "low", "close", "volume")
 
 

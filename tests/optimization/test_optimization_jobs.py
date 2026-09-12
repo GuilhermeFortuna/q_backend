@@ -167,9 +167,7 @@ def test_cancel_mid_run_stops_before_all_trials(run_jobs_sync, db_scope):
     assert payload["completed_trials"] < 12
 
 
-def test_start_job_primes_ohlcv_cache_once(
-    run_jobs_sync, db_scope, synthetic_ohlcv, tmp_path, monkeypatch
-):
+def test_start_job_primes_ohlcv_cache_once(run_jobs_sync, db_scope, synthetic_ohlcv, tmp_path, monkeypatch):
     from datetime import datetime
     from unittest.mock import MagicMock
 

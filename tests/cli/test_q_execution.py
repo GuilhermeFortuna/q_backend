@@ -47,9 +47,7 @@ def test_cmd_run_starts_worker_with_market_data_lifecycle(
     worker = MagicMock()
     build_worker.return_value = worker
 
-    code = q_execution.cmd_run(
-        q_execution.build_parser().parse_args(["run", "--poll-interval", "2.5"])
-    )
+    code = q_execution.cmd_run(q_execution.build_parser().parse_args(["run", "--poll-interval", "2.5"]))
 
     assert code == 0
     build_components.assert_called_once_with(md)
@@ -94,9 +92,7 @@ def test_cmd_flatten_acquires_lease_and_clears_pending_action(
         patch.object(q_execution, "clear_pending_deployment_action") as clear_pending,
         patch.object(q_execution, "release_worker_lease") as release,
     ):
-        code = q_execution.cmd_flatten(
-            q_execution.build_parser().parse_args(["flatten", str(deployment_id)])
-        )
+        code = q_execution.cmd_flatten(q_execution.build_parser().parse_args(["flatten", str(deployment_id)]))
 
     assert code == 0
     acquire.assert_called_once()
@@ -131,8 +127,6 @@ def test_cmd_flatten_returns_nonzero_on_failed_outcome(
         patch.object(q_execution, "clear_pending_deployment_action"),
         patch.object(q_execution, "release_worker_lease"),
     ):
-        code = q_execution.cmd_flatten(
-            q_execution.build_parser().parse_args(["flatten", str(deployment_id)])
-        )
+        code = q_execution.cmd_flatten(q_execution.build_parser().parse_args(["flatten", str(deployment_id)]))
 
     assert code == 1

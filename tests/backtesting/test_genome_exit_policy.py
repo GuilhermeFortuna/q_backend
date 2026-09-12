@@ -202,11 +202,7 @@ def test_seed_exit_policies_inserts_variants():
         exit_policy_preset_ids=["fixed_pct_bracket", "atr_stop_chandelier"],
         exit_policy_seed_fraction=0.25,
     )
-    with_policy = [
-        genome
-        for genome in population
-        if genome.metadata.get("exit_rule_policy") is not None
-    ]
+    with_policy = [genome for genome in population if genome.metadata.get("exit_rule_policy") is not None]
     assert len(with_policy) == 5
 
 
@@ -221,14 +217,8 @@ def test_seed_exit_policies_is_deterministic():
     )
     first = build_initial_population(random.Random(7), **kwargs)
     second = build_initial_population(random.Random(7), **kwargs)
-    first_ids = [
-        genome.metadata.get("exit_rule_policy", {}).get("preset_id")
-        for genome in first
-    ]
-    second_ids = [
-        genome.metadata.get("exit_rule_policy", {}).get("preset_id")
-        for genome in second
-    ]
+    first_ids = [genome.metadata.get("exit_rule_policy", {}).get("preset_id") for genome in first]
+    second_ids = [genome.metadata.get("exit_rule_policy", {}).get("preset_id") for genome in second]
     assert first_ids == second_ids
 
 

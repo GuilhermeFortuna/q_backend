@@ -60,9 +60,7 @@ def _gateway_reachable(url: str) -> bool:
 def pytest_configure(config):
     import os
 
-    config._wo190_live_gateway_url = (
-        os.environ.get("Q_MT5_GATEWAY_URL") or ""
-    ).strip() or None
+    config._wo190_live_gateway_url = (os.environ.get("Q_MT5_GATEWAY_URL") or "").strip() or None
 
 
 live_gateway = pytest.mark.live_gateway
@@ -165,15 +163,11 @@ def test_gap_fill_extends_envelope_and_second_read_hits_gateway_once(
 
     envelope = local_store.available_range(_SYMBOL, _TIMEFRAME)
     assert envelope is not None
-    assert envelope.end >= _REQUEST_END.replace(
-        hour=envelope.end.hour, minute=envelope.end.minute
-    )
+    assert envelope.end >= _REQUEST_END.replace(hour=envelope.end.hour, minute=envelope.end.minute)
 
     second = service.get_ohlcv(_SYMBOL, _TIMEFRAME, start, _REQUEST_END)
     assert len(second) == len(first)
-    assert len(rates_calls) == first_call_count, (
-        "second identical read must not hit the gateway again"
-    )
+    assert len(rates_calls) == first_call_count, "second identical read must not hit the gateway again"
 
 
 def test_read_ohlcv_fresh_matches_service_freshness(fake_http_gateway):
@@ -183,9 +177,7 @@ def test_read_ohlcv_fresh_matches_service_freshness(fake_http_gateway):
 
     stale_only = local_store.read_ohlcv(_SYMBOL, _TIMEFRAME, start, _REQUEST_END)
     via_service = service.get_ohlcv(_SYMBOL, _TIMEFRAME, start, _REQUEST_END)
-    fresh = read_ohlcv_fresh(
-        _SYMBOL, _TIMEFRAME, start, _REQUEST_END, service=service
-    )
+    fresh = read_ohlcv_fresh(_SYMBOL, _TIMEFRAME, start, _REQUEST_END, service=service)
 
     assert len(via_service) > len(stale_only)
     assert [bar.time for bar in fresh] == [bar.time for bar in via_service]
@@ -202,9 +194,7 @@ def test_offline_covered_range_still_served(fake_http_gateway, monkeypatch):
     assert offline, "covered range must still load from local parquet when gateway is down"
 
 
-def test_offline_uncovered_range_raises_connection_error(
-    gateway_market_root, monkeypatch
-):
+def test_offline_uncovered_range_raises_connection_error(gateway_market_root, monkeypatch):
     _seed_stale_local()
 
     class _DownRemote:
@@ -230,9 +220,7 @@ def test_offline_uncovered_range_raises_connection_error(
         )
 
 
-def test_read_ohlcv_fresh_offline_uncovered_falls_back_to_local(
-    gateway_market_root, monkeypatch, caplog
-):
+def test_read_ohlcv_fresh_offline_uncovered_falls_back_to_local(gateway_market_root, monkeypatch, caplog):
     _seed_stale_local()
     start = _request_start()
 

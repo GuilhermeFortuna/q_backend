@@ -82,9 +82,7 @@ DONCHIAN_BREAKOUT_SPEC = {
     "market": "B3",
     "timeframe": "H1",
     "indicators": [{"id": "donchian", "type": "donchian", "period": 20}],
-    "entry": {
-        "all": [{"left": "close", "op": ">", "right": "donchian.upper"}]
-    },
+    "entry": {"all": [{"left": "close", "op": ">", "right": "donchian.upper"}]},
     "exit": {
         "any": [
             {"left": "close", "op": "<", "right": "donchian.lower"},
@@ -108,9 +106,7 @@ BOLLINGER_REVERSION_SPEC = {
     "universe": ["PETR4"],
     "market": "B3",
     "timeframe": "D1",
-    "indicators": [
-        {"id": "bb", "type": "bollinger_bands", "source": "close", "period": 20}
-    ],
+    "indicators": [{"id": "bb", "type": "bollinger_bands", "source": "close", "period": 20}],
     "entry": {"all": [{"left": "close", "op": "<", "right": "bb.lower"}]},
     "exit": {
         "any": [
@@ -209,9 +205,7 @@ def test_invalid_spec_fails_before_compilation():
 
 
 def test_compile_endpoint_returns_compiled_payload():
-    response = compile_strategy_builder_spec(
-        CompileStrategySpecRequest(strategy_spec=EMA_CROSS_SPEC)
-    )
+    response = compile_strategy_builder_spec(CompileStrategySpecRequest(strategy_spec=EMA_CROSS_SPEC))
 
     assert response.status == "compiled"
     assert response.compiled_strategy_id == response.compiled_strategy.compiled_id
@@ -224,9 +218,7 @@ def test_compile_endpoint_returns_validation_errors():
     spec["timeframe"] = "BADTF"
 
     with pytest.raises(HTTPException) as exc_info:
-        compile_strategy_builder_spec(
-            CompileStrategySpecRequest(strategy_spec=spec)
-        )
+        compile_strategy_builder_spec(CompileStrategySpecRequest(strategy_spec=spec))
 
     assert exc_info.value.status_code == 422
     assert exc_info.value.detail["status"] == "validation_failed"

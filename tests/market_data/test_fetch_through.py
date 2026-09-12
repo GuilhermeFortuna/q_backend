@@ -87,14 +87,10 @@ def test_ohlcv_fetch_through_persists_to_local_store(market_root):
     bars = _bars()
     service._remote_client = _StubRemote(bars=bars)
 
-    result = service.get_ohlcv(
-        "PETR4", "D1", datetime(2024, 3, 1), datetime(2024, 3, 4)
-    )
+    result = service.get_ohlcv("PETR4", "D1", datetime(2024, 3, 1), datetime(2024, 3, 4))
 
     assert result == bars
-    stored = local_store.read_ohlcv(
-        "PETR4", "D1", datetime(2024, 3, 1), datetime(2024, 3, 4)
-    )
+    stored = local_store.read_ohlcv("PETR4", "D1", datetime(2024, 3, 1), datetime(2024, 3, 4))
     assert stored == bars
 
 
@@ -108,9 +104,7 @@ def test_ohlcv_fetch_through_write_failure_is_swallowed(market_root, monkeypatch
 
     monkeypatch.setattr(local_store, "write_ohlcv", _boom)
 
-    result = service.get_ohlcv(
-        "PETR4", "D1", datetime(2024, 3, 1), datetime(2024, 3, 4)
-    )
+    result = service.get_ohlcv("PETR4", "D1", datetime(2024, 3, 1), datetime(2024, 3, 4))
 
     # Caller still gets the gateway bars even though caching failed.
     assert result == bars
@@ -121,14 +115,10 @@ def test_tick_fetch_through_persists_to_local_store(market_root):
     arrays = _ticks()
     service._remote_client = _StubRemote(arrays=arrays)
 
-    result = service.get_ticks_columnar(
-        "PETR4", datetime(2024, 3, 1), datetime(2024, 3, 2), use_cache=False
-    )
+    result = service.get_ticks_columnar("PETR4", datetime(2024, 3, 1), datetime(2024, 3, 2), use_cache=False)
 
     assert result is arrays
-    stored = local_store.read_ticks_columnar(
-        "PETR4", datetime(2024, 3, 1), datetime(2024, 3, 2)
-    )
+    stored = local_store.read_ticks_columnar("PETR4", datetime(2024, 3, 1), datetime(2024, 3, 2))
     assert len(stored["time_msc"]) == 3
 
 
@@ -142,8 +132,6 @@ def test_tick_fetch_through_write_failure_is_swallowed(market_root, monkeypatch)
 
     monkeypatch.setattr(local_store, "write_ticks", _boom)
 
-    result = service.get_ticks_columnar(
-        "PETR4", datetime(2024, 3, 1), datetime(2024, 3, 2), use_cache=False
-    )
+    result = service.get_ticks_columnar("PETR4", datetime(2024, 3, 1), datetime(2024, 3, 2), use_cache=False)
 
     assert result is arrays

@@ -8,6 +8,7 @@ import numpy as np
 
 try:
     import MetaTrader5 as mt5
+
     MT5_IMPORTABLE = True
 except Exception:  # noqa: BLE001 - optional dep guard: ImportError on Linux, DLL errors on Windows
     # Best-effort optional-dependency guard. MetaTrader5 is Windows-only and can
@@ -113,21 +114,9 @@ def _ticks_structured_to_columnar(ticks: np.ndarray) -> dict[str, np.ndarray]:
 
     bid = ticks["bid"].astype(np.float64, copy=False)
     ask = ticks["ask"].astype(np.float64, copy=False)
-    last = (
-        ticks["last"].astype(np.float64, copy=False)
-        if has_last
-        else np.zeros(count, dtype=np.float64)
-    )
-    volume = (
-        ticks["volume"].astype(np.float64, copy=False)
-        if has_volume
-        else np.zeros(count, dtype=np.float64)
-    )
-    flags = (
-        ticks["flags"].astype(np.int32, copy=False)
-        if has_flags
-        else np.zeros(count, dtype=np.int32)
-    )
+    last = ticks["last"].astype(np.float64, copy=False) if has_last else np.zeros(count, dtype=np.float64)
+    volume = ticks["volume"].astype(np.float64, copy=False) if has_volume else np.zeros(count, dtype=np.float64)
+    flags = ticks["flags"].astype(np.int32, copy=False) if has_flags else np.zeros(count, dtype=np.int32)
 
     return {
         "time_msc": time_msc,
@@ -237,9 +226,7 @@ def _mt5_timeframe(name: str) -> int:
 def _resolve_mt5_timeframe(timeframe: str) -> int:
     name = timeframe.upper()
     if name not in TIMEFRAME_MAP:
-        raise ValueError(
-            f"Invalid timeframe '{timeframe}'. Choose from: {list(TIMEFRAME_MAP.keys())}"
-        )
+        raise ValueError(f"Invalid timeframe '{timeframe}'. Choose from: {list(TIMEFRAME_MAP.keys())}")
     return _mt5_timeframe(name)
 
 
@@ -266,9 +253,7 @@ def resolve_copy_ticks_flags(tick_flags: str | None) -> int:
         return _default_copy_ticks_all()
     if tick_flags.lower() == "trade":
         return _default_copy_ticks_trade()
-    raise ValueError(
-        f"Invalid tick_flags '{tick_flags}'. Expected 'all' or 'trade'."
-    )
+    raise ValueError(f"Invalid tick_flags '{tick_flags}'. Expected 'all' or 'trade'.")
 
 
 def _get_chunk_days(mt5_timeframe: int) -> int:
@@ -346,23 +331,15 @@ class MetaTraderClient:
 
             if not mt5.initialize(**init_kwargs):
                 error_code, error_desc = mt5.last_error()
-                logger.error(
-                    f"Failed to initialize MetaTrader 5 terminal: {error_desc} (Code: {error_code})"
-                )
+                logger.error(f"Failed to initialize MetaTrader 5 terminal: {error_desc} (Code: {error_code})")
                 return False
 
             if self.login is not None and self.server:
                 password_param = self.password if self.password else ""
-                logger.info(
-                    f"Logging into MT5 account {self.login} on server '{self.server}'..."
-                )
-                if not mt5.login(
-                    login=self.login, password=password_param, server=self.server
-                ):
+                logger.info(f"Logging into MT5 account {self.login} on server '{self.server}'...")
+                if not mt5.login(login=self.login, password=password_param, server=self.server):
                     error_code, error_desc = mt5.last_error()
-                    logger.error(
-                        f"Failed to login into account {self.login}: {error_desc} (Code: {error_code})"
-                    )
+                    logger.error(f"Failed to login into account {self.login}: {error_desc} (Code: {error_code})")
                     mt5.shutdown()
                     return False
             elif self.login is not None:
@@ -414,9 +391,7 @@ class MetaTraderClient:
     def _ensure_connected(self) -> None:
         if not self._is_initialized:
             if not self.connect():
-                raise ConnectionError(
-                    "Not connected to MetaTrader 5 terminal, and automatic reconnection failed."
-                )
+                raise ConnectionError("Not connected to MetaTrader 5 terminal, and automatic reconnection failed.")
 
     def get_symbol_info(self, symbol: str) -> Optional[Dict[str, Any]]:
         """
@@ -428,9 +403,7 @@ class MetaTraderClient:
 
             if not mt5.symbol_select(symbol, True):
                 error_code, error_desc = mt5.last_error()
-                logger.error(
-                    f"Failed to select symbol {symbol}: {error_desc} (Code: {error_code})"
-                )
+                logger.error(f"Failed to select symbol {symbol}: {error_desc} (Code: {error_code})")
                 return None
 
             info = mt5.symbol_info(symbol)
@@ -489,9 +462,7 @@ class MetaTraderClient:
         all_rates = np.concatenate(chunks) if len(chunks) > 1 else chunks[0]
         return _rates_to_ohlcv_list(all_rates)
 
-    def get_ohlcv(
-        self, symbol: str, timeframe: str, start: datetime, end: datetime
-    ) -> List[OHLCV]:
+    def get_ohlcv(self, symbol: str, timeframe: str, start: datetime, end: datetime) -> List[OHLCV]:
         """
         Fetches historical OHLCV data (bars) for a given symbol and timeframe within a range.
         """
@@ -503,16 +474,12 @@ class MetaTraderClient:
 
             if not mt5.symbol_select(symbol, True):
                 error_code, error_desc = mt5.last_error()
-                logger.warning(
-                    f"Failed to select symbol {symbol} in MarketWatch: {error_desc} (Code: {error_code})"
-                )
+                logger.warning(f"Failed to select symbol {symbol} in MarketWatch: {error_desc} (Code: {error_code})")
 
             result = self._fetch_ohlcv_range_chunked(symbol, mt5_timeframe, start, end)
             if not result:
                 error_code, error_desc = mt5.last_error()
-                logger.error(
-                    f"Failed to fetch OHLCV for {symbol}: {error_desc} (Code: {error_code})"
-                )
+                logger.error(f"Failed to fetch OHLCV for {symbol}: {error_desc} (Code: {error_code})")
             return result
 
         return self._run_locked(_fetch)
@@ -523,9 +490,7 @@ class MetaTraderClient:
             return None
         return _bar_open_time(rates, 0)
 
-    def _probe_earliest_bar(
-        self, symbol: str, mt5_timeframe: int
-    ) -> Optional[datetime]:
+    def _probe_earliest_bar(self, symbol: str, mt5_timeframe: int) -> Optional[datetime]:
         """
         Find the oldest stored bar. copy_rates_from_pos only walks the terminal's
         in-memory window; copy_rates_from/range queries can reach further history.
@@ -550,11 +515,7 @@ class MetaTraderClient:
             rates = mt5.copy_rates_range(symbol, mt5_timeframe, cursor, chunk_end)
             if rates is not None and len(rates) > 0:
                 chunk_earliest = _bar_open_time(rates, 0)
-                earliest = (
-                    chunk_earliest
-                    if earliest is None
-                    else min(earliest, chunk_earliest)
-                )
+                earliest = chunk_earliest if earliest is None else min(earliest, chunk_earliest)
 
             if chunk_end >= now:
                 break
@@ -590,9 +551,7 @@ class MetaTraderClient:
 
         return total
 
-    def get_available_ohlcv_range(
-        self, symbol: str, timeframe: str
-    ) -> Optional[OhlcvAvailableRange]:
+    def get_available_ohlcv_range(self, symbol: str, timeframe: str) -> Optional[OhlcvAvailableRange]:
         """
         Returns the earliest and latest bar timestamps available in MT5 for a symbol/timeframe.
         """
@@ -604,9 +563,7 @@ class MetaTraderClient:
 
             if not mt5.symbol_select(symbol, True):
                 error_code, error_desc = mt5.last_error()
-                logger.warning(
-                    f"Failed to select symbol {symbol} in MarketWatch: {error_desc} (Code: {error_code})"
-                )
+                logger.warning(f"Failed to select symbol {symbol} in MarketWatch: {error_desc} (Code: {error_code})")
                 return None
 
             earliest = self._probe_earliest_bar(symbol, mt5_timeframe)
@@ -614,15 +571,10 @@ class MetaTraderClient:
 
             if earliest is None or latest is None:
                 error_code, error_desc = mt5.last_error()
-                logger.error(
-                    f"Failed to probe OHLCV history for {symbol}: "
-                    f"{error_desc} (Code: {error_code})"
-                )
+                logger.error(f"Failed to probe OHLCV history for {symbol}: " f"{error_desc} (Code: {error_code})")
                 return None
 
-            bar_count = self._count_bars_between(
-                symbol, mt5_timeframe, earliest, latest
-            )
+            bar_count = self._count_bars_between(symbol, mt5_timeframe, earliest, latest)
 
             return OhlcvAvailableRange(
                 symbol=symbol,
@@ -652,9 +604,7 @@ class MetaTraderClient:
             if cursor > end:
                 break
 
-            chunk_end = min(
-                cursor + timedelta(days=_TICK_RANGE_FETCH_DAYS), end
-            )
+            chunk_end = min(cursor + timedelta(days=_TICK_RANGE_FETCH_DAYS), end)
             ticks = mt5.copy_ticks_range(symbol, cursor, chunk_end, flags)
 
             if ticks is not None and len(ticks) > 0:
@@ -671,14 +621,10 @@ class MetaTraderClient:
                 names = ticks.dtype.names or ()
                 if "time_msc" in names:
                     last_msc = int(ticks["time_msc"][-1])
-                    next_cursor = _time_msc_to_naive_local(last_msc) + timedelta(
-                        milliseconds=1
-                    )
+                    next_cursor = _time_msc_to_naive_local(last_msc) + timedelta(milliseconds=1)
                 else:
                     last_sec = int(ticks["time"][-1])
-                    next_cursor = unix_seconds_to_brasilia_naive(last_sec) + timedelta(
-                        seconds=1
-                    )
+                    next_cursor = unix_seconds_to_brasilia_naive(last_sec) + timedelta(seconds=1)
 
                 if next_cursor <= cursor:
                     break
@@ -720,17 +666,13 @@ class MetaTraderClient:
         def _fetch() -> dict[str, np.ndarray]:
             self._ensure_connected()
 
-            resolved_flags = (
-                _default_copy_ticks_all() if flags is None else flags
-            )
+            resolved_flags = _default_copy_ticks_all() if flags is None else flags
             start_local = _to_naive_local(start)
             end_local = _to_naive_local(end)
             cache_key: Optional[str] = None
 
             if use_cache:
-                cache_key = make_cache_key(
-                    symbol, start_local, end_local, resolved_flags
-                )
+                cache_key = make_cache_key(symbol, start_local, end_local, resolved_flags)
                 cached = load_tick_cache(cache_key)
                 if cached is not None:
                     return cached
@@ -738,13 +680,10 @@ class MetaTraderClient:
             if not mt5.symbol_select(symbol, True):
                 error_code, error_desc = mt5.last_error()
                 logger.warning(
-                    f"Failed to select symbol {symbol} in MarketWatch: "
-                    f"{error_desc} (Code: {error_code})"
+                    f"Failed to select symbol {symbol} in MarketWatch: " f"{error_desc} (Code: {error_code})"
                 )
 
-            result = self._fetch_ticks_range_chunked(
-                symbol, start_local, end_local, resolved_flags
-            )
+            result = self._fetch_ticks_range_chunked(symbol, start_local, end_local, resolved_flags)
 
             if use_cache and cache_key is not None:
                 store_tick_cache(cache_key, result)
@@ -767,24 +706,18 @@ class MetaTraderClient:
         def _fetch() -> List[Tick]:
             self._ensure_connected()
 
-            resolved_flags = (
-                _default_copy_ticks_all() if flags is None else flags
-            )
+            resolved_flags = _default_copy_ticks_all() if flags is None else flags
             start = _to_naive_local(start)
             end = _to_naive_local(end)
 
             if not mt5.symbol_select(symbol, True):
                 error_code, error_desc = mt5.last_error()
-                logger.warning(
-                    f"Failed to select symbol {symbol} in MarketWatch: {error_desc} (Code: {error_code})"
-                )
+                logger.warning(f"Failed to select symbol {symbol} in MarketWatch: {error_desc} (Code: {error_code})")
 
             ticks = mt5.copy_ticks_range(symbol, start, end, resolved_flags)
             if ticks is None or len(ticks) == 0:
                 error_code, error_desc = mt5.last_error()
-                logger.error(
-                    f"Failed to fetch ticks for {symbol}: {error_desc} (Code: {error_code})"
-                )
+                logger.error(f"Failed to fetch ticks for {symbol}: {error_desc} (Code: {error_code})")
                 return []
 
             return _map_tick_rows(ticks)
@@ -807,8 +740,7 @@ class MetaTraderClient:
             if not mt5.symbol_select(symbol, True):
                 error_code, error_desc = mt5.last_error()
                 logger.warning(
-                    f"Failed to select symbol {symbol} in MarketWatch: "
-                    f"{error_desc} (Code: {error_code})"
+                    f"Failed to select symbol {symbol} in MarketWatch: " f"{error_desc} (Code: {error_code})"
                 )
                 return []
 
@@ -816,9 +748,7 @@ class MetaTraderClient:
             mapped: List[Tick] = []
             for window in _RECENT_TICKS_WINDOWS:
                 start = _to_naive_local(end - window)
-                ticks = mt5.copy_ticks_range(
-                    symbol, start, _to_naive_local(end), mt5.COPY_TICKS_ALL
-                )
+                ticks = mt5.copy_ticks_range(symbol, start, _to_naive_local(end), mt5.COPY_TICKS_ALL)
                 if ticks is None or len(ticks) == 0:
                     continue
 

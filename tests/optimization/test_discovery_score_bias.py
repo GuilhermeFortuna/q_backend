@@ -175,11 +175,7 @@ def _search_config(symbol: str) -> StrategySearchConfig:
 
 
 def _count_latent_nodes(population) -> int:
-    return sum(
-        1
-        for genome in population
-        if any(node.kind == "ind.latent" for node in genome.nodes)
-    )
+    return sum(1 for genome in population if any(node.kind == "ind.latent" for node in genome.nodes))
 
 
 def _population_latent_counts(
@@ -243,9 +239,7 @@ def test_dominant_latent_kind_seeded_more_often_than_uniform(discovery_db) -> No
             count=_N_SEEDS,
         )
         assert sum(biased_counts) > sum(uniform_counts)
-        assert sum(biased_counts) / len(biased_counts) > sum(uniform_counts) / len(
-            uniform_counts
-        )
+        assert sum(biased_counts) / len(biased_counts) > sum(uniform_counts) / len(uniform_counts)
     finally:
         unregister_neural_model_features(
             [neural_catalog_key(name, version.model_hash) for name in version.latent_names]
@@ -280,9 +274,7 @@ def test_no_scores_population_matches_uniform_for_fixed_seed(discovery_db) -> No
             **population_kwargs,
         )
 
-        assert [genome.model_dump() for genome in uniform] == [
-            genome.model_dump() for genome in no_scores
-        ]
+        assert [genome.model_dump() for genome in uniform] == [genome.model_dump() for genome in no_scores]
 
         provider = GeneticCandidateProvider(
             search.genetic,
@@ -290,9 +282,9 @@ def test_no_scores_population_matches_uniform_for_fixed_seed(discovery_db) -> No
             latent_universe=universe,
             kind_weights={},
         )
-        assert [
-            genome.model_dump() for genome in provider.initial_population
-        ] == [genome.model_dump() for genome in uniform]
+        assert [genome.model_dump() for genome in provider.initial_population] == [
+            genome.model_dump() for genome in uniform
+        ]
     finally:
         unregister_neural_model_features(
             [neural_catalog_key(name, version.model_hash) for name in version.latent_names]

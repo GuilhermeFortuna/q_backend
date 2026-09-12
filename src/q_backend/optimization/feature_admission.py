@@ -91,9 +91,7 @@ def feature_key_matches_evidence(feature_key: str, evidence_feature_id: str) -> 
     feature_name = normalize_feature_name(feature_key)
     spec = get_feature_spec(feature_name)
     default_id = feature_id(spec, spec.default_params)
-    return evidence_feature_id == default_id or evidence_feature_id.startswith(
-        f"{feature_name}.v"
-    )
+    return evidence_feature_id == default_id or evidence_feature_id.startswith(f"{feature_name}.v")
 
 
 def node_kind_matches(feature_key: str, node_kind: str | None) -> bool:

@@ -83,9 +83,7 @@ def local_market(tmp_path, monkeypatch):
     yield
 
 
-def test_candle_backtest_local_mode_without_mt5(
-    run_jobs_sync, local_market, api_session_scope, lake_root_path
-):
+def test_candle_backtest_local_mode_without_mt5(run_jobs_sync, local_market, api_session_scope, lake_root_path):
     request = BacktestJobRequest(
         symbol="PETR4",
         timeframe="D1",

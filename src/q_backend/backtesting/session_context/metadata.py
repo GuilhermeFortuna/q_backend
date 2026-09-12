@@ -22,28 +22,16 @@ CONTEXT_NODE_METADATA: dict[str, ContextNodeMetadata] = {
     "feature.session_window": ContextNodeMetadata(0, frozenset(), False),
     "feature.vol_regime": ContextNodeMetadata(0, frozenset({"close"}), False),
     "feature.trend_regime": ContextNodeMetadata(0, frozenset({"close"}), False),
-    "feature.range_compression": ContextNodeMetadata(
-        0, frozenset({"open", "high", "low", "close"}), False
-    ),
+    "feature.range_compression": ContextNodeMetadata(0, frozenset({"open", "high", "low", "close"}), False),
     "feature.prev_session_high": ContextNodeMetadata(1, frozenset({"open", "high", "low", "close"}), True),
     "feature.prev_session_low": ContextNodeMetadata(1, frozenset({"open", "high", "low", "close"}), True),
     "feature.prev_session_close": ContextNodeMetadata(1, frozenset({"open", "high", "low", "close"}), True),
     "feature.session_gap": ContextNodeMetadata(1, frozenset({"open", "close"}), True),
-    "feature.dist_prev_session_high_atr": ContextNodeMetadata(
-        1, frozenset({"open", "high", "low", "close"}), True
-    ),
-    "feature.dist_prev_session_low_atr": ContextNodeMetadata(
-        1, frozenset({"open", "high", "low", "close"}), True
-    ),
-    "feature.dist_prev_session_close_atr": ContextNodeMetadata(
-        1, frozenset({"open", "high", "low", "close"}), True
-    ),
-    "feature.opening_range_high": ContextNodeMetadata(
-        0, frozenset({"open", "high", "low", "close"}), False
-    ),
-    "feature.opening_range_low": ContextNodeMetadata(
-        0, frozenset({"open", "high", "low", "close"}), False
-    ),
+    "feature.dist_prev_session_high_atr": ContextNodeMetadata(1, frozenset({"open", "high", "low", "close"}), True),
+    "feature.dist_prev_session_low_atr": ContextNodeMetadata(1, frozenset({"open", "high", "low", "close"}), True),
+    "feature.dist_prev_session_close_atr": ContextNodeMetadata(1, frozenset({"open", "high", "low", "close"}), True),
+    "feature.opening_range_high": ContextNodeMetadata(0, frozenset({"open", "high", "low", "close"}), False),
+    "feature.opening_range_low": ContextNodeMetadata(0, frozenset({"open", "high", "low", "close"}), False),
     "feature.d1_prev_high": ContextNodeMetadata(1, frozenset({"open", "high", "low", "close"}), True),
     "feature.d1_prev_low": ContextNodeMetadata(1, frozenset({"open", "high", "low", "close"}), True),
     "feature.d1_prev_close": ContextNodeMetadata(1, frozenset({"open", "high", "low", "close"}), True),

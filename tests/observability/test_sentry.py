@@ -198,5 +198,3 @@ def test_cross_repo_release_format_alignment():
     frontend_release = f"q@{fixture_sha}"
     backend_release = f"q@{fixture_sha}"
     assert frontend_release == backend_release
-
-

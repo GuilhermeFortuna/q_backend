@@ -62,12 +62,8 @@ def _ohlcv_to_indexed_frame(bars: list[OHLCV]) -> pd.DataFrame:
     return df.set_index("time")
 
 
-def _load_ohlcv_indexed(
-    symbol: str, timeframe: str, start: datetime, end: datetime
-) -> pd.DataFrame:
-    return _ohlcv_to_indexed_frame(
-        read_ohlcv_fresh(symbol, timeframe, start, end)
-    )
+def _load_ohlcv_indexed(symbol: str, timeframe: str, start: datetime, end: datetime) -> pd.DataFrame:
+    return _ohlcv_to_indexed_frame(read_ohlcv_fresh(symbol, timeframe, start, end))
 
 
 def _attach_exogenous_to_bars(
@@ -174,9 +170,7 @@ def compute_matrix_id(
     for request in features:
         spec, params, fid = _resolve_request(request)
         entries.append((fid, spec.version, params))
-    payload = _matrix_cache_payload(
-        symbol, timeframe, start, end, entries, exogenous_series=exogenous_series
-    )
+    payload = _matrix_cache_payload(symbol, timeframe, start, end, entries, exogenous_series=exogenous_series)
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -226,13 +220,9 @@ def build_feature_matrix(
 
     needs_exogenous = _requests_need_exogenous(features)
     if needs_exogenous and not exogenous_series:
-        raise ValueError(
-            "exogenous_series is required when building a matrix with exogenous features"
-        )
+        raise ValueError("exogenous_series is required when building a matrix with exogenous features")
 
-    matrix_id = compute_matrix_id(
-        symbol, timeframe, start, end, features, exogenous_series=exogenous_series
-    )
+    matrix_id = compute_matrix_id(symbol, timeframe, start, end, features, exogenous_series=exogenous_series)
     if use_cache and feature_matrix_exists(matrix_id):
         cached = read_feature_matrix(matrix_id)
         return FeatureMatrix(

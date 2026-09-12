@@ -94,9 +94,7 @@ class TRBStrategy(TradingStrategy):
             signals.append(Signal(symbol=symbol, action=SignalAction.SELL))
         return signals
 
-    def check_exit_conditions(
-        self, current_data: pd.Series, open_trades: List[Trade]
-    ) -> List[Signal]:
+    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
         symbol = resolve_symbol(current_data, self.symbol)
         if self._timestamp_to_bar is None:
             return []
@@ -122,8 +120,7 @@ register_strategy(
     name="TRB",
     label="Trading Range Breakout (Lai–Lau)",
     description=(
-        "Close-based trading-range breakout with a fixed bar-count holding "
-        "period (Lai & Lau 2006 TRB rule)."
+        "Close-based trading-range breakout with a fixed bar-count holding " "period (Lai & Lau 2006 TRB rule)."
     ),
     params=[
         StrategyParamSpec(

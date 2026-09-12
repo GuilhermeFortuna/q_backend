@@ -260,9 +260,7 @@ def permutation_null_floor(
     rng = np.random.default_rng(seed)
     null_values: list[float] = []
     for _ in range(max(1, n_permutations)):
-        permuted = block_permute_series(
-            aligned_feature, block_size=block_size, rng=rng
-        )
+        permuted = block_permute_series(aligned_feature, block_size=block_size, rng=rng)
         null_values.append(abs(_rank_ic(permuted, aligned_target)))
 
     null_mean = float(np.median(null_values))
@@ -326,13 +324,9 @@ def decide_admission(
     if len(fold_diagnostics) < min_folds:
         return "inconclusive", [f"insufficient_folds:{len(fold_diagnostics)}<{min_folds}"]
 
-    valid_folds = [
-        item for item in fold_diagnostics if not math.isnan(item.rank_ic) and item.n_obs >= 2
-    ]
+    valid_folds = [item for item in fold_diagnostics if not math.isnan(item.rank_ic) and item.n_obs >= 2]
     if len(valid_folds) < min_valid_folds:
-        return "inconclusive", [
-            f"insufficient_valid_folds:{len(valid_folds)}<{min_valid_folds}"
-        ]
+        return "inconclusive", [f"insufficient_valid_folds:{len(valid_folds)}<{min_valid_folds}"]
 
     if leakage_status == "suspect":
         return "rejected", ["leakage_suspect"]
@@ -489,9 +483,7 @@ def evaluate_feature_evidence(
 def profile_target_specs(horizons: list[int]) -> list[TargetSpec]:
     """Profile-aware forward-return targets for each configured horizon."""
     return [
-        TargetSpec(name="fwd_return", horizon=horizon, kind="regression")
-        for horizon in sorted(horizons)
-        if horizon > 0
+        TargetSpec(name="fwd_return", horizon=horizon, kind="regression") for horizon in sorted(horizons) if horizon > 0
     ]
 
 
@@ -501,16 +493,12 @@ def apply_redundancy_decisions(
     scores: list,
 ) -> list[FeatureEvidence]:
     """Mark non-representatives rejected when a stronger peer exists."""
-    representative_by_cluster = {
-        cluster.cluster_id: cluster.representative for cluster in clusters
-    }
+    representative_by_cluster = {cluster.cluster_id: cluster.representative for cluster in clusters}
     score_by_feature = {item.feature_id: item.global_score for item in scores}
     updated: list[FeatureEvidence] = []
 
     for evidence in evidences:
-        representative = representative_by_cluster.get(
-            evidence.cluster_id, evidence.key.feature_id
-        )
+        representative = representative_by_cluster.get(evidence.cluster_id, evidence.key.feature_id)
         is_representative = evidence.key.feature_id == representative
         if evidence.decision != "admitted":
             updated.append(replace(evidence, is_representative=is_representative))

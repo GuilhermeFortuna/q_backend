@@ -55,9 +55,7 @@ def resolve_latent_universe(
 
     production = [
         version
-        for version in list_neural_model_versions(
-            session, status=NeuralModelStatus.PRODUCTION.value
-        )
+        for version in list_neural_model_versions(session, status=NeuralModelStatus.PRODUCTION.value)
         if version.model.symbol == symbol and version.model.timeframe == timeframe
     ]
     if not production:

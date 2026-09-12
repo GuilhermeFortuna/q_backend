@@ -38,10 +38,7 @@ def _warmup_bars_for_params(strategy_params: dict[str, Any]) -> int:
         for key, value in strategy_params.items()
         if isinstance(value, (int, float))
         and not isinstance(value, bool)
-        and any(
-            fragment in key.split("__", 1)[-1].lower()
-            for fragment in _WARMUP_PARAM_KEYS
-        )
+        and any(fragment in key.split("__", 1)[-1].lower() for fragment in _WARMUP_PARAM_KEYS)
     ]
     longest = max(lookbacks, default=0)
     return longest * _WARMUP_MULTIPLIER
@@ -103,9 +100,7 @@ def _window_duration(start: datetime, end: datetime) -> timedelta:
     return end - start
 
 
-def split_windows(
-    start: datetime, end: datetime, cfg: WalkForwardConfig
-) -> list[WalkForwardWindow]:
+def split_windows(start: datetime, end: datetime, cfg: WalkForwardConfig) -> list[WalkForwardWindow]:
     if start >= end:
         raise ValueError("start must be before end")
 
@@ -165,13 +160,10 @@ class WalkForwardRunner:
         candidate_id: str | None = None,
     ):
         if config.is_multi_objective():
-            raise ValueError(
-                "Walk-forward analysis does not support multi-objective studies"
-            )
+            raise ValueError("Walk-forward analysis does not support multi-objective studies")
         if config.backtest.engine == "tick":
             raise ValueError(
-                "Walk-forward analysis supports candle engine only (engine='tick' "
-                "is not supported yet)"
+                "Walk-forward analysis supports candle engine only (engine='tick' " "is not supported yet)"
             )
         self.config = config
         self.wf_config = wf_config
@@ -277,10 +269,12 @@ class WalkForwardRunner:
 
         callbacks = []
         if self.run_id:
+
             def optuna_callback(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
                 from datetime import datetime
+
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
-                
+
                 # Check state
                 if trial.state == optuna.trial.TrialState.COMPLETE:
                     val_str = f"value: {trial.value}"
@@ -288,10 +282,10 @@ class WalkForwardRunner:
                     val_str = "state: PRUNED"
                 else:
                     val_str = f"state: {trial.state.name}"
-                
+
                 params_str = ", ".join(f"'{k}': {v}" for k, v in trial.params.items())
                 params_str = "{" + params_str + "}"
-                
+
                 try:
                     best_trial = study.best_trial
                     best_val = best_trial.value
@@ -299,13 +293,14 @@ class WalkForwardRunner:
                     best_str = f"Best is trial {best_num} with value: {best_val}"
                 except ValueError:
                     best_str = "No best trial yet"
-                
+
                 candidate_prefix = f"Candidate {self.candidate_id} - " if self.candidate_id else ""
                 window_prefix = f"Window {window.index} - "
                 msg = f"[I {timestamp}] {candidate_prefix}{window_prefix}Trial {trial.number} finished with {val_str} and parameters: {params_str}. {best_str}."
-                
+
                 try:
                     from q_backend.storage.redis.client import get_redis
+
                     redis_client = get_redis()
                     log_key = f"strategy_search:logs:{self.run_id}"
                     redis_client.rpush(log_key, msg)
@@ -336,9 +331,7 @@ class WalkForwardRunner:
         risk_params = best_trial.user_attrs.get("risk_params", {})
         manager_params = best_trial.user_attrs.get("manager_params", {})
         is_metrics = best_trial.user_attrs.get("metrics", {})
-        is_objective = float(
-            resolve_objective(is_metrics, self.config.objective.mode)
-        )
+        is_objective = float(resolve_objective(is_metrics, self.config.objective.mode))
 
         self._notify(
             progress_callback,
@@ -421,10 +414,7 @@ class WalkForwardRunner:
     ) -> WalkForwardResult:
         backtest = self.config.backtest
         all_oos_trades: list[Trade] = [
-            trade
-            for window in window_results
-            if window.status == "completed"
-            for trade in window.oos_trades
+            trade for window in window_results if window.status == "completed" for trade in window.oos_trades
         ]
 
         oos_equity_curve = build_equity_curve(
@@ -435,12 +425,8 @@ class WalkForwardRunner:
         )
 
         if all_oos_trades:
-            base_metrics = _aggregate_base_metrics(
-                all_oos_trades, backtest.initial_capital, oos_equity_curve
-            )
-            backtest_days = max(
-                (backtest.end - backtest.start).total_seconds() / 86400, 1.0
-            )
+            base_metrics = _aggregate_base_metrics(all_oos_trades, backtest.initial_capital, oos_equity_curve)
+            backtest_days = max((backtest.end - backtest.start).total_seconds() / 86400, 1.0)
             oos_metrics = compute_extended_metrics(
                 base_metrics,
                 all_oos_trades,
@@ -516,4 +502,3 @@ def _compute_efficiency(
 # so we fan them out across processes. The OHLCV frame is large and identical for
 # every window, so it is shipped to each worker once via the pool initializer
 # rather than pickled per task.
-

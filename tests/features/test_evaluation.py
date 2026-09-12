@@ -79,9 +79,7 @@ def test_stability_higher_for_uniform_than_regime_only_feature():
     close = close.reindex(target.index)
 
     rng = np.random.default_rng(7)
-    uniform = (target + pd.Series(rng.normal(0, 0.01, len(target)), index=target.index)).rename(
-        "uniform"
-    )
+    uniform = (target + pd.Series(rng.normal(0, 0.01, len(target)), index=target.index)).rename("uniform")
 
     regime_only = target.copy().rename("regime_only")
     split = len(target) // 6
@@ -103,16 +101,14 @@ def test_regime_ics_has_bucket_keys_and_is_causal():
     assert set(full.regime_ics.keys()) == {"low", "mid", "high"}
 
     # Changing future close must not move an earlier bar's regime bucket.
-    vol_full = compute_realized_vol(
-        close.reindex(feature.index).sort_index(), 63
-    ).reindex(feature.index)
+    vol_full = compute_realized_vol(close.reindex(feature.index).sort_index(), 63).reindex(feature.index)
     buckets_full = assign_regime_buckets(vol_full, 3)
 
     bars_short = bars.iloc[:-20].copy()
     close_short = pd.Series(bars_short["close"].to_numpy(), index=bars_short["time"])
-    vol_short = compute_realized_vol(
-        close_short.reindex(feature.index[:-20]).sort_index(), 63
-    ).reindex(feature.index[:-20])
+    vol_short = compute_realized_vol(close_short.reindex(feature.index[:-20]).sort_index(), 63).reindex(
+        feature.index[:-20]
+    )
     buckets_short = assign_regime_buckets(vol_short, 3)
 
     check_idx = 100

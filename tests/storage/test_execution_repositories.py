@@ -298,9 +298,7 @@ def test_repository_transaction_rollback_drops_partial_ledger_and_position(
 
         from q_backend.storage.db.execution_models import ExecutionLedgerEntry
 
-        count = verify.execute(
-            select(func.count()).select_from(ExecutionLedgerEntry)
-        ).scalar_one()
+        count = verify.execute(select(func.count()).select_from(ExecutionLedgerEntry)).scalar_one()
         assert count == 0
     finally:
         verify.close()
@@ -308,13 +306,9 @@ def test_repository_transaction_rollback_drops_partial_ledger_and_position(
 
 def test_deployment_lifecycle_repository_enforces_transitions(db_session: Session):
     _, deployment = _seed_account_and_deployment(db_session)
-    transition_deployment_lifecycle(
-        db_session, deployment.id, DeploymentLifecycle.RUNNING
-    )
+    transition_deployment_lifecycle(db_session, deployment.id, DeploymentLifecycle.RUNNING)
     with pytest.raises(IllegalLifecycleTransition):
-        transition_deployment_lifecycle(
-            db_session, deployment.id, DeploymentLifecycle.DRAFT
-        )
+        transition_deployment_lifecycle(db_session, deployment.id, DeploymentLifecycle.DRAFT)
 
 
 def test_order_lifecycle_repository_enforces_transitions(db_session: Session):
@@ -327,13 +321,9 @@ def test_order_lifecycle_repository_enforces_transitions(db_session: Session):
         side=ExecutionSide.BUY,
         quantity=Decimal("1"),
     )
-    transition_execution_order(
-        db_session, order.id, ExecutionOrderStatus.SUBMITTED
-    )
+    transition_execution_order(db_session, order.id, ExecutionOrderStatus.SUBMITTED)
     with pytest.raises(IllegalLifecycleTransition):
-        transition_execution_order(
-            db_session, order.id, ExecutionOrderStatus.INTENT
-        )
+        transition_execution_order(db_session, order.id, ExecutionOrderStatus.INTENT)
 
 
 def test_execution_migration_revision_chain() -> None:
@@ -357,10 +347,10 @@ def test_execution_migration_revision_chain() -> None:
         "20260626_0011",
         "20260628_0012",
         "20260628_0013",
-            "20260630_0014",
-            "20260630_0015",
-            "20260702_0016",
-        ]
+        "20260630_0014",
+        "20260630_0015",
+        "20260702_0016",
+    ]
 
     assert script.get_current_head() == expected_chain[-1]
 
@@ -369,9 +359,9 @@ def test_execution_migration_revision_chain() -> None:
     for revision in script.walk_revisions():
         actual_chain.append(revision.revision)
         down = revision.down_revision
-        assert down is None or isinstance(down, str), (
-            f"revision {revision.revision} has a non-linear down_revision: {down!r}"
-        )
+        assert down is None or isinstance(
+            down, str
+        ), f"revision {revision.revision} has a non-linear down_revision: {down!r}"
 
     assert list(reversed(actual_chain)) == expected_chain
 

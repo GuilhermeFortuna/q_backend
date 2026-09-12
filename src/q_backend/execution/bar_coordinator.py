@@ -19,9 +19,7 @@ from q_backend.market_data.models import OHLCV
 
 
 class OhlcvProvider(Protocol):
-    def get_ohlcv(
-        self, symbol: str, timeframe: str, start: datetime, end: datetime
-    ) -> list[OHLCV]: ...
+    def get_ohlcv(self, symbol: str, timeframe: str, start: datetime, end: datetime) -> list[OHLCV]: ...
 
 
 @dataclass(frozen=True)
@@ -119,9 +117,7 @@ class BarCoordinator:
 
         if earliest_close is None:
             if initial_window_bars is None:
-                raise ValueError(
-                    "initial_window_bars is required when no consumer has a watermark"
-                )
+                raise ValueError("initial_window_bars is required when no consumer has a watermark")
             end = now
             start = now - duration * initial_window_bars
         else:

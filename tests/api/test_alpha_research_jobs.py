@@ -265,8 +265,7 @@ def test_alpha_research_inconclusive_before_expensive_stages(
     stage_names = {stage["name"] for stage in payload["result"]["stages"]}
     assert "preflight" in stage_names
     assert "feature_evidence" not in stage_names or all(
-        stage["name"] != "feature_evidence" or stage["status"] != "completed"
-        for stage in payload["result"]["stages"]
+        stage["name"] != "feature_evidence" or stage["status"] != "completed" for stage in payload["result"]["stages"]
     )
 
 
@@ -330,11 +329,7 @@ def test_alpha_research_ready_for_paper_planted_edge(
     assert payload is not None
     assert payload["status"] == "completed"
     assert payload["result"]["verdict"] == "ready_for_paper"
-    completed_stages = {
-        stage["name"]
-        for stage in payload["result"]["stages"]
-        if stage["status"] == "completed"
-    }
+    completed_stages = {stage["name"] for stage in payload["result"]["stages"] if stage["status"] == "completed"}
     assert "preflight" in completed_stages
     assert "feature_evidence" in completed_stages
     assert "hypothesis_eligibility" in completed_stages

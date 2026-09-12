@@ -30,8 +30,7 @@ async def lifespan(app: FastAPI):
     success = market_data_service.initialize()
     if not success:
         logger.warning(
-            "MetaTrader 5 terminal initialization failed on startup; "
-            "auto mode will use the local provider."
+            "MetaTrader 5 terminal initialization failed on startup; " "auto mode will use the local provider."
         )
     else:
         logger.info("MetaTrader 5 terminal initialized successfully on startup.")

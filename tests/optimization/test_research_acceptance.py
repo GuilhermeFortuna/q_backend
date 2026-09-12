@@ -211,9 +211,7 @@ def test_broad_plateau_passes_acceptance():
 
 def test_four_completed_seeds_plus_one_failed_is_inconclusive():
     seeds = [_completed_seed(seed) for seed in range(4)]
-    seeds.append(
-        SeedRunRecord(seed=44, status="failed", failure_reason="optimizer crashed")
-    )
+    seeds.append(SeedRunRecord(seed=44, status="failed", failure_reason="optimizer crashed"))
     result = evaluate_research_acceptance_from_evidence(
         acceptance_id="acc-inconclusive",
         candidate_id="partial",

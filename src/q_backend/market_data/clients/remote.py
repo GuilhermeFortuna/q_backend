@@ -139,9 +139,7 @@ class RemoteMt5Client:
             return False
 
         if resp.status_code != 200:
-            logger.debug(
-                "Remote MT5 gateway health returned HTTP %s", resp.status_code
-            )
+            logger.debug("Remote MT5 gateway health returned HTTP %s", resp.status_code)
             return False
 
         try:
@@ -172,9 +170,7 @@ class RemoteMt5Client:
             return False
 
     # -- OHLCV --------------------------------------------------------------
-    def get_ohlcv(
-        self, symbol: str, timeframe: str, start: datetime, end: datetime
-    ) -> list[OHLCV]:
+    def get_ohlcv(self, symbol: str, timeframe: str, start: datetime, end: datetime) -> list[OHLCV]:
         params = {
             "symbol": symbol,
             "timeframe": timeframe,
@@ -188,13 +184,9 @@ class RemoteMt5Client:
         with np.load(io.BytesIO(content)) as npz:
             return _npz_to_ohlcv(npz)
 
-    def get_available_ohlcv_range(
-        self, symbol: str, timeframe: str
-    ) -> Optional[OhlcvAvailableRange]:
+    def get_available_ohlcv_range(self, symbol: str, timeframe: str) -> Optional[OhlcvAvailableRange]:
         try:
-            payload = self._get_json(
-                "/v1/available_range", {"symbol": symbol, "timeframe": timeframe}
-            )
+            payload = self._get_json("/v1/available_range", {"symbol": symbol, "timeframe": timeframe})
         except _GatewayNotFound:
             return None
         return OhlcvAvailableRange(
@@ -220,9 +212,7 @@ class RemoteMt5Client:
 
         cache_key: str | None = None
         if use_cache:
-            cache_key = make_cache_key(
-                symbol, start_local, end_local, resolved_flags, provider=_PROVIDER
-            )
+            cache_key = make_cache_key(symbol, start_local, end_local, resolved_flags, provider=_PROVIDER)
             cached = load_tick_cache(cache_key)
             if cached is not None:
                 return cached
@@ -252,9 +242,7 @@ class RemoteMt5Client:
         end: datetime,
         flags: int | None = None,
     ) -> list[Tick]:
-        arrays = self.get_ticks_columnar(
-            symbol, start, end, flags=flags, use_cache=False
-        )
+        arrays = self.get_ticks_columnar(symbol, start, end, flags=flags, use_cache=False)
         return columnar_to_ticks(arrays)
 
     def get_recent_ticks(self, symbol: str, limit: int = 200) -> list[Tick]:
@@ -298,9 +286,7 @@ class RemoteMt5Client:
             ) as client:
                 resp = client.get(path, params=params)
         except httpx.HTTPError as exc:
-            raise ConnectionError(
-                f"Remote MT5 gateway request to {path} failed: {exc}"
-            ) from exc
+            raise ConnectionError(f"Remote MT5 gateway request to {path} failed: {exc}") from exc
 
         if resp.status_code == 200:
             return resp
@@ -311,9 +297,7 @@ class RemoteMt5Client:
         try:
             return resp.json()
         except ValueError as exc:
-            raise ConnectionError(
-                f"Remote MT5 gateway {path} returned a non-JSON body."
-            ) from exc
+            raise ConnectionError(f"Remote MT5 gateway {path} returned a non-JSON body.") from exc
 
     def _get_npz(self, path: str, params: dict[str, Any]) -> bytes:
         return self._get(path, params).content
@@ -326,12 +310,8 @@ class RemoteMt5Client:
         if status == 400:
             raise ValueError(message or f"Bad request to {path}.")
         if status == 503 or code == "mt5_unavailable":
-            raise ConnectionError(
-                message or "Remote MT5 gateway reports the terminal is unavailable."
-            )
-        raise ConnectionError(
-            f"Remote MT5 gateway {path} error (HTTP {status}): {message}"
-        )
+            raise ConnectionError(message or "Remote MT5 gateway reports the terminal is unavailable.")
+        raise ConnectionError(f"Remote MT5 gateway {path} error (HTTP {status}): {message}")
 
 
 def _flags_to_str(flags: int) -> str:

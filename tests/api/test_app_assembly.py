@@ -199,11 +199,7 @@ def _route_inventory() -> set[tuple[str, str]]:
 
 def test_full_route_inventory_present_across_all_routers():
     inventory = _route_inventory()
-    missing = [
-        (method, path)
-        for method, path in FULL_ROUTE_INVENTORY
-        if (method, path) not in inventory
-    ]
+    missing = [(method, path) for method, path in FULL_ROUTE_INVENTORY if (method, path) not in inventory]
     assert not missing, f"Missing routes: {missing}"
 
 

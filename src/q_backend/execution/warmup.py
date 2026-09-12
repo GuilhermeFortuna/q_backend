@@ -43,14 +43,10 @@ def _flatten_compiled_params(compiled_config: dict[str, Any]) -> dict[str, Any]:
     try:
         request = BacktestRequest.model_validate(compiled_config)
     except Exception as exc:
-        raise WindowBoundUndeterminedError(
-            "compiled_config is not a valid backtest configuration"
-        ) from exc
+        raise WindowBoundUndeterminedError("compiled_config is not a valid backtest configuration") from exc
 
     if request.engine == "tick":
-        raise WindowBoundUndeterminedError(
-            "tick/sub-second strategies are outside forward execution scope"
-        )
+        raise WindowBoundUndeterminedError("tick/sub-second strategies are outside forward execution scope")
 
     entries, _manager, exit_params = normalize_entries(request)
     flat: dict[str, Any] = dict(exit_params)
@@ -82,23 +78,16 @@ def compute_window_bound_bars(compiled_config: dict[str, Any]) -> int:
             if col.startswith("atr_"):
                 lookbacks.append(int(col.split("_", 1)[1]))
             elif col.startswith("donchian_high_") or col.startswith("donchian_low_"):
-                prefix = (
-                    "donchian_high_"
-                    if col.startswith("donchian_high_")
-                    else "donchian_low_"
-                )
+                prefix = "donchian_high_" if col.startswith("donchian_high_") else "donchian_low_"
                 lookbacks.append(int(col.removeprefix(prefix)))
 
     if not lookbacks:
         raise WindowBoundUndeterminedError(
-            "no period/lookback parameters found in compiled_config; "
-            "cannot bound indicator history safely"
+            "no period/lookback parameters found in compiled_config; " "cannot bound indicator history safely"
         )
 
     longest = max(lookbacks)
     if longest <= 0:
-        raise WindowBoundUndeterminedError(
-            "longest lookback is non-positive; cannot bound indicator history"
-        )
+        raise WindowBoundUndeterminedError("longest lookback is non-positive; cannot bound indicator history")
 
     return longest * _WARMUP_MULTIPLIER + _WINDOW_BUFFER_BARS

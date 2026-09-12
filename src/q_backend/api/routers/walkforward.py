@@ -50,9 +50,7 @@ def get_walkforward_status(run_id: str):
     """Return progress/status for a walk-forward run."""
     payload = walkforward_jobs.get_status_payload(run_id)
     if payload is None:
-        raise HTTPException(
-            status_code=404, detail=f"Walk-forward run '{run_id}' not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Walk-forward run '{run_id}' not found.")
     return payload
 
 
@@ -68,10 +66,7 @@ def get_walkforward_results(run_id: str):
         if payload is None:
             raise HTTPException(
                 status_code=409,
-                detail=(
-                    f"Walk-forward run '{run_id}' has no results yet "
-                    f"(status: {job.status})."
-                ),
+                detail=(f"Walk-forward run '{run_id}' has no results yet " f"(status: {job.status})."),
             )
         return payload
 
@@ -81,14 +76,9 @@ def get_walkforward_results(run_id: str):
         if persisted_status is not None:
             raise HTTPException(
                 status_code=409,
-                detail=(
-                    f"Walk-forward run '{run_id}' has no results yet "
-                    f"(status: {persisted_status})."
-                ),
+                detail=(f"Walk-forward run '{run_id}' has no results yet " f"(status: {persisted_status})."),
             )
-        raise HTTPException(
-            status_code=404, detail=f"Walk-forward run '{run_id}' not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Walk-forward run '{run_id}' not found.")
     return payload
 
 
@@ -106,9 +96,7 @@ def cancel_walkforward(run_id: str):
     walkforward_jobs.request_cancel(run_id)
     payload = walkforward_jobs.get_status_payload(run_id)
     if payload is None:
-        raise HTTPException(
-            status_code=404, detail=f"Walk-forward run '{run_id}' not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Walk-forward run '{run_id}' not found.")
     return payload
 
 
@@ -121,10 +109,7 @@ def list_walkforwards(
     """Return a paginated list of walk-forward runs, newest first."""
     runs, total = list_walkforward_runs(session, limit=limit, offset=offset)
     return {
-        "items": [
-            WalkForwardRunListItem(**walkforward_jobs.run_list_item_from_db(run))
-            for run in runs
-        ],
+        "items": [WalkForwardRunListItem(**walkforward_jobs.run_list_item_from_db(run)) for run in runs],
         "total": total,
         "limit": limit,
         "offset": offset,
@@ -137,14 +122,10 @@ def delete_walkforward(run_id: str, session: Session = Depends(get_session)):
     try:
         run_uuid = uuid.UUID(run_id)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=404, detail=f"Walk-forward run '{run_id}' not found."
-        ) from exc
+        raise HTTPException(status_code=404, detail=f"Walk-forward run '{run_id}' not found.") from exc
 
     if not delete_walkforward_run(session, run_uuid):
-        raise HTTPException(
-            status_code=404, detail=f"Walk-forward run '{run_id}' not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Walk-forward run '{run_id}' not found.")
 
     walkforward_jobs.evict_run(run_id)
     walkforward_jobs.delete_run_lake_artifacts(run_id)
@@ -159,17 +140,13 @@ def get_walkforward_equity_artifact(run_id: str):
     try:
         uuid.UUID(run_id)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=404, detail=f"Walk-forward run '{run_id}' not found."
-        ) from exc
+        raise HTTPException(status_code=404, detail=f"Walk-forward run '{run_id}' not found.") from exc
 
     job = walkforward_jobs.get_job(run_id)
     if job is not None and job.result is not None:
         return {
             "run_id": run_id,
-            "points": walkforward_jobs.serialize_equity_points(
-                job.result.oos_equity_curve
-            ),
+            "points": walkforward_jobs.serialize_equity_points(job.result.oos_equity_curve),
         }
 
     try:

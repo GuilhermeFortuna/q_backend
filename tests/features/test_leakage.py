@@ -263,9 +263,7 @@ def test_exogenous_harness_catches_a_forward_leak() -> None:
             end=indexed.index[-1].to_pydatetime(),
         )
         leaked = attached[column].shift(-1).reset_index(drop=True)
-        return FeatureSeries(
-            feature_id="leaky_exog", series=leaked, warmup_bars=0, leakage_status="suspect"
-        )
+        return FeatureSeries(feature_id="leaky_exog", series=leaked, warmup_bars=0, leakage_status="suspect")
 
     with pytest.raises(LeakageError):
         assert_causal(_leaky, bars, sample_indices=[40, 80])

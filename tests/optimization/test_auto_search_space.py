@@ -50,9 +50,7 @@ def _expected_search_param_type(spec: StrategyParamSpec) -> type:
     return CategoricalParam
 
 
-CANDLE_STRATEGIES = [
-    info.name for info in list_registered_strategies() if info.engine == "candle"
-]
+CANDLE_STRATEGIES = [info.name for info in list_registered_strategies() if info.engine == "candle"]
 
 
 @pytest.mark.parametrize("strategy_name", CANDLE_STRATEGIES)
@@ -286,9 +284,7 @@ def test_auto_search_space_merges_strategy_and_risk():
     space = auto_search_space("MACrossover", include_risk=True)
     assert "short_period" in space.strategy_params
     assert "type" in space.risk_params
-    assert isinstance(
-        space.risk_params["safety_margin_per_contract"], LogFloatParam
-    )
+    assert isinstance(space.risk_params["safety_margin_per_contract"], LogFloatParam)
 
 
 def test_auto_search_space_without_risk():

@@ -18,9 +18,7 @@ def resolve_tick_flags(tick_flags: Optional[str]) -> int:
         return mt5.COPY_TICKS_ALL
     if tick_flags.lower() == "trade":
         return mt5.COPY_TICKS_TRADE
-    raise ValueError(
-        f"Invalid tick_flags '{tick_flags}'. Expected 'all' or 'trade'."
-    )
+    raise ValueError(f"Invalid tick_flags '{tick_flags}'. Expected 'all' or 'trade'.")
 
 
 def columnar_to_tick_arrays(columnar: dict[str, Any]) -> TickArrays:
@@ -68,17 +66,13 @@ class TickBacktestRunner:
         studies run on a worker thread, so tick data is loaded here on the caller
         thread (typically the FastAPI request handler) and cached in memory.
         """
-        arrays = market_data_service.get_ticks_columnar(
-            symbol, start, end, flags=flags
-        )
+        arrays = market_data_service.get_ticks_columnar(symbol, start, end, flags=flags)
         if len(arrays["time_msc"]) == 0:
             raise ValueError("No tick data found for the given parameters.")
         return cls(columnar_to_tick_arrays(arrays))
 
     def run(self, config: BacktestRunConfig) -> BacktestRunResult:
-        strategy = build_tick_strategy(
-            config.strategy, config.strategy_params, config.symbol
-        )
+        strategy = build_tick_strategy(config.strategy, config.strategy_params, config.symbol)
         sizing_config = config.position_sizing or FixedQuantityPositionSizing()
         engine = TickBacktestEngine(
             strategy=strategy,

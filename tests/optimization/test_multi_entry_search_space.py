@@ -86,9 +86,7 @@ def test_two_instances_derive_disjoint_namespaced_keys():
     e0_keys = {key for key in strategy_keys if key.startswith("e0__")}
     e1_keys = {key for key in strategy_keys if key.startswith("e1__")}
     assert e0_keys.isdisjoint(e1_keys)
-    assert {key.removeprefix("e0__") for key in e0_keys} == {
-        key.removeprefix("e1__") for key in e1_keys
-    }
+    assert {key.removeprefix("e0__") for key in e0_keys} == {key.removeprefix("e1__") for key in e1_keys}
 
 
 def test_majority_manager_exposes_vote_threshold_only():
@@ -146,9 +144,7 @@ def test_single_entry_parity_after_stripping_prefix():
     single_space, _single_fixed = derive_strategy_search_space(strategy_name)
     entry_only = _entry_searchable_keys(strategy_name)
 
-    stripped = {
-        key.split("__", 1)[1] for key in multi_space.strategy_params if key.startswith("e0__")
-    }
+    stripped = {key.split("__", 1)[1] for key in multi_space.strategy_params if key.startswith("e0__")}
     assert stripped == entry_only
     assert stripped == set(single_space.strategy_params.keys()) & entry_only
 
@@ -212,10 +208,7 @@ def test_multi_entry_optimization_rebuilds_composite_strategy(sample_ohlcv_df):
         fixed_params=fixed_params,
     )
     strategy = build_composite_entry(
-        [
-            {"strategy": entry.strategy, "params": entry.params}
-            for entry in rebuilt_entries
-        ],
+        [{"strategy": entry.strategy, "params": entry.params} for entry in rebuilt_entries],
         manager.kind,
         resolved_manager,
         {},

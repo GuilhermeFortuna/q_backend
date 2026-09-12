@@ -74,7 +74,7 @@ def _events_to_registry(
             point_value=point_value,
         )
         registry.register_trade(trade)
-        
+
         reason_code = int(_exit_reasons[i])
         try:
             exit_reason_str = ExitReason(reason_code).name
@@ -105,9 +105,7 @@ class TickBacktestEngine:
         self.initial_capital = initial_capital
         self.point_value = point_value
         self.symbol = symbol
-        self._sizing_mode, self._sizing_a, self._sizing_b, self._sizing_c = (
-            kernel_sizing_params(sizing_config)
-        )
+        self._sizing_mode, self._sizing_a, self._sizing_b, self._sizing_c = kernel_sizing_params(sizing_config)
 
     def run(
         self,
@@ -143,6 +141,4 @@ class TickBacktestEngine:
             self._sizing_b,
             self._sizing_c,
         )
-        return _events_to_registry(
-            events, ticks.time_msc, self.symbol, self.point_value
-        )
+        return _events_to_registry(events, ticks.time_msc, self.symbol, self.point_value)

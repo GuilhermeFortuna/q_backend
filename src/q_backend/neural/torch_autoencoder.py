@@ -57,10 +57,7 @@ def _deserialize_state_dict(
 def _build_sequences(values: np.ndarray, lookback: int) -> np.ndarray:
     if values.shape[0] < lookback:
         return np.empty((0, lookback, values.shape[1]), dtype=float)
-    sequences = [
-        values[index - lookback + 1 : index + 1]
-        for index in range(lookback - 1, values.shape[0])
-    ]
+    sequences = [values[index - lookback + 1 : index + 1] for index in range(lookback - 1, values.shape[0])]
     return np.stack(sequences, axis=0)
 
 
@@ -139,16 +136,12 @@ class TorchAutoencoder:
     def _select_feature_columns(self, window: pd.DataFrame) -> list[str]:
         if list(window.columns) == list(self.config.input_features):
             return list(self.config.input_features)
-        missing = [
-            name for name in self.config.input_features if name not in window.columns
-        ]
+        missing = [name for name in self.config.input_features if name not in window.columns]
         if missing:
             raise ValueError(f"Input features missing from window: {missing}")
         return list(self.config.input_features)
 
-    def _split_fit_validation(
-        self, values: np.ndarray, holdout_fraction: float
-    ) -> tuple[np.ndarray, np.ndarray]:
+    def _split_fit_validation(self, values: np.ndarray, holdout_fraction: float) -> tuple[np.ndarray, np.ndarray]:
         if values.shape[0] < 2:
             return values, values[:0]
         holdout_rows = max(1, int(round(values.shape[0] * holdout_fraction)))
@@ -267,15 +260,11 @@ class TorchAutoencoder:
             float(hyperparams["val_holdout_fraction"]),
         )
         if fit_values.shape[0] < lookback:
-            raise ValueError(
-                f"Training window needs at least {lookback} rows for lookback={lookback}."
-            )
+            raise ValueError(f"Training window needs at least {lookback} rows for lookback={lookback}.")
 
         scaler = StandardScaler()
         scaled_fit = scaler.fit_transform(fit_values)
-        scaled_val = (
-            scaler.transform(val_values) if val_values.size else val_values.reshape(0, raw.shape[1])
-        )
+        scaled_val = scaler.transform(val_values) if val_values.size else val_values.reshape(0, raw.shape[1])
 
         fit_sequences = _build_sequences(scaled_fit, lookback)
         val_sequences = _build_sequences(scaled_val, lookback)
@@ -298,9 +287,7 @@ class TorchAutoencoder:
         batch_size = 64
         with torch.no_grad():
             for start in range(0, sequences.shape[0], batch_size):
-                batch = torch.from_numpy(
-                    sequences[start : start + batch_size].astype(np.float32)
-                ).to(device)
+                batch = torch.from_numpy(sequences[start : start + batch_size].astype(np.float32)).to(device)
                 latents = model.encode(batch).cpu().numpy()
                 encoded_batches.append(latents)
         return np.concatenate(encoded_batches, axis=0)
@@ -347,9 +334,7 @@ class TorchAutoencoder:
         }
 
     @classmethod
-    def load_from_artifact_state(
-        cls, config: EncoderConfig, state: dict[str, Any]
-    ) -> TorchAutoencoder:
+    def load_from_artifact_state(cls, config: EncoderConfig, state: dict[str, Any]) -> TorchAutoencoder:
         encoder = cls(config=config)
         encoder._scaler = state.get("scaler")
         encoder._feature_columns = list(state.get("feature_columns", []))

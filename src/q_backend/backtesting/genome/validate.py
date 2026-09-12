@@ -64,9 +64,7 @@ def validate_genome(
     max_node_count: int = DEFAULT_MAX_NODE_COUNT,
 ) -> None:
     if len(genome.nodes) > max_node_count:
-        raise GenomeValidationError(
-            f"Genome has {len(genome.nodes)} nodes; maximum is {max_node_count}."
-        )
+        raise GenomeValidationError(f"Genome has {len(genome.nodes)} nodes; maximum is {max_node_count}.")
 
     nodes_by_id: dict[str, GenomeNode] = {}
     for node in genome.nodes:
@@ -81,9 +79,7 @@ def validate_genome(
         spec = NODE_SPECS[node.kind]
         unknown_keys = set(node.params) - spec.allowed_param_keys
         if unknown_keys:
-            raise GenomeValidationError(
-                f"Node '{node.id}' ({node.kind}) has unknown params: {sorted(unknown_keys)}."
-            )
+            raise GenomeValidationError(f"Node '{node.id}' ({node.kind}) has unknown params: {sorted(unknown_keys)}.")
 
         for key, value in node.params.items():
             if _is_param_ref(value):
@@ -94,28 +90,21 @@ def validate_genome(
                     )
             elif key == "bars" and node.kind == "transform.shift":
                 if value != 1:
-                    raise GenomeValidationError(
-                        f"Node '{node.id}': transform.shift.bars must be 1 (got {value!r})."
-                    )
+                    raise GenomeValidationError(f"Node '{node.id}': transform.shift.bars must be 1 (got {value!r}).")
             elif key == "change_bars" and node.kind == "transform.pct_change":
                 if not isinstance(value, int) or value < 1:
                     raise GenomeValidationError(
-                        f"Node '{node.id}': transform.pct_change.change_bars must be >= 1 "
-                        f"(got {value!r})."
+                        f"Node '{node.id}': transform.pct_change.change_bars must be >= 1 " f"(got {value!r})."
                     )
             elif node.kind == "transform.clip" and not _is_param_ref(value):
                 if key == "clip_low" and "clip_high" in node.params:
                     high = node.params["clip_high"]
                     if not _is_param_ref(high) and isinstance(value, (int, float)) and value > high:
-                        raise GenomeValidationError(
-                            f"Node '{node.id}': clip_low must be <= clip_high."
-                        )
+                        raise GenomeValidationError(f"Node '{node.id}': clip_low must be <= clip_high.")
                 if key == "clip_high" and "clip_low" in node.params:
                     low = node.params["clip_low"]
                     if not _is_param_ref(low) and isinstance(value, (int, float)) and value < low:
-                        raise GenomeValidationError(
-                            f"Node '{node.id}': clip_high must be >= clip_low."
-                        )
+                        raise GenomeValidationError(f"Node '{node.id}': clip_high must be >= clip_low.")
             elif (
                 node.kind == "feature.session_window"
                 and key == "window_to"
@@ -127,22 +116,16 @@ def validate_genome(
                     parse_hhmm(str(node.params["window_from"]))
                     parse_hhmm(str(value))
                 except ValueError as exc:
-                    raise GenomeValidationError(
-                        f"Node '{node.id}' param '{key}' must be HH:MM."
-                    ) from exc
+                    raise GenomeValidationError(f"Node '{node.id}' param '{key}' must be HH:MM.") from exc
                 if hhmm_to_minutes(str(node.params["window_from"])) >= hhmm_to_minutes(str(value)):
                     raise GenomeValidationError(
                         f"Node '{node.id}': feature.session_window window_from must be before window_to."
                     )
-            elif key in {"session_open", "session_close", "window_from", "window_to"} and not _is_param_ref(
-                value
-            ):
+            elif key in {"session_open", "session_close", "window_from", "window_to"} and not _is_param_ref(value):
                 try:
                     parse_hhmm(str(value))
                 except ValueError as exc:
-                    raise GenomeValidationError(
-                        f"Node '{node.id}' param '{key}' must be HH:MM."
-                    ) from exc
+                    raise GenomeValidationError(f"Node '{node.id}' param '{key}' must be HH:MM.") from exc
 
         input_count = len(node.inputs)
         if input_count < spec.min_inputs or input_count > spec.max_inputs:
@@ -169,20 +152,16 @@ def validate_genome(
             if node.kind.startswith("logic."):
                 if ref_type != "bool_series":
                     raise GenomeValidationError(
-                        f"Node '{node.id}' ({node.kind}) requires bool_series inputs; "
-                        f"'{raw_input}' is {ref_type}."
+                        f"Node '{node.id}' ({node.kind}) requires bool_series inputs; " f"'{raw_input}' is {ref_type}."
                     )
             elif node.kind.startswith("cmp."):
                 if ref_type == "bool_series":
                     raise GenomeValidationError(
-                        f"Node '{node.id}' ({node.kind}) cannot compare bool_series input "
-                        f"'{raw_input}'."
+                        f"Node '{node.id}' ({node.kind}) cannot compare bool_series input " f"'{raw_input}'."
                     )
             elif node.kind == "exit.middle_band":
                 if ref_type != "price_series":
-                    raise GenomeValidationError(
-                        f"Node '{node.id}' (exit.middle_band) requires price_series inputs."
-                    )
+                    raise GenomeValidationError(f"Node '{node.id}' (exit.middle_band) requires price_series inputs.")
 
             if spec.input_series_types is not None:
                 idx = node.inputs.index(raw_input)
@@ -200,9 +179,7 @@ def validate_genome(
     for node in genome.nodes:
         depth = _node_depth(node.id, children)
         if depth > max_depth:
-            raise GenomeValidationError(
-                f"Node '{node.id}' exceeds max depth {max_depth} (depth={depth})."
-            )
+            raise GenomeValidationError(f"Node '{node.id}' exceeds max depth {max_depth} (depth={depth}).")
 
     _validate_signal_refs(genome, nodes_by_id)
     _validate_exit_rule_policy(genome)
@@ -220,9 +197,7 @@ def _validate_exit_rule_policy(genome: Genome) -> None:
     known_preset_ids = {preset.id for preset in selected_exit_policy_presets(None)}
     known_preset_ids.update({"fixed_stop_only", "atr_stop_only"})
     if preset_id not in known_preset_ids:
-        raise GenomeValidationError(
-            f"exit_rule_policy preset_id '{preset_id}' is not a supported exit preset."
-        )
+        raise GenomeValidationError(f"exit_rule_policy preset_id '{preset_id}' is not a supported exit preset.")
 
     params = policy.get("params")
     if not isinstance(params, dict) or not params:
@@ -233,9 +208,7 @@ def _validate_exit_rule_policy(genome: Genome) -> None:
             continue
         param_key = str(binding["param"])
         if param_key not in GENOME_PARAM_BOUNDS:
-            raise GenomeValidationError(
-                f"exit_rule_policy param ref '{param_key}' is not in GENOME_PARAM_BOUNDS."
-            )
+            raise GenomeValidationError(f"exit_rule_policy param ref '{param_key}' is not in GENOME_PARAM_BOUNDS.")
         if preset_id not in {"fixed_stop_only", "atr_stop_only"}:
             preset = preset_by_id(preset_id)
             allowed = set(preset_exit_param_names(preset))
@@ -289,13 +262,10 @@ def _validate_signal_refs(genome: Genome, nodes_by_id: dict[str, GenomeNode]) ->
         try:
             out_type = port_output_type(node.kind, port)
         except KeyError as exc:
-            raise GenomeValidationError(
-                f"{label} references invalid port on node '{ref.ref}'."
-            ) from exc
+            raise GenomeValidationError(f"{label} references invalid port on node '{ref.ref}'.") from exc
         if out_type != "bool_series":
             raise GenomeValidationError(
-                f"{label} must reference a bool_series or exit_policy node; "
-                f"'{ref.ref}' is {out_type}."
+                f"{label} must reference a bool_series or exit_policy node; " f"'{ref.ref}' is {out_type}."
             )
 
 
@@ -318,13 +288,10 @@ def _require_bool_ref(label: str, ref_id: str, nodes_by_id: dict[str, GenomeNode
     try:
         out_type = port_output_type(node.kind, port)
     except KeyError as exc:
-        raise GenomeValidationError(
-            f"{label} references invalid port on node '{ref_id}'."
-        ) from exc
+        raise GenomeValidationError(f"{label} references invalid port on node '{ref_id}'.") from exc
     if out_type != "bool_series":
         raise GenomeValidationError(
-            f"{label} must reference a bool_series node; '{ref_id}' ({node.kind}) "
-            f"port '{port}' is {out_type}."
+            f"{label} must reference a bool_series node; '{ref_id}' ({node.kind}) " f"port '{port}' is {out_type}."
         )
 
 

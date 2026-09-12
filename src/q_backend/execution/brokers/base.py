@@ -166,15 +166,15 @@ class BrokerOrderState(BaseModel):
 
 @runtime_checkable
 class ExecutionBroker(Protocol):
-  def health(self) -> BrokerHealth: ...
+    def health(self) -> BrokerHealth: ...
 
-  def submit_market_order(
-      self,
-      request: MarketOrderRequest,
-      *,
-      cost_config: PaperCostConfig,
-  ) -> BrokerSubmissionResult: ...
+    def submit_market_order(
+        self,
+        request: MarketOrderRequest,
+        *,
+        cost_config: PaperCostConfig,
+    ) -> BrokerSubmissionResult: ...
 
-  def lookup_order(self, request: MarketOrderRequest) -> BrokerOrderState:
-      """Look up an order's outcome by its client order id (read-only)."""
-      ...
+    def lookup_order(self, request: MarketOrderRequest) -> BrokerOrderState:
+        """Look up an order's outcome by its client order id (read-only)."""
+        ...

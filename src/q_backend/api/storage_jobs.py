@@ -47,9 +47,7 @@ def validate_timeframes(timeframes: list[str]) -> list[str]:
     for tf in timeframes:
         key = tf.strip().upper()
         if key not in TIMEFRAME_MAP:
-            raise ValueError(
-                f"Invalid timeframe '{tf}'. Choose from: {list(TIMEFRAME_MAP.keys())}"
-            )
+            raise ValueError(f"Invalid timeframe '{tf}'. Choose from: {list(TIMEFRAME_MAP.keys())}")
         normalized.append(key)
     return normalized
 
@@ -62,9 +60,7 @@ def _resolve_range(start: datetime, end: datetime) -> tuple[datetime, datetime]:
     return start, end
 
 
-def _iter_month_chunks(
-    start: datetime, end: datetime
-) -> list[tuple[datetime, datetime, str]]:
+def _iter_month_chunks(start: datetime, end: datetime) -> list[tuple[datetime, datetime, str]]:
     chunks: list[tuple[datetime, datetime, str]] = []
     cursor = datetime(start.year, start.month, 1)
     end_month = datetime(end.year, end.month, 1)
@@ -148,10 +144,7 @@ def _run_bars_ingest(
         try:
             bars = provider.get_ohlcv(symbol, timeframe, start, end)
             if not bars:
-                raise ValueError(
-                    f"No OHLCV bars returned from {source_label} for "
-                    f"{symbol}/{timeframe}."
-                )
+                raise ValueError(f"No OHLCV bars returned from {source_label} for " f"{symbol}/{timeframe}.")
             catalog_entry = local_store.write_ohlcv(symbol, timeframe, bars)
             results.append(
                 IngestTimeframeResult(
@@ -163,9 +156,7 @@ def _run_bars_ingest(
                 ).model_dump()
             )
         except Exception as exc:  # noqa: BLE001 — isolate per timeframe
-            logger.warning(
-                "Storage ingest failed for %s/%s: %s", symbol, timeframe, exc
-            )
+            logger.warning("Storage ingest failed for %s/%s: %s", symbol, timeframe, exc)
             results.append(
                 IngestTimeframeResult(
                     timeframe=timeframe,
@@ -216,14 +207,9 @@ def _run_ticks_ingest(
             },
         )
         try:
-            arrays = provider.get_ticks_columnar(
-                symbol, chunk_start, chunk_end, use_cache=False
-            )
+            arrays = provider.get_ticks_columnar(symbol, chunk_start, chunk_end, use_cache=False)
             if len(arrays.get("time_msc", [])) == 0:
-                raise ValueError(
-                    f"No ticks returned from {source_label} for {symbol} in "
-                    f"{month_label}."
-                )
+                raise ValueError(f"No ticks returned from {source_label} for {symbol} in " f"{month_label}.")
             catalog_entry = local_store.write_ticks(symbol, arrays)
             results.append(
                 IngestTimeframeResult(
@@ -235,9 +221,7 @@ def _run_ticks_ingest(
                 ).model_dump()
             )
         except Exception as exc:  # noqa: BLE001 — isolate per month
-            logger.warning(
-                "Tick ingest failed for %s/%s: %s", symbol, month_label, exc
-            )
+            logger.warning("Tick ingest failed for %s/%s: %s", symbol, month_label, exc)
             results.append(
                 IngestTimeframeResult(
                     timeframe=month_label,
@@ -287,19 +271,13 @@ def run_ingest_job(job_id: str, request_json: str) -> None:
         try:
             provider = service.acquisition_provider()
         except ConnectionError as exc:
-            raise RuntimeError(
-                f"Ingestion requires a reachable acquisition provider: {exc}"
-            ) from exc
+            raise RuntimeError(f"Ingestion requires a reachable acquisition provider: {exc}") from exc
 
         if request.kind == "ticks":
-            results, detail, status, terminal_error = _run_ticks_ingest(
-                job_id, symbol, start, end, provider
-            )
+            results, detail, status, terminal_error = _run_ticks_ingest(job_id, symbol, start, end, provider)
         else:
             timeframes = validate_timeframes(request.timeframes)
-            results, detail, status, terminal_error = _run_bars_ingest(
-                job_id, symbol, timeframes, start, end, provider
-            )
+            results, detail, status, terminal_error = _run_bars_ingest(job_id, symbol, timeframes, start, end, provider)
 
         _persist_progress(
             job_id,

@@ -182,9 +182,7 @@ def _apply_warmup(series: pd.Series, warmup_bars: int) -> pd.Series:
     return trimmed
 
 
-def _build_classical_input_window(
-    bars: pd.DataFrame, input_features: list[str]
-) -> pd.DataFrame:
+def _build_classical_input_window(bars: pd.DataFrame, input_features: list[str]) -> pd.DataFrame:
     """Standardized classical features consumed by the encoder."""
     df = bars.sort_values("time").reset_index(drop=True)
     columns: dict[str, np.ndarray] = {}
@@ -201,9 +199,7 @@ def _get_or_compute_latent_frame(model_hash: str, bars: pd.DataFrame) -> pd.Data
         return cached
 
     encoder = read_neural_model(model_hash)
-    input_window = _build_classical_input_window(
-        bars, list(encoder.config.input_features)
-    )
+    input_window = _build_classical_input_window(bars, list(encoder.config.input_features))
     finite_mask = input_window.notna().all(axis=1)
     latent_frame = pd.DataFrame(
         np.nan,
@@ -228,9 +224,7 @@ def _compute_neural(bars: pd.DataFrame, spec: FeatureSpec) -> FeatureSeries:
 
     latent_frame = _get_or_compute_latent_frame(spec.model_hash, df)
     if spec.name not in latent_frame.columns:
-        raise KeyError(
-            f"Latent column '{spec.name}' not found for model '{spec.model_hash}'."
-        )
+        raise KeyError(f"Latent column '{spec.name}' not found for model '{spec.model_hash}'.")
 
     raw = latent_frame[spec.name].reset_index(drop=True)
     warmup = _oos_warmup_bars(df["time"], train_end)
@@ -255,9 +249,7 @@ def _output_port(feature_name: str) -> str:
         raise KeyError(f"No output port mapping for feature '{feature_name}'.") from exc
 
 
-def _compute_tsmom_outputs(
-    df: pd.DataFrame, params: dict[str, Any]
-) -> dict[str, pd.Series]:
+def _compute_tsmom_outputs(df: pd.DataFrame, params: dict[str, Any]) -> dict[str, pd.Series]:
     """Mirror ``CompositeStrategy._evaluate_tsmom`` (momentum + volatility ports)."""
     lookback = int(params["lookback_bars"])
     vol_window = int(params["vol_window"])
@@ -265,37 +257,25 @@ def _compute_tsmom_outputs(
 
     momentum = df["close"] / df["close"].shift(lookback) - 1.0
     if vol_estimator == "yang_zhang":
-        volatility = compute_yang_zhang(
-            df["open"], df["high"], df["low"], df["close"], vol_window
-        )
+        volatility = compute_yang_zhang(df["open"], df["high"], df["low"], df["close"], vol_window)
     else:
         volatility = compute_realized_vol(df["close"], vol_window)
 
     return {"momentum": momentum, "volatility": volatility}
 
 
-def _compute_node_outputs(
-    node_kind: str, df: pd.DataFrame, params: dict[str, Any]
-) -> dict[str, pd.Series]:
+def _compute_node_outputs(node_kind: str, df: pd.DataFrame, params: dict[str, Any]) -> dict[str, pd.Series]:
     """Return all output ports for ``node_kind`` — same leaf calls as ``_evaluate_node``."""
     close = df["close"]
 
     if node_kind == "ind.ma":
-        return {
-            "out": compute_ma(
-                close, int(params["period"]), normalize_ma_type(str(params["ma_type"]))
-            )
-        }
+        return {"out": compute_ma(close, int(params["period"]), normalize_ma_type(str(params["ma_type"])))}
     if node_kind == "ind.ema":
         return {"out": compute_ma(close, int(params["period"]), "ema")}
     if node_kind == "ind.rsi":
         return {"out": compute_rsi(close, int(params["period"]))}
     if node_kind == "ind.atr":
-        return {
-            "out": compute_atr(
-                df["high"], df["low"], df["close"], int(params["period"])
-            )
-        }
+        return {"out": compute_atr(df["high"], df["low"], df["close"], int(params["period"]))}
     if node_kind == "ind.macd":
         macd_line, signal_line, histogram = compute_macd(
             close,
@@ -309,14 +289,10 @@ def _compute_node_outputs(
             "macd_histogram": histogram,
         }
     if node_kind == "ind.bollinger":
-        upper, middle, lower = compute_bollinger_bands(
-            close, int(params["period"]), float(params["num_std"])
-        )
+        upper, middle, lower = compute_bollinger_bands(close, int(params["period"]), float(params["num_std"]))
         return {"bb_upper": upper, "bb_middle": middle, "bb_lower": lower}
     if node_kind == "ind.donchian":
-        upper, lower = compute_donchian_channels(
-            df["high"], df["low"], int(params["period"])
-        )
+        upper, lower = compute_donchian_channels(df["high"], df["low"], int(params["period"]))
         return {"donchian_upper": upper, "donchian_lower": lower}
     if node_kind == "ind.momentum":
         lookback = int(params["lookback_bars"])
@@ -325,9 +301,7 @@ def _compute_node_outputs(
         window = int(params["window"])
         estimator = str(params.get("estimator", "close_to_close"))
         if estimator == "yang_zhang":
-            vol = compute_yang_zhang(
-                df["open"], df["high"], df["low"], df["close"], window
-            )
+            vol = compute_yang_zhang(df["open"], df["high"], df["low"], df["close"], window)
         else:
             vol = compute_realized_vol(close, window)
         return {"out": vol}
@@ -369,9 +343,7 @@ def _compute_node_outputs(
         return {"out": resolve_exog_column(df, str(params["symbol"]), "close")}
     if node_kind == "source.exog.return":
         lookback = int(params["lookback_bars"])
-        return {
-            "out": resolve_exog_column(df, str(params["symbol"]), f"return_{lookback}")
-        }
+        return {"out": resolve_exog_column(df, str(params["symbol"]), f"return_{lookback}")}
     if node_kind == "source.exog.return_zscore":
         lookback = int(params["lookback_bars"])
         window = int(params["window"])
@@ -384,32 +356,16 @@ def _compute_node_outputs(
         }
     if node_kind == "source.exog.rolling_corr":
         window = int(params["window"])
-        return {
-            "out": resolve_exog_column(
-                df, str(params["symbol"]), f"rolling_corr_{window}"
-            )
-        }
+        return {"out": resolve_exog_column(df, str(params["symbol"]), f"rolling_corr_{window}")}
     if node_kind == "source.exog.relative_strength":
         lookback = int(params["lookback_bars"])
-        return {
-            "out": resolve_exog_column(
-                df, str(params["symbol"]), f"relative_strength_{lookback}"
-            )
-        }
+        return {"out": resolve_exog_column(df, str(params["symbol"]), f"relative_strength_{lookback}")}
     if node_kind == "source.exog.vol_regime":
         vol_window = int(params["vol_window"])
-        return {
-            "out": resolve_exog_column(
-                df, str(params["symbol"]), f"vol_regime_{vol_window}"
-            ).astype(bool)
-        }
+        return {"out": resolve_exog_column(df, str(params["symbol"]), f"vol_regime_{vol_window}").astype(bool)}
     if node_kind == "source.exog.direction_regime":
         lookback = int(params["lookback_bars"])
-        return {
-            "out": resolve_exog_column(
-                df, str(params["symbol"]), f"direction_regime_{lookback}"
-            ).astype(bool)
-        }
+        return {"out": resolve_exog_column(df, str(params["symbol"]), f"direction_regime_{lookback}").astype(bool)}
 
     if node_kind.startswith("feature."):
         working = df.set_index("time")

@@ -103,9 +103,7 @@ class DefaultBacktestRunner:
         df.set_index("time", inplace=True)
         df.index = pd.to_datetime(df.index, format="ISO8601")
         if df.index.tz is not None:
-            df.index = pd.DatetimeIndex(
-                [_to_naive_local(ts.to_pydatetime()) for ts in df.index]
-            )
+            df.index = pd.DatetimeIndex([_to_naive_local(ts.to_pydatetime()) for ts in df.index])
         df = prepare_evaluation_frame(df, timeframe=timeframe)
 
         def data_provider(_config: BacktestRunConfig) -> pd.DataFrame:
@@ -136,9 +134,7 @@ class DefaultBacktestRunner:
         df.set_index("time", inplace=True)
         df.index = pd.to_datetime(df.index, format="ISO8601")
         if df.index.tz is not None:
-            df.index = pd.DatetimeIndex(
-                [_to_naive_local(ts.to_pydatetime()) for ts in df.index]
-            )
+            df.index = pd.DatetimeIndex([_to_naive_local(ts.to_pydatetime()) for ts in df.index])
         return prepare_evaluation_frame(df, timeframe=timeframe)
 
     @classmethod
@@ -222,22 +218,15 @@ class DefaultBacktestRunner:
                 fixed_strategy_params=config.fixed_params,
             )
             strategy = build_composite_entry(
-                [
-                    {"strategy": entry.strategy, "params": entry.params}
-                    for entry in rebuilt_entries
-                ],
+                [{"strategy": entry.strategy, "params": entry.params} for entry in rebuilt_entries],
                 manager_template.kind,
                 merged_manager_params,
                 config.exit_params or {},
                 config.symbol,
             )
         else:
-            strategy = build_strategy(
-                config.strategy, config.strategy_params, config.symbol
-            )
-        sizer = build_position_sizer(
-            config.position_sizing, point_value=config.point_value
-        )
+            strategy = build_strategy(config.strategy, config.strategy_params, config.symbol)
+        sizer = build_position_sizer(config.position_sizing, point_value=config.point_value)
         engine = BacktestEngine(
             strategy,
             sizer,
@@ -250,9 +239,7 @@ class DefaultBacktestRunner:
             costs=config.costs,
         )
         trade_start = config.start if config.warmup_bars > 0 else None
-        registry = engine.run(
-            df, parallel_mode=config.parallel_mode, trade_start=trade_start
-        )
+        registry = engine.run(df, parallel_mode=config.parallel_mode, trade_start=trade_start)
 
         closed_trades = registry.get_closed_trades()
         base_metrics = registry.get_performance_metrics(config.initial_capital)

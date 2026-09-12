@@ -141,11 +141,7 @@ class GeneticSearchConfig(BaseModel):
             from q_backend.backtesting.exit_rules.presets import EXIT_PRESETS
 
             known = {preset.id for preset in EXIT_PRESETS}
-            unknown = [
-                preset_id
-                for preset_id in self.exit_policy_preset_ids
-                if preset_id not in known
-            ]
+            unknown = [preset_id for preset_id in self.exit_policy_preset_ids if preset_id not in known]
             if unknown:
                 raise ValueError(f"Unknown exit policy preset id(s): {', '.join(unknown)}")
         return self
@@ -162,9 +158,7 @@ class StrategySearchConfig(BaseModel):
     genetic: GeneticSearchConfig | None = None
     lockbox: LockboxConfig = Field(default_factory=LockboxConfig)
     exit_presets: ExitPresetSearchConfig = Field(default_factory=ExitPresetSearchConfig)
-    exit_quality_scoring: ExitQualityScoringConfig = Field(
-        default_factory=ExitQualityScoringConfig
-    )
+    exit_quality_scoring: ExitQualityScoringConfig = Field(default_factory=ExitQualityScoringConfig)
     # Internal harness override (WO153): when False, discovery ignores any PRODUCTION
     # model and runs latents-OFF. Defaults True so normal discovery stays automatic.
     # Not part of the frontend discovery request surface (WO156/157 use a separate
@@ -186,8 +180,7 @@ class StrategySearchConfig(BaseModel):
     def reject_multi_objective(self) -> StrategySearchConfig:
         if self.objective.mode == ObjectiveMode.MULTI_OBJECTIVE_RETURN_DRAWDOWN:
             raise ValueError(
-                "Strategy search requires a single-objective mode; "
-                "multi-objective ranking is not supported"
+                "Strategy search requires a single-objective mode; " "multi-objective ranking is not supported"
             )
         return self
 
@@ -195,16 +188,11 @@ class StrategySearchConfig(BaseModel):
     def reject_exit_presets_with_genetic(self) -> StrategySearchConfig:
         if self.genetic is not None and self.exit_presets.enabled:
             raise ValueError(
-                "exit_presets is not supported with genetic search; "
-                "genetic exit-policy evolution is WO80"
+                "exit_presets is not supported with genetic search; " "genetic exit-policy evolution is WO80"
             )
         if self.exit_presets.enabled and self.exit_presets.preset_ids is not None:
             known = {preset.id for preset in EXIT_PRESETS}
-            unknown = [
-                preset_id
-                for preset_id in self.exit_presets.preset_ids
-                if preset_id not in known
-            ]
+            unknown = [preset_id for preset_id in self.exit_presets.preset_ids if preset_id not in known]
             if unknown:
                 raise ValueError(f"Unknown exit preset id(s): {', '.join(unknown)}")
         return self
@@ -354,9 +342,7 @@ class RegistryCandidateProvider:
             fixed_params=fixed_params,
         )
 
-    def _exit_preset_candidate(
-        self, info: StrategyInfo, preset: ExitPreset
-    ) -> SearchCandidate:
+    def _exit_preset_candidate(self, info: StrategyInfo, preset: ExitPreset) -> SearchCandidate:
         exit_cfg = self._config.exit_presets
         candidate_id = f"{info.name}__exit_{preset.id}"
         search_space, fixed_params = derive_exit_preset_search_space(
@@ -389,11 +375,7 @@ class RegistryCandidateProvider:
 
 
 def _strategy_fixed_params(fixed_params: dict[str, Any]) -> dict[str, Any]:
-    return {
-        key: value
-        for key, value in fixed_params.items()
-        if key not in METADATA_FIXED_PARAM_KEYS
-    }
+    return {key: value for key, value in fixed_params.items() if key not in METADATA_FIXED_PARAM_KEYS}
 
 
 def _runner_for_candidate(
@@ -422,6 +404,7 @@ def _build_optimization_config(
 
     # Apply matched profile session rules (like day_trade, timings) if applicable
     from q_backend.optimization.hypothesis import match_profile
+
     profile = match_profile(backtest.symbol, backtest.timeframe)
     if profile is not None:
         rules = profile.session_rules
@@ -462,11 +445,7 @@ def _best_window(
     windows: list[WalkForwardWindowResult],
     mode: ObjectiveMode,
 ) -> WalkForwardWindowResult | None:
-    completed = [
-        window
-        for window in windows
-        if window.status == "completed" and window.oos_metrics
-    ]
+    completed = [window for window in windows if window.status == "completed" and window.oos_metrics]
     if not completed:
         return None
 
@@ -518,12 +497,7 @@ def _apply_gates(
 
 
 def _collect_oos_trades(wf_result: WalkForwardResult) -> list[Trade]:
-    return [
-        trade
-        for window in wf_result.windows
-        if window.status == "completed"
-        for trade in window.oos_trades
-    ]
+    return [trade for window in wf_result.windows if window.status == "completed" for trade in window.oos_trades]
 
 
 def _attach_exit_quality_diagnostics(
@@ -689,11 +663,7 @@ def _trailing_sort_key(result: CandidateResult) -> tuple[int, str]:
 
 
 def _rank_results(results: list[CandidateResult]) -> list[CandidateResult]:
-    passing = [
-        result
-        for result in results
-        if result.passed_gates and result.objective_value is not None
-    ]
+    passing = [result for result in results if result.passed_gates and result.objective_value is not None]
     passing.sort(
         key=lambda result: result.robustness_score or float("-inf"),
         reverse=True,
@@ -726,9 +696,7 @@ class StrategySearchRunner:
         search_candidates = list(provider.candidates())
         unsupported: list[CandidateResult] = []
         if isinstance(provider, RegistryCandidateProvider):
-            unsupported = [
-                _unsupported_result(name) for name in provider.unsupported_names()
-            ]
+            unsupported = [_unsupported_result(name) for name in provider.unsupported_names()]
 
         total = len(search_candidates) + len(unsupported)
         results: list[CandidateResult] = []

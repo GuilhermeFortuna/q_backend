@@ -132,9 +132,7 @@ class OptimizationConfig(BaseModel):
     def validate_study_direction(self):
         is_multi = self.objective.mode == ObjectiveMode.MULTI_OBJECTIVE_RETURN_DRAWDOWN
         if is_multi and self.study.direction is not None:
-            raise ValueError(
-                "study.direction must be omitted for multi-objective studies"
-            )
+            raise ValueError("study.direction must be omitted for multi-objective studies")
         return self
 
     def is_multi_objective(self) -> bool:

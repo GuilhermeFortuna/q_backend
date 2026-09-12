@@ -66,7 +66,5 @@ def test_output_ordering_is_deterministic():
 def test_endpoint_json_is_stable():
     registry = get_strategy_builder_capabilities()
     encoded_once = json.dumps(registry.model_dump(mode="json"), sort_keys=True)
-    encoded_twice = json.dumps(
-        build_capability_registry().model_dump(mode="json"), sort_keys=True
-    )
+    encoded_twice = json.dumps(build_capability_registry().model_dump(mode="json"), sort_keys=True)
     assert encoded_once == encoded_twice

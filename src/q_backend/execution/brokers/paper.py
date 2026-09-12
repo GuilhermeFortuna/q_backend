@@ -171,12 +171,8 @@ class PaperBroker:
             )
 
         assert quote is not None
-        fill_price = executable_fill_price(
-            request.side, quote, cost_config.slippage_points
-        )
-        fee = compute_commission(
-            cost_config, price=fill_price, quantity=request.quantity
-        )
+        fill_price = executable_fill_price(request.side, quote, cost_config.slippage_points)
+        fee = compute_commission(cost_config, price=fill_price, quantity=request.quantity)
         fill = FillRecord(
             broker_mode=self._broker_mode,
             external_fill_id=request.external_fill_id,
@@ -213,8 +209,5 @@ class PaperBroker:
         """
         return BrokerOrderState(
             status=BrokerOrderLookupStatus.NOT_FOUND,
-            message=(
-                "paper broker keeps no external order state; "
-                "Q ledger is authoritative"
-            ),
+            message=("paper broker keeps no external order state; " "Q ledger is authoritative"),
         )

@@ -109,9 +109,7 @@ REQUEST_BODY = {
 }
 
 
-def test_run_backtest_persists_and_appears_in_history(
-    run_jobs_sync, api_db_session, api_session_scope, sample_ohlcv
-):
+def test_run_backtest_persists_and_appears_in_history(run_jobs_sync, api_db_session, api_session_scope, sample_ohlcv):
     run_id, run_payload = run_async_backtest(
         REQUEST_BODY,
         api_session_scope=api_session_scope,
@@ -148,9 +146,7 @@ def test_run_backtest_graceful_degradation_when_persistence_unavailable(run_jobs
             start_backtest(BacktestJobRequest.model_validate(REQUEST_BODY))
 
 
-def test_delete_backtest_removes_run_from_history(
-    run_jobs_sync, api_db_session, api_session_scope, sample_ohlcv
-):
+def test_delete_backtest_removes_run_from_history(run_jobs_sync, api_db_session, api_session_scope, sample_ohlcv):
     run_id, _run_payload = run_async_backtest(
         REQUEST_BODY,
         api_session_scope=api_session_scope,
@@ -165,9 +161,7 @@ def test_delete_backtest_removes_run_from_history(
     assert list_payload["items"] == []
 
 
-def test_list_backtests_filters_sort_and_patch_save(
-    run_jobs_sync, api_db_session, api_session_scope, sample_ohlcv
-):
+def test_list_backtests_filters_sort_and_patch_save(run_jobs_sync, api_db_session, api_session_scope, sample_ohlcv):
     run_id, _run_payload = run_async_backtest(
         REQUEST_BODY,
         api_session_scope=api_session_scope,
@@ -192,16 +186,12 @@ def test_list_backtests_filters_sort_and_patch_save(
     )
     assert saved.is_saved is True
 
-    saved_only = list_backtests(
-        session=api_db_session, limit=50, offset=0, saved_only=True
-    )
+    saved_only = list_backtests(session=api_db_session, limit=50, offset=0, saved_only=True)
     assert saved_only["total"] == 1
     assert saved_only["items"][0].run_id == run_id
 
 
-def test_bulk_delete_backtests(
-    run_jobs_sync, api_db_session, api_session_scope, sample_ohlcv
-):
+def test_bulk_delete_backtests(run_jobs_sync, api_db_session, api_session_scope, sample_ohlcv):
     run_id, _run_payload = run_async_backtest(
         REQUEST_BODY,
         api_session_scope=api_session_scope,

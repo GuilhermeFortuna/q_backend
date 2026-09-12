@@ -181,9 +181,7 @@ def test_build_feature_matrix_neural_columns(neural_setup, monkeypatch) -> None:
         lambda *args, **kwargs: None,
     )
 
-    requests = [
-        FeatureRequest(name=key, version=None, params={}) for key in keys
-    ]
+    requests = [FeatureRequest(name=key, version=None, params={}) for key in keys]
     matrix = build_feature_matrix("SYN", "H1", start, end, requests, use_cache=False)
     assert matrix.frame.shape[1] == len(keys)
 

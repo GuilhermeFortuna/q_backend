@@ -112,9 +112,7 @@ def _transition_position(
     fill_price: Decimal,
 ) -> _PositionTransition:
     if current_side == PositionSide.FLAT or current_quantity == 0:
-        opening_side = (
-            PositionSide.LONG if order_side == ExecutionSide.BUY else PositionSide.SHORT
-        )
+        opening_side = PositionSide.LONG if order_side == ExecutionSide.BUY else PositionSide.SHORT
         return _PositionTransition(
             new_side=opening_side,
             new_quantity=order_quantity,
@@ -125,20 +123,18 @@ def _transition_position(
             opening_side=opening_side,
         )
 
-    is_reducing = (
-        current_side == PositionSide.LONG and order_side == ExecutionSide.SELL
-    ) or (current_side == PositionSide.SHORT and order_side == ExecutionSide.BUY)
+    is_reducing = (current_side == PositionSide.LONG and order_side == ExecutionSide.SELL) or (
+        current_side == PositionSide.SHORT and order_side == ExecutionSide.BUY
+    )
 
-    is_same_side_add = (
-        current_side == PositionSide.LONG and order_side == ExecutionSide.BUY
-    ) or (current_side == PositionSide.SHORT and order_side == ExecutionSide.SELL)
+    is_same_side_add = (current_side == PositionSide.LONG and order_side == ExecutionSide.BUY) or (
+        current_side == PositionSide.SHORT and order_side == ExecutionSide.SELL
+    )
 
     if is_same_side_add:
         new_qty = current_quantity + order_quantity
         entry = current_entry or fill_price
-        weighted_entry = (
-            (entry * current_quantity) + (fill_price * order_quantity)
-        ) / new_qty
+        weighted_entry = ((entry * current_quantity) + (fill_price * order_quantity)) / new_qty
         return _PositionTransition(
             new_side=current_side,
             new_quantity=new_qty,
@@ -150,9 +146,7 @@ def _transition_position(
         )
 
     if not is_reducing:
-        raise ValueError(
-            "one-position invariant: order side opposes current position"
-        )
+        raise ValueError("one-position invariant: order side opposes current position")
 
     close_qty = min(current_quantity, order_quantity)
     remaining_order = order_quantity - close_qty
@@ -180,9 +174,7 @@ def _transition_position(
             opening_side=None,
         )
 
-    opening_side = (
-        PositionSide.LONG if order_side == ExecutionSide.BUY else PositionSide.SHORT
-    )
+    opening_side = PositionSide.LONG if order_side == ExecutionSide.BUY else PositionSide.SHORT
     return _PositionTransition(
         new_side=opening_side,
         new_quantity=remaining_order,
@@ -252,9 +244,7 @@ class ExecutionLedger:
 
         open_position = get_open_net_position(session, deployment_id)
         current_side = (
-            PositionSide(open_position.side)
-            if open_position and open_position.is_open
-            else PositionSide.FLAT
+            PositionSide(open_position.side) if open_position and open_position.is_open else PositionSide.FLAT
         )
         current_qty = open_position.quantity if open_position and open_position.is_open else Decimal("0")
         current_entry = open_position.average_entry_price if open_position else None

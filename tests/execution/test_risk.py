@@ -94,9 +94,7 @@ def test_risk_gate_rejection_codes(mutator, code):
     assert rejection.code == code
 
 
-def test_risk_rejection_leaves_ledger_unchanged(
-    db_session, seeded_deployment, paper_cost_config, execution_service
-):
+def test_risk_rejection_leaves_ledger_unchanged(db_session, seeded_deployment, paper_cost_config, execution_service):
     _, deployment, token = seeded_deployment
     set_kill_switch(db_session, enabled=True)
     from q_backend.execution.results import EvaluationPhaseTiming, ForwardDecisionResult

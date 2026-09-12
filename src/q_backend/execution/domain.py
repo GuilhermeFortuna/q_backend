@@ -102,9 +102,7 @@ class IllegalLifecycleTransition(ValueError):
 
 
 _DEPLOYMENT_TRANSITIONS: dict[DeploymentLifecycle, frozenset[DeploymentLifecycle]] = {
-    DeploymentLifecycle.DRAFT: frozenset(
-        {DeploymentLifecycle.RUNNING, DeploymentLifecycle.STOPPED}
-    ),
+    DeploymentLifecycle.DRAFT: frozenset({DeploymentLifecycle.RUNNING, DeploymentLifecycle.STOPPED}),
     DeploymentLifecycle.RUNNING: frozenset(
         {
             DeploymentLifecycle.PAUSED,
@@ -169,9 +167,7 @@ def validate_order_transition(
 ) -> ExecutionOrderStatus:
     allowed = _ORDER_TRANSITIONS.get(current, frozenset())
     if target not in allowed:
-        raise IllegalLifecycleTransition(
-            f"order status cannot transition from {current.value} to {target.value}"
-        )
+        raise IllegalLifecycleTransition(f"order status cannot transition from {current.value} to {target.value}")
     return target
 
 

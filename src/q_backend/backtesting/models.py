@@ -43,15 +43,9 @@ class Order(BaseModel):
     action: OrderAction = Field(..., description="BUY or SELL")
     order_type: OrderType = Field(..., description="MARKET, LIMIT, or STOP")
     quantity: float = Field(..., description="Amount/volume to trade")
-    price: Optional[float] = Field(
-        None, description="Limit or Stop price, depending on order_type"
-    )
-    status: OrderStatus = Field(
-        default=OrderStatus.PENDING, description="Current status of the order"
-    )
-    created_at: datetime = Field(
-        default_factory=_utcnow, description="When the order was generated"
-    )
+    price: Optional[float] = Field(None, description="Limit or Stop price, depending on order_type")
+    status: OrderStatus = Field(default=OrderStatus.PENDING, description="Current status of the order")
+    created_at: datetime = Field(default_factory=_utcnow, description="When the order was generated")
 
 
 class Trade(BaseModel):
@@ -68,19 +62,13 @@ class Trade(BaseModel):
     quantity: float = Field(..., description="Amount/volume traded")
     entry_time: datetime = Field(..., description="Datetime the trade was opened")
     entry_price: float = Field(..., description="Execution price at entry")
-    exit_time: Optional[datetime] = Field(
-        None, description="Datetime the trade was closed"
-    )
+    exit_time: Optional[datetime] = Field(None, description="Datetime the trade was closed")
     exit_price: Optional[float] = Field(None, description="Execution price at exit")
     status: TradeStatus = Field(default=TradeStatus.OPEN, description="OPEN or CLOSED")
     pnl: Optional[float] = Field(None, description="Profit and loss for the trade")
     commission: float = Field(0.0, description="Transaction costs")
-    point_value: float = Field(
-        1.0, description="Multiplier representing value per point/contract size"
-    )
-    exit_reason: Optional[str] = Field(
-        None, description="The reason or strategy that triggered the trade exit"
-    )
+    point_value: float = Field(1.0, description="Multiplier representing value per point/contract size")
+    exit_reason: Optional[str] = Field(None, description="The reason or strategy that triggered the trade exit")
 
 
 class SignalAction(str, Enum):
@@ -106,9 +94,5 @@ class Signal(BaseModel):
         ge=0.0,
         le=1.0,
     )
-    created_at: datetime = Field(
-        default_factory=_utcnow, description="When the signal was generated"
-    )
-    exit_reason: Optional[str] = Field(
-        None, description="Reason/strategy for exit signal"
-    )
+    created_at: datetime = Field(default_factory=_utcnow, description="When the signal was generated")
+    exit_reason: Optional[str] = Field(None, description="Reason/strategy for exit signal")

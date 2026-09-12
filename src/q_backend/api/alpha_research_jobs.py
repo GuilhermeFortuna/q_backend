@@ -79,15 +79,12 @@ def _now_iso() -> str:
 
 def _backend_version() -> str:
     try:
-        return (
-            subprocess.check_output(
-                ["git", "rev-parse", "HEAD"],
-                text=True,
-                stderr=subprocess.DEVNULL,
-                timeout=2,
-            )
-            .strip()
-        )
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        ).strip()
     except Exception:  # noqa: BLE001 - version stamp is best-effort
         # Best-effort: a git hash is a diagnostic stamp, not required for the
         # run. Any failure (not a repo, git missing, timeout) degrades to
@@ -317,17 +314,11 @@ def run_alpha_research_job(job_id: str, request_json: str, *, resume: bool = Fal
 
     stages: list[dict[str, Any]] = list(checkpoint.get("stages", []))
     profile = RESEARCH_PROFILES.get(request.profile_id)
-    acceptance_config = (
-        research_acceptance_config_for_profile(profile)
-        if profile is not None
-        else None
-    )
+    acceptance_config = research_acceptance_config_for_profile(profile) if profile is not None else None
     budget = request.compute_budget
     if budget is not None and acceptance_config is not None:
         if budget.optimization_seeds is not None:
-            acceptance_config = acceptance_config.model_copy(
-                update={"optimization_seeds": budget.optimization_seeds}
-            )
+            acceptance_config = acceptance_config.model_copy(update={"optimization_seeds": budget.optimization_seeds})
 
     def _raise_if_cancelled(stage_name: str) -> None:
         if is_cancelled(job_id):
@@ -397,9 +388,7 @@ def run_alpha_research_job(job_id: str, request_json: str, *, resume: bool = Fal
             study_n_trials=study_n_trials,
         )
         if budget is not None and budget.walkforward is not None:
-            search_config = search_config.model_copy(
-                update={"walkforward": budget.walkforward}
-            )
+            search_config = search_config.model_copy(update={"walkforward": budget.walkforward})
 
         base_seed = search_config.study.seed
         seed_count = acceptance_config.optimization_seeds
@@ -544,8 +533,7 @@ def run_alpha_research_job(job_id: str, request_json: str, *, resume: bool = Fal
                 )
             checkpoint["candidate_evaluation_complete"] = True
             checkpoint["acceptance_summaries"] = {
-                candidate_id: result.to_dict()
-                for candidate_id, result in acceptance_by_candidate.items()
+                candidate_id: result.to_dict() for candidate_id, result in acceptance_by_candidate.items()
             }
             write_alpha_research_artifact(
                 job_id,
@@ -606,20 +594,14 @@ def run_alpha_research_job(job_id: str, request_json: str, *, resume: bool = Fal
                 lockbox_blocked = True
             elif consumption.state == LockboxConsumptionState.SAME_CHAMPION:
                 lockbox_evaluated = True
-                lockbox_metrics = (
-                    consumption.record.lockbox_metrics if consumption.record else None
-                )
+                lockbox_metrics = consumption.record.lockbox_metrics if consumption.record else None
                 checkpoint["lockbox_consumed"] = True
                 checkpoint["lockbox_metrics"] = lockbox_metrics
             else:
                 from q_backend.optimization.lockbox import evaluate_lockbox as run_lockbox_evaluation
                 from q_backend.optimization.strategy_search import SearchCandidate
 
-                spec = next(
-                    item
-                    for item in checkpoint["candidate_specs"]
-                    if item["candidate_id"] == frozen_id
-                )
+                spec = next(item for item in checkpoint["candidate_specs"] if item["candidate_id"] == frozen_id)
                 candidate = SearchCandidate(
                     candidate_id=spec["candidate_id"],
                     strategy=spec["strategy"],
@@ -687,9 +669,7 @@ def run_alpha_research_job(job_id: str, request_json: str, *, resume: bool = Fal
         provenance["champion_hash"] = champion_hash
         provenance["finished_at"] = _now_iso()
 
-        frozen_spec = next(
-            spec for spec in checkpoint["candidate_specs"] if spec["candidate_id"] == frozen_id
-        )
+        frozen_spec = next(spec for spec in checkpoint["candidate_specs"] if spec["candidate_id"] == frozen_id)
         frozen_genome = frozen_spec["fixed_params"].get("genome")
         champion_payload = {
             "candidate_id": frozen_id,
@@ -864,9 +844,7 @@ def reconcile_orphaned_runs() -> int:
 
             if checkpoint.get("lockbox_consumed"):
                 payload["status"] = "failed"
-                payload["error"] = (
-                    "Cancelled after backend restart; lock-box was already consumed."
-                )
+                payload["error"] = "Cancelled after backend restart; lock-box was already consumed."
                 client.set(key, json.dumps(payload), ex=DEFAULT_PROGRESS_TTL_SECONDS)
                 failed += 1
                 continue

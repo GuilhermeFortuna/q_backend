@@ -174,9 +174,7 @@ def _search_config(
     )
 
 
-CANDLE_STRATEGIES = [
-    info.name for info in list_registered_strategies() if info.engine == "candle"
-]
+CANDLE_STRATEGIES = [info.name for info in list_registered_strategies() if info.engine == "candle"]
 
 
 def test_registry_provider_yields_candle_strategies_only():
@@ -238,9 +236,7 @@ def test_registry_provider_exit_presets_expand_candidates():
     ]
     metadata = provider.candidate_metadata()
     assert metadata["MACrossover__exit_fixed_pct_bracket"]["exit_preset_id"] == "fixed_pct_bracket"
-    assert metadata["MACrossover__exit_atr_stop_chandelier"]["exit_preset_label"] == (
-        "ATR stop + Chandelier trail"
-    )
+    assert metadata["MACrossover__exit_atr_stop_chandelier"]["exit_preset_label"] == ("ATR stop + Chandelier trail")
 
 
 def test_registry_provider_exit_presets_without_baseline():
@@ -321,9 +317,7 @@ def test_evaluate_candidate_smoke_merges_exit_preset_params():
     class CaptureParamsRunner:
         def run(self, config: BacktestRunConfig) -> BacktestRunResult:
             captured_params.append(dict(config.strategy_params))
-            return DefaultBacktestRunner(
-                data_provider=lambda cfg: full_df.loc[cfg.start : cfg.end]
-            ).run(config)
+            return DefaultBacktestRunner(data_provider=lambda cfg: full_df.loc[cfg.start : cfg.end]).run(config)
 
     config = _search_config(
         start=start,
@@ -385,9 +379,7 @@ def test_registry_provider_exit_presets_tick_strategy_unsupported():
         start=_dt(2024, 1, 1),
         end=_dt(2024, 6, 1),
         strategies=["TickMaBreakout"],
-    ).model_copy(
-        update={"exit_presets": ExitPresetSearchConfig(enabled=True)}
-    )
+    ).model_copy(update={"exit_presets": ExitPresetSearchConfig(enabled=True)})
     provider = RegistryCandidateProvider(config)
     assert list(provider.candidates()) == []
     assert provider.unsupported_names() == ["TickMaBreakout"]
@@ -503,9 +495,7 @@ def test_gated_candidate_sorted_after_passing():
     start = _dt(2024, 1, 1)
     end = _dt(2024, 4, 30)
     full_df = _make_intraday_ohlcv(start, 120)
-    runner = DefaultBacktestRunner(
-        data_provider=lambda cfg: full_df.loc[cfg.start : cfg.end]
-    )
+    runner = DefaultBacktestRunner(data_provider=lambda cfg: full_df.loc[cfg.start : cfg.end])
     config = _search_config(
         start=start,
         end=end,
@@ -573,9 +563,7 @@ def test_rank_results_orders_passing_before_gated_and_trailing():
         status="unsupported",
     )
 
-    ranked = _rank_results(
-        [unsupported, error, no_result, gated, passing_low, passing_high]
-    )
+    ranked = _rank_results([unsupported, error, no_result, gated, passing_low, passing_high])
 
     assert [candidate.candidate_id for candidate in ranked] == [
         "a",
@@ -629,9 +617,7 @@ def test_evaluate_candidate_attaches_oos_exit_quality():
     start = _dt(2024, 1, 1)
     end = _dt(2024, 4, 30)
     full_df = _make_intraday_ohlcv(start, 120)
-    runner = DefaultBacktestRunner(
-        data_provider=lambda cfg: full_df.loc[cfg.start : cfg.end]
-    )
+    runner = DefaultBacktestRunner(data_provider=lambda cfg: full_df.loc[cfg.start : cfg.end])
     config = _search_config(
         start=start,
         end=end,
@@ -660,9 +646,7 @@ def test_should_stop_after_first_candidate():
     start = _dt(2024, 1, 1)
     end = _dt(2024, 4, 30)
     full_df = _make_intraday_ohlcv(start, 120)
-    runner = DefaultBacktestRunner(
-        data_provider=lambda cfg: full_df.loc[cfg.start : cfg.end]
-    )
+    runner = DefaultBacktestRunner(data_provider=lambda cfg: full_df.loc[cfg.start : cfg.end])
     config = _search_config(
         start=start,
         end=end,
@@ -686,9 +670,7 @@ def test_should_stop_after_first_candidate():
     )
 
     evaluated = [
-        candidate
-        for candidate in result.candidates
-        if candidate.status in {"completed", "error", "no_result"}
+        candidate for candidate in result.candidates if candidate.status in {"completed", "error", "no_result"}
     ]
     assert len(evaluated) == 1
 
@@ -703,9 +685,7 @@ def test_multi_objective_config_rejected():
                 "start": start.isoformat(),
                 "end": end.isoformat(),
             },
-            objective=ObjectiveConfig(
-                mode=ObjectiveMode.MULTI_OBJECTIVE_RETURN_DRAWDOWN
-            ),
+            objective=ObjectiveConfig(mode=ObjectiveMode.MULTI_OBJECTIVE_RETURN_DRAWDOWN),
             walkforward=WalkForwardConfig(train_days=10, test_days=5),
             study=StudyConfig(name="multi", n_trials=1),
         )
@@ -715,9 +695,7 @@ def test_tick_strategy_marked_unsupported_in_full_search():
     start = _dt(2024, 1, 1)
     end = _dt(2024, 4, 30)
     full_df = _make_intraday_ohlcv(start, 120)
-    runner = DefaultBacktestRunner(
-        data_provider=lambda cfg: full_df.loc[cfg.start : cfg.end]
-    )
+    runner = DefaultBacktestRunner(data_provider=lambda cfg: full_df.loc[cfg.start : cfg.end])
     config = _search_config(start=start, end=end, strategies=["TickMaBreakout"], n_trials=1)
 
     result = StrategySearchRunner(config, runner).run()

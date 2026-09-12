@@ -111,17 +111,13 @@ def test_final_actor_failure_event_has_worker_tags(monkeypatch: pytest.MonkeyPat
     )
     broker = Mock()
     broker.get_actor.return_value.options = {}
-    message = MessageProxy(
-        _message("run_optimization_trials", "study-1", "db-id", "{}", 4)
-    )
+    message = MessageProxy(_message("run_optimization_trials", "study-1", "db-id", "{}", 4))
     trading = SentryTradingContextMiddleware(enabled=True, worker_id="worker-1")
     integration = SentryMiddleware()
 
     trading.before_process_message(broker, message)
     integration.before_process_message(broker, message)
-    integration.after_process_message(
-        broker, message, exception=RuntimeError("actor failed")
-    )
+    integration.after_process_message(broker, message, exception=RuntimeError("actor failed"))
     trading.after_process_message(broker, message)
 
     assert len(events) == 1
@@ -154,9 +150,7 @@ def test_worker_shutdown_flushes_sentry(monkeypatch: pytest.MonkeyPatch):
         ("q_promote_encoder", "q_promote_encoder"),
     ],
 )
-def test_cli_initializes_and_tags_before_parsing(
-    monkeypatch: pytest.MonkeyPatch, module_name: str, command: str
-):
+def test_cli_initializes_and_tags_before_parsing(monkeypatch: pytest.MonkeyPatch, module_name: str, command: str):
     module = __import__(f"q_backend.cli.{module_name}", fromlist=["main"])
     init = Mock(return_value=False)
     set_tag = Mock()

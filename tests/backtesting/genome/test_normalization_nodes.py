@@ -140,9 +140,7 @@ def _default_params_for_kind(kind: str) -> dict[str, object]:
 
 
 def test_pct_change_rejects_non_positive_change_bars():
-    genome = Genome.model_validate(
-        _single_transform_genome("transform.pct_change", {"change_bars": 0})
-    )
+    genome = Genome.model_validate(_single_transform_genome("transform.pct_change", {"change_bars": 0}))
     with pytest.raises(GenomeValidationError, match="change_bars must be >= 1"):
         validate_genome(genome)
 

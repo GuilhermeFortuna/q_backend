@@ -61,8 +61,7 @@ def _quotes(clock: FixedClock) -> FakeQuoteSource:
 def _buy_result(deployment_id, *, bar_close_time=None) -> ForwardDecisionResult:
     return ForwardDecisionResult(
         deployment_id=str(deployment_id),
-        bar_close_time=bar_close_time
-        or datetime(2024, 6, 1, 14, 0, tzinfo=timezone.utc),
+        bar_close_time=bar_close_time or datetime(2024, 6, 1, 14, 0, tzinfo=timezone.utc),
         bar_close_price=130005.0,
         signal_action=SignalAction.BUY,
         reason="test buy",
@@ -77,9 +76,7 @@ def _buy_result(deployment_id, *, bar_close_time=None) -> ForwardDecisionResult:
 
 
 def _seed_running_deployment(session, name: str):
-    account = create_paper_account(
-        session, name=f"{name}-acct", initial_balance=Decimal("100000")
-    )
+    account = create_paper_account(session, name=f"{name}-acct", initial_balance=Decimal("100000"))
     deployment = create_execution_deployment(
         session,
         paper_account_id=account.id,
@@ -198,9 +195,7 @@ def test_reconcile_filled_matches_never_crashed_run(db_session, paper_cost_confi
         pos_a.average_entry_price,
     )
     assert cash_b == cash_a
-    assert not deployment_has_unknown_orders(
-        list_orders_for_deployment(db_session, dep_b.id)
-    )
+    assert not deployment_has_unknown_orders(list_orders_for_deployment(db_session, dep_b.id))
 
 
 def test_reconcile_not_found_fails_order_and_unblocks(db_session):
@@ -208,12 +203,8 @@ def test_reconcile_not_found_fails_order_and_unblocks(db_session):
     _, order = _pending_unknown_order(db_session, deployment)
     cash_before = get_paper_account(db_session, deployment.paper_account_id).cash_balance
 
-    broker = FakeReconciliationBroker(
-        default=BrokerOrderState(status=BrokerOrderLookupStatus.NOT_FOUND)
-    )
-    reconciler = OrderReconciler(
-        broker=broker, ledger=ExecutionLedger(), point_value=Decimal("0.2")
-    )
+    broker = FakeReconciliationBroker(default=BrokerOrderState(status=BrokerOrderLookupStatus.NOT_FOUND))
+    reconciler = OrderReconciler(broker=broker, ledger=ExecutionLedger(), point_value=Decimal("0.2"))
     reconciler.reconcile_deployment(db_session, deployment)
     db_session.flush()
     db_session.refresh(order)
@@ -223,9 +214,7 @@ def test_reconcile_not_found_fails_order_and_unblocks(db_session):
     assert fill_row_count(db_session) == 0
     cash_after = get_paper_account(db_session, deployment.paper_account_id).cash_balance
     assert cash_after == cash_before
-    assert not deployment_has_unknown_orders(
-        list_orders_for_deployment(db_session, deployment.id)
-    )
+    assert not deployment_has_unknown_orders(list_orders_for_deployment(db_session, deployment.id))
 
 
 def test_reconcile_unavailable_stays_pending_and_blocks(db_session, paper_cost_config):
@@ -235,13 +224,9 @@ def test_reconcile_unavailable_stays_pending_and_blocks(db_session, paper_cost_c
     _, order = _pending_unknown_order(db_session, deployment)
 
     broker = FakeReconciliationBroker(
-        default=BrokerOrderState(
-            status=BrokerOrderLookupStatus.UNAVAILABLE, message="broker offline"
-        )
+        default=BrokerOrderState(status=BrokerOrderLookupStatus.UNAVAILABLE, message="broker offline")
     )
-    reconciler = OrderReconciler(
-        broker=broker, ledger=ExecutionLedger(), point_value=Decimal("0.2"), clock=clock.now
-    )
+    reconciler = OrderReconciler(broker=broker, ledger=ExecutionLedger(), point_value=Decimal("0.2"), clock=clock.now)
     reconciler.reconcile_deployment(db_session, deployment)
     db_session.flush()
     db_session.refresh(order)
@@ -250,9 +235,7 @@ def test_reconcile_unavailable_stays_pending_and_blocks(db_session, paper_cost_c
     assert order.reconciliation_state == ReconciliationState.PENDING.value
     assert order.reconciliation_attempted_at is not None
     assert order.reconciliation_error == "broker offline"
-    assert deployment_has_unknown_orders(
-        list_orders_for_deployment(db_session, deployment.id)
-    )
+    assert deployment_has_unknown_orders(list_orders_for_deployment(db_session, deployment.id))
 
     # A new submission is blocked with the structured risk reason.
     service = ExecutionService(

@@ -88,7 +88,7 @@ class TestHurstTrendBlendStrategy:
 
         closes = [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0]
         df = _ohlc_frame(closes)
-        
+
         # Unlagged strategy
         strategy_no_lag = build_strategy(
             "HurstTrendBlend",
@@ -186,7 +186,7 @@ class TestHurstTrendBlendIntegration:
         trades = registry.get_all_trades()
 
         assert len(trades) > 0, "expected at least one trade"
-        
+
         # Verify that all executed trades have integer-valued quantities
         for trade in trades:
             assert trade.quantity.is_integer()

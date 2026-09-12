@@ -39,9 +39,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_evaluation_runs_status", "evaluation_runs", ["status"], unique=False)
-    op.create_index(
-        "ix_evaluation_runs_created_at", "evaluation_runs", ["created_at"], unique=False
-    )
+    op.create_index("ix_evaluation_runs_created_at", "evaluation_runs", ["created_at"], unique=False)
 
     op.create_table(
         "feature_score_rows",
@@ -60,13 +58,9 @@ def upgrade() -> None:
         sa.Column("regime_ics", sa.JSON(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["run_id"], ["evaluation_runs.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["run_id"], ["evaluation_runs.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "run_id", "feature_id", name="uq_feature_score_rows_run_feature"
-        ),
+        sa.UniqueConstraint("run_id", "feature_id", name="uq_feature_score_rows_run_feature"),
     )
     op.create_index(
         "ix_feature_score_rows_feature_name",

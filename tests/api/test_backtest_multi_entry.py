@@ -187,9 +187,7 @@ def test_legacy_equivalence_between_strategy_params_and_entries_shape(
         mock_service,
     )
 
-    assert _trade_signature(legacy_payload["trades"]) == _trade_signature(
-        entries_payload["trades"]
-    )
+    assert _trade_signature(legacy_payload["trades"]) == _trade_signature(entries_payload["trades"])
     assert legacy_payload["indicators"] == entries_payload["indicators"]
 
 
@@ -223,9 +221,7 @@ def test_signal_managers_catalog_lists_three_managers_with_majority_params():
 
     majority = next(manager for manager in managers if manager.id == "majority")
     assert majority.param_names == ["vote_threshold"]
-    vote_threshold = next(
-        spec for spec in majority.params if spec.name == "vote_threshold"
-    )
+    vote_threshold = next(spec for spec in majority.params if spec.name == "vote_threshold")
     assert vote_threshold.type == "int"
     assert vote_threshold.default == 2
 

@@ -26,23 +26,25 @@ from q_backend.optimization.strategy_search import (
 
 class HypothesisError(Exception):
     """Base exception for all hypothesis catalog errors."""
+
     pass
 
 
 class IncompatibleProfileError(HypothesisError):
     """Raised when a hypothesis is incompatible with the requested instrument profile."""
+
     def __init__(self, hypothesis_id: str, symbol: str, timeframe: str, details: str):
         self.hypothesis_id = hypothesis_id
         self.symbol = symbol
         self.timeframe = timeframe
         super().__init__(
-            f"Hypothesis '{hypothesis_id}' is incompatible with symbol={symbol}, "
-            f"timeframe={timeframe}. {details}"
+            f"Hypothesis '{hypothesis_id}' is incompatible with symbol={symbol}, " f"timeframe={timeframe}. {details}"
         )
 
 
 class MissingFeatureEvidenceError(HypothesisError):
     """Raised when required features for a hypothesis are not admitted by the evidence gate."""
+
     def __init__(self, hypothesis_id: str, missing_features: list[str]):
         self.hypothesis_id = hypothesis_id
         self.missing_features = missing_features
@@ -54,6 +56,7 @@ class MissingFeatureEvidenceError(HypothesisError):
 
 class SessionRules(BaseModel):
     """Session trading limits and flattening rules."""
+
     day_trade: bool = False
     day_trade_start_time: str = "09:00"
     day_trade_end_time: str = "17:00"
@@ -62,6 +65,7 @@ class SessionRules(BaseModel):
 
 class InstrumentResearchProfile(BaseModel):
     """Versioned research constraints and thresholds for a specific symbol/timeframe."""
+
     version: int = 1
     profile_id: str
     symbol: str
@@ -76,6 +80,7 @@ class InstrumentResearchProfile(BaseModel):
 
 class HypothesisDefinition(BaseModel):
     """Static catalog definition of a named economic hypothesis."""
+
     hypothesis_id: str
     profile_id: str
     version: int = 1
@@ -90,6 +95,7 @@ class HypothesisDefinition(BaseModel):
 
 class HypothesisCandidateMetadata(BaseModel):
     """Identity tracking columns for candidates derived from the hypothesis catalog."""
+
     profile_version: int
     hypothesis_id: str
     rationale: str
@@ -99,18 +105,20 @@ class HypothesisCandidateMetadata(BaseModel):
 
 class FeatureAdmissionResolver(Protocol):
     """Injectable boundary verifying feature evidence admissibility (WO161/WO162)."""
-    def is_feature_admitted(self, feature_id: str, symbol: str, timeframe: str) -> bool:
-        ...
+
+    def is_feature_admitted(self, feature_id: str, symbol: str, timeframe: str) -> bool: ...
 
 
 class FailClosedFeatureAdmissionResolver:
     """Production default resolver that rejects all features prior to WO162 evidencing."""
+
     def is_feature_admitted(self, feature_id: str, symbol: str, timeframe: str) -> bool:
         return False
 
 
 class AdmittedAllFeatureAdmissionResolver:
     """Test-only resolver that admits all features to exercise provider mechanics."""
+
     def is_feature_admitted(self, feature_id: str, symbol: str, timeframe: str) -> bool:
         return True
 
@@ -126,6 +134,7 @@ def compute_template_hash(template: dict[str, Any]) -> str:
 def copy_clean_template(template: dict[str, Any]) -> dict[str, Any]:
     """Strip metadata field from template to isolate layout/structure."""
     import copy
+
     copied = copy.deepcopy(template)
     copied.pop("metadata", None)
     return copied
@@ -234,7 +243,12 @@ CCM_H1_SWING_BREAKOUT = {
         {"id": "n2", "kind": "ind.donchian", "params": {"period": {"param": "period"}}, "inputs": []},
         {"id": "n3", "kind": "cmp.cross_above", "params": {}, "inputs": ["n1", "n2:donchian_upper"]},
         {"id": "n4", "kind": "cmp.cross_below", "params": {}, "inputs": ["n1", "n2:donchian_lower"]},
-        {"id": "n5", "kind": "feature.vol_regime", "params": {"window": {"param": "window"}, "regime_lookback": {"param": "regime_lookback"}}, "inputs": ["n1"]},
+        {
+            "id": "n5",
+            "kind": "feature.vol_regime",
+            "params": {"window": {"param": "window"}, "regime_lookback": {"param": "regime_lookback"}},
+            "inputs": ["n1"],
+        },
         {"id": "n6", "kind": "cmp.cross_above", "params": {"threshold": {"param": "threshold"}}, "inputs": ["n5"]},
         {"id": "n7", "kind": "logic.and", "params": {}, "inputs": ["n3", "n6"]},
         {"id": "n8", "kind": "logic.and", "params": {}, "inputs": ["n4", "n6"]},
@@ -243,7 +257,7 @@ CCM_H1_SWING_BREAKOUT = {
     "entry_short": {"ref": "n8"},
     "exit_long": {"ref": "n4"},
     "exit_short": {"ref": "n3"},
-    "metadata": {}
+    "metadata": {},
 }
 
 CCM_H1_SWING_PULLBACK = {
@@ -264,7 +278,7 @@ CCM_H1_SWING_PULLBACK = {
     "entry_short": {"ref": "n9"},
     "exit_long": {"ref": "n4"},
     "exit_short": {"ref": "n3"},
-    "metadata": {}
+    "metadata": {},
 }
 
 WIN_H1_SWING_TREND = {
@@ -285,7 +299,7 @@ WIN_H1_SWING_TREND = {
     "entry_short": {"ref": "n9"},
     "exit_long": {"ref": "n4"},
     "exit_short": {"ref": "n3"},
-    "metadata": {}
+    "metadata": {},
 }
 
 WDO_M15_DAY_OR_BREAKOUT = {
@@ -293,8 +307,18 @@ WDO_M15_DAY_OR_BREAKOUT = {
     "genome_id": "wdo_m15_day_v1_or_breakout",
     "nodes": [
         {"id": "n1", "kind": "source.close", "params": {}, "inputs": []},
-        {"id": "n2", "kind": "feature.opening_range_high", "params": {"session_open": "09:00", "range_minutes": {"param": "range_minutes"}}, "inputs": []},
-        {"id": "n3", "kind": "feature.opening_range_low", "params": {"session_open": "09:00", "range_minutes": {"param": "range_minutes"}}, "inputs": []},
+        {
+            "id": "n2",
+            "kind": "feature.opening_range_high",
+            "params": {"session_open": "09:00", "range_minutes": {"param": "range_minutes"}},
+            "inputs": [],
+        },
+        {
+            "id": "n3",
+            "kind": "feature.opening_range_low",
+            "params": {"session_open": "09:00", "range_minutes": {"param": "range_minutes"}},
+            "inputs": [],
+        },
         {"id": "n4", "kind": "cmp.cross_above", "params": {}, "inputs": ["n1", "n2:out"]},
         {"id": "n5", "kind": "cmp.cross_below", "params": {}, "inputs": ["n1", "n3:out"]},
         {"id": "n6", "kind": "feature.minutes_from_open", "params": {"session_open": "09:00"}, "inputs": []},
@@ -308,7 +332,7 @@ WDO_M15_DAY_OR_BREAKOUT = {
     "entry_short": {"ref": "n11"},
     "exit_long": {"ref": "n5"},
     "exit_short": {"ref": "n4"},
-    "metadata": {}
+    "metadata": {},
 }
 
 
@@ -382,11 +406,11 @@ def extract_hypothesis_metadata(genome: dict[str, Any] | Genome | None) -> dict[
         metadata = genome.get("metadata", {})
     else:
         metadata = genome.metadata or {}
-    
+
     hyp_meta = metadata.get("hypothesis", {})
     if not isinstance(hyp_meta, dict):
         return {}
-        
+
     return {
         "profile_version": hyp_meta.get("profile_version"),
         "hypothesis_id": hyp_meta.get("hypothesis_id"),
@@ -418,17 +442,15 @@ class HypothesisCandidateProvider:
     def candidates(self) -> Iterable[SearchCandidate]:
         symbol = self._config.backtest.symbol
         timeframe = self._config.backtest.timeframe
-        
+
         # 1. Determine profile
         profile = match_profile(symbol, timeframe)
         if profile is None:
-            raise IncompatibleProfileError(
-                "N/A", symbol, timeframe, "No matching instrument research profile found."
-            )
+            raise IncompatibleProfileError("N/A", symbol, timeframe, "No matching instrument research profile found.")
 
         # 2. Get hypotheses
         hypotheses = get_hypotheses_for_profile(profile.profile_id)
-        
+
         # Filter by requested strategies if specified
         requested = self._config.strategies
         if requested is not None:
@@ -439,9 +461,11 @@ class HypothesisCandidateProvider:
                     if req_id in HYPOTHESIS_CATALOG:
                         other_hyp = HYPOTHESIS_CATALOG[req_id]
                         raise IncompatibleProfileError(
-                            req_id, symbol, timeframe,
+                            req_id,
+                            symbol,
+                            timeframe,
                             f"Hypothesis '{req_id}' belongs to profile '{other_hyp.profile_id}' "
-                            f"but active profile is '{profile.profile_id}'."
+                            f"but active profile is '{profile.profile_id}'.",
                         )
                     else:
                         raise ValueError(f"Hypothesis ID '{req_id}' not found in the catalog.")
@@ -452,7 +476,8 @@ class HypothesisCandidateProvider:
         for hyp in hypotheses:
             # Check required features admission
             missing = [
-                feat for feat in hyp.required_features
+                feat
+                for feat in hyp.required_features
                 if not self._resolver.is_feature_admitted(feat, symbol, timeframe)
             ]
             if missing:
@@ -477,7 +502,7 @@ class HypothesisCandidateProvider:
             template = dict(hyp.genome_template)
             template["genome_id"] = hyp.hypothesis_id
             template["version"] = 1
-            
+
             # Embed hypothesis identity into genome metadata
             tpl_hash = compute_template_hash(hyp.genome_template)
             if "metadata" not in template:
@@ -502,6 +527,7 @@ class HypothesisCandidateProvider:
             # Combine risk search space if configured
             if self._config.include_risk_search:
                 from q_backend.optimization.auto_search_space import default_risk_search_space
+
                 risk_space = default_risk_search_space()
                 search_space = SearchSpaceConfig(
                     strategy_params=search_space.strategy_params,
@@ -532,7 +558,7 @@ class HypothesisCandidateProvider:
                     "genome": genome.model_dump(),
                     "timeframe": timeframe,
                     **fixed_params,
-                }
+                },
             )
 
     def report(self, results: list[CandidateResult]) -> None:
@@ -549,15 +575,16 @@ def resolve_candidate_provider(
     """Build the correct CandidateProvider (Registry, Genetic or Hypothesis) for the request."""
     if request.genetic is not None:
         from q_backend.optimization.genetic_search import create_genetic_candidate_provider
+
         return create_genetic_candidate_provider(
             request.genetic,
             request,
             latents_enabled=request.latents_enabled,
             resolver=resolver,
         )
-    
+
     resolver = resolver or FailClosedFeatureAdmissionResolver()
-    
+
     use_hypothesis = False
     if request.strategies:
         if any(strat in HYPOTHESIS_CATALOG for strat in request.strategies):
@@ -569,6 +596,7 @@ def resolve_candidate_provider(
 
     if use_hypothesis:
         return HypothesisCandidateProvider(request, resolver)
-    
+
     from q_backend.optimization.strategy_search import RegistryCandidateProvider
+
     return RegistryCandidateProvider(request)

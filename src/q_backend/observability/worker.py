@@ -13,7 +13,6 @@ from typing import Any
 import sentry_sdk
 from dramatiq.middleware import Middleware
 
-
 _POSITIONAL_IDS: dict[str, tuple[str | None, ...]] = {
     "optimization_coordinator": ("study_id", None, None),
     "run_optimization_trials": ("study_id", None, None, None),
@@ -24,9 +23,7 @@ _POSITIONAL_IDS: dict[str, tuple[str | None, ...]] = {
     "evaluate_genetic_candidate": ("study_id", None, None, None, None),
     "run_backtest": ("backtest_id", None),
 }
-_MESSAGE_TAGS = frozenset(
-    {"symbol", "strategy", "backtest_id", "study_id", "dataset", "worker_id"}
-)
+_MESSAGE_TAGS = frozenset({"symbol", "strategy", "backtest_id", "study_id", "dataset", "worker_id"})
 
 
 class SentryTradingContextMiddleware(Middleware):

@@ -48,8 +48,7 @@ def _resolve_bar_ms(display_timeframe: str, span_msc: int) -> int:
     key = display_timeframe.upper()
     if key not in DISPLAY_TIMEFRAME_MS:
         raise ValueError(
-            f"Invalid display_timeframe '{display_timeframe}'. "
-            f"Choose from: {sorted(DISPLAY_TIMEFRAME_MS.keys())}"
+            f"Invalid display_timeframe '{display_timeframe}'. " f"Choose from: {sorted(DISPLAY_TIMEFRAME_MS.keys())}"
         )
     bar_ms = DISPLAY_TIMEFRAME_MS[key]
     while span_msc > 0 and span_msc // bar_ms > _MAX_DISPLAY_BARS:
@@ -114,8 +113,8 @@ def serialize_tick_chart_data(
     display_timeframe: str = "M1",
 ) -> Dict[str, Any]:
     """
-  Resample ticks to display OHLCV bars and align indicator series to bar closes.
-  """
+    Resample ticks to display OHLCV bars and align indicator series to bar closes.
+    """
     span_msc = int(ticks.time_msc[-1] - ticks.time_msc[0]) if len(ticks.time_msc) else 0
     bar_ms = _resolve_bar_ms(display_timeframe, span_msc)
     bars, bar_ranges = _resample_ticks_to_bars(ticks, bar_ms)

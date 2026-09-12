@@ -79,9 +79,7 @@ class SingleEntryStrategy(TradingStrategy):
             return [Signal(symbol="TEST", action=SignalAction.BUY)]
         return []
 
-    def check_exit_conditions(
-        self, current_data: pd.Series, open_trades: List[Trade]
-    ) -> List[Signal]:
+    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
         return []
 
     def get_chart_indicators(self):
@@ -132,9 +130,7 @@ def test_enabled_rules_respects_zero_defaults():
 def test_required_columns_only_for_atr_rules():
     assert required_columns({"stop_loss_pct": 0.02}) == []
     assert required_columns({"stop_loss_atr": 1.5, "atr_period": 14}) == ["atr_14"]
-    assert required_columns(
-        {"stop_loss_atr": 1.5, "take_profit_atr": 2.0, "atr_period": 21}
-    ) == ["atr_21"]
+    assert required_columns({"stop_loss_atr": 1.5, "take_profit_atr": 2.0, "atr_period": 21}) == ["atr_21"]
 
 
 def test_golden_fixed_stop_loss_long():

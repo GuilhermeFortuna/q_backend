@@ -112,9 +112,7 @@ def ai_enabled_settings(monkeypatch):
 def test_supported_prompt_returns_valid_spec_and_compiled_strategy():
     provider = FakeInterpreterProvider(content=json.dumps(_ai_response_payload()))
     response = interpret_strategy_request(
-        StrategyInterpretRequest(
-            message="Create a trend strategy using EMA 20 and EMA 50."
-        ),
+        StrategyInterpretRequest(message="Create a trend strategy using EMA 20 and EMA 50."),
         provider=provider,
     )
 
@@ -199,11 +197,7 @@ def test_executable_code_output_is_rejected():
 
     with pytest.raises(AiParseError, match="StrategySpec contained forbidden field"):
         parse_ai_interpreter_response(
-            json.dumps(
-                _ai_response_payload(
-                    strategy_spec={**EMA_CROSS_SPEC, "python_code": "print('hack')"}
-                )
-            )
+            json.dumps(_ai_response_payload(strategy_spec={**EMA_CROSS_SPEC, "python_code": "print('hack')"}))
         )
 
 
@@ -212,9 +206,7 @@ def test_ai_disabled_returns_service_error(monkeypatch):
     get_settings.cache_clear()
 
     with pytest.raises(HTTPException) as exc_info:
-        interpret_strategy_builder_request(
-            StrategyInterpretRequest(message="Create an EMA strategy.")
-        )
+        interpret_strategy_builder_request(StrategyInterpretRequest(message="Create an EMA strategy."))
 
     assert exc_info.value.status_code == 503
     assert exc_info.value.detail["status"] == "ai_disabled"
@@ -226,9 +218,7 @@ def test_ai_misconfigured_returns_service_error(monkeypatch):
     get_settings.cache_clear()
 
     with pytest.raises(HTTPException) as exc_info:
-        interpret_strategy_builder_request(
-            StrategyInterpretRequest(message="Create an EMA strategy.")
-        )
+        interpret_strategy_builder_request(StrategyInterpretRequest(message="Create an EMA strategy."))
 
     assert exc_info.value.status_code == 503
     assert exc_info.value.detail["status"] == "ai_misconfigured"
@@ -236,12 +226,8 @@ def test_ai_misconfigured_returns_service_error(monkeypatch):
 
 def test_provider_selection_uses_configured_provider_model_and_base_url(ai_enabled_settings):
     settings = get_settings()
-    with patch(
-        "q_backend.strategy_builder.providers.factory.OpenAICompatibleInterpreterProvider"
-    ) as mock_provider_cls:
-        mock_provider_cls.return_value = FakeInterpreterProvider(
-            content=json.dumps(_ai_response_payload())
-        )
+    with patch("q_backend.strategy_builder.providers.factory.OpenAICompatibleInterpreterProvider") as mock_provider_cls:
+        mock_provider_cls.return_value = FakeInterpreterProvider(content=json.dumps(_ai_response_payload()))
         provider = build_strategy_interpreter_provider(settings)
 
     mock_provider_cls.assert_called_once_with(
@@ -277,9 +263,7 @@ def test_timeout_provider_errors_return_frontend_renderable_service_error(ai_ena
         return_value={"openai_compatible": provider},
     ):
         with pytest.raises(HTTPException) as exc_info:
-            interpret_strategy_builder_request(
-                StrategyInterpretRequest(message="Create an EMA strategy.")
-            )
+            interpret_strategy_builder_request(StrategyInterpretRequest(message="Create an EMA strategy."))
 
     assert exc_info.value.status_code == 502
     assert exc_info.value.detail["status"] == "provider_error"
@@ -308,9 +292,7 @@ def test_interpret_endpoint_uses_registry_backed_prompt(ai_enabled_settings):
 def test_invalid_model_spec_returns_validation_without_compilation():
     invalid_spec = dict(EMA_CROSS_SPEC)
     invalid_spec["timeframe"] = "BADTF"
-    provider = FakeInterpreterProvider(
-        content=json.dumps(_ai_response_payload(strategy_spec=invalid_spec))
-    )
+    provider = FakeInterpreterProvider(content=json.dumps(_ai_response_payload(strategy_spec=invalid_spec)))
 
     response = interpret_strategy_request(
         StrategyInterpretRequest(message="Create a strategy with a bad timeframe."),
@@ -348,9 +330,7 @@ def test_interpret_request_model_override_is_passed_to_provider(ai_enabled_setti
     assert captured["model"] == "test-model-b"
 
 
-def test_interpret_explicit_gemini_provider_routes_to_gemini(
-    ai_enabled_settings, monkeypatch
-):
+def test_interpret_explicit_gemini_provider_routes_to_gemini(ai_enabled_settings, monkeypatch):
     monkeypatch.setenv("Q_AI_STRATEGY_GEMINI_API_KEY", "test-key")
     get_settings.cache_clear()
     local = FakeInterpreterProvider(
@@ -461,9 +441,7 @@ def test_interpret_endpoint_surfaces_change_notes(ai_enabled_settings):
         "q_backend.api.routers.strategy_builder.build_strategy_interpreter_providers",
         return_value={"openai_compatible": provider},
     ):
-        response = interpret_strategy_builder_request(
-            StrategyInterpretRequest(message="Switch to hourly bars.")
-        )
+        response = interpret_strategy_builder_request(StrategyInterpretRequest(message="Switch to hourly bars."))
 
     assert response.change_notes == ["set timeframe D1 -> H1"]
     assert response.model_dump(mode="json")["change_notes"] == ["set timeframe D1 -> H1"]
@@ -473,13 +451,10 @@ def test_golden_two_turn_momentum_collaborator_flow():
     # Turn 1: Vague opener
     turn1_payload = {
         "summary": "Drafted momentum strategy based on standard assumptions.",
-        "assumptions": [
-            "Assumed timeframe is D1.",
-            "Assumed universe is PETR4."
-        ],
+        "assumptions": ["Assumed timeframe is D1.", "Assumed universe is PETR4."],
         "questions": [
             "What specific momentum indicator do you want to use (e.g. EMA crossover)?",
-            "What timeframe would you like?"
+            "What timeframe would you like?",
         ],
         "unsupported_requests": [],
         "strategy_spec": {
@@ -500,17 +475,15 @@ def test_golden_two_turn_momentum_collaborator_flow():
         },
         "confidence": 0.6,
     }
-    
+
     provider_turn1 = FakeInterpreterProvider(content=json.dumps(turn1_payload))
-    request_turn1 = StrategyInterpretRequest(
-        message="I want something that rides momentum"
-    )
-    
+    request_turn1 = StrategyInterpretRequest(message="I want something that rides momentum")
+
     response_turn1 = interpret_strategy_request(
         request_turn1,
         provider=provider_turn1,
     )
-    
+
     assert response_turn1.strategy_spec is not None
     assert response_turn1.strategy_spec["name"] == "Momentum Strategy"
     assert len(response_turn1.assumptions) >= 1
@@ -520,13 +493,8 @@ def test_golden_two_turn_momentum_collaborator_flow():
     # Turn 2: Incorporate answer
     turn2_payload = {
         "summary": "Updated strategy to use EMA crossover.",
-        "assumptions": [
-            "Assumed timeframe is D1.",
-            "Assumed universe is PETR4."
-        ],
-        "questions": [
-            "What timeframe would you like?"
-        ],
+        "assumptions": ["Assumed timeframe is D1.", "Assumed universe is PETR4."],
+        "questions": ["What timeframe would you like?"],
         "unsupported_requests": [],
         "strategy_spec": {
             **EMA_CROSS_SPEC,
@@ -535,23 +503,26 @@ def test_golden_two_turn_momentum_collaborator_flow():
         "confidence": 0.85,
     }
     provider_turn2 = FakeInterpreterProvider(content=json.dumps(turn2_payload))
-    
+
     from q_backend.strategy_builder.interpret_models import ConversationMessage
+
     request_turn2 = StrategyInterpretRequest(
         message="Use an EMA crossover of 20 and 50 periods.",
         conversation=[
             ConversationMessage(role="user", content="I want something that rides momentum"),
-            ConversationMessage(role="assistant", content=response_turn1.summary + "\nQuestions: " + ", ".join(response_turn1.questions)),
+            ConversationMessage(
+                role="assistant", content=response_turn1.summary + "\nQuestions: " + ", ".join(response_turn1.questions)
+            ),
             ConversationMessage(role="user", content="Use an EMA crossover of 20 and 50 periods."),
         ],
         current_spec=response_turn1.strategy_spec,
     )
-    
+
     response_turn2 = interpret_strategy_request(
         request_turn2,
         provider=provider_turn2,
     )
-    
+
     assert response_turn2.strategy_spec is not None
     assert response_turn2.strategy_spec["name"] == "EMA Crossover Momentum"
     assert "What specific momentum indicator do you want to use" not in response_turn2.questions
@@ -559,21 +530,20 @@ def test_golden_two_turn_momentum_collaborator_flow():
 
 def test_live_ai_interpreter_vague_opener():
     import os
+
     if not os.getenv("Q_TEST_LIVE_AI"):
         pytest.skip("Q_TEST_LIVE_AI environment variable not set to run live AI tests")
-    
+
     from q_backend.storage.settings import get_settings
     from q_backend.strategy_builder.providers.factory import build_strategy_interpreter_provider
-    
+
     settings = get_settings()
     provider = build_strategy_interpreter_provider(settings)
-    
-    request = StrategyInterpretRequest(
-        message="I want something that rides momentum"
-    )
-    
+
+    request = StrategyInterpretRequest(message="I want something that rides momentum")
+
     response = interpret_strategy_request(request, provider=provider)
-    
+
     assert response.summary
     assert len(response.questions) >= 1
     assert response.strategy_spec is not None or response.questions

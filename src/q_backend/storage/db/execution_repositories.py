@@ -89,9 +89,7 @@ def get_paper_account(session: Session, account_id: uuid.UUID) -> Optional[Paper
 
 
 def get_paper_account_by_name(session: Session, name: str) -> Optional[PaperAccount]:
-    return session.execute(
-        select(PaperAccount).where(PaperAccount.name == name)
-    ).scalar_one_or_none()
+    return session.execute(select(PaperAccount).where(PaperAccount.name == name)).scalar_one_or_none()
 
 
 def update_paper_cash_balance(
@@ -140,9 +138,7 @@ def create_execution_deployment(
     return deployment
 
 
-def get_execution_deployment(
-    session: Session, deployment_id: uuid.UUID
-) -> Optional[ExecutionDeployment]:
+def get_execution_deployment(session: Session, deployment_id: uuid.UUID) -> Optional[ExecutionDeployment]:
     return session.get(ExecutionDeployment, deployment_id)
 
 
@@ -341,9 +337,7 @@ def get_execution_fill_by_external_id(
 # --- Net positions ---
 
 
-def get_open_net_position(
-    session: Session, deployment_id: uuid.UUID
-) -> Optional[ExecutionNetPosition]:
+def get_open_net_position(session: Session, deployment_id: uuid.UUID) -> Optional[ExecutionNetPosition]:
     return session.execute(
         select(ExecutionNetPosition).where(
             ExecutionNetPosition.deployment_id == deployment_id,
@@ -473,17 +467,13 @@ def acquire_worker_lease(
     now: Optional[datetime] = None,
 ) -> ExecutionWorkerLease:
     current = session.execute(
-        select(ExecutionWorkerLease).where(
-            ExecutionWorkerLease.deployment_id == deployment_id
-        )
+        select(ExecutionWorkerLease).where(ExecutionWorkerLease.deployment_id == deployment_id)
     ).scalar_one_or_none()
     ts = now or _utcnow()
     expires = ts + timedelta(seconds=ttl_seconds)
     if current is not None:
         if _as_utc(current.expires_at) > _as_utc(ts) and current.worker_id != worker_id:
-            raise LeaseConflictError(
-                f"deployment {deployment_id} lease held by {current.worker_id}"
-            )
+            raise LeaseConflictError(f"deployment {deployment_id} lease held by {current.worker_id}")
         current.worker_id = worker_id
         current.lease_token = lease_token
         current.acquired_at = ts
@@ -515,9 +505,7 @@ def heartbeat_worker_lease(
     now: Optional[datetime] = None,
 ) -> ExecutionWorkerLease:
     lease = session.execute(
-        select(ExecutionWorkerLease).where(
-            ExecutionWorkerLease.deployment_id == deployment_id
-        )
+        select(ExecutionWorkerLease).where(ExecutionWorkerLease.deployment_id == deployment_id)
     ).scalar_one_or_none()
     if lease is None:
         raise ValueError(f"No lease for deployment {deployment_id}")
@@ -538,9 +526,7 @@ def release_worker_lease(
     lease_token: str,
 ) -> bool:
     lease = session.execute(
-        select(ExecutionWorkerLease).where(
-            ExecutionWorkerLease.deployment_id == deployment_id
-        )
+        select(ExecutionWorkerLease).where(ExecutionWorkerLease.deployment_id == deployment_id)
     ).scalar_one_or_none()
     if lease is None:
         return False
@@ -669,9 +655,7 @@ def mark_incomplete_orders_unknown(
     return marked
 
 
-def get_execution_order(
-    session: Session, order_id: uuid.UUID
-) -> Optional[ExecutionOrder]:
+def get_execution_order(session: Session, order_id: uuid.UUID) -> Optional[ExecutionOrder]:
     return session.get(ExecutionOrder, order_id)
 
 
@@ -687,9 +671,7 @@ def list_pending_reconciliation_orders(
     )
     if deployment_id is not None:
         stmt = stmt.where(ExecutionOrder.deployment_id == deployment_id)
-    return list(
-        session.execute(stmt.order_by(ExecutionOrder.created_at)).scalars().all()
-    )
+    return list(session.execute(stmt.order_by(ExecutionOrder.created_at)).scalars().all())
 
 
 def list_pending_reconciliation_orders_page(
@@ -751,9 +733,7 @@ def finalize_order_reconciliation(
 
 def release_expired_leases(session: Session, *, now: Optional[datetime] = None) -> int:
     ts = now or _utcnow()
-    leases = list(
-        session.execute(select(ExecutionWorkerLease)).scalars().all()
-    )
+    leases = list(session.execute(select(ExecutionWorkerLease)).scalars().all())
     released = 0
     for lease in leases:
         if _as_utc(lease.expires_at) <= _as_utc(ts):
@@ -764,13 +744,9 @@ def release_expired_leases(session: Session, *, now: Optional[datetime] = None) 
     return released
 
 
-def get_worker_lease(
-    session: Session, deployment_id: uuid.UUID
-) -> Optional[ExecutionWorkerLease]:
+def get_worker_lease(session: Session, deployment_id: uuid.UUID) -> Optional[ExecutionWorkerLease]:
     return session.execute(
-        select(ExecutionWorkerLease).where(
-            ExecutionWorkerLease.deployment_id == deployment_id
-        )
+        select(ExecutionWorkerLease).where(ExecutionWorkerLease.deployment_id == deployment_id)
     ).scalar_one_or_none()
 
 
@@ -801,12 +777,9 @@ def list_paper_accounts(
 
     total = session.execute(select(func.count()).select_from(PaperAccount)).scalar_one()
     rows = list(
-        session.execute(
-            select(PaperAccount)
-            .order_by(PaperAccount.created_at)
-            .limit(limit)
-            .offset(offset)
-        ).scalars().all()
+        session.execute(select(PaperAccount).order_by(PaperAccount.created_at).limit(limit).offset(offset))
+        .scalars()
+        .all()
     )
     return rows, int(total)
 
@@ -832,11 +805,9 @@ def list_deployments_page(
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total = session.execute(count_stmt).scalar_one()
     rows = list(
-        session.execute(
-            stmt.order_by(ExecutionDeployment.created_at.desc())
-            .limit(limit)
-            .offset(offset)
-        ).scalars().all()
+        session.execute(stmt.order_by(ExecutionDeployment.created_at.desc()).limit(limit).offset(offset))
+        .scalars()
+        .all()
     )
     return rows, int(total)
 
@@ -852,9 +823,7 @@ def _paginate(
 
     count_stmt = sa_select(func.count()).select_from(stmt.subquery())
     total = session.execute(count_stmt).scalar_one()
-    rows = list(
-        session.execute(stmt.limit(limit).offset(offset)).scalars().all()
-    )
+    rows = list(session.execute(stmt.limit(limit).offset(offset)).scalars().all())
     return rows, int(total)
 
 
@@ -867,9 +836,7 @@ def list_decisions_page(
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[ExecutionDecision], int]:
-    stmt = select(ExecutionDecision).where(
-        ExecutionDecision.deployment_id == deployment_id
-    )
+    stmt = select(ExecutionDecision).where(ExecutionDecision.deployment_id == deployment_id)
     if from_time is not None:
         stmt = stmt.where(ExecutionDecision.bar_close_time >= from_time)
     if to_time is not None:
@@ -950,9 +917,7 @@ def list_ledger_entries_page(
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[ExecutionLedgerEntry], int]:
-    stmt = select(ExecutionLedgerEntry).where(
-        ExecutionLedgerEntry.paper_account_id == paper_account_id
-    )
+    stmt = select(ExecutionLedgerEntry).where(ExecutionLedgerEntry.paper_account_id == paper_account_id)
     if deployment_id is not None:
         stmt = stmt.where(ExecutionLedgerEntry.deployment_id == deployment_id)
     if from_time is not None:
@@ -972,9 +937,7 @@ def list_risk_events_page(
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[ExecutionRiskEvent], int]:
-    stmt = select(ExecutionRiskEvent).where(
-        ExecutionRiskEvent.deployment_id == deployment_id
-    )
+    stmt = select(ExecutionRiskEvent).where(ExecutionRiskEvent.deployment_id == deployment_id)
     if from_time is not None:
         stmt = stmt.where(ExecutionRiskEvent.created_at >= from_time)
     if to_time is not None:
@@ -983,9 +946,7 @@ def list_risk_events_page(
     return _paginate(session, stmt, limit=limit, offset=offset)
 
 
-def get_latest_decision(
-    session: Session, deployment_id: uuid.UUID
-) -> Optional[ExecutionDecision]:
+def get_latest_decision(session: Session, deployment_id: uuid.UUID) -> Optional[ExecutionDecision]:
     return session.execute(
         select(ExecutionDecision)
         .where(ExecutionDecision.deployment_id == deployment_id)
@@ -994,13 +955,13 @@ def get_latest_decision(
     ).scalar_one_or_none()
 
 
-def count_unknown_orders(
-    session: Session, *, deployment_id: Optional[uuid.UUID] = None
-) -> int:
+def count_unknown_orders(session: Session, *, deployment_id: Optional[uuid.UUID] = None) -> int:
     from sqlalchemy import func
 
-    stmt = select(func.count()).select_from(ExecutionOrder).where(
-        ExecutionOrder.status == ExecutionOrderStatus.UNKNOWN.value
+    stmt = (
+        select(func.count())
+        .select_from(ExecutionOrder)
+        .where(ExecutionOrder.status == ExecutionOrderStatus.UNKNOWN.value)
     )
     if deployment_id is not None:
         stmt = stmt.where(ExecutionOrder.deployment_id == deployment_id)
@@ -1075,9 +1036,7 @@ def set_pending_deployment_action(
     return deployment
 
 
-def clear_pending_deployment_action(
-    session: Session, deployment_id: uuid.UUID
-) -> ExecutionDeployment:
+def clear_pending_deployment_action(session: Session, deployment_id: uuid.UUID) -> ExecutionDeployment:
     deployment = session.get(ExecutionDeployment, deployment_id)
     if deployment is None:
         raise ValueError(f"ExecutionDeployment {deployment_id} not found")

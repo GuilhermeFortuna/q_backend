@@ -80,10 +80,7 @@ def _json_safe_regime(regime_ics: dict[str, float]) -> dict[str, Any]:
 
 
 def _feature_name_map(manifest: dict[str, Any]) -> dict[str, str]:
-    return {
-        str(row["feature_id"]): str(row["name"])
-        for row in manifest.get("features", [])
-    }
+    return {str(row["feature_id"]): str(row["name"]) for row in manifest.get("features", [])}
 
 
 def create_pending_evaluation_run(
@@ -233,9 +230,7 @@ def _evaluate_into_run(
 
     try:
         _report_progress("loading_data", 0, len(feature_set))
-        matrix = build_feature_matrix(
-            symbol, timeframe, start, end, feature_set
-        )
+        matrix = build_feature_matrix(symbol, timeframe, start, end, feature_set)
         bars = read_ohlcv_fresh(symbol, timeframe, start, end)
         bars_df = _ohlcv_to_compute_bars(bars)
         target_series = compute_target(bars_df, target)
@@ -248,9 +243,7 @@ def _evaluate_into_run(
             target_series,
             close=close,
             bars=bars_df,
-            progress_callback=lambda done, total: _report_progress(
-                "evaluating", done, total
-            ),
+            progress_callback=lambda done, total: _report_progress("evaluating", done, total),
         )
         _report_progress("scoring", len(feature_set), len(feature_set))
         clusters = cluster_redundant(matrix)
@@ -317,7 +310,5 @@ def _evaluate_into_run(
         raise
 
 
-def load_evaluation_run(
-    session: Session, run_id: uuid.UUID
-) -> EvaluationRun | None:
+def load_evaluation_run(session: Session, run_id: uuid.UUID) -> EvaluationRun | None:
     return get_evaluation_run(session, run_id)

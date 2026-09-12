@@ -164,9 +164,7 @@ def test_parallel_without_frame_uses_sequential_path(naive_ohlcv_df):
         parallel_mock.assert_not_called()
 
 
-def test_parallel_continue_on_trial_error_records_failures(
-    naive_ohlcv_df, inline_process_pool
-):
+def test_parallel_continue_on_trial_error_records_failures(naive_ohlcv_df, inline_process_pool):
     config = _parallel_optimization_config(n_trials=4)
     config.study.continue_on_trial_error = True
     backtest_runner = DefaultBacktestRunner.from_frame_sliced(naive_ohlcv_df)
@@ -196,9 +194,7 @@ def test_parallel_continue_on_trial_error_records_failures(
     assert len(result.study.trials) == 4
 
 
-def test_parallel_unexpected_error_reraises_without_continue(
-    naive_ohlcv_df, inline_process_pool
-):
+def test_parallel_unexpected_error_reraises_without_continue(naive_ohlcv_df, inline_process_pool):
     config = _parallel_optimization_config(n_trials=2)
     config.study.continue_on_trial_error = False
     backtest_runner = DefaultBacktestRunner.from_frame_sliced(naive_ohlcv_df)
@@ -216,9 +212,7 @@ def test_parallel_unexpected_error_reraises_without_continue(
             ).run()
 
 
-def test_parallel_validation_prune_does_not_fail_chunk(
-    naive_ohlcv_df, inline_process_pool
-):
+def test_parallel_validation_prune_does_not_fail_chunk(naive_ohlcv_df, inline_process_pool):
     config = OptimizationConfig.model_validate(
         {
             "study": {
@@ -262,11 +256,7 @@ def test_parallel_validation_prune_does_not_fail_chunk(
     ).run()
 
     assert len(result.study.trials) == 6
-    pruned = [
-        trial
-        for trial in result.study.trials
-        if trial.state == optuna.trial.TrialState.PRUNED
-    ]
+    pruned = [trial for trial in result.study.trials if trial.state == optuna.trial.TrialState.PRUNED]
     assert pruned
     assert all(trial.user_attrs.get("status") == "pruned" for trial in pruned)
 
@@ -292,9 +282,7 @@ def test_parallel_should_stop_after_first_batch(naive_ohlcv_df):
     assert len(result.study.trials) == 2
 
 
-def test_parallel_multi_objective_returns_pareto_front(
-    naive_ohlcv_df, multi_objective_config
-):
+def test_parallel_multi_objective_returns_pareto_front(naive_ohlcv_df, multi_objective_config):
     multi_objective_config.study.n_trials = 6
     backtest_runner = DefaultBacktestRunner.from_frame_sliced(naive_ohlcv_df)
 

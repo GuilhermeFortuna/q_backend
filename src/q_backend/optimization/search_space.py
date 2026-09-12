@@ -19,9 +19,7 @@ from q_backend.optimization.models import (
 )
 
 
-def _suggest_param(
-    trial: optuna.Trial, name: str, spec: SearchParam
-) -> str | int | float:
+def _suggest_param(trial: optuna.Trial, name: str, spec: SearchParam) -> str | int | float:
     if isinstance(spec, IntParam):
         return trial.suggest_int(name, spec.low, spec.high, step=spec.step)
     if isinstance(spec, FloatParam):
@@ -109,9 +107,7 @@ def build_position_sizing_config(
         max_contracts = risk_params.get("max_contracts")
         return FixedSafetyMarginPositionSizing(
             type="fixed_safety_margin",
-            safety_margin_per_contract=float(
-                risk_params.get("safety_margin_per_contract", 5000.0)
-            ),
+            safety_margin_per_contract=float(risk_params.get("safety_margin_per_contract", 5000.0)),
             min_contracts=int(risk_params.get("min_contracts", 1)),
             max_contracts=int(max_contracts) if max_contracts is not None else None,
         )

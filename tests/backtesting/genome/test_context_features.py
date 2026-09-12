@@ -27,9 +27,7 @@ from q_backend.features.compute import compute_feature
 from q_backend.features.registry import get_feature_spec
 from q_backend.optimization.backtest_runner import DefaultBacktestRunner
 
-CONTEXT_KINDS = tuple(
-    sorted(kind for kind in NODE_SPECS if kind.startswith("feature."))
-)
+CONTEXT_KINDS = tuple(sorted(kind for kind in NODE_SPECS if kind.startswith("feature.")))
 
 
 def _intraday_frame(

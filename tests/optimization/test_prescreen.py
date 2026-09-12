@@ -254,16 +254,14 @@ def test_prescreen_determinism_same_seed_same_prescreen_decisions():
         )
         orchestrator = GeneticStrategySearchOrchestrator(config, provider, runner)
         orchestrator.run()
-        return [
-            candidate.error or candidate.status
-            for candidate in orchestrator.generations[0]
-        ]
+        return [candidate.error or candidate.status for candidate in orchestrator.generations[0]]
 
     assert run_once() == run_once()
 
 
 def test_resolve_probe_frame_raises_on_provider_failure():
     """WO179 must-surface: a raising probe data provider fails the run, not silently None."""
+
     def _boom(_cfg):
         raise RuntimeError("probe data source down")
 

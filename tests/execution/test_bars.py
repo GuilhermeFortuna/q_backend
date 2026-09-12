@@ -22,12 +22,8 @@ def test_drop_forming_bar_removes_incomplete_last_row():
 
 def test_is_bar_complete_after_close():
     open_time = datetime(2024, 1, 1, 10, 0, tzinfo=timezone.utc)
-    assert not is_bar_complete(
-        open_time, "M15", now=open_time + timedelta(minutes=14)
-    )
-    assert is_bar_complete(
-        open_time, "M15", now=open_time + timedelta(minutes=15)
-    )
+    assert not is_bar_complete(open_time, "M15", now=open_time + timedelta(minutes=14))
+    assert is_bar_complete(open_time, "M15", now=open_time + timedelta(minutes=15))
 
 
 def test_trim_rolling_window_is_bounded():

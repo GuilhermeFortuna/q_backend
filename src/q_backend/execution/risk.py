@@ -176,14 +176,10 @@ class RiskGate:
     def _check_one_position(self, ctx: RiskContext) -> Optional[RiskRejection]:
         if ctx.position_side == PositionSide.FLAT:
             return None
-        reducing = (
-            ctx.position_side == PositionSide.LONG and ctx.side == ExecutionSide.SELL
-        ) or (
+        reducing = (ctx.position_side == PositionSide.LONG and ctx.side == ExecutionSide.SELL) or (
             ctx.position_side == PositionSide.SHORT and ctx.side == ExecutionSide.BUY
         )
-        same_side_add = (
-            ctx.position_side == PositionSide.LONG and ctx.side == ExecutionSide.BUY
-        ) or (
+        same_side_add = (ctx.position_side == PositionSide.LONG and ctx.side == ExecutionSide.BUY) or (
             ctx.position_side == PositionSide.SHORT and ctx.side == ExecutionSide.SELL
         )
         if reducing or same_side_add:

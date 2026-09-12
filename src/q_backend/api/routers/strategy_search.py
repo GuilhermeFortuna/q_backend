@@ -56,9 +56,7 @@ def get_strategy_search_status(run_id: str):
     """Return progress/status for a strategy search run."""
     payload = strategy_search_jobs.get_status_payload(run_id)
     if payload is None:
-        raise HTTPException(
-            status_code=404, detail=f"Strategy search run '{run_id}' not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Strategy search run '{run_id}' not found.")
     return payload
 
 
@@ -74,10 +72,7 @@ def get_strategy_search_results(run_id: str):
         if payload is None:
             raise HTTPException(
                 status_code=409,
-                detail=(
-                    f"Strategy search run '{run_id}' has no results yet "
-                    f"(status: {job.status})."
-                ),
+                detail=(f"Strategy search run '{run_id}' has no results yet " f"(status: {job.status})."),
             )
         return payload
 
@@ -87,14 +82,9 @@ def get_strategy_search_results(run_id: str):
         if persisted_status is not None:
             raise HTTPException(
                 status_code=409,
-                detail=(
-                    f"Strategy search run '{run_id}' has no results yet "
-                    f"(status: {persisted_status})."
-                ),
+                detail=(f"Strategy search run '{run_id}' has no results yet " f"(status: {persisted_status})."),
             )
-        raise HTTPException(
-            status_code=404, detail=f"Strategy search run '{run_id}' not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Strategy search run '{run_id}' not found.")
     return payload
 
 
@@ -112,9 +102,7 @@ def cancel_strategy_search(run_id: str):
     strategy_search_jobs.request_cancel(run_id)
     payload = strategy_search_jobs.get_status_payload(run_id)
     if payload is None:
-        raise HTTPException(
-            status_code=404, detail=f"Strategy search run '{run_id}' not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Strategy search run '{run_id}' not found.")
     return payload
 
 
@@ -127,12 +115,7 @@ def list_strategy_searches(
     """Return a paginated list of strategy search runs, newest first."""
     runs, total = list_strategy_search_runs(session, limit=limit, offset=offset)
     return {
-        "items": [
-            StrategySearchRunListItem(
-                **strategy_search_jobs.run_list_item_from_db(run)
-            )
-            for run in runs
-        ],
+        "items": [StrategySearchRunListItem(**strategy_search_jobs.run_list_item_from_db(run)) for run in runs],
         "total": total,
         "limit": limit,
         "offset": offset,
@@ -145,14 +128,10 @@ def delete_strategy_search(run_id: str, session: Session = Depends(get_session))
     try:
         run_uuid = uuid.UUID(run_id)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=404, detail=f"Strategy search run '{run_id}' not found."
-        ) from exc
+        raise HTTPException(status_code=404, detail=f"Strategy search run '{run_id}' not found.") from exc
 
     if not delete_strategy_search_run(session, run_uuid):
-        raise HTTPException(
-            status_code=404, detail=f"Strategy search run '{run_id}' not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Strategy search run '{run_id}' not found.")
 
     strategy_search_jobs.evict_run(run_id)
     strategy_search_jobs.delete_run_lake_artifacts(run_id)
@@ -167,42 +146,29 @@ def get_strategy_search_candidate_equity_artifact(run_id: str, candidate_id: str
     try:
         uuid.UUID(run_id)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=404, detail=f"Strategy search run '{run_id}' not found."
-        ) from exc
+        raise HTTPException(status_code=404, detail=f"Strategy search run '{run_id}' not found.") from exc
 
     if not strategy_search_jobs.candidate_exists_in_run(run_id, candidate_id):
         raise HTTPException(
             status_code=404,
-            detail=(
-                f"Candidate '{candidate_id}' not found in strategy search run "
-                f"'{run_id}'."
-            ),
+            detail=(f"Candidate '{candidate_id}' not found in strategy search run " f"'{run_id}'."),
         )
 
     job = strategy_search_jobs.get_job(run_id)
     if job is not None and job.result is not None:
         candidate = next(
-            (
-                item
-                for item in job.result.candidates
-                if item.candidate_id == candidate_id
-            ),
+            (item for item in job.result.candidates if item.candidate_id == candidate_id),
             None,
         )
         if candidate is not None and candidate.oos_equity_curve is not None:
             return {
                 "run_id": run_id,
                 "candidate_id": candidate_id,
-                "points": strategy_search_jobs.serialize_equity_points(
-                    candidate.oos_equity_curve
-                ),
+                "points": strategy_search_jobs.serialize_equity_points(candidate.oos_equity_curve),
             }
 
     try:
-        df = read_strategy_search_candidate_artifact(
-            run_id, candidate_id, "oos_equity"
-        )
+        df = read_strategy_search_candidate_artifact(run_id, candidate_id, "oos_equity")
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -222,27 +188,19 @@ def get_strategy_search_candidate_genome(run_id: str, candidate_id: str):
     try:
         uuid.UUID(run_id)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=404, detail=f"Strategy search run '{run_id}' not found."
-        ) from exc
+        raise HTTPException(status_code=404, detail=f"Strategy search run '{run_id}' not found.") from exc
 
     if not strategy_search_jobs.candidate_exists_in_run(run_id, candidate_id):
         raise HTTPException(
             status_code=404,
-            detail=(
-                f"Candidate '{candidate_id}' not found in strategy search run "
-                f"'{run_id}'."
-            ),
+            detail=(f"Candidate '{candidate_id}' not found in strategy search run " f"'{run_id}'."),
         )
 
     genome = strategy_search_jobs.get_candidate_genome(run_id, candidate_id)
     if genome is None:
         raise HTTPException(
             status_code=404,
-            detail=(
-                f"Genome not available for candidate '{candidate_id}' "
-                f"in strategy search run '{run_id}'."
-            ),
+            detail=(f"Genome not available for candidate '{candidate_id}' " f"in strategy search run '{run_id}'."),
         )
 
     return {

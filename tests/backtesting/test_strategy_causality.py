@@ -32,9 +32,7 @@ from q_backend.backtesting.strategy_registry import (
     list_registered_strategies,
 )
 
-STRATEGY_NAMES = [
-    info.name for info in list_registered_strategies() if info.engine == "candle"
-]
+STRATEGY_NAMES = [info.name for info in list_registered_strategies() if info.engine == "candle"]
 
 
 def _synthetic_ohlcv(n: int = 260) -> pd.DataFrame:
@@ -72,7 +70,6 @@ def test_strategy_indicators_are_causal(strategy_name):
 
     full = strategy.compute_indicators(data)
 
-
     added_cols = [c for c in full.columns if c not in data.columns]
     assert added_cols, f"{strategy_name}: compute_indicators added no columns"
 
@@ -82,22 +79,14 @@ def test_strategy_indicators_are_causal(strategy_name):
         prefix = strategy.compute_indicators(data.iloc[:k].copy())
 
         for col in added_cols:
-            assert col in prefix.columns, (
-                f"{strategy_name}: column '{col}' missing when run on a prefix"
-            )
+            assert col in prefix.columns, f"{strategy_name}: column '{col}' missing when run on a prefix"
             expected = full[col].iloc[:k]
             actual = prefix[col]
 
-            if pd.api.types.is_bool_dtype(expected) or pd.api.types.is_bool_dtype(
-                actual
-            ):
-                mismatches = (
-                    expected.fillna(False).to_numpy()
-                    != actual.fillna(False).to_numpy()
-                )
+            if pd.api.types.is_bool_dtype(expected) or pd.api.types.is_bool_dtype(actual):
+                mismatches = expected.fillna(False).to_numpy() != actual.fillna(False).to_numpy()
                 assert not mismatches.any(), (
-                    f"{strategy_name}: signal column '{col}' changes at "
-                    f"prefix length {k} -> look-ahead bias"
+                    f"{strategy_name}: signal column '{col}' changes at " f"prefix length {k} -> look-ahead bias"
                 )
             else:
                 pd.testing.assert_series_equal(

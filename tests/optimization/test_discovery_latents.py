@@ -33,7 +33,6 @@ from q_backend.storage.db.models import NeuralModelStatus
 from q_backend.storage.db.repositories import set_neural_model_status
 from q_backend.optimization.models import StudyConfig
 
-
 _SYMBOL = "SYN151E2E"
 _TIMEFRAME = "H1"
 _N_BARS = 300
@@ -181,17 +180,13 @@ def test_population_can_include_latent_with_production_model(
         # (seeding → latent genome) is exercised, not merely the universe resolution.
         population = provider._population
         assert any(
-            node.kind == "ind.latent"
-            for genome in population
-            for node in genome.nodes
+            node.kind == "ind.latent" for genome in population for node in genome.nodes
         ), "discovery seeding produced no latent genome despite a PRODUCTION model"
 
         candidate = provider.candidates()[0]
         assert candidate.fixed_params.get("latent_model_hash") == version.model_hash
     finally:
-        unregister_neural_model_features(
-            [f"{name}@{version.model_hash[:8]}" for name in version.latent_names]
-        )
+        unregister_neural_model_features([f"{name}@{version.model_hash[:8]}" for name in version.latent_names])
 
 
 def test_latent_entering_genome_backtests_pit_safe(discovery_db) -> None:
@@ -214,9 +209,7 @@ def test_latent_entering_genome_backtests_pit_safe(discovery_db) -> None:
             train_end_ts = train_end_ts.tz_localize("UTC")
         assert series.loc[times > train_end_ts].notna().any()
     finally:
-        unregister_neural_model_features(
-            [f"{name}@{version.model_hash[:8]}" for name in version.latent_names]
-        )
+        unregister_neural_model_features([f"{name}@{version.model_hash[:8]}" for name in version.latent_names])
 
 
 def test_no_production_model_population_matches_legacy_seed() -> None:
@@ -241,9 +234,7 @@ def test_no_production_model_population_matches_legacy_seed() -> None:
         **kwargs,
     )
 
-    assert [genome.model_dump() for genome in legacy] == [
-        genome.model_dump() for genome in modern
-    ]
+    assert [genome.model_dump() for genome in legacy] == [genome.model_dump() for genome in modern]
 
     search = _search_config("NO_MODEL")
     legacy_provider = GeneticCandidateProvider(
@@ -255,6 +246,6 @@ def test_no_production_model_population_matches_legacy_seed() -> None:
         search,
         latent_universe=empty,
     )
-    assert [
-        genome.model_dump() for genome in legacy_provider.initial_population
-    ] == [genome.model_dump() for genome in modern_provider.initial_population]
+    assert [genome.model_dump() for genome in legacy_provider.initial_population] == [
+        genome.model_dump() for genome in modern_provider.initial_population
+    ]

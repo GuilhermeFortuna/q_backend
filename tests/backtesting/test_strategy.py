@@ -33,23 +33,13 @@ def test_valid_strategy_implementation():
 
         def check_entry_conditions(self, current_data: pd.Series) -> List[Signal]:
             if current_data.get("ma_short", 0) > current_data.get("ma_long", 0):
-                return [
-                    Signal(
-                        symbol=current_data.name or "UNKNOWN", action=SignalAction.BUY
-                    )
-                ]
+                return [Signal(symbol=current_data.name or "UNKNOWN", action=SignalAction.BUY)]
             return []
 
-        def check_exit_conditions(
-            self, current_data: pd.Series, open_trades: List[Trade]
-        ) -> List[Signal]:
+        def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
             # Simple exit logic: if short MA crosses below long MA, close all positions
             if current_data.get("ma_short", 0) < current_data.get("ma_long", 0):
-                return [
-                    Signal(
-                        symbol=current_data.name or "UNKNOWN", action=SignalAction.CLOSE
-                    )
-                ]
+                return [Signal(symbol=current_data.name or "UNKNOWN", action=SignalAction.CLOSE)]
             return []
 
         def get_chart_indicators(self):
@@ -88,9 +78,7 @@ def test_macrossover_strategy():
     from q_backend.backtesting import MACrossoverStrategy
 
     # Initialize strategy with short_period=2, long_period=4, threshold=1.0, symbol="BTCUSDT"
-    strategy = MACrossoverStrategy(
-        short_period=2, long_period=4, threshold=1.0, symbol="BTCUSDT"
-    )
+    strategy = MACrossoverStrategy(short_period=2, long_period=4, threshold=1.0, symbol="BTCUSDT")
     assert strategy.parameters["short_period"] == 2
     assert strategy.parameters["long_period"] == 4
     assert strategy.parameters["threshold"] == 1.0

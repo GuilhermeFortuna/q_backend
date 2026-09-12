@@ -70,6 +70,4 @@ class CapabilityRegistry(BaseModel):
     exit_presets: list[ExitPreset]
     risk_sizing: list[RiskSizingCapability]
     execution_assumptions: ExecutionAssumptions
-    unsupported: list[str] = Field(
-        description="Product-level capabilities Q does not expose today."
-    )
+    unsupported: list[str] = Field(description="Product-level capabilities Q does not expose today.")

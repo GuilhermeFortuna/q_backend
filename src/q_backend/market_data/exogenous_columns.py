@@ -17,7 +17,6 @@ def resolve_exog_column(df: pd.DataFrame, symbol: str, suffix: str) -> pd.Series
     column = exog_column_name(symbol, suffix)
     if column not in df.columns:
         raise KeyError(
-            f"Missing exogenous column '{column}'. "
-            "Ensure exogenous_series is configured for this research run."
+            f"Missing exogenous column '{column}'. " "Ensure exogenous_series is configured for this research run."
         )
     return df[column]

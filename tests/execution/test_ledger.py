@@ -116,9 +116,7 @@ def _submit_and_apply(
 
 
 def test_long_open_and_close_accounting(db_session, now, cost_config):
-    account, deployment, broker, ledger, quotes = _setup(
-        db_session, now, spread=(Decimal("100"), Decimal("101"))
-    )
+    account, deployment, broker, ledger, quotes = _setup(db_session, now, spread=(Decimal("100"), Decimal("101")))
     open_result = _submit_and_apply(
         db_session,
         account=account,
@@ -153,9 +151,7 @@ def test_long_open_and_close_accounting(db_session, now, cost_config):
 
 
 def test_short_open_and_cover(db_session, now, cost_config):
-    account, deployment, broker, ledger, quotes = _setup(
-        db_session, now, spread=(Decimal("200"), Decimal("201"))
-    )
+    account, deployment, broker, ledger, quotes = _setup(db_session, now, spread=(Decimal("200"), Decimal("201")))
     _submit_and_apply(
         db_session,
         account=account,
@@ -188,9 +184,7 @@ def test_short_open_and_cover(db_session, now, cost_config):
 
 
 def test_explicit_reversal_long_to_short(db_session, now, cost_config):
-    account, deployment, broker, ledger, _ = _setup(
-        db_session, now, spread=(Decimal("100"), Decimal("101"))
-    )
+    account, deployment, broker, ledger, _ = _setup(db_session, now, spread=(Decimal("100"), Decimal("101")))
     _submit_and_apply(
         db_session,
         account=account,
@@ -224,9 +218,7 @@ def test_spread_round_trip_loses_spread(db_session, now):
         cost_per_contract=Decimal("0"),
         cost_bps=Decimal("0"),
     )
-    account, deployment, broker, ledger, quotes = _setup(
-        db_session, now, spread=(Decimal("100"), Decimal("102"))
-    )
+    account, deployment, broker, ledger, quotes = _setup(db_session, now, spread=(Decimal("100"), Decimal("102")))
     start_cash = account.cash_balance
     _submit_and_apply(
         db_session,
@@ -262,9 +254,7 @@ def test_slippage_and_commission_once_per_side(db_session, now):
         cost_per_contract=Decimal("2"),
         cost_bps=Decimal("0"),
     )
-    account, deployment, broker, ledger, _ = _setup(
-        db_session, now, spread=(Decimal("100"), Decimal("101"))
-    )
+    account, deployment, broker, ledger, _ = _setup(db_session, now, spread=(Decimal("100"), Decimal("101")))
     buy = _submit_and_apply(
         db_session,
         account=account,
@@ -290,17 +280,13 @@ def test_slippage_and_commission_once_per_side(db_session, now):
     )
     assert sell.fee == Decimal("2")
     fees = db_session.execute(
-        select(func.coalesce(func.sum(ExecutionLedgerEntry.amount), 0)).where(
-            ExecutionLedgerEntry.entry_type == "fee"
-        )
+        select(func.coalesce(func.sum(ExecutionLedgerEntry.amount), 0)).where(ExecutionLedgerEntry.entry_type == "fee")
     ).scalar_one()
     assert Decimal(str(fees)) == Decimal("-4")
 
 
 def test_duplicate_fill_identity_is_idempotent(db_session, now, cost_config):
-    account, deployment, broker, ledger, _ = _setup(
-        db_session, now, spread=(Decimal("100"), Decimal("101"))
-    )
+    account, deployment, broker, ledger, _ = _setup(db_session, now, spread=(Decimal("100"), Decimal("101")))
     order = create_execution_order_intent(
         db_session,
         deployment_id=deployment.id,
@@ -342,9 +328,7 @@ def test_duplicate_fill_identity_is_idempotent(db_session, now, cost_config):
 
 
 def test_ledger_conservation_equity_components(db_session, now, cost_config):
-    account, deployment, broker, ledger, quotes = _setup(
-        db_session, now, spread=(Decimal("100"), Decimal("101"))
-    )
+    account, deployment, broker, ledger, quotes = _setup(db_session, now, spread=(Decimal("100"), Decimal("101")))
     _submit_and_apply(
         db_session,
         account=account,
@@ -378,9 +362,7 @@ def test_ledger_transaction_rollback_drops_partial_writes(db_engine, now, cost_c
         expire_on_commit=False,
     )
     session = session_factory()
-    account, deployment, broker, ledger, _ = _setup(
-        session, now, spread=(Decimal("100"), Decimal("101"))
-    )
+    account, deployment, broker, ledger, _ = _setup(session, now, spread=(Decimal("100"), Decimal("101")))
     order = create_execution_order_intent(
         session,
         deployment_id=deployment.id,

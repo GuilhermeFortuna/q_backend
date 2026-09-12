@@ -12,9 +12,7 @@ from q_backend.neural.training import default_train_encoder_config, train_encode
 from q_backend.storage.lake.artifacts import read_neural_model
 
 
-def test_train_encoder_writes_artifact_and_db_row(
-    db_session: Session, lake_root_path
-) -> None:
+def test_train_encoder_writes_artifact_and_db_row(db_session: Session, lake_root_path) -> None:
     start = datetime(2024, 2, 1, tzinfo=timezone.utc)
     end = datetime(2024, 2, 15, tzinfo=timezone.utc)
     features = tuple(f"feature_{index:02d}" for index in range(1, 5))

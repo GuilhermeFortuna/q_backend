@@ -18,19 +18,13 @@ class ExitRule(ABC):
     enable_value: float | int
 
     @abstractmethod
-    def param_specs(self) -> list[StrategyParamSpec]:
-        ...
+    def param_specs(self) -> list[StrategyParamSpec]: ...
 
     @abstractmethod
-    def is_enabled(self, params: dict[str, Any]) -> bool:
-        ...
+    def is_enabled(self, params: dict[str, Any]) -> bool: ...
 
     def param_names(self) -> list[str]:
-        return [
-            spec.name
-            for spec in self.param_specs()
-            if spec.exit_group != "general"
-        ]
+        return [spec.name for spec in self.param_specs() if spec.exit_group != "general"]
 
     def required_param_names(self) -> list[str]:
         return []
@@ -54,5 +48,4 @@ class ExitRule(ABC):
         data: pd.Series,
         state: dict[str, Any],
         params: dict[str, Any],
-    ) -> bool:
-        ...
+    ) -> bool: ...

@@ -53,9 +53,7 @@ def _synthetic_bars() -> list[OHLCV]:
 
 @pytest.fixture
 def integration_session():
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     session = factory()
@@ -117,9 +115,7 @@ def _config(train_end_index: int, model_key: str):
     )
 
 
-def test_pipeline_trains_and_gates_end_to_end(
-    integration_session, lake_root_path, stub_ohlcv
-) -> None:
+def test_pipeline_trains_and_gates_end_to_end(integration_session, lake_root_path, stub_ohlcv) -> None:
     """Real matrix -> encoder -> gate produces a registered model and a gate verdict."""
     # train_end leaves ~250 OOS bars (> the 100-bar gate minimum).
     config = _config(train_end_index=350, model_key="int_pca_ok")
@@ -143,9 +139,7 @@ def test_pipeline_trains_and_gates_end_to_end(
     assert version.n_latents == 2
 
 
-def test_pipeline_keeps_model_when_gate_cannot_run(
-    integration_session, lake_root_path, stub_ohlcv
-) -> None:
+def test_pipeline_keeps_model_when_gate_cannot_run(integration_session, lake_root_path, stub_ohlcv) -> None:
     """A gate failure (no OOS bars after train_end) must NOT discard the trained model."""
     # train_end at the last bar -> zero OOS bars -> gate raises inside the pipeline.
     config = _config(train_end_index=_N_BARS - 1, model_key="int_pca_no_oos")

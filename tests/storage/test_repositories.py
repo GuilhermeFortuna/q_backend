@@ -242,10 +242,13 @@ def test_find_backtest_run_by_config_returns_none_when_no_match(db_session):
         status=RunStatus.COMPLETED.value,
     )
 
-    assert find_backtest_run_by_config(
-        db_session,
-        {"symbol": "WIN$", "timeframe": "M5", "strategy": "RSI"},
-    ) is None
+    assert (
+        find_backtest_run_by_config(
+            db_session,
+            {"symbol": "WIN$", "timeframe": "M5", "strategy": "RSI"},
+        )
+        is None
+    )
 
 
 def _create_completed_run(db_session, *, symbol, strategy, pnl=None, is_saved=False):
@@ -326,9 +329,7 @@ def test_delete_optimization_studies_bulk(db_session):
     )
     missing_id = uuid.uuid4()
 
-    deleted, not_found = delete_optimization_studies(
-        db_session, [study_a.id, study_b.id, missing_id]
-    )
+    deleted, not_found = delete_optimization_studies(db_session, [study_a.id, study_b.id, missing_id])
     assert deleted == 2
     assert not_found == [missing_id]
     study = create_optimization_study(

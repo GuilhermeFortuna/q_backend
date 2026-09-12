@@ -24,13 +24,9 @@ class BollingerReversionStrategy(TradingStrategy):
     def compute_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
         df = data.copy()
         if "close" not in df.columns:
-            raise ValueError(
-                "Data must contain a 'close' column for Bollinger strategy."
-            )
+            raise ValueError("Data must contain a 'close' column for Bollinger strategy.")
 
-        upper, middle, lower = compute_bollinger_bands(
-            df["close"], self.period, self.num_std
-        )
+        upper, middle, lower = compute_bollinger_bands(df["close"], self.period, self.num_std)
         df["bb_upper"] = upper
         df["bb_middle"] = middle
         df["bb_lower"] = lower
@@ -40,19 +36,11 @@ class BollingerReversionStrategy(TradingStrategy):
         df["prev_bb_upper"] = df["bb_upper"].shift(1)
         df["prev_bb_middle"] = df["bb_middle"].shift(1)
 
-        df["buy_signal"] = (df["prev_close"] >= df["prev_bb_lower"]) & (
-            df["close"] < df["bb_lower"]
-        )
-        df["sell_signal"] = (df["prev_close"] <= df["prev_bb_upper"]) & (
-            df["close"] > df["bb_upper"]
-        )
+        df["buy_signal"] = (df["prev_close"] >= df["prev_bb_lower"]) & (df["close"] < df["bb_lower"])
+        df["sell_signal"] = (df["prev_close"] <= df["prev_bb_upper"]) & (df["close"] > df["bb_upper"])
 
-        df["exit_long_signal"] = (df["prev_close"] <= df["prev_bb_middle"]) & (
-            df["close"] > df["bb_middle"]
-        )
-        df["exit_short_signal"] = (df["prev_close"] >= df["prev_bb_middle"]) & (
-            df["close"] < df["bb_middle"]
-        )
+        df["exit_long_signal"] = (df["prev_close"] <= df["prev_bb_middle"]) & (df["close"] > df["bb_middle"])
+        df["exit_short_signal"] = (df["prev_close"] >= df["prev_bb_middle"]) & (df["close"] < df["bb_middle"])
         return df
 
     def get_chart_indicators(self) -> List[ChartIndicatorSpec]:
@@ -86,9 +74,7 @@ class BollingerReversionStrategy(TradingStrategy):
             signals.append(Signal(symbol=symbol, action=SignalAction.SELL))
         return signals
 
-    def check_exit_conditions(
-        self, current_data: pd.Series, open_trades: List[Trade]
-    ) -> List[Signal]:
+    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
         symbol = resolve_symbol(current_data, self.symbol)
         if not open_trades:
             return []
@@ -106,9 +92,7 @@ class BollingerReversionStrategy(TradingStrategy):
         return signals
 
 
-def _build_bollinger_reversion(
-    params: dict[str, Any], symbol: str
-) -> BollingerReversionStrategy:
+def _build_bollinger_reversion(params: dict[str, Any], symbol: str) -> BollingerReversionStrategy:
     return BollingerReversionStrategy(
         period=int(params["period"]),
         num_std=float(params["num_std"]),

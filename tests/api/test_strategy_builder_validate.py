@@ -56,9 +56,7 @@ DONCHIAN_BREAKOUT_SPEC = {
     "market": "B3",
     "timeframe": "H1",
     "indicators": [{"id": "donchian", "type": "donchian", "period": 20}],
-    "entry": {
-        "all": [{"left": "close", "op": ">", "right": "donchian.upper"}]
-    },
+    "entry": {"all": [{"left": "close", "op": ">", "right": "donchian.upper"}]},
     "exit": {
         "any": [
             {"left": "close", "op": "<", "right": "donchian.lower"},
@@ -163,9 +161,7 @@ def test_validate_endpoint_returns_structured_errors():
     spec = copy.deepcopy(EMA_CROSS_SPEC)
     spec["indicators"] = [{"id": "st", "type": "supertrend", "period": 14}]
 
-    response = validate_strategy_builder_spec(
-        ValidateStrategySpecRequest(strategy_spec=spec)
-    )
+    response = validate_strategy_builder_spec(ValidateStrategySpecRequest(strategy_spec=spec))
 
     assert response.valid is False
     assert response.errors[0].path

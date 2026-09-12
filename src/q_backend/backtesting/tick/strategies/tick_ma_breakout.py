@@ -14,10 +14,8 @@ def _rolling_sma(values: np.ndarray, period: int) -> np.ndarray:
         return out
 
     csum = np.cumsum(values)
-    window_sum = csum[period - 1:] - np.concatenate(
-        (np.array([0.0]), csum[: n - period])
-    )
-    out[period - 1:] = window_sum / period
+    window_sum = csum[period - 1 :] - np.concatenate((np.array([0.0]), csum[: n - period]))
+    out[period - 1 :] = window_sum / period
     return out
 
 

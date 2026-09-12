@@ -115,11 +115,7 @@ def _population_dumps(provider) -> list[dict]:
 
 
 def _population_has_latent(provider) -> bool:
-    return any(
-        node.kind == "ind.latent"
-        for genome in provider.initial_population
-        for node in genome.nodes
-    )
+    return any(node.kind == "ind.latent" for genome in provider.initial_population for node in genome.nodes)
 
 
 @pytest.fixture
@@ -142,9 +138,7 @@ def genetic_session_scope(discovery_db):
     return test_session_scope
 
 
-def test_latents_enabled_false_is_byte_identical_to_no_model_path(
-    discovery_db, genetic_session_scope
-) -> None:
+def test_latents_enabled_false_is_byte_identical_to_no_model_path(discovery_db, genetic_session_scope) -> None:
     version, _bars = _train_and_promote(discovery_db)
     try:
         search_with_model = _search_config(_SYMBOL)
@@ -172,9 +166,9 @@ def test_latents_enabled_false_is_byte_identical_to_no_model_path(
             )
 
         assert with_latents._latent_universe.latent_model_hash == version.model_hash
-        assert _population_has_latent(with_latents), (
-            "latents_enabled=True must seed latent genomes when a PRODUCTION model exists"
-        )
+        assert _population_has_latent(
+            with_latents
+        ), "latents_enabled=True must seed latent genomes when a PRODUCTION model exists"
         assert not _population_has_latent(control_override)
         assert not _population_has_latent(no_model)
 
@@ -187,9 +181,7 @@ def test_latents_enabled_false_is_byte_identical_to_no_model_path(
         # Revert-guard: ignoring the seam would keep latents on and break this assertion.
         assert _population_dumps(with_latents) != _population_dumps(control_override)
     finally:
-        unregister_neural_model_features(
-            [f"{name}@{version.model_hash[:8]}" for name in version.latent_names]
-        )
+        unregister_neural_model_features([f"{name}@{version.model_hash[:8]}" for name in version.latent_names])
 
 
 def test_latents_disabled_skips_db_resolution(discovery_db) -> None:

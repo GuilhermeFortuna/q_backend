@@ -2,14 +2,10 @@ import numpy as np
 import pandas as pd
 
 
-def compute_realized_vol(
-    close: pd.Series, window: int, periods_per_year: int = 252
-) -> pd.Series:
+def compute_realized_vol(close: pd.Series, window: int, periods_per_year: int = 252) -> pd.Series:
     """Rolling annualized close-to-close volatility from log returns."""
     log_ret = np.log(close / close.shift(1))
-    return log_ret.rolling(window=window, min_periods=window).std() * np.sqrt(
-        periods_per_year
-    )
+    return log_ret.rolling(window=window, min_periods=window).std() * np.sqrt(periods_per_year)
 
 
 def compute_yang_zhang(
@@ -50,9 +46,7 @@ def compute_rsi(close: pd.Series, period: int) -> pd.Series:
     return 100 - (100 / (1 + rs))
 
 
-def compute_bollinger_bands(
-    close: pd.Series, period: int, num_std: float
-) -> tuple[pd.Series, pd.Series, pd.Series]:
+def compute_bollinger_bands(close: pd.Series, period: int, num_std: float) -> tuple[pd.Series, pd.Series, pd.Series]:
     middle = close.rolling(window=period).mean()
     std = close.rolling(window=period).std()
     upper = middle + num_std * std
@@ -71,17 +65,13 @@ def compute_macd(
     return macd_line, signal_line, histogram
 
 
-def compute_donchian_channels(
-    high: pd.Series, low: pd.Series, period: int
-) -> tuple[pd.Series, pd.Series]:
+def compute_donchian_channels(high: pd.Series, low: pd.Series, period: int) -> tuple[pd.Series, pd.Series]:
     upper = high.rolling(window=period).max().shift(1)
     lower = low.rolling(window=period).min().shift(1)
     return upper, lower
 
 
-def compute_atr(
-    high: pd.Series, low: pd.Series, close: pd.Series, period: int
-) -> pd.Series:
+def compute_atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int) -> pd.Series:
     """
     Computes Wilder's Average True Range (ATR) using Wilder's smoothing/exponential moving average.
     """
@@ -91,4 +81,3 @@ def compute_atr(
     tr3 = (low - prev_close).abs()
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     return tr.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
-

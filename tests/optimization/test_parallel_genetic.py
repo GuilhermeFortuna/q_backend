@@ -145,9 +145,7 @@ def test_worker_initializer_materializes_frame_once_per_worker():
     provider = GeneticCandidateProvider(config.genetic, config, probe_df=full_df)
     candidates = provider.candidates()
 
-    with patch(
-        "q_backend.optimization.genetic_parallel.ProcessPoolExecutor"
-    ) as pool_cls:
+    with patch("q_backend.optimization.genetic_parallel.ProcessPoolExecutor") as pool_cls:
         pool = pool_cls.return_value.__enter__.return_value
         evaluate_generation_parallel(
             candidates,
@@ -228,12 +226,8 @@ def test_parallel_speedup_smoke_not_timing_threshold():
         n_trials=1,
     )
 
-    serial_config = config.model_copy(
-        update={"genetic": config.genetic.model_copy(update={"max_workers": 1})}
-    )
-    parallel_config = config.model_copy(
-        update={"genetic": config.genetic.model_copy(update={"max_workers": 2})}
-    )
+    serial_config = config.model_copy(update={"genetic": config.genetic.model_copy(update={"max_workers": 1})})
+    parallel_config = config.model_copy(update={"genetic": config.genetic.model_copy(update={"max_workers": 2})})
 
     t0 = time.perf_counter()
     select_search_orchestrator(serial_config, runner).run()

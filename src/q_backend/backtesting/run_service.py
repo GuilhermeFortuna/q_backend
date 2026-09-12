@@ -37,12 +37,8 @@ def _strategy_display_name(config: Dict[str, Any]) -> str:
         from q_backend.api.schemas.backtest import EntryInstance, EntryManagerConfig
         from q_backend.backtesting.entry_config import format_entry_strategy_label
 
-        entry_instances = [
-            EntryInstance.model_validate(entry) for entry in entries
-        ]
-        manager = EntryManagerConfig.model_validate(
-            config.get("entry_manager", {"kind": "or", "params": {}})
-        )
+        entry_instances = [EntryInstance.model_validate(entry) for entry in entries]
+        manager = EntryManagerConfig.model_validate(config.get("entry_manager", {"kind": "or", "params": {}}))
         return format_entry_strategy_label(entry_instances, manager)
     return config.get("strategy", "")
 
@@ -129,9 +125,7 @@ def delete_backtest_lake_artifacts(run_id: str) -> None:
     try:
         delete_backtest_artifacts(run_id)
     except Exception as exc:  # noqa: BLE001 - best-effort lake cleanup; logged
-        logger.warning(
-            "Failed to delete backtest lake artifacts for %s: %s", run_id, exc
-        )
+        logger.warning("Failed to delete backtest lake artifacts for %s: %s", run_id, exc)
 
 
 def list_runs(
@@ -165,15 +159,11 @@ def get_run(session: Session, run_id: str) -> BacktestRunDetailResponse:
     try:
         run_uuid = uuid.UUID(run_id)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=404, detail=f"Backtest run '{run_id}' not found."
-        ) from exc
+        raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.") from exc
 
     run = get_backtest_run(session, run_uuid)
     if run is None:
-        raise HTTPException(
-            status_code=404, detail=f"Backtest run '{run_id}' not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.")
     return backtest_run_detail(run)
 
 
@@ -185,16 +175,12 @@ def patch_run(
     try:
         run_uuid = uuid.UUID(run_id)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=404, detail=f"Backtest run '{run_id}' not found."
-        ) from exc
+        raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.") from exc
 
     try:
         run = update_backtest_run(session, run_uuid, is_saved=body.is_saved)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=404, detail=f"Backtest run '{run_id}' not found."
-        ) from exc
+        raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.") from exc
 
     return backtest_run_detail(run)
 
@@ -203,14 +189,10 @@ def delete(session: Session, run_id: str) -> None:
     try:
         run_uuid = uuid.UUID(run_id)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=404, detail=f"Backtest run '{run_id}' not found."
-        ) from exc
+        raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.") from exc
 
     if not delete_backtest_run(session, run_uuid):
-        raise HTTPException(
-            status_code=404, detail=f"Backtest run '{run_id}' not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.")
 
     delete_backtest_lake_artifacts(run_id)
 
@@ -236,9 +218,7 @@ def read_equity_artifact(run_id: str) -> Dict[str, Any]:
     try:
         uuid.UUID(run_id)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=404, detail=f"Backtest run '{run_id}' not found."
-        ) from exc
+        raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.") from exc
 
     try:
         df = read_backtest_artifact(run_id, "equity")
@@ -252,9 +232,7 @@ def read_trades_artifact(run_id: str) -> Dict[str, Any]:
     try:
         uuid.UUID(run_id)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=404, detail=f"Backtest run '{run_id}' not found."
-        ) from exc
+        raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.") from exc
 
     try:
         df = read_backtest_artifact(run_id, "trades")

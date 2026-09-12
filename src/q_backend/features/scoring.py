@@ -59,9 +59,7 @@ def _trim_to_valid_from(frame: pd.DataFrame, manifest: dict[str, Any]) -> pd.Dat
     return frame.loc[index >= cutoff]
 
 
-def _union_find_components(
-    feature_ids: list[str], corr: pd.DataFrame, threshold: float
-) -> list[list[str]]:
+def _union_find_components(feature_ids: list[str], corr: pd.DataFrame, threshold: float) -> list[list[str]]:
     parent = {fid: fid for fid in feature_ids}
 
     def find(node: str) -> str:
@@ -96,9 +94,7 @@ def _union_find_components(
     return clusters
 
 
-def cluster_redundant(
-    matrix: FeatureMatrix, *, threshold: float = 0.9
-) -> list[RedundancyCluster]:
+def cluster_redundant(matrix: FeatureMatrix, *, threshold: float = 0.9) -> list[RedundancyCluster]:
     frame = _trim_to_valid_from(matrix.frame, matrix.manifest)
     feature_ids = sorted(frame.columns)
     if not feature_ids:
@@ -197,9 +193,7 @@ def score_features(
     for evaluation in sorted(evaluations, key=lambda item: item.feature_id):
         cluster_id = cluster_id_by_feature.get(evaluation.feature_id, 0)
         cluster_size = cluster_size_by_id.get(cluster_id, 1)
-        global_score = _compute_global_score(
-            evaluation, cluster_size=cluster_size
-        )
+        global_score = _compute_global_score(evaluation, cluster_size=cluster_size)
         provisional.append(
             FeatureScore(
                 feature_id=evaluation.feature_id,
@@ -217,20 +211,13 @@ def score_features(
                 feature_id=item.feature_id,
                 global_score=item.global_score,
                 cluster_id=item.cluster_id,
-                is_representative=item.feature_id
-                == representatives[item.cluster_id],
+                is_representative=item.feature_id == representatives[item.cluster_id],
             )
         )
     return scored
 
 
-def recommended_feature_set(
-    scores: list[FeatureScore], *, top_k: int = 20
-) -> list[str]:
-    representatives = [
-        item
-        for item in scores
-        if item.is_representative
-    ]
+def recommended_feature_set(scores: list[FeatureScore], *, top_k: int = 20) -> list[str]:
+    representatives = [item for item in scores if item.is_representative]
     representatives.sort(key=lambda item: (-item.global_score, item.feature_id))
     return [item.feature_id for item in representatives[:top_k]]

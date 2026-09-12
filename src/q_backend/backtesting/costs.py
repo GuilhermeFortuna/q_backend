@@ -16,6 +16,4 @@ def side_cost(
 ) -> float:
     if costs is None:
         return 0.0
-    return quantity * costs.cost_per_contract + (
-        costs.cost_bps / 10_000
-    ) * price * quantity * point_value
+    return quantity * costs.cost_per_contract + (costs.cost_bps / 10_000) * price * quantity * point_value

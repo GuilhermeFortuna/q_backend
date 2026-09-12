@@ -129,17 +129,10 @@ class TestInverseVolatilitySizer:
         assert order.quantity == 2500.0
 
     def test_missing_vol_returns_none(self):
-        sizer = build_position_sizer(
-            InverseVolatilityPositionSizing(target_volatility_pct=10.0)
-        )
+        sizer = build_position_sizer(InverseVolatilityPositionSizing(target_volatility_pct=10.0))
         sig = Signal(symbol="WIN$", action=SignalAction.BUY)
         assert sizer.size_signal(sig, 100.0, 100_000.0, current_data=None) is None
-        assert (
-            sizer.size_signal(
-                sig, 100.0, 100_000.0, current_data=pd.Series({"close": 100.0})
-            )
-            is None
-        )
+        assert sizer.size_signal(sig, 100.0, 100_000.0, current_data=pd.Series({"close": 100.0})) is None
 
     def test_clamps_respected(self):
         sizer = build_position_sizer(
@@ -232,15 +225,14 @@ class TestTSMOMInverseVolIntegration:
         fill_row = indicators.loc[first_trade.entry_time]
         vol = float(fill_row["volatility"])
         fill_price = float(fill_row["open"])
-        expected = math.floor(
-            (target_pct / 100.0) * capital / (vol * fill_price * point_value)
-        )
+        expected = math.floor((target_pct / 100.0) * capital / (vol * fill_price * point_value))
         assert first_trade.quantity == pytest.approx(float(expected), rel=0, abs=0)
 
 
 class TestRollingNeweyWest:
     def test_rolling_newey_west_t_stat_basic(self):
         from q_backend.backtesting.strategies.tsmom import compute_rolling_newey_west_t_stat
+
         returns = np.array([0.01] * 10, dtype=np.float64)
         t_stat = compute_rolling_newey_west_t_stat(returns, 5, 2)
         assert t_stat[4] == 0.0

@@ -38,12 +38,8 @@ class PaperAccount(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     currency: Mapped[str] = mapped_column(String(8), nullable=False, default="BRL")
     initial_balance: Mapped[Decimal] = mapped_column(MoneyNumeric, nullable=False)
     cash_balance: Mapped[Decimal] = mapped_column(MoneyNumeric, nullable=False)
-    sizing_config: Mapped[dict[str, Any]] = mapped_column(
-        PortableJSON, nullable=False, default=dict
-    )
-    risk_config: Mapped[dict[str, Any]] = mapped_column(
-        PortableJSON, nullable=False, default=dict
-    )
+    sizing_config: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
+    risk_config: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
 
     deployments: Mapped[list["ExecutionDeployment"]] = relationship(
         back_populates="paper_account",
@@ -69,34 +65,20 @@ class ExecutionDeployment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     lifecycle: Mapped[str] = mapped_column(String(32), nullable=False)
     strategy_name: Mapped[str] = mapped_column(String(255), nullable=False)
     strategy_version: Mapped[int] = mapped_column(Integer, nullable=False)
-    compiled_config: Mapped[dict[str, Any]] = mapped_column(
-        PortableJSON, nullable=False, default=dict
-    )
+    compiled_config: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
     config_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     symbol: Mapped[str] = mapped_column(String(64), nullable=False)
     timeframe: Mapped[str] = mapped_column(String(16), nullable=False)
-    sizing_config: Mapped[dict[str, Any]] = mapped_column(
-        PortableJSON, nullable=False, default=dict
-    )
-    risk_config: Mapped[dict[str, Any]] = mapped_column(
-        PortableJSON, nullable=False, default=dict
-    )
+    sizing_config: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
+    risk_config: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
     live_activation_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
-    last_bar_close_time: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    started_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    stopped_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_bar_close_time: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    stopped_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     pending_action: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
-    pending_action_requested_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    pending_action_requested_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     paper_account: Mapped["PaperAccount"] = relationship(back_populates="deployments")
     decisions: Mapped[list["ExecutionDecision"]] = relationship(
@@ -142,32 +124,20 @@ class ExecutionDecision(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("execution_deployments.id", ondelete="CASCADE"),
         nullable=False,
     )
-    bar_close_time: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    bar_close_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     strategy_name: Mapped[str] = mapped_column(String(255), nullable=False)
     strategy_version: Mapped[int] = mapped_column(Integer, nullable=False)
-    compiled_config: Mapped[dict[str, Any]] = mapped_column(
-        PortableJSON, nullable=False, default=dict
-    )
+    compiled_config: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
     config_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     symbol: Mapped[str] = mapped_column(String(64), nullable=False)
     timeframe: Mapped[str] = mapped_column(String(16), nullable=False)
-    sizing_config: Mapped[dict[str, Any]] = mapped_column(
-        PortableJSON, nullable=False, default=dict
-    )
-    risk_config: Mapped[dict[str, Any]] = mapped_column(
-        PortableJSON, nullable=False, default=dict
-    )
+    sizing_config: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
+    risk_config: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
     signal_action: Mapped[str] = mapped_column(String(16), nullable=False)
     outcome: Mapped[str] = mapped_column(String(32), nullable=False)
-    requested_quantity: Mapped[Optional[Decimal]] = mapped_column(
-        QuantityNumeric, nullable=True
-    )
+    requested_quantity: Mapped[Optional[Decimal]] = mapped_column(QuantityNumeric, nullable=True)
     reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    context: Mapped[dict[str, Any]] = mapped_column(
-        PortableJSON, nullable=False, default=dict
-    )
+    context: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
 
     deployment: Mapped["ExecutionDeployment"] = relationship(back_populates="decisions")
     orders: Mapped[list["ExecutionOrder"]] = relationship(back_populates="decision")
@@ -204,28 +174,16 @@ class ExecutionOrder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     reconciliation_state: Mapped[str] = mapped_column(String(32), nullable=False)
     external_order_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     rejection_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    intent_committed_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    submitted_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    completed_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    intent_committed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     # Reconciliation bookkeeping for orders that entered UNKNOWN/PENDING.
-    reconciliation_attempted_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    reconciliation_attempted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     reconciliation_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    reconciled_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    reconciled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     reconciled_by: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     reconciliation_detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    details: Mapped[dict[str, Any]] = mapped_column(
-        PortableJSON, nullable=False, default=dict
-    )
+    details: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
 
     deployment: Mapped["ExecutionDeployment"] = relationship(back_populates="orders")
     decision: Mapped[Optional["ExecutionDecision"]] = relationship(
@@ -259,18 +217,12 @@ class ExecutionFill(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     quantity: Mapped[Decimal] = mapped_column(QuantityNumeric, nullable=False)
     price: Mapped[Decimal] = mapped_column(PriceNumeric, nullable=False)
     fee: Mapped[Decimal] = mapped_column(MoneyNumeric, nullable=False, default=Decimal("0"))
-    slippage: Mapped[Decimal] = mapped_column(
-        MoneyNumeric, nullable=False, default=Decimal("0")
-    )
+    slippage: Mapped[Decimal] = mapped_column(MoneyNumeric, nullable=False, default=Decimal("0"))
     quote_bid: Mapped[Optional[Decimal]] = mapped_column(PriceNumeric, nullable=True)
     quote_ask: Mapped[Optional[Decimal]] = mapped_column(PriceNumeric, nullable=True)
-    quote_timestamp: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    quote_timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     filled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    details: Mapped[dict[str, Any]] = mapped_column(
-        PortableJSON, nullable=False, default=dict
-    )
+    details: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
 
     deployment: Mapped["ExecutionDeployment"] = relationship(back_populates="fills")
     order: Mapped["ExecutionOrder"] = relationship(back_populates="fills")
@@ -298,18 +250,10 @@ class ExecutionNetPosition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     side: Mapped[str] = mapped_column(String(8), nullable=False)
     quantity: Mapped[Decimal] = mapped_column(QuantityNumeric, nullable=False)
-    average_entry_price: Mapped[Optional[Decimal]] = mapped_column(
-        PriceNumeric, nullable=True
-    )
-    is_open: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="false"
-    )
-    opened_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    closed_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    average_entry_price: Mapped[Optional[Decimal]] = mapped_column(PriceNumeric, nullable=True)
+    is_open: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    opened_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     deployment: Mapped["ExecutionDeployment"] = relationship(
         back_populates="net_positions",
@@ -376,9 +320,7 @@ class ExecutionRiskEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     rejection_code: Mapped[str] = mapped_column(String(64), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
-    context: Mapped[dict[str, Any]] = mapped_column(
-        PortableJSON, nullable=False, default=dict
-    )
+    context: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
 
     deployment: Mapped["ExecutionDeployment"] = relationship(back_populates="risk_events")
     decision: Mapped[Optional["ExecutionDecision"]] = relationship(
@@ -386,9 +328,7 @@ class ExecutionRiskEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     order: Mapped[Optional["ExecutionOrder"]] = relationship(back_populates="risk_events")
 
-    __table_args__ = (
-        Index("ix_execution_risk_events_deployment", "deployment_id"),
-    )
+    __table_args__ = (Index("ix_execution_risk_events_deployment", "deployment_id"),)
 
 
 class ExecutionWorkerLease(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -423,9 +363,7 @@ class ExecutionControlState(TimestampMixin, Base):
     __tablename__ = "execution_control_state"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
-    kill_switch_enabled: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="false"
-    )
+    kill_switch_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     kill_switch_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     updated_by: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
 
@@ -442,9 +380,7 @@ class ExecutionAuditEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=True,
     )
     message: Mapped[str] = mapped_column(Text, nullable=False)
-    payload: Mapped[dict[str, Any]] = mapped_column(
-        PortableJSON, nullable=False, default=dict
-    )
+    payload: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
 
     __table_args__ = (
         Index("ix_execution_audit_events_deployment", "deployment_id"),

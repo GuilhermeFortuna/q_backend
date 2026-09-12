@@ -63,9 +63,7 @@ def test_sync_preserves_promoted_status(db_session: Session) -> None:
 
     sync_registry_to_db(db_session)
 
-    definitions = list_feature_definitions(
-        db_session, status=FeatureStatus.PRODUCTION.value
-    )
+    definitions = list_feature_definitions(db_session, status=FeatureStatus.PRODUCTION.value)
     rsi = next(defn for defn in definitions if defn.name == "rsi")
     assert len(rsi.versions) == 1
     assert rsi.versions[0].status == FeatureStatus.PRODUCTION.value

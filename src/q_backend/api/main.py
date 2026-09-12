@@ -19,9 +19,7 @@ from q_backend.api.routers import strategy_search as strategy_search_router
 from q_backend.api.routers import system as system_router
 from q_backend.api.routers import walkforward as walkforward_router
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 logger = logging.getLogger(__name__)
 

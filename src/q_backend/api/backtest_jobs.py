@@ -148,9 +148,7 @@ def _resolve_range(request: BacktestJobRequest) -> tuple[datetime, datetime]:
 def _execute_candle(
     request: BacktestJobRequest, start: datetime, end: datetime, market_data_service
 ) -> tuple[dict[str, Any], list, pd.DataFrame]:
-    ohlcv_data = market_data_service.get_ohlcv(
-        request.symbol, request.timeframe, start, end
-    )
+    ohlcv_data = market_data_service.get_ohlcv(request.symbol, request.timeframe, start, end)
     if not ohlcv_data:
         raise ValueError("No market data found for the given parameters.")
 
@@ -160,10 +158,7 @@ def _execute_candle(
 
     entries, manager, exit_params = normalize_entries(request)
     strategy = build_composite_entry(
-        [
-            {"strategy": entry.strategy, "params": entry.params}
-            for entry in entries
-        ],
+        [{"strategy": entry.strategy, "params": entry.params} for entry in entries],
         manager.kind,
         manager.params,
         exit_params,
@@ -171,9 +166,7 @@ def _execute_candle(
     )
     chart_data = serialize_chart_data(strategy.compute_indicators(df.copy()), strategy)
 
-    sizer = build_position_sizer(
-        request.position_sizing, point_value=request.point_value
-    )
+    sizer = build_position_sizer(request.position_sizing, point_value=request.point_value)
     engine = BacktestEngine(
         strategy,
         sizer,
@@ -190,9 +183,7 @@ def _execute_candle(
     metrics = registry.get_performance_metrics(request.initial_capital)
     closed_trade_objects = registry.get_closed_trades()
     trades = [t.model_dump(mode="json") for t in closed_trade_objects]
-    equity = build_equity_curve(
-        closed_trade_objects, request.initial_capital, start, end
-    )
+    equity = build_equity_curve(closed_trade_objects, request.initial_capital, start, end)
     equity_df = pd.DataFrame({"time": equity.index, "equity": equity.values})
 
     payload = {
@@ -222,12 +213,8 @@ def _execute_tick(
         last=arrays["last"],
         volume=arrays["volume"],
     )
-    strategy = build_tick_strategy(
-        request.strategy, request.strategy_params, request.symbol
-    )
-    chart_data = serialize_tick_chart_data(
-        ticks, strategy, display_timeframe=request.display_timeframe
-    )
+    strategy = build_tick_strategy(request.strategy, request.strategy_params, request.symbol)
+    chart_data = serialize_tick_chart_data(ticks, strategy, display_timeframe=request.display_timeframe)
     sizing_config = request.position_sizing or FixedQuantityPositionSizing()
     engine = TickBacktestEngine(
         strategy=strategy,
@@ -241,9 +228,7 @@ def _execute_tick(
     metrics = registry.get_performance_metrics(request.initial_capital)
     closed_trade_objects = registry.get_closed_trades()
     trades = [t.model_dump(mode="json") for t in closed_trade_objects]
-    equity = build_equity_curve(
-        closed_trade_objects, request.initial_capital, start, end
-    )
+    equity = build_equity_curve(closed_trade_objects, request.initial_capital, start, end)
     equity_df = pd.DataFrame({"time": equity.index, "equity": equity.values})
 
     payload = {
@@ -264,13 +249,9 @@ def run_backtest_job(run_id: str, request_json: str) -> None:
     try:
         start, end = _resolve_range(request)
         if request.engine == "tick":
-            payload, trades_objects, equity_df = _execute_tick(
-                request, start, end, market_data_service
-            )
+            payload, trades_objects, equity_df = _execute_tick(request, start, end, market_data_service)
         else:
-            payload, trades_objects, equity_df = _execute_candle(
-                request, start, end, market_data_service
-            )
+            payload, trades_objects, equity_df = _execute_candle(request, start, end, market_data_service)
         payload["run_id"] = run_id
 
         lake_paths = None
@@ -279,9 +260,7 @@ def run_backtest_job(run_id: str, request_json: str) -> None:
             lake_paths = write_backtest_artifacts(run_id, trades_df, equity_df)
             lake_paths["result"] = write_backtest_result(run_id, payload)
         except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
-            logger.warning(
-                "Failed to write backtest lake artifacts for %s", run_id, exc_info=True
-            )
+            logger.warning("Failed to write backtest lake artifacts for %s", run_id, exc_info=True)
 
         _finish_run(
             run_id,
@@ -316,9 +295,7 @@ def _finish_run(
                 finished_at=_now(),
             )
     except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
-        logger.warning(
-            "Failed to persist backtest run finish for %s", run_id, exc_info=True
-        )
+        logger.warning("Failed to persist backtest run finish for %s", run_id, exc_info=True)
 
 
 def get_status_payload(run_id: str) -> Optional[dict[str, Any]]:
@@ -331,7 +308,8 @@ def get_status_payload(run_id: str) -> Optional[dict[str, Any]]:
         # authoritative DB run row. If Redis is unreachable, fall back to the DB
         # status rather than failing the status endpoint; log for visibility.
         logger.warning(
-            "Redis progress unavailable for run %s; using DB status", run_id,
+            "Redis progress unavailable for run %s; using DB status",
+            run_id,
             exc_info=True,
         )
         cached = None

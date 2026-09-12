@@ -59,9 +59,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index("ix_execution_audit_events_type", table_name="execution_audit_events")
-    op.drop_index(
-        "ix_execution_audit_events_deployment", table_name="execution_audit_events"
-    )
+    op.drop_index("ix_execution_audit_events_deployment", table_name="execution_audit_events")
     op.drop_table("execution_audit_events")
     op.drop_column("execution_deployments", "pending_action_requested_at")
     op.drop_column("execution_deployments", "pending_action")

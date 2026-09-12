@@ -86,16 +86,12 @@ def evaluate_seed_run(
         # Already-handled: one seed's walk-forward failing must not abort the
         # multi-seed acceptance run. The reason is captured on the record
         # (status stays "failed" + failure_reason); log so the traceback is kept.
-        logger.warning(
-            "Research acceptance seed %s failed: %s", seed, exc, exc_info=True
-        )
+        logger.warning("Research acceptance seed %s failed: %s", seed, exc, exc_info=True)
         record.failure_reason = str(exc)
         return record
 
     record.window_count = len(wf_result.windows)
-    record.completed_windows = sum(
-        1 for window in wf_result.windows if window.status == "completed"
-    )
+    record.completed_windows = sum(1 for window in wf_result.windows if window.status == "completed")
     record.window_returns = window_returns_from_results(
         wf_result.windows,
         mode=run_config.objective.mode,
@@ -146,11 +142,7 @@ def evaluate_neighbor_on_segment(
         **candidate.fixed_params,
         **neighbor_params.get("strategy_params", {}),
     }
-    strategy_params = {
-        key: value
-        for key, value in strategy_params.items()
-        if key != "_exit_preset_id"
-    }
+    strategy_params = {key: value for key, value in strategy_params.items() if key != "_exit_preset_id"}
     risk_params = neighbor_params.get("risk_params", {})
     position_sizing = build_position_sizing_config(risk_params)
 

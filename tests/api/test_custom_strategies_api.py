@@ -9,6 +9,7 @@ from q_backend.api.routers.strategies import (
 from q_backend.backtesting.custom_strategy_store import save_custom_strategies
 from fastapi import HTTPException
 
+
 @pytest.fixture(autouse=True)
 def clean_custom_strategies(tmp_path, monkeypatch):
     mock_file = tmp_path / "custom_strategies.json"
@@ -31,8 +32,8 @@ def test_custom_strategies_crud_functions():
             "oversold": 25.0,
             "overbought": 75.0,
             "stop_loss_pct": 0.015,
-            "take_profit_pct": 0.03
-        }
+            "take_profit_pct": 0.03,
+        },
     )
     response = save_custom_strategy(req)
     assert response["status"] == "success"
@@ -47,24 +48,16 @@ def test_custom_strategies_crud_functions():
     response = list_strategies()
     strategies = [s.name for s in response["strategies"]]
     assert "MyCustomRSI" in strategies
-    
+
     # 5. Overwrite validation failure (built-in name conflict)
-    req_conflict = CustomStrategySaveRequest(
-        name="RSIMeanReversion",
-        base_strategy="RSIMeanReversion",
-        parameters={}
-    )
+    req_conflict = CustomStrategySaveRequest(name="RSIMeanReversion", base_strategy="RSIMeanReversion", parameters={})
     with pytest.raises(HTTPException) as excinfo:
         save_custom_strategy(req_conflict)
     assert excinfo.value.status_code == 400
     assert "Cannot overwrite built-in strategy" in excinfo.value.detail
 
     # 6. Invalid base strategy validation failure
-    req_invalid_base = CustomStrategySaveRequest(
-        name="AnotherCustom",
-        base_strategy="NonExistentBase",
-        parameters={}
-    )
+    req_invalid_base = CustomStrategySaveRequest(name="AnotherCustom", base_strategy="NonExistentBase", parameters={})
     with pytest.raises(HTTPException) as excinfo:
         save_custom_strategy(req_invalid_base)
     assert excinfo.value.status_code == 400

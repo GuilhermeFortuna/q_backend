@@ -58,11 +58,7 @@ class ExitStrategy:
 
     def _prune_stale_state(self, open_trades: List[Trade]) -> None:
         active_ids = {trade.id for trade in open_trades}
-        self._state = {
-            trade_id: rule_states
-            for trade_id, rule_states in self._state.items()
-            if trade_id in active_ids
-        }
+        self._state = {trade_id: rule_states for trade_id, rule_states in self._state.items() if trade_id in active_ids}
 
     def _rule_state(self, trade_id: str, rule_id: str) -> dict[str, Any]:
         trade_state = self._state.setdefault(trade_id, {})

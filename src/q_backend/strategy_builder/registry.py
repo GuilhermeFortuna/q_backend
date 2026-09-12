@@ -78,11 +78,7 @@ _SUPPORTED_MARKETS = ("B3",)
 
 def _builtin_strategies() -> list[StrategyInfo]:
     return sorted(
-        (
-            info
-            for info in list_registered_strategies()
-            if info.name not in _CUSTOM_STRATEGIES
-        ),
+        (info for info in list_registered_strategies() if info.name not in _CUSTOM_STRATEGIES),
         key=lambda info: info.name,
     )
 
@@ -116,13 +112,7 @@ def _genome_nodes() -> list[GenomeNodeCapability]:
 
 
 def _operators() -> list[str]:
-    return sorted(
-        {
-            operator
-            for kind, operator in _CMP_KIND_TO_OPERATOR.items()
-            if kind in NODE_SPECS
-        }
-    )
+    return sorted({operator for kind, operator in _CMP_KIND_TO_OPERATOR.items() if kind in NODE_SPECS})
 
 
 def _ohlcv_columns() -> list[str]:
@@ -162,9 +152,7 @@ def build_capability_registry() -> CapabilityRegistry:
         ),
         strategies=strategies,
         genome_nodes=_genome_nodes(),
-        genome_param_bounds=[
-            GENOME_PARAM_BOUNDS[key] for key in sorted(GENOME_PARAM_BOUNDS)
-        ],
+        genome_param_bounds=[GENOME_PARAM_BOUNDS[key] for key in sorted(GENOME_PARAM_BOUNDS)],
         genome_limits=GenomeLimits(
             max_depth=DEFAULT_MAX_DEPTH,
             max_node_count=DEFAULT_MAX_NODE_COUNT,

@@ -25,9 +25,7 @@ from urllib.request import Request, urlopen
 import numpy as np
 import pytest
 
-_GATEWAY_PATH = (
-    Path(__file__).resolve().parents[2] / "gateway" / "mt5_gateway.py"
-)
+_GATEWAY_PATH = Path(__file__).resolve().parents[2] / "gateway" / "mt5_gateway.py"
 
 _RATE_DTYPE = [
     ("time", "i8"),
@@ -50,9 +48,7 @@ _TICK_DTYPE = [
     ("flags", "i4"),
 ]
 
-_SymbolInfo = namedtuple(
-    "SymbolInfo", ["name", "description", "digits", "point", "trade_mode"]
-)
+_SymbolInfo = namedtuple("SymbolInfo", ["name", "description", "digits", "point", "trade_mode"])
 _SymbolSearch = namedtuple("SymbolSearch", ["name", "description", "path", "custom"])
 _TerminalInfo = namedtuple("TerminalInfo", ["build"])
 
@@ -164,9 +160,7 @@ def _load_gateway(fake: types.ModuleType):
     saved = sys.modules.get("MetaTrader5")
     sys.modules["MetaTrader5"] = fake
     try:
-        spec = importlib.util.spec_from_file_location(
-            "mt5_gateway_under_test", _GATEWAY_PATH
-        )
+        spec = importlib.util.spec_from_file_location("mt5_gateway_under_test", _GATEWAY_PATH)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         return module
@@ -281,8 +275,7 @@ def test_ohlcv_round_trip_preserves_raw_epochs_and_dtypes(gateway, fake_mt5):
 def test_ticks_round_trip_and_flags_trade_mapping(gateway, fake_mt5):
     base_epoch = _epoch(datetime(2026, 1, 5, 9, 0, 0))
     rows = [
-        (base_epoch + i, 130000.0 + i, 130010.0 + i, 130005.0 + i, 3.0, (base_epoch + i) * 1000, 6)
-        for i in range(3)
+        (base_epoch + i, 130000.0 + i, 130010.0 + i, 130005.0 + i, 3.0, (base_epoch + i) * 1000, 6) for i in range(3)
     ]
     ticks = np.array(rows, dtype=_TICK_DTYPE)
     fake_mt5._state["ticks_queue"] = [ticks]
@@ -403,9 +396,7 @@ def test_mt5_unavailable_returns_503(gateway, fake_mt5):
 def test_token_required_when_configured(gateway, fake_mt5):
     with _running_server(gateway, token="s3cret") as base:
         no_header, _h1, body1 = _get(base, "/v1/health")
-        with_header, _h2, _body2 = _get(
-            base, "/v1/health", headers={"X-Gateway-Token": "s3cret"}
-        )
+        with_header, _h2, _body2 = _get(base, "/v1/health", headers={"X-Gateway-Token": "s3cret"})
 
     assert no_header == 401
     assert json.loads(body1)["code"] == "unauthorized"
@@ -423,12 +414,8 @@ def test_blank_token_means_no_auth(gateway, fake_mt5):
 
 def test_symbol_info_and_search(gateway, fake_mt5):
     with _running_server(gateway) as base:
-        info_status, _h, info_body = _get(
-            base, "/v1/symbol_info", {"symbol": "WIN$"}
-        )
-        search_status, _h2, search_body = _get(
-            base, "/v1/symbols/search", {"query": "win"}
-        )
+        info_status, _h, info_body = _get(base, "/v1/symbol_info", {"symbol": "WIN$"})
+        search_status, _h2, search_body = _get(base, "/v1/symbols/search", {"query": "win"})
 
     assert info_status == 200
     assert json.loads(info_body)["name"] == "WIN$"
@@ -441,18 +428,10 @@ def test_symbol_info_and_search(gateway, fake_mt5):
 def test_available_range(gateway, fake_mt5):
     latest_epoch = _epoch(datetime(2026, 1, 5, 18, 0, 0))
     earliest_epoch = _epoch(datetime(2020, 1, 2, 9, 0, 0))
-    fake_mt5._state["rates_from_pos"] = np.array(
-        [(latest_epoch, 1.0, 1.0, 1.0, 1.0, 1, 0, 0)], dtype=_RATE_DTYPE
-    )
-    fake_mt5._state["rates_from"] = np.array(
-        [(earliest_epoch, 1.0, 1.0, 1.0, 1.0, 1, 0, 0)], dtype=_RATE_DTYPE
-    )
+    fake_mt5._state["rates_from_pos"] = np.array([(latest_epoch, 1.0, 1.0, 1.0, 1.0, 1, 0, 0)], dtype=_RATE_DTYPE)
+    fake_mt5._state["rates_from"] = np.array([(earliest_epoch, 1.0, 1.0, 1.0, 1.0, 1, 0, 0)], dtype=_RATE_DTYPE)
     # One non-empty count chunk, then empty terminates the bar count loop.
-    fake_mt5._state["rates_queue"] = [
-        np.array(
-            [(earliest_epoch, 1.0, 1.0, 1.0, 1.0, 1, 0, 0)], dtype=_RATE_DTYPE
-        )
-    ]
+    fake_mt5._state["rates_queue"] = [np.array([(earliest_epoch, 1.0, 1.0, 1.0, 1.0, 1, 0, 0)], dtype=_RATE_DTYPE)]
 
     with _running_server(gateway) as base:
         status, _headers, body = _get(

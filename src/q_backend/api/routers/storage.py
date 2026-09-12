@@ -33,10 +33,7 @@ def start_storage_ingest(
     except ConnectionError as exc:
         raise HTTPException(
             status_code=503,
-            detail=(
-                "Ingestion requires a reachable acquisition provider "
-                f"(native MT5 or remote gateway): {exc}"
-            ),
+            detail=("Ingestion requires a reachable acquisition provider " f"(native MT5 or remote gateway): {exc}"),
         ) from exc
     try:
         if request.kind == "bars":
@@ -55,9 +52,7 @@ def start_storage_ingest(
 def get_storage_ingest_status(job_id: str):
     payload = storage_jobs.get_status_payload(job_id)
     if payload is None:
-        raise HTTPException(
-            status_code=404, detail=f"Storage ingest job '{job_id}' not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Storage ingest job '{job_id}' not found.")
     return payload
 
 

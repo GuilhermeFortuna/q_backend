@@ -104,14 +104,10 @@ def test_analytics_endpoint_404_for_unknown_study():
     assert exc_info.value.status_code == 404
 
 
-def test_analytics_finished_study_returns_all_datasets(
-    run_jobs_sync, api_session_scope
-):
+def test_analytics_finished_study_returns_all_datasets(run_jobs_sync, api_session_scope):
     with patch("q_backend.api.optimization_jobs.session_scope", api_session_scope):
         with patch("q_backend.optimization.analytics.MIN_TRIALS", 2):
-            job = optimization_jobs.start_job(
-                _config(n_trials=3, study_name="finished-analytics")
-            )
+            job = optimization_jobs.start_job(_config(n_trials=3, study_name="finished-analytics"))
 
     with patch("q_backend.api.optimization_jobs.session_scope", api_session_scope):
         with patch("q_backend.optimization.analytics.MIN_TRIALS", 2):
@@ -130,9 +126,7 @@ def test_analytics_finished_study_returns_all_datasets(
     assert "maximize_net_profit" in payload["param_importances"]
 
 
-def test_analytics_running_study_returns_partial_payload_without_409(
-    api_db_session, api_session_scope, tmp_path
-):
+def test_analytics_running_study_returns_partial_payload_without_409(api_db_session, api_session_scope, tmp_path):
     config = _config(n_trials=10, study_name="running-analytics")
     worker_config = config.model_copy(deep=True)
     sqlite_path = tmp_path / "running-analytics.db"
@@ -167,9 +161,7 @@ def test_analytics_running_study_returns_partial_payload_without_409(
     assert payload["param_importances"] is None
 
 
-def test_analytics_running_study_does_not_409_when_results_would(
-    api_db_session, api_session_scope, tmp_path
-):
+def test_analytics_running_study_does_not_409_when_results_would(api_db_session, api_session_scope, tmp_path):
     config = _config(n_trials=10, study_name="running-vs-results")
     worker_config = config.model_copy(deep=True)
     sqlite_path = tmp_path / "running-vs-results.db"

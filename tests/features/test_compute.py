@@ -47,15 +47,11 @@ def _minimal_genome(spec_name: str, params: dict) -> dict:
     nodes: list[dict] = []
 
     if node_spec.min_inputs > 0:
-        nodes.append(
-            {"id": source_id, "kind": "source.close", "params": {}, "inputs": []}
-        )
+        nodes.append({"id": source_id, "kind": "source.close", "params": {}, "inputs": []})
         ind_inputs = [source_id]
     else:
         ind_inputs = []
-        nodes.append(
-            {"id": source_id, "kind": "source.close", "params": {}, "inputs": []}
-        )
+        nodes.append({"id": source_id, "kind": "source.close", "params": {}, "inputs": []})
 
     nodes.append(
         {
@@ -91,9 +87,7 @@ def _output_port_for(spec_name: str) -> str:
     return _FEATURE_OUTPUT_PORT[spec_name]
 
 
-def _genome_series(
-    bars: pd.DataFrame, spec_name: str, params: dict
-) -> pd.Series:
+def _genome_series(bars: pd.DataFrame, spec_name: str, params: dict) -> pd.Series:
     spec = get_feature_spec(spec_name)
     port = _output_port_for(spec_name)
     col = _indicator_column("ind", port)
@@ -120,9 +114,7 @@ def test_compute_feature_shape_and_warmup(spec_name: str, params: dict) -> None:
     result = compute_feature(bars, spec, params)
 
     assert len(result.series) == len(bars)
-    pd.testing.assert_index_equal(
-        result.series.index, pd.DatetimeIndex(bars["time"])
-    )
+    pd.testing.assert_index_equal(result.series.index, pd.DatetimeIndex(bars["time"]))
     assert result.warmup_bars == int(resolved[spec.lookback_param])
     assert result.series.iloc[: result.warmup_bars].isna().all()
     if result.warmup_bars < len(result.series):

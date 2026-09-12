@@ -36,9 +36,7 @@ class DiscoveryAbRequest(BaseModel):
         if len(self.seeds) != len(set(self.seeds)):
             raise ValueError("seeds must be unique")
         if self.minimum_complete_pairs > len(self.seeds):
-            raise ValueError(
-                "minimum_complete_pairs cannot exceed the number of requested seeds"
-            )
+            raise ValueError("minimum_complete_pairs cannot exceed the number of requested seeds")
         return self
 
 
@@ -126,9 +124,7 @@ class EncoderAblationRequest(BaseModel):
             raise ValueError("input_features must be non-empty")
         count = len(self.configs)
         if count < 1 or count > MAX_ABLATION_CONFIGS:
-            raise ValueError(
-                f"configs must contain between 1 and {MAX_ABLATION_CONFIGS} items"
-            )
+            raise ValueError(f"configs must contain between 1 and {MAX_ABLATION_CONFIGS} items")
         labels = [spec.label for spec in self.configs]
         if len(labels) != len(set(labels)):
             raise ValueError("config labels must be unique")
@@ -179,14 +175,10 @@ class AlphaResearchComputeBudget(BaseModel):
     @model_validator(mode="after")
     def reject_threshold_overrides(self) -> "AlphaResearchComputeBudget":
         forbidden = {
-            key
-            for key, value in self.model_dump().items()
-            if key.startswith("min_") or key.endswith("_threshold")
+            key for key, value in self.model_dump().items() if key.startswith("min_") or key.endswith("_threshold")
         }
         if forbidden:
-            raise ValueError(
-                "Alpha-research compute budget cannot override profile acceptance thresholds."
-            )
+            raise ValueError("Alpha-research compute budget cannot override profile acceptance thresholds.")
         return self
 
 

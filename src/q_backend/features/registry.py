@@ -60,9 +60,7 @@ def _default_param_value(key: str) -> Any:
     raise KeyError(f"No default registered for param key '{key}'")
 
 
-def _default_params_for(
-    node_kind: str, *, overrides: dict[str, Any] | None = None
-) -> dict[str, Any]:
+def _default_params_for(node_kind: str, *, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
     keys = NODE_SPECS[node_kind].allowed_param_keys
     params = {key: _default_param_value(key) for key in keys}
     if overrides:
@@ -560,9 +558,7 @@ def register_neural_model_features(version: NeuralModelVersion) -> list[str]:
             forward_window=0,
             output_type="oscillator",
             leakage_status="clean",
-            description=(
-                f"Neural latent {latent_name} from model {version.model_hash[:8]}."
-            ),
+            description=(f"Neural latent {latent_name} from model {version.model_hash[:8]}."),
             source="neural",
             model_hash=version.model_hash,
             latent_index=index,
@@ -582,29 +578,21 @@ def assert_catalog_consistent() -> None:
     for catalog_key, spec in FEATURE_SPECS.items():
         if spec.source == "neural":
             if not spec.model_hash:
-                raise AssertionError(
-                    f"Neural feature '{catalog_key}' is missing model_hash."
-                )
+                raise AssertionError(f"Neural feature '{catalog_key}' is missing model_hash.")
             if spec.latent_index is None:
-                raise AssertionError(
-                    f"Neural feature '{catalog_key}' is missing latent_index."
-                )
+                raise AssertionError(f"Neural feature '{catalog_key}' is missing latent_index.")
             if spec.forward_window != 0:
                 raise AssertionError(
                     f"Neural feature '{catalog_key}' has forward_window="
                     f"{spec.forward_window}; features must be causal."
                 )
             if spec.node_kind is not None:
-                raise AssertionError(
-                    f"Neural feature '{catalog_key}' must have node_kind=None."
-                )
+                raise AssertionError(f"Neural feature '{catalog_key}' must have node_kind=None.")
             continue
 
         node = NODE_SPECS.get(spec.node_kind)
         if node is None:
-            raise AssertionError(
-                f"Feature '{spec.name}' references unknown node kind '{spec.node_kind}'."
-            )
+            raise AssertionError(f"Feature '{spec.name}' references unknown node kind '{spec.node_kind}'.")
         if spec.param_keys != node.allowed_param_keys:
             raise AssertionError(
                 f"Feature '{spec.name}' param_keys {sorted(spec.param_keys)} != "

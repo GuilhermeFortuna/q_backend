@@ -38,47 +38,43 @@ def test_gemini_provider_happy_path_interpret():
         api_key="test-api-key",
         max_output_tokens=1024,
     )
-    
+
     response_payload = {
         "candidates": [
-            {
-                "content": {
-                    "parts": [
-                        {"text": "{\n  \"schema_version\": \"strategy_spec.v1\"\n}"}
-                    ]
-                },
-                "finishReason": "STOP"
-            }
+            {"content": {"parts": [{"text": '{\n  "schema_version": "strategy_spec.v1"\n}'}]}, "finishReason": "STOP"}
         ]
     }
-    
+
     request = StrategyInterpretRequest(message="Build a test strategy")
     capabilities = build_capability_registry()
-    
+
     with patch("urllib.request.urlopen") as mock_urlopen:
         mock_urlopen.return_value = _FakeResponse(json.dumps(response_payload))
-        
+
         res = provider.interpret(
             request,
             capabilities,
             system_prompt="system instructions",
             user_prompt="user prompt text",
         )
-        
+
         assert res.content == '{\n  "schema_version": "strategy_spec.v1"\n}'
         assert res.model == "gemini-2.5-flash"
         assert res.provider == "gemini"
-        
+
         # Verify request parameters
         mock_urlopen.assert_called_once()
         args, kwargs = mock_urlopen.call_args
         http_req = args[0]
-        
+
         # Check URL
-        assert http_req.full_url == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+        assert (
+            http_req.full_url
+            == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+        )
         # Check header
         assert http_req.get_header("X-goog-api-key") == "test-api-key"
-        
+
         # Check body
         req_body = json.loads(http_req.data.decode("utf-8"))
         assert req_body["system_instruction"]["parts"][0]["text"] == "system instructions"
@@ -95,34 +91,29 @@ def test_gemini_provider_interpret_strips_models_prefix_if_present():
         model="models/gemini-2.5-flash",
         api_key="test-api-key",
     )
-    
-    response_payload = {
-        "candidates": [
-            {
-                "content": {
-                    "parts": [{"text": "{\"key\": \"val\"}"}]
-                }
-            }
-        ]
-    }
-    
+
+    response_payload = {"candidates": [{"content": {"parts": [{"text": '{"key": "val"}'}]}}]}
+
     request = StrategyInterpretRequest(message="test")
     capabilities = build_capability_registry()
-    
+
     with patch("urllib.request.urlopen") as mock_urlopen:
         mock_urlopen.return_value = _FakeResponse(json.dumps(response_payload))
-        
+
         provider.interpret(
             request,
             capabilities,
             system_prompt="sys",
             user_prompt="user",
         )
-        
+
         mock_urlopen.assert_called_once()
         args, kwargs = mock_urlopen.call_args
         http_req = args[0]
-        assert http_req.full_url == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+        assert (
+            http_req.full_url
+            == "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+        )
 
 
 def test_gemini_provider_parts_concatenation():
@@ -130,23 +121,12 @@ def test_gemini_provider_parts_concatenation():
         base_url="https://generativelanguage.googleapis.com/v1beta",
         model="gemini-2.5-flash",
     )
-    
-    response_payload = {
-        "candidates": [
-            {
-                "content": {
-                    "parts": [
-                        {"text": "part1 "},
-                        {"text": "part2"}
-                    ]
-                }
-            }
-        ]
-    }
-    
+
+    response_payload = {"candidates": [{"content": {"parts": [{"text": "part1 "}, {"text": "part2"}]}}]}
+
     request = StrategyInterpretRequest(message="test")
     capabilities = build_capability_registry()
-    
+
     with patch("urllib.request.urlopen", return_value=_FakeResponse(json.dumps(response_payload))):
         res = provider.interpret(
             request,
@@ -162,17 +142,12 @@ def test_gemini_provider_empty_candidates_with_block_reason():
         base_url="https://generativelanguage.googleapis.com/v1beta",
         model="gemini-2.5-flash",
     )
-    
-    response_payload = {
-        "candidates": [],
-        "promptFeedback": {
-            "blockReason": "SAFETY"
-        }
-    }
-    
+
+    response_payload = {"candidates": [], "promptFeedback": {"blockReason": "SAFETY"}}
+
     request = StrategyInterpretRequest(message="test")
     capabilities = build_capability_registry()
-    
+
     with patch("urllib.request.urlopen", return_value=_FakeResponse(json.dumps(response_payload))):
         with pytest.raises(ProviderRequestError) as exc_info:
             provider.interpret(
@@ -190,14 +165,14 @@ def test_gemini_provider_http_error_handling():
         base_url="https://generativelanguage.googleapis.com/v1beta",
         model="gemini-2.5-flash",
     )
-    
+
     request = StrategyInterpretRequest(message="test")
     capabilities = build_capability_registry()
-    
+
     class _FakeHTTPError(urllib.error.HTTPError):
         def __init__(self):
             super().__init__("http://url", 429, "Too Many Requests", {}, None)
-        
+
         def read(self, *args, **kwargs):
             return b"Rate limit exceeded"
 
@@ -220,30 +195,21 @@ def test_gemini_provider_list_models():
         model="gemini-2.5-flash",
         api_key="test-api-key",
     )
-    
+
     response_payload = {
         "models": [
-            {
-                "name": "models/gemini-2.5-flash",
-                "supportedGenerationMethods": ["generateContent", "countTokens"]
-            },
-            {
-                "name": "models/gemini-2.5-pro",
-                "supportedGenerationMethods": ["generateContent"]
-            },
-            {
-                "name": "models/embedding-001",
-                "supportedGenerationMethods": ["embedContent"]
-            }
+            {"name": "models/gemini-2.5-flash", "supportedGenerationMethods": ["generateContent", "countTokens"]},
+            {"name": "models/gemini-2.5-pro", "supportedGenerationMethods": ["generateContent"]},
+            {"name": "models/embedding-001", "supportedGenerationMethods": ["embedContent"]},
         ]
     }
-    
+
     with patch("urllib.request.urlopen") as mock_urlopen:
         mock_urlopen.return_value = _FakeResponse(json.dumps(response_payload))
         models = provider.list_models()
-        
+
         assert models == ["gemini-2.5-flash", "gemini-2.5-pro"]
-        
+
         mock_urlopen.assert_called_once()
         args, kwargs = mock_urlopen.call_args
         http_req = args[0]
@@ -256,7 +222,7 @@ def test_gemini_provider_list_models_network_failure():
         base_url="https://generativelanguage.googleapis.com/v1beta",
         model="gemini-2.5-flash",
     )
-    
+
     with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("connection refused")):
         models = provider.list_models()
         assert models == []

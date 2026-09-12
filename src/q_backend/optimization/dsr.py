@@ -50,9 +50,8 @@ def _norm_ppf(probability: float) -> float:
     phigh = 1.0 - plow
     if probability < plow:
         q = math.sqrt(-2.0 * math.log(probability))
-        return (
-            (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5])
-            / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1.0)
+        return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / (
+            (((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1.0
         )
     if probability > phigh:
         q = math.sqrt(-2.0 * math.log(1.0 - probability))
@@ -111,11 +110,7 @@ def deflated_sharpe_ratio(
         mu=0.0,
         sigma=math.sqrt(max(trials_sr_variance, 0.0)),
     )
-    denominator = math.sqrt(
-        1.0
-        - skewness * sr_observed
-        + ((kurtosis - 1.0) / 4.0) * sr_observed * sr_observed
-    )
+    denominator = math.sqrt(1.0 - skewness * sr_observed + ((kurtosis - 1.0) / 4.0) * sr_observed * sr_observed)
     if denominator <= 0.0:
         return 0.0
     z = (sr_observed - sr0) * math.sqrt(num_observations - 1) / denominator

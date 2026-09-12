@@ -86,11 +86,7 @@ def test_random_valid_genomes_are_causal(seed: int):
             expected = full[col].iloc[:k]
             actual = prefix[col]
             if pd.api.types.is_bool_dtype(expected) or pd.api.types.is_bool_dtype(actual):
-                mismatches = (
-                    expected.fillna(False).to_numpy() != actual.fillna(False).to_numpy()
-                )
+                mismatches = expected.fillna(False).to_numpy() != actual.fillna(False).to_numpy()
                 assert not mismatches.any(), f"look-ahead in {col} at prefix {k}"
             else:
-                pd.testing.assert_series_equal(
-                    expected, actual, check_names=False, rtol=1e-9, atol=1e-9
-                )
+                pd.testing.assert_series_equal(expected, actual, check_names=False, rtol=1e-9, atol=1e-9)

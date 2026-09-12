@@ -41,10 +41,7 @@ def canonical_config_payload(config: EncoderConfig) -> dict[str, Any]:
         "train_end": _iso_z(config.train_end),
         "n_latents": config.n_latents,
         "input_features": sorted(config.input_features),
-        "hyperparams": {
-            key: value
-            for key, value in sorted(config.hyperparams.items())
-        },
+        "hyperparams": {key: value for key, value in sorted(config.hyperparams.items())},
     }
 
 

@@ -248,9 +248,7 @@ def compute_tail_diagnostics(
     if regime_trade_pnl:
         total_abs = sum(abs(value) for value in regime_trade_pnl.values())
         if total_abs > 0:
-            regime_contribution = {
-                key: float(value / total_abs) for key, value in regime_trade_pnl.items()
-            }
+            regime_contribution = {key: float(value / total_abs) for key, value in regime_trade_pnl.items()}
 
     return TailDiagnostics(
         worst_window_return=worst,
@@ -277,9 +275,7 @@ def _neighbor_values(current: Any, spec: SearchParam) -> list[Any]:
         values = []
         for delta in (-step, step):
             candidate = float(current) + delta
-            if spec.low <= candidate <= spec.high and not math.isclose(
-                candidate, float(current)
-            ):
+            if spec.low <= candidate <= spec.high and not math.isclose(candidate, float(current)):
                 values.append(candidate)
         return values
     if isinstance(spec, LogFloatParam):
@@ -289,9 +285,7 @@ def _neighbor_values(current: Any, spec: SearchParam) -> list[Any]:
         values = []
         for factor in (0.9, 1.1):
             candidate = current_f * factor
-            if spec.low <= candidate <= spec.high and not math.isclose(
-                candidate, current_f
-            ):
+            if spec.low <= candidate <= spec.high and not math.isclose(candidate, current_f):
                 values.append(candidate)
         return values
     if isinstance(spec, CategoricalParam):
@@ -447,9 +441,7 @@ def build_acceptance_criteria(
         criteria.append(
             AcceptanceCriterion(
                 name="oos_windows",
-                status="passed"
-                if completed_windows >= config.min_completed_oos_windows
-                else "failed",
+                status="passed" if completed_windows >= config.min_completed_oos_windows else "failed",
                 observed=completed_windows,
                 threshold=config.min_completed_oos_windows,
                 reason="Completed walk-forward OOS windows.",
@@ -459,9 +451,7 @@ def build_acceptance_criteria(
         criteria.append(
             AcceptanceCriterion(
                 name="oos_trades",
-                status="passed"
-                if oos_trades >= config.min_stitched_oos_trades
-                else "failed",
+                status="passed" if oos_trades >= config.min_stitched_oos_trades else "failed",
                 observed=oos_trades,
                 threshold=config.min_stitched_oos_trades,
                 reason="Stitched OOS trade count.",
@@ -494,9 +484,7 @@ def build_acceptance_criteria(
             criteria.append(
                 AcceptanceCriterion(
                     name="worst_window_return",
-                    status="passed"
-                    if worst >= config.worst_window_return_gate
-                    else "failed",
+                    status="passed" if worst >= config.worst_window_return_gate else "failed",
                     observed=worst,
                     threshold=config.worst_window_return_gate,
                     reason="Worst OOS-window return hard gate.",
@@ -523,9 +511,7 @@ def build_acceptance_criteria(
                     name="seed_robustness",
                     status="unavailable",
                     observed={
-                        "completed": sum(
-                            1 for seed in evaluated if seed.status == "completed"
-                        ),
+                        "completed": sum(1 for seed in evaluated if seed.status == "completed"),
                         "failed_or_missing": len(incomplete),
                     },
                     threshold={
@@ -537,16 +523,12 @@ def build_acceptance_criteria(
             )
         else:
             positive = sum(
-                1
-                for seed in evaluated
-                if float((seed.oos_metrics or {}).get("total_return_pct", 0.0)) > 0.0
+                1 for seed in evaluated if float((seed.oos_metrics or {}).get("total_return_pct", 0.0)) > 0.0
             )
             criteria.append(
                 AcceptanceCriterion(
                     name="seed_robustness",
-                    status="passed"
-                    if positive >= config.min_positive_seed_outcomes
-                    else "failed",
+                    status="passed" if positive >= config.min_positive_seed_outcomes else "failed",
                     observed=positive,
                     threshold=config.min_positive_seed_outcomes,
                     reason="Independent optimization seeds with positive OOS return.",
@@ -592,10 +574,7 @@ def build_acceptance_criteria(
             plateau.profitable_fraction is not None
             and plateau.profitable_fraction >= config.min_plateau_profitable_fraction
         )
-        retention_ok = (
-            plateau.score_retention is None
-            or plateau.score_retention >= config.min_plateau_score_retention
-        )
+        retention_ok = plateau.score_retention is None or plateau.score_retention >= config.min_plateau_score_retention
         passed = profitable_ok and retention_ok
         criteria.append(
             AcceptanceCriterion(
@@ -660,9 +639,7 @@ def build_acceptance_criteria(
             criteria.append(
                 AcceptanceCriterion(
                     name="lockbox_drawdown",
-                    status="passed"
-                    if drawdown <= config.lockbox_max_drawdown_pct
-                    else "failed",
+                    status="passed" if drawdown <= config.lockbox_max_drawdown_pct else "failed",
                     observed=drawdown,
                     threshold=config.lockbox_max_drawdown_pct,
                     reason="Lock-box maximum drawdown.",

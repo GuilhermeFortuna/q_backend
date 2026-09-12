@@ -56,6 +56,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.black]
+line-length = 120
 target-version = ["py312"]
 
 # Scoped, deliberately minimal lint config (WO179). We enable only the two
@@ -64,11 +65,15 @@ target-version = ["py312"]
 #   S110   — ``try: ... except: pass`` (swallowed error)
 # Every sanctioned best-effort catch carries a per-line ``# noqa`` + justification.
 [tool.ruff]
+line-length = 120
 target-version = "py312"
 src = ["src"]
 
 [tool.ruff.lint]
 select = ["BLE001", "S110"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["BLE001", "S110"]
 
 [tool.uv.sources]
 metatrader5 = [

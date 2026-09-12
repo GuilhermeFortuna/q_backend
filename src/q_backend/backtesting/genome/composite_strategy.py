@@ -156,10 +156,10 @@ class CompositeStrategy(TradingStrategy):
 
         plan = self.plan
 
-        uses_bar_index = any(
-            compiled.node.kind in ("exit.fixed_holding", "ind.tsmom")
-            for compiled in plan.sorted_nodes
-        ) or plan.fixed_holding_period is not None
+        uses_bar_index = (
+            any(compiled.node.kind in ("exit.fixed_holding", "ind.tsmom") for compiled in plan.sorted_nodes)
+            or plan.fixed_holding_period is not None
+        )
         if uses_bar_index:
             df = add_bar_index(df)
 
@@ -245,9 +245,7 @@ class CompositeStrategy(TradingStrategy):
             df[cols["out"]] = resolve_exog_column(df, str(params["symbol"]), "close")
         elif kind == "source.exog.return":
             lookback = int(params["lookback_bars"])
-            df[cols["out"]] = resolve_exog_column(
-                df, str(params["symbol"]), f"return_{lookback}"
-            )
+            df[cols["out"]] = resolve_exog_column(df, str(params["symbol"]), f"return_{lookback}")
         elif kind == "source.exog.return_zscore":
             lookback = int(params["lookback_bars"])
             window = int(params["window"])
@@ -258,29 +256,21 @@ class CompositeStrategy(TradingStrategy):
             )
         elif kind == "source.exog.rolling_corr":
             window = int(params["window"])
-            df[cols["out"]] = resolve_exog_column(
-                df, str(params["symbol"]), f"rolling_corr_{window}"
-            )
+            df[cols["out"]] = resolve_exog_column(df, str(params["symbol"]), f"rolling_corr_{window}")
         elif kind == "source.exog.relative_strength":
             lookback = int(params["lookback_bars"])
-            df[cols["out"]] = resolve_exog_column(
-                df, str(params["symbol"]), f"relative_strength_{lookback}"
-            )
+            df[cols["out"]] = resolve_exog_column(df, str(params["symbol"]), f"relative_strength_{lookback}")
         elif kind == "source.exog.vol_regime":
             vol_window = int(params["vol_window"])
-            df[cols["out"]] = resolve_exog_column(
-                df, str(params["symbol"]), f"vol_regime_{vol_window}"
-            ).astype(bool)
+            df[cols["out"]] = resolve_exog_column(df, str(params["symbol"]), f"vol_regime_{vol_window}").astype(bool)
         elif kind == "source.exog.direction_regime":
             lookback = int(params["lookback_bars"])
-            df[cols["out"]] = resolve_exog_column(
-                df, str(params["symbol"]), f"direction_regime_{lookback}"
-            ).astype(bool)
+            df[cols["out"]] = resolve_exog_column(df, str(params["symbol"]), f"direction_regime_{lookback}").astype(
+                bool
+            )
         elif kind == "ind.ma":
             source = self._binding_series(df, compiled, 0)
-            df[cols["out"]] = compute_ma(
-                source, int(params["period"]), normalize_ma_type(str(params["ma_type"]))
-            )
+            df[cols["out"]] = compute_ma(source, int(params["period"]), normalize_ma_type(str(params["ma_type"])))
         elif kind == "ind.ema":
             source = self._binding_series(df, compiled, 0)
             df[cols["out"]] = compute_ma(source, int(params["period"]), "ema")
@@ -288,9 +278,7 @@ class CompositeStrategy(TradingStrategy):
             source = self._binding_series(df, compiled, 0)
             df[cols["out"]] = compute_rsi(source, int(params["period"]))
         elif kind == "ind.atr":
-            df[cols["out"]] = compute_atr(
-                df["high"], df["low"], df["close"], int(params["period"])
-            )
+            df[cols["out"]] = compute_atr(df["high"], df["low"], df["close"], int(params["period"]))
         elif kind == "ind.macd":
             source = self._binding_series(df, compiled, 0)
             macd_line, signal_line, histogram = compute_macd(
@@ -304,9 +292,7 @@ class CompositeStrategy(TradingStrategy):
             df[cols["macd_histogram"]] = histogram
         elif kind == "ind.bollinger":
             source = self._binding_series(df, compiled, 0)
-            upper, middle, lower = compute_bollinger_bands(
-                source, int(params["period"]), float(params["num_std"])
-            )
+            upper, middle, lower = compute_bollinger_bands(source, int(params["period"]), float(params["num_std"]))
             df[cols["bb_upper"]] = upper
             df[cols["bb_middle"]] = middle
             df[cols["bb_lower"]] = lower
@@ -323,9 +309,7 @@ class CompositeStrategy(TradingStrategy):
             window = int(params["window"])
             estimator = str(params.get("estimator", "close_to_close"))
             if estimator == "yang_zhang" and all(c in df.columns for c in ("open", "high", "low", "close")):
-                df[cols["out"]] = compute_yang_zhang(
-                    df["open"], df["high"], df["low"], df["close"], window
-                )
+                df[cols["out"]] = compute_yang_zhang(df["open"], df["high"], df["low"], df["close"], window)
             else:
                 df[cols["out"]] = compute_realized_vol(source, window)
         elif kind == "ind.diff":
@@ -339,9 +323,7 @@ class CompositeStrategy(TradingStrategy):
         elif kind == "ind.trb_channel":
             close = self._binding_series(df, compiled, 0)
             tmp = pd.DataFrame({"close": close}, index=df.index)
-            tmp = compute_trb_channel_signals(
-                tmp, int(params["period"]), float(params["band_pct"])
-            )
+            tmp = compute_trb_channel_signals(tmp, int(params["period"]), float(params["band_pct"]))
             for port in ("channel_high", "channel_low", "trb_upper", "trb_lower"):
                 df[cols[port]] = tmp[port]
         elif kind == "ind.ma_band":
@@ -383,9 +365,7 @@ class CompositeStrategy(TradingStrategy):
                 idx = min(max(0, latent_index), n_latents - 1)
                 col_name = latent_frame.columns[idx]
                 if self._latent_warmup is None:
-                    self._latent_warmup = _oos_warmup_bars(
-                        bars["time"], self._get_latent_train_end()
-                    )
+                    self._latent_warmup = _oos_warmup_bars(bars["time"], self._get_latent_train_end())
                 raw = latent_frame[col_name].reset_index(drop=True)
                 values = _apply_warmup(raw, self._latent_warmup)
                 by_time = pd.Series(values.to_numpy(), index=bars["time"])
@@ -424,9 +404,7 @@ class CompositeStrategy(TradingStrategy):
                 kind=kind,
                 params=params,
                 cols=cols,
-                binding_series=lambda frame, index: self._binding_series(
-                    frame, compiled, index
-                ),
+                binding_series=lambda frame, index: self._binding_series(frame, compiled, index),
             )
         elif kind.startswith("cmp.") or kind.startswith("logic."):
             self._evaluate_bool_node(df, compiled)
@@ -442,21 +420,15 @@ class CompositeStrategy(TradingStrategy):
         else:
             raise ValueError(f"Unsupported node kind '{kind}'.")
 
-    def _evaluate_tsmom(
-        self, df: pd.DataFrame, compiled: Any, params: dict[str, Any]
-    ) -> None:
+    def _evaluate_tsmom(self, df: pd.DataFrame, compiled: Any, params: dict[str, Any]) -> None:
         lookback = int(params["lookback_bars"])
         rebalance_bars = int(params["rebalance_bars"])
         vol_window = int(params["vol_window"])
         vol_estimator = str(params["vol_estimator"])
 
         momentum = df["close"] / df["close"].shift(lookback) - 1.0
-        if vol_estimator == "yang_zhang" and all(
-            c in df.columns for c in ("open", "high", "low", "close")
-        ):
-            volatility = compute_yang_zhang(
-                df["open"], df["high"], df["low"], df["close"], vol_window
-            )
+        if vol_estimator == "yang_zhang" and all(c in df.columns for c in ("open", "high", "low", "close")):
+            volatility = compute_yang_zhang(df["open"], df["high"], df["low"], df["close"], vol_window)
         else:
             volatility = compute_realized_vol(df["close"], vol_window)
 
@@ -558,9 +530,7 @@ class CompositeStrategy(TradingStrategy):
             signals.append(Signal(symbol=symbol, action=SignalAction.SELL))
         return signals
 
-    def check_exit_conditions(
-        self, current_data: pd.Series, open_trades: List[Trade]
-    ) -> List[Signal]:
+    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
         symbol = resolve_symbol(current_data, self.symbol)
         if not open_trades:
             return []

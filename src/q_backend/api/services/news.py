@@ -78,9 +78,7 @@ def _parse_feed_xml(
     for item in items:
         title = item.find("title").text if item.find("title") is not None else ""
         link = item.find("link").text if item.find("link") is not None else ""
-        description = (
-            item.find("description").text if item.find("description") is not None else ""
-        )
+        description = item.find("description").text if item.find("description") is not None else ""
         pub_date_str = item.find("pubDate").text if item.find("pubDate") is not None else ""
 
         if not title or not link or link in seen:
@@ -118,9 +116,7 @@ def _find_feed_item_metadata(
             continue
 
         title = item.find("title").text if item.find("title") is not None else ""
-        description = (
-            item.find("description").text if item.find("description") is not None else ""
-        )
+        description = item.find("description").text if item.find("description") is not None else ""
         pub_date_str = item.find("pubDate").text if item.find("pubDate") is not None else ""
 
         description, image_url = _clean_description(description)
@@ -143,9 +139,7 @@ def _scrape_article_content(url: str, html: str, *, is_valor: bool) -> tuple[str
     title = ""
 
     if is_valor:
-        paragraphs = re.findall(
-            r"<p[^>]*content-text__container[^>]*>(.*?)</p>", html, re.DOTALL
-        )
+        paragraphs = re.findall(r"<p[^>]*content-text__container[^>]*>(.*?)</p>", html, re.DOTALL)
         clean_paragraphs = []
         for paragraph in paragraphs:
             p_clean = re.sub(r"<[^>]+>", "", paragraph).strip()
@@ -192,10 +186,7 @@ def _scrape_article_content(url: str, html: str, *, is_valor: bool) -> tuple[str
             if (
                 len(p_clean) > 85
                 and not any(bw in p_clean.lower() for bw in bad_words)
-                and not any(
-                    x in p_clean
-                    for x in ["var ", "window.", "document.", "function()", "adsbygoogle"]
-                )
+                and not any(x in p_clean for x in ["var ", "window.", "document.", "function()", "adsbygoogle"])
             ):
                 clean_paragraphs.append(p_clean)
         if clean_paragraphs:
@@ -218,12 +209,7 @@ def _scrape_article_content(url: str, html: str, *, is_valor: bool) -> tuple[str
     if not title:
         title_match = re.search(r"<title>(.*?)</title>", html, re.IGNORECASE)
         if title_match:
-            title = (
-                title_match.group(1)
-                .replace(" - CNBC", "")
-                .replace(" | Valor Econômico", "")
-                .strip()
-            )
+            title = title_match.group(1).replace(" - CNBC", "").replace(" | Valor Econômico", "").strip()
 
     return content, image_url, title
 
@@ -235,9 +221,7 @@ def latest_articles(limit: int = 25, *, fetch: FetchFn = _default_fetch) -> list
     for feed in NEWS_FEEDS:
         try:
             xml_data = fetch(feed["url"], FEED_LIST_TIMEOUT)
-            articles.extend(
-                _parse_feed_xml(xml_data, source=feed["source"], seen_urls=seen_urls)
-            )
+            articles.extend(_parse_feed_xml(xml_data, source=feed["source"], seen_urls=seen_urls))
         except Exception as exc:  # noqa: BLE001 - best-effort feed fetch/parse; logged
             logger.error("Failed to fetch news from feed %s: %s", feed["url"], exc)
 
@@ -272,9 +256,7 @@ def get_article(article_id: str, *, fetch: FetchFn = _default_fetch) -> dict[str
     content = ""
     try:
         html = fetch(url, ARTICLE_SCRAPE_TIMEOUT).decode("utf-8")
-        scraped_content, scraped_image, scraped_title = _scrape_article_content(
-            url, html, is_valor=is_valor
-        )
+        scraped_content, scraped_image, scraped_title = _scrape_article_content(url, html, is_valor=is_valor)
         content = scraped_content
         if not image_url:
             image_url = scraped_image

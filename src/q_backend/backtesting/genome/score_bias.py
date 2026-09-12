@@ -82,10 +82,7 @@ def _normalize_weights(max_by_kind: dict[str, float]) -> dict[str, float]:
     peak = max(max_by_kind.values())
     if peak <= 0.0:
         return {}
-    return {
-        kind: 1.0 + ALPHA * (abs_ic / peak)
-        for kind, abs_ic in max_by_kind.items()
-    }
+    return {kind: 1.0 + ALPHA * (abs_ic / peak) for kind, abs_ic in max_by_kind.items()}
 
 
 def build_kind_weights(

@@ -79,8 +79,7 @@ def _composite_with_stub_instances(
         symbol="TEST",
     )
     comp._instances = [
-        (f"e{index}", "stub", _StubSubStrategy(buy, sell))
-        for index, (buy, sell) in enumerate(stub_rows)
+        (f"e{index}", "stub", _StubSubStrategy(buy, sell)) for index, (buy, sell) in enumerate(stub_rows)
     ]
     return comp
 
@@ -235,9 +234,9 @@ def test_reversal_via_engine_fills_on_next_open():
         index=index,
     )
 
-    registry = BacktestEngine(
-        comp, FixedQuantitySizer(quantity=1.0), initial_capital=1000
-    ).run(data, parallel_mode=ParallelMode.SEQUENTIAL)
+    registry = BacktestEngine(comp, FixedQuantitySizer(quantity=1.0), initial_capital=1000).run(
+        data, parallel_mode=ParallelMode.SEQUENTIAL
+    )
 
     closed = registry.get_closed_trades()
     assert len(closed) == 1
@@ -259,9 +258,9 @@ def test_flat_net_stance_does_not_close_open_long_in_engine():
         index=index,
     )
 
-    registry = BacktestEngine(
-        comp, FixedQuantitySizer(quantity=1.0), initial_capital=1000
-    ).run(data, parallel_mode=ParallelMode.SEQUENTIAL)
+    registry = BacktestEngine(comp, FixedQuantitySizer(quantity=1.0), initial_capital=1000).run(
+        data, parallel_mode=ParallelMode.SEQUENTIAL
+    )
 
     open_trades = registry.get_open_trades()
     assert len(open_trades) == 1
@@ -288,9 +287,9 @@ def test_explicit_exit_still_fires_independently():
         index=index,
     )
 
-    registry = BacktestEngine(
-        comp, FixedQuantitySizer(quantity=1.0), initial_capital=10_000
-    ).run(data, parallel_mode=ParallelMode.SEQUENTIAL)
+    registry = BacktestEngine(comp, FixedQuantitySizer(quantity=1.0), initial_capital=10_000).run(
+        data, parallel_mode=ParallelMode.SEQUENTIAL
+    )
 
     closed = registry.get_closed_trades()
     assert len(closed) == 1

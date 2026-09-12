@@ -63,9 +63,7 @@ def get_data_source() -> DataSource:
 def set_data_source(value: str) -> None:
     normalized = value.strip().lower()
     if normalized not in _VALID_SOURCES:
-        raise ValueError(
-            f"Invalid data_source '{value}'. Choose from: {sorted(_VALID_SOURCES)}"
-        )
+        raise ValueError(f"Invalid data_source '{value}'. Choose from: {sorted(_VALID_SOURCES)}")
     config = _read_config()
     config["data_source"] = normalized
     _write_config(config)

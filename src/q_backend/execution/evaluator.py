@@ -85,9 +85,7 @@ def _map_position_sizing_config(raw: dict[str, Any]) -> Optional[PositionSizingC
         return _POSITION_SIZING_ADAPTER.validate_python(raw)
     # Legacy execution tests may store a simplified shape.
     if "quantity" in raw:
-        return _POSITION_SIZING_ADAPTER.validate_python(
-            {"type": "fixed_quantity", "quantity": float(raw["quantity"])}
-        )
+        return _POSITION_SIZING_ADAPTER.validate_python({"type": "fixed_quantity", "quantity": float(raw["quantity"])})
     return None
 
 
@@ -112,9 +110,7 @@ class StrategyEvaluator:
         self.timeframe = identity.timeframe.upper()
         self.initial_capital = initial_capital
         self.point_value = point_value
-        self.window_bound = window_bound or compute_window_bound_bars(
-            identity.compiled_config
-        )
+        self.window_bound = window_bound or compute_window_bound_bars(identity.compiled_config)
         self.strategy = strategy or build_strategy_from_compiled(
             identity.compiled_config,
             symbol=identity.symbol,
@@ -207,10 +203,7 @@ class StrategyEvaluator:
             close_time = close_ts.to_pydatetime()
             if through_close is not None and close_time > through_close:
                 break
-            if (
-                self._last_evaluated_close is not None
-                and close_time < self._last_evaluated_close
-            ):
+            if self._last_evaluated_close is not None and close_time < self._last_evaluated_close:
                 continue
             indicators_started = time.perf_counter()
             augmented = self._augmented_frame()
@@ -220,9 +213,7 @@ class StrategyEvaluator:
             row = augmented.loc[open_time]
             if isinstance(row, pd.DataFrame):
                 row = row.iloc[-1]
-            results.append(
-                self._evaluate_row(row, close_time, indicators_ms=indicators_ms)
-            )
+            results.append(self._evaluate_row(row, close_time, indicators_ms=indicators_ms))
         return results
 
     def _augmented_frame(self) -> pd.DataFrame:

@@ -156,10 +156,7 @@ def _run_eval_sync(request: FeatureEvalCreateRequest, session: Session):
     inline; it now runs in the background, so tests of the persistence pipeline
     use the kept-synchronous run_evaluation)."""
     target = _resolve_target_spec(request.target.name, request.target.horizon)
-    feature_set = [
-        FeatureRequest(item.name, item.version, dict(item.params))
-        for item in request.features
-    ]
+    feature_set = [FeatureRequest(item.name, item.version, dict(item.params)) for item in request.features]
     return run_evaluation(
         session,
         symbol=request.symbol,
@@ -225,9 +222,7 @@ def test_feature_eval_unknown_run_returns_404(seeded_features: Session) -> None:
     assert exc_info.value.status_code == 404
 
 
-def test_features_leaderboard_returns_latest_scores(
-    seeded_features: Session, sample_market, lake_root_path
-) -> None:
+def test_features_leaderboard_returns_latest_scores(seeded_features: Session, sample_market, lake_root_path) -> None:
     _run_eval_sync(_eval_request(sample_market), seeded_features)
     leaderboard = get_features_leaderboard(session=seeded_features)
     assert leaderboard["features"]

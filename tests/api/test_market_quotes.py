@@ -130,9 +130,7 @@ def test_build_market_snapshot_market_closed_fallback(mock_mt5):
 
 
 def test_get_market_snapshot_returns_503_when_offline(tmp_path, monkeypatch):
-    monkeypatch.setenv(
-        "Q_RUNTIME_CONFIG_PATH", str(tmp_path / "runtime_config.json")
-    )
+    monkeypatch.setenv("Q_RUNTIME_CONFIG_PATH", str(tmp_path / "runtime_config.json"))
     set_data_source("mt5")
     with patch.object(market_data_service, "mt5_available", return_value=False):
         with pytest.raises(Exception) as exc_info:
@@ -177,9 +175,7 @@ def test_get_market_snapshots_rejects_more_than_50_symbols():
 
 
 def test_get_market_snapshots_returns_503_when_offline(tmp_path, monkeypatch):
-    monkeypatch.setenv(
-        "Q_RUNTIME_CONFIG_PATH", str(tmp_path / "runtime_config.json")
-    )
+    monkeypatch.setenv("Q_RUNTIME_CONFIG_PATH", str(tmp_path / "runtime_config.json"))
     set_data_source("mt5")
     with patch.object(market_data_service, "mt5_available", return_value=False):
         with pytest.raises(Exception) as exc_info:
@@ -267,9 +263,7 @@ def test_get_market_ticks_respects_limit_and_returns_newest_last(mock_mt5):
     ]
 
     with patch.object(market_data_service, "mt5_available", return_value=True):
-        with patch.object(
-            market_data_service, "get_recent_ticks", return_value=ticks
-        ) as get_recent:
+        with patch.object(market_data_service, "get_recent_ticks", return_value=ticks) as get_recent:
             body = get_market_ticks("PETR4", limit=1, mds=market_data_service)
 
     get_recent.assert_called_once_with("PETR4", 1)
@@ -281,9 +275,7 @@ def test_get_market_ticks_respects_limit_and_returns_newest_last(mock_mt5):
 def test_get_market_ticks_returns_404_for_unknown_symbol():
     with patch.object(market_data_service, "mt5_available", return_value=True):
         with patch.object(market_data_service, "get_recent_ticks", return_value=[]):
-            with patch.object(
-                market_data_service, "get_symbol_info", return_value=None
-            ):
+            with patch.object(market_data_service, "get_symbol_info", return_value=None):
                 with pytest.raises(Exception) as exc_info:
                     get_market_ticks("UNKNOWN", mds=market_data_service)
     assert exc_info.value.status_code == 404

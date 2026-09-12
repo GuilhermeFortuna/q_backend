@@ -64,9 +64,7 @@ def test_latest_articles_parses_sorts_caps_and_builds_base64_ids():
     assert len(articles) == 2
     assert articles[0]["title"] == "Newer Article"
     assert articles[1]["title"] == "Older Article"
-    assert articles[0]["id"] == base64.urlsafe_b64encode(
-        b"https://example.com/newer"
-    ).decode("utf-8")
+    assert articles[0]["id"] == base64.urlsafe_b64encode(b"https://example.com/newer").decode("utf-8")
     assert articles[0]["imageUrl"] == "https://example.com/img.jpg"
 
 

@@ -98,16 +98,8 @@ class StrategySpecValidator:
         errors.extend(self._validate_indicators(spec.indicators))
         indicator_ids = {indicator.id for indicator in spec.indicators}
         self._current_indicators = spec.indicators
-        errors.extend(
-            self._validate_condition_group(
-                spec.entry, "entry", indicator_ids, require_comparison=True
-            )
-        )
-        errors.extend(
-            self._validate_condition_group(
-                spec.exit, "exit", indicator_ids, require_comparison=False
-            )
-        )
+        errors.extend(self._validate_condition_group(spec.entry, "entry", indicator_ids, require_comparison=True))
+        errors.extend(self._validate_condition_group(spec.exit, "exit", indicator_ids, require_comparison=False))
         errors.extend(self._validate_risk(spec.risk.model_dump(mode="json")))
         errors.extend(self._validate_execution(spec.execution_assumptions.model_dump(mode="json")))
         return errors
@@ -181,9 +173,7 @@ class StrategySpecValidator:
                 )
         return errors
 
-    def _validate_indicators(
-        self, indicators: list[IndicatorSpec]
-    ) -> list[ValidationErrorDetail]:
+    def _validate_indicators(self, indicators: list[IndicatorSpec]) -> list[ValidationErrorDetail]:
         errors: list[ValidationErrorDetail] = []
         seen_ids: set[str] = set()
         for index, indicator in enumerate(indicators):
@@ -234,8 +224,7 @@ class StrategySpecValidator:
                             path=f"{path_prefix}.period",
                             code="invalid_parameter",
                             message=(
-                                f"Indicator period {indicator.period} is below the minimum "
-                                f"{int(period_spec.min)}."
+                                f"Indicator period {indicator.period} is below the minimum " f"{int(period_spec.min)}."
                             ),
                         )
                     )
@@ -245,8 +234,7 @@ class StrategySpecValidator:
                             path=f"{path_prefix}.period",
                             code="invalid_parameter",
                             message=(
-                                f"Indicator period {indicator.period} exceeds the maximum "
-                                f"{int(period_spec.max)}."
+                                f"Indicator period {indicator.period} exceeds the maximum " f"{int(period_spec.max)}."
                             ),
                         )
                     )
@@ -284,9 +272,7 @@ class StrategySpecValidator:
             condition_path = f"{path}.{group_key}[{index}]"
             if isinstance(condition, ComparisonCondition):
                 has_comparison = True
-                errors.extend(
-                    self._validate_comparison(condition, condition_path, indicator_ids)
-                )
+                errors.extend(self._validate_comparison(condition, condition_path, indicator_ids))
             elif isinstance(condition, (ExitStopLossCondition, ExitTakeProfitCondition)):
                 errors.extend(self._validate_exit_condition(condition, condition_path))
             else:
@@ -327,9 +313,7 @@ class StrategySpecValidator:
 
         for side, label in ((condition.left, "left"), (condition.right, "right")):
             if isinstance(side, str):
-                errors.extend(
-                    self._validate_reference(side, f"{path}.{label}", indicator_ids)
-                )
+                errors.extend(self._validate_reference(side, f"{path}.{label}", indicator_ids))
         return errors
 
     def _validate_exit_condition(
@@ -459,9 +443,7 @@ class StrategySpecValidator:
             )
         return errors
 
-    def _scan_forbidden_keys(
-        self, value: Any, *, path: str
-    ) -> list[ValidationErrorDetail]:
+    def _scan_forbidden_keys(self, value: Any, *, path: str) -> list[ValidationErrorDetail]:
         errors: list[ValidationErrorDetail] = []
         if isinstance(value, dict):
             for key, nested in value.items():

@@ -116,9 +116,12 @@ def _synthetic_feature_window(request: NeuralTrainRequest) -> pd.DataFrame:
 
 
 def _start_job(run_jobs_sync, job_session_scope, request: NeuralTrainRequest):
-    with patch("q_backend.api.neural_jobs.session_scope", job_session_scope), patch(
-        "q_backend.neural.training_pipeline.build_training_feature_window",
-        lambda *_args, **_kwargs: _synthetic_feature_window(request),
+    with (
+        patch("q_backend.api.neural_jobs.session_scope", job_session_scope),
+        patch(
+            "q_backend.neural.training_pipeline.build_training_feature_window",
+            lambda *_args, **_kwargs: _synthetic_feature_window(request),
+        ),
     ):
         return neural_jobs.start_training_job(request=request)
 
@@ -193,9 +196,7 @@ def test_invalid_training_request_rejected_at_start() -> None:
         )
 
 
-def test_training_failure_marks_job_failed(
-    run_jobs_sync, job_session_scope, lake_root_path, monkeypatch
-) -> None:
+def test_training_failure_marks_job_failed(run_jobs_sync, job_session_scope, lake_root_path, monkeypatch) -> None:
     request = _train_request(model_key="job_fail_pca")
     monkeypatch.setattr(
         "q_backend.neural.training_pipeline.train_encoder",

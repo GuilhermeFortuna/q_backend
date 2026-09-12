@@ -84,10 +84,7 @@ def get_optimization_results(study_id: str):
         if persisted_status is not None:
             raise HTTPException(
                 status_code=409,
-                detail=(
-                    f"Study '{study_id}' has no results yet "
-                    f"(status: {persisted_status})."
-                ),
+                detail=(f"Study '{study_id}' has no results yet " f"(status: {persisted_status})."),
             )
         raise HTTPException(status_code=404, detail=f"Study '{study_id}' not found.")
     return payload
@@ -118,14 +115,9 @@ def list_optimizations(
     offset: int = Query(0, ge=0),
 ):
     """Return a paginated list of optimization studies, newest first."""
-    studies, total = list_optimization_studies(
-        session, limit=limit, offset=offset
-    )
+    studies, total = list_optimization_studies(session, limit=limit, offset=offset)
     return {
-        "items": [
-            OptimizationStudyListItem(**optimization_jobs.study_list_item_from_db(study))
-            for study in studies
-        ],
+        "items": [OptimizationStudyListItem(**optimization_jobs.study_list_item_from_db(study)) for study in studies],
         "total": total,
         "limit": limit,
         "offset": offset,

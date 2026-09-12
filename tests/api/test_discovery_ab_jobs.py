@@ -278,10 +278,14 @@ def test_discovery_ab_completes_with_paired_metrics(
     clear_model_output_cache()
 
     patches = _session_patches(api_session_scope)
-    with patches[0], patches[1], patch.object(
-        discovery_ab_jobs,
-        "_best_objective_from_child_run",
-        side_effect=_objective_with_fallback,
+    with (
+        patches[0],
+        patches[1],
+        patch.object(
+            discovery_ab_jobs,
+            "_best_objective_from_child_run",
+            side_effect=_objective_with_fallback,
+        ),
     ):
         started = discovery_ab_jobs.start_discovery_ab_job(request=request)
 
@@ -293,9 +297,7 @@ def test_discovery_ab_completes_with_paired_metrics(
     result = payload["result"]
     assert result is not None
     assert result["verdict"] in {"helps", "no_effect", "hurts"}
-    assert result["n_seeds"] == len(result["control"]["values"]) == len(
-        result["treatment"]["values"]
-    )
+    assert result["n_seeds"] == len(result["control"]["values"]) == len(result["treatment"]["values"])
     assert result["n_seeds"] > 0
     assert isinstance(result["control"]["mean"], float)
     assert isinstance(result["treatment"]["mean"], float)
@@ -361,10 +363,14 @@ def test_dropped_child_seed_noted_in_detail(
         return original(run_id)
 
     patches = _session_patches(api_session_scope)
-    with patches[0], patches[1], patch.object(
-        discovery_ab_jobs,
-        "_best_objective_from_child_run",
-        side_effect=_side_effect,
+    with (
+        patches[0],
+        patches[1],
+        patch.object(
+            discovery_ab_jobs,
+            "_best_objective_from_child_run",
+            side_effect=_side_effect,
+        ),
     ):
         from q_backend.features.sync import sync_registry_to_db
 

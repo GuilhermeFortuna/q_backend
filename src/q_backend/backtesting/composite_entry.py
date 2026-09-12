@@ -104,9 +104,7 @@ class CompositeEntryStrategy(TradingStrategy):
             signals.append(Signal(symbol=symbol, action=SignalAction.SELL))
         return signals
 
-    def check_exit_conditions(
-        self, current_data: pd.Series, open_trades: List[Trade]
-    ) -> List[Signal]:
+    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
         symbol = resolve_symbol(current_data, self.symbol)
         if not open_trades:
             return []

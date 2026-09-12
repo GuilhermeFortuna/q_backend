@@ -85,12 +85,8 @@ def test_performance_metrics():
     registry.register_trade(trade1)
     registry.register_trade(trade2)
 
-    registry.close_trade(
-        "t1", datetime.now(timezone.utc), exit_price=1.1050
-    )  # +500 PnL
-    registry.close_trade(
-        "t2", datetime.now(timezone.utc), exit_price=1.1080
-    )  # +200 PnL
+    registry.close_trade("t1", datetime.now(timezone.utc), exit_price=1.1050)  # +500 PnL
+    registry.close_trade("t2", datetime.now(timezone.utc), exit_price=1.1080)  # +200 PnL
 
     metrics = registry.get_performance_metrics()
 
@@ -158,24 +154,16 @@ def test_registry_advanced_metrics():
 
     # Close trades with deterministic exit times and prices to get custom PnL
     # (We bypass close_trade PnL formula and directly set PnL for simplicity and transparency)
-    registry.close_trade(
-        "t1", datetime(2023, 1, 1, 12, 0, tzinfo=timezone.utc), exit_price=12.0
-    )
+    registry.close_trade("t1", datetime(2023, 1, 1, 12, 0, tzinfo=timezone.utc), exit_price=12.0)
     t1.pnl = 2000.0
 
-    registry.close_trade(
-        "t2", datetime(2023, 1, 2, 12, 0, tzinfo=timezone.utc), exit_price=8.5
-    )
+    registry.close_trade("t2", datetime(2023, 1, 2, 12, 0, tzinfo=timezone.utc), exit_price=8.5)
     t2.pnl = -1500.0
 
-    registry.close_trade(
-        "t3", datetime(2023, 1, 3, 12, 0, tzinfo=timezone.utc), exit_price=9.5
-    )
+    registry.close_trade("t3", datetime(2023, 1, 3, 12, 0, tzinfo=timezone.utc), exit_price=9.5)
     t3.pnl = -500.0
 
-    registry.close_trade(
-        "t4", datetime(2023, 1, 4, 12, 0, tzinfo=timezone.utc), exit_price=13.0
-    )
+    registry.close_trade("t4", datetime(2023, 1, 4, 12, 0, tzinfo=timezone.utc), exit_price=13.0)
     t4.pnl = 3000.0
 
     metrics = registry.get_performance_metrics(initial_capital=10000.0)

@@ -47,9 +47,7 @@ def validate_timeframe(timeframe: str) -> str:
     if key not in _SUPPORTED_TIMEFRAMES:
         raise ExecutionValidationError(f"unsupported timeframe '{timeframe}'")
     if _TF_MINUTES[key] < _MIN_TIMEFRAME_MINUTES:
-        raise ExecutionValidationError(
-            f"timeframe '{timeframe}' is below the M15 minimum for forward execution"
-        )
+        raise ExecutionValidationError(f"timeframe '{timeframe}' is below the M15 minimum for forward execution")
     return key
 
 

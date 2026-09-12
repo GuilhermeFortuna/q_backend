@@ -123,11 +123,7 @@ def _row_from_pipeline_result(
 
 
 def _select_best_label(rows: list[EncoderAblationRow]) -> str | None:
-    candidates = [
-        row
-        for row in rows
-        if row.best_latent_ic is not None and math.isfinite(row.best_latent_ic)
-    ]
+    candidates = [row for row in rows if row.best_latent_ic is not None and math.isfinite(row.best_latent_ic)]
     if not candidates:
         return None
     best = max(

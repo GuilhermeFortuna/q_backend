@@ -51,9 +51,7 @@ def test_rsi_mean_reversion_indicators_and_signals():
 
 
 def test_bollinger_reversion_indicators_and_signals():
-    strategy = build_strategy(
-        "BollingerReversion", {"period": 5, "num_std": 2.0}, "TEST"
-    )
+    strategy = build_strategy("BollingerReversion", {"period": 5, "num_std": 2.0}, "TEST")
     closes = [100.0] * 10 + [80.0, 75.0, 70.0, 85.0, 100.0, 110.0]
     df = _make_ohlcv(closes)
     result = strategy.compute_indicators(df)

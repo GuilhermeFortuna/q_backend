@@ -87,9 +87,7 @@ def merge_instruments_by_symbol(*groups: list[dict]) -> list[dict]:
 
 
 def stored_instruments() -> list[dict]:
-    return [
-        raw_symbol_to_instrument(entry) for entry in local_store.stored_symbols()
-    ]
+    return [raw_symbol_to_instrument(entry) for entry in local_store.stored_symbols()]
 
 
 def search_instrument_sources(service: MarketDataService, query: str) -> list[dict]:
@@ -102,13 +100,9 @@ def search_instrument_sources(service: MarketDataService, query: str) -> list[di
     remote_up = service._remote_client.is_available()
 
     if not mt5_up and source == "mt5":
-        raise HTTPException(
-            status_code=503, detail="MetaTrader 5 terminal is offline."
-        )
+        raise HTTPException(status_code=503, detail="MetaTrader 5 terminal is offline.")
     if not remote_up and source == "remote":
-        raise HTTPException(
-            status_code=503, detail="Remote MetaTrader 5 gateway is offline."
-        )
+        raise HTTPException(status_code=503, detail="Remote MetaTrader 5 gateway is offline.")
 
     merged: dict[str, dict] = {}
 
@@ -135,6 +129,8 @@ def search_instrument_sources(service: MarketDataService, query: str) -> list[di
                 logger.error("Error searching remote MT5 for query '%s': %s", needle, exc)
 
     return list(merged.values())[:50]
+
+
 def utc_iso_seconds(dt: datetime) -> str:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
@@ -261,11 +257,7 @@ def format_tape_ticks(raw_ticks: List[Tick]) -> List[dict]:
     formatted: List[dict] = []
     for tick in selected:
         time_msc = tick.time_msc or 0
-        timestamp = (
-            utc_iso_milliseconds(time_msc)
-            if time_msc > 0
-            else mt5_datetime_to_utc_iso(tick.time)
-        )
+        timestamp = utc_iso_milliseconds(time_msc) if time_msc > 0 else mt5_datetime_to_utc_iso(tick.time)
         formatted.append(
             {
                 "timestamp": timestamp,
@@ -300,6 +292,8 @@ def symbol_info_to_instrument_response(symbol: str, info: Dict[str, Any]) -> dic
         "volumeStep": float(info.get("volume_step") or 0.0),
         "spreadFloating": bool(info.get("spread_float")),
     }
+
+
 def normalize_market_timeframe(timeframe: str) -> str:
     """Map UI-style timeframe labels to MT5 codes."""
     mapping = {
@@ -352,6 +346,7 @@ def estimate_start_time(end_time: datetime, timeframe: str, count: int) -> datet
     seconds_per_bar = seconds_map.get(timeframe.upper(), 86400)
     delta_seconds = count * seconds_per_bar * 3
     from datetime import timedelta
+
     return end_time - timedelta(seconds=delta_seconds)
 
 
@@ -398,9 +393,7 @@ def fetch_ohlcv_rows(
         available = local_store.available_range(symbol, mt5_timeframe)
         if available is None:
             return []
-        bars = service._local_client.get_ohlcv(
-            symbol, mt5_timeframe, available.start, available.end
-        )
+        bars = service._local_client.get_ohlcv(symbol, mt5_timeframe, available.start, available.end)
         return bars[-count:] if len(bars) > count else bars
 
     if ohlcv_source == "remote":
@@ -411,9 +404,7 @@ def fetch_ohlcv_rows(
                 if start_est < available.start:
                     start_est = available.start
                 try:
-                    bars = service._remote_client.get_ohlcv(
-                        symbol, mt5_timeframe, start_est, available.end
-                    )
+                    bars = service._remote_client.get_ohlcv(symbol, mt5_timeframe, start_est, available.end)
                     return bars[-count:] if len(bars) > count else bars
                 except ValueError as ve:
                     raise HTTPException(status_code=400, detail=str(ve)) from ve
@@ -423,18 +414,13 @@ def fetch_ohlcv_rows(
         # Fallback to local if remote was unavailable or returned None for available range
         available_loc = local_store.available_range(symbol, mt5_timeframe)
         if available_loc is not None:
-            bars = service._local_client.get_ohlcv(
-                symbol, mt5_timeframe, available_loc.start, available_loc.end
-            )
+            bars = service._local_client.get_ohlcv(symbol, mt5_timeframe, available_loc.start, available_loc.end)
             return bars[-count:] if len(bars) > count else bars
         return []
 
-
     if not service.mt5_available():
         if get_data_source() == "mt5":
-            raise HTTPException(
-                status_code=503, detail="MetaTrader 5 terminal is offline."
-            )
+            raise HTTPException(status_code=503, detail="MetaTrader 5 terminal is offline.")
         raise HTTPException(
             status_code=404,
             detail=f"No OHLCV data found for symbol '{symbol}' (local data provider).",
@@ -442,14 +428,10 @@ def fetch_ohlcv_rows(
 
     mt5 = mt5_client_module.mt5
     if mt5 is None:
-        raise HTTPException(
-            status_code=503, detail="MetaTrader 5 terminal is offline."
-        )
+        raise HTTPException(status_code=503, detail="MetaTrader 5 terminal is offline.")
 
     if not mt5.symbol_select(symbol, True):
-        raise HTTPException(
-            status_code=404, detail=f"Symbol '{symbol}' not found on MetaTrader 5."
-        )
+        raise HTTPException(status_code=404, detail=f"Symbol '{symbol}' not found on MetaTrader 5.")
 
     timeframe_map = {
         "M1": mt5_client_module._mt5_timeframe("M1"),
@@ -488,9 +470,7 @@ def fetch_ohlcv_available_range(service: MarketDataService, symbol: str, timefra
         return None
 
     if not service.is_available():
-        raise HTTPException(
-            status_code=503, detail="Market data provider is unavailable."
-        )
+        raise HTTPException(status_code=503, detail="Market data provider is unavailable.")
 
     try:
         return service.mt5_client.get_available_ohlcv_range(symbol, mt5_timeframe)
@@ -505,14 +485,8 @@ def ohlcv_to_bar_response(row) -> dict:
     if hasattr(row, "time"):
         timestamp_dt = row.time
         if not isinstance(timestamp_dt, datetime):
-            timestamp_dt = datetime.fromisoformat(
-                str(timestamp_dt).replace("Z", "+00:00")
-            )
-        volume = (
-            row.real_volume
-            if row.real_volume is not None and row.real_volume > 0
-            else row.tick_volume
-        )
+            timestamp_dt = datetime.fromisoformat(str(timestamp_dt).replace("Z", "+00:00"))
+        volume = row.real_volume if row.real_volume is not None and row.real_volume > 0 else row.tick_volume
         return {
             "timestamp": mt5_datetime_to_utc_iso(timestamp_dt),
             "open": float(row.open),
@@ -528,12 +502,9 @@ def ohlcv_to_bar_response(row) -> dict:
         "high": float(row["high"]),
         "low": float(row["low"]),
         "close": float(row["close"]),
-        "volume": (
-            int(row["real_volume"])
-            if row["real_volume"] > 0
-            else int(row["tick_volume"])
-        ),
+        "volume": (int(row["real_volume"]) if row["real_volume"] > 0 else int(row["tick_volume"])),
     }
+
 
 def list_market_instruments(service: MarketDataService) -> list[dict]:
     """Retrieve tradable instruments: default B3 assets plus symbols stored locally."""
@@ -543,9 +514,7 @@ def list_market_instruments(service: MarketDataService) -> list[dict]:
     )
 
     if not service.mt5_available():
-        logger.warning(
-            "MT5 not connected; returning default and stored instrument definitions."
-        )
+        logger.warning("MT5 not connected; returning default and stored instrument definitions.")
         return instruments
 
     mt5 = mt5_client_module.mt5
@@ -554,9 +523,6 @@ def list_market_instruments(service: MarketDataService) -> list[dict]:
 
     for item in DEFAULT_B3_INSTRUMENTS:
         if not mt5.symbol_select(item["symbol"], True):
-            logger.warning(
-                "Symbol '%s' could not be selected in MT5.", item["symbol"]
-            )
+            logger.warning("Symbol '%s' could not be selected in MT5.", item["symbol"])
 
     return instruments
-

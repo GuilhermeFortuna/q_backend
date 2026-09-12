@@ -67,25 +67,19 @@ def get_completed_windows(run_id: str, *, client: Optional[redis.Redis] = None) 
     return int(raw) if raw is not None else 0
 
 
-def set_provider_state(
-    run_id: str, state: dict[str, Any], *, client: Optional[redis.Redis] = None
-) -> None:
+def set_provider_state(run_id: str, state: dict[str, Any], *, client: Optional[redis.Redis] = None) -> None:
     """Persist the evolving provider state (RNG, champion, population, counters)."""
     client = client or get_redis()
     client.set(_state_key(run_id), json.dumps(state), ex=_TTL_SECONDS)
 
 
-def get_provider_state(
-    run_id: str, *, client: Optional[redis.Redis] = None
-) -> Optional[dict[str, Any]]:
+def get_provider_state(run_id: str, *, client: Optional[redis.Redis] = None) -> Optional[dict[str, Any]]:
     client = client or get_redis()
     raw = client.get(_state_key(run_id))
     return json.loads(raw) if raw is not None else None
 
 
-def get_generation_genome(
-    run_id: str, index: int, *, client: Optional[redis.Redis] = None
-) -> dict[str, Any]:
+def get_generation_genome(run_id: str, index: int, *, client: Optional[redis.Redis] = None) -> dict[str, Any]:
     """Return the genome a candidate worker should evaluate, by population index.
 
     Sourced from the stashed provider state, whose ``population`` is always the
@@ -111,9 +105,7 @@ def append_generation_results(
     client.expire(key, _TTL_SECONDS)
 
 
-def get_all_generation_results(
-    run_id: str, *, client: Optional[redis.Redis] = None
-) -> list[list[dict[str, Any]]]:
+def get_all_generation_results(run_id: str, *, client: Optional[redis.Redis] = None) -> list[list[dict[str, Any]]]:
     """Return every generation's results, ordered by generation index."""
     client = client or get_redis()
     raw = client.hgetall(_results_key(run_id))
@@ -135,9 +127,7 @@ def set_candidate_meta(
     client.expire(key, _TTL_SECONDS)
 
 
-def get_all_candidate_meta(
-    run_id: str, *, client: Optional[redis.Redis] = None
-) -> dict[str, dict[str, Any]]:
+def get_all_candidate_meta(run_id: str, *, client: Optional[redis.Redis] = None) -> dict[str, dict[str, Any]]:
     client = client or get_redis()
     raw = client.hgetall(_meta_key(run_id))
     return {cid: json.loads(value) for cid, value in raw.items()}

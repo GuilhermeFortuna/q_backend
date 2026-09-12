@@ -84,9 +84,7 @@ def _simulate_njit(
         if position_dir == 0:
             sig = direction[i]
             if sig != 0:
-                qty = _compute_quantity(
-                    capital, sizing_mode, sizing_a, sizing_b, sizing_c
-                )
+                qty = _compute_quantity(capital, sizing_mode, sizing_a, sizing_b, sizing_c)
                 if qty > 0.0:
                     if sig > 0:
                         position_dir = 1
@@ -143,17 +141,9 @@ def _simulate_njit(
 
             if exited:
                 if position_dir > 0:
-                    pnl = (
-                        (fill_price - pos_entry_price)
-                        * pos_quantity
-                        * point_value
-                    )
+                    pnl = (fill_price - pos_entry_price) * pos_quantity * point_value
                 else:
-                    pnl = (
-                        (pos_entry_price - fill_price)
-                        * pos_quantity
-                        * point_value
-                    )
+                    pnl = (pos_entry_price - fill_price) * pos_quantity * point_value
 
                 capital += pnl
 

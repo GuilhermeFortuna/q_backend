@@ -160,22 +160,14 @@ def base_indicator_kinds() -> tuple[str, ...]:
         sorted(
             kind
             for kind, spec in NODE_SPECS.items()
-            if kind.startswith("ind.")
-            and resolve_node_gen_metadata(spec).swap
-            and kind != "ind.latent"
+            if kind.startswith("ind.") and resolve_node_gen_metadata(spec).swap and kind != "ind.latent"
         )
     )
 
 
 def add_node_kinds() -> tuple[str, ...]:
     """Unary series producers eligible for ``add_node`` mutation."""
-    return tuple(
-        sorted(
-            kind
-            for kind, spec in NODE_SPECS.items()
-            if resolve_node_gen_metadata(spec).add_node
-        )
-    )
+    return tuple(sorted(kind for kind, spec in NODE_SPECS.items() if resolve_node_gen_metadata(spec).add_node))
 
 
 def random_init_transform_kinds() -> tuple[str, ...]:
@@ -184,8 +176,7 @@ def random_init_transform_kinds() -> tuple[str, ...]:
         sorted(
             kind
             for kind, spec in NODE_SPECS.items()
-            if kind.startswith("transform.")
-            and resolve_node_gen_metadata(spec).random_init
+            if kind.startswith("transform.") and resolve_node_gen_metadata(spec).random_init
         )
     )
 
@@ -206,9 +197,7 @@ def swap_kinds(indicator_kinds: tuple[str, ...] | list[str]) -> tuple[str, ...]:
             if kind.startswith("feature.") and resolve_node_gen_metadata(spec).swap
         )
     )
-    indicator_swap = tuple(
-        sorted(kind for kind in indicator_kinds if kind in NODE_SPECS and kind.startswith("ind."))
-    )
+    indicator_swap = tuple(sorted(kind for kind in indicator_kinds if kind in NODE_SPECS and kind.startswith("ind.")))
     return indicator_swap + transform_kinds + feature_kinds
 
 

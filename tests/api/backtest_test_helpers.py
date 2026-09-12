@@ -48,9 +48,7 @@ def run_async_backtest(
                 return_value=mock_service,
             )
         )
-        stack.enter_context(
-            patch("q_backend.api.backtest_jobs.session_scope", api_session_scope)
-        )
+        stack.enter_context(patch("q_backend.api.backtest_jobs.session_scope", api_session_scope))
         for extra in extra_patches or []:
             stack.enter_context(extra)
         start_resp = start_backtest(request)

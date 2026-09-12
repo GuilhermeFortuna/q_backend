@@ -88,9 +88,7 @@ def _sample_columnar(n: int = 120) -> dict[str, np.ndarray]:
     }
 
 
-def test_tick_backtest_returns_metrics_trades_bars_and_run_id(
-    run_jobs_sync, api_db_session, api_session_scope
-):
+def test_tick_backtest_returns_metrics_trades_bars_and_run_id(run_jobs_sync, api_db_session, api_session_scope):
     request_body = {
         "symbol": "WIN$",
         "engine": "tick",
@@ -192,9 +190,7 @@ def test_tick_backtest_mt5_offline_returns_503(run_jobs_sync, api_session_scope)
         }
     )
     mock_service = mock_worker_market_service()
-    mock_service.get_ticks_columnar.side_effect = ConnectionError(
-        "MetaTrader 5 terminal is offline."
-    )
+    mock_service.get_ticks_columnar.side_effect = ConnectionError("MetaTrader 5 terminal is offline.")
 
     with (
         patch(

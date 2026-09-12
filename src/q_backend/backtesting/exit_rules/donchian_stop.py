@@ -28,10 +28,7 @@ class DonchianChannelStopRule(ExitRule):
                 min=0,
                 max=500,
                 step=1,
-                hint=(
-                    "Exit when price crosses the opposite N-bar Donchian extreme "
-                    "(channel trail). 0 to disable."
-                ),
+                hint=("Exit when price crosses the opposite N-bar Donchian extreme " "(channel trail). 0 to disable."),
                 exit_group="trailing",
             ),
         ]
@@ -57,12 +54,7 @@ class DonchianChannelStopRule(ExitRule):
         low_col = f"donchian_low_{period}"
         donchian_high = data.get(high_col, None)
         donchian_low = data.get(low_col, None)
-        if (
-            donchian_high is None
-            or donchian_low is None
-            or pd.isna(donchian_high)
-            or pd.isna(donchian_low)
-        ):
+        if donchian_high is None or donchian_low is None or pd.isna(donchian_high) or pd.isna(donchian_low):
             return False
 
         _, current_high, current_low = _bar_prices(data)

@@ -72,11 +72,7 @@ def sample_market(monkeypatch):
     end = bars_df["time"].iloc[-1].to_pydatetime()
 
     def _read_ohlcv(symbol: str, timeframe: str, start_dt: datetime, end_dt: datetime):
-        filtered = [
-            bar
-            for bar in ohlcv
-            if start_dt <= bar.time <= end_dt
-        ]
+        filtered = [bar for bar in ohlcv if start_dt <= bar.time <= end_dt]
         return filtered
 
     monkeypatch.setattr(
@@ -90,9 +86,7 @@ def sample_market(monkeypatch):
     }
 
 
-def test_build_feature_matrix_uses_read_through_seam(
-    sample_market, lake_root_path, monkeypatch
-):
+def test_build_feature_matrix_uses_read_through_seam(sample_market, lake_root_path, monkeypatch):
     """WO189: matrix loads bars through read_ohlcv_fresh, not local_store."""
     calls: list[tuple[str, str, datetime, datetime]] = []
 
@@ -125,9 +119,7 @@ def test_build_feature_matrix_uses_read_through_seam(
         [FeatureRequest("rsi", None, {"period": 14})],
         use_cache=False,
     )
-    assert calls == [
-        ("EURUSD", "H1", sample_market["start"], sample_market["end"])
-    ]
+    assert calls == [("EURUSD", "H1", sample_market["start"], sample_market["end"])]
 
 
 def test_build_feature_matrix_two_features_valid_from(sample_market, lake_root_path):
@@ -145,9 +137,7 @@ def test_build_feature_matrix_two_features_valid_from(sample_market, lake_root_p
     )
 
     assert len(result.frame.columns) == 2
-    pd.testing.assert_index_equal(
-        result.frame.index, pd.DatetimeIndex(sample_market["bars_df"]["time"])
-    )
+    pd.testing.assert_index_equal(result.frame.index, pd.DatetimeIndex(sample_market["bars_df"]["time"]))
     assert result.manifest["bar_count"] == len(sample_market["bars_df"])
     assert len(result.manifest["features"]) == 2
 
@@ -158,9 +148,7 @@ def test_build_feature_matrix_two_features_valid_from(sample_market, lake_root_p
     assert valid_from == expected
 
 
-def test_build_feature_matrix_cache_hit_skips_compute(
-    sample_market, lake_root_path, monkeypatch
-):
+def test_build_feature_matrix_cache_hit_skips_compute(sample_market, lake_root_path, monkeypatch):
     features = [
         FeatureRequest("rsi", None, {"period": 14}),
         FeatureRequest("atr", None, {"period": 14}),

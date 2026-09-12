@@ -293,9 +293,7 @@ def _register_production_pca_model(smoke_db) -> None:
 # --------------------------------------------------------------------------- #
 # 1. Completion + determinism                                                  #
 # --------------------------------------------------------------------------- #
-def test_discovery_job_completes_and_is_deterministic(
-    run_jobs_sync, smoke_db, smoke_lake
-):
+def test_discovery_job_completes_and_is_deterministic(run_jobs_sync, smoke_db, smoke_lake):
     run_a = _run_discovery(_smoke_request(init_seed=1234, latents_enabled=False))
     payload_a = strategy_search_jobs.results_payload_from_db(run_a)
 
@@ -336,9 +334,7 @@ def test_discovery_job_completes_and_is_deterministic(
 # --------------------------------------------------------------------------- #
 # 2. Latents seam (WO150–152 / WO153)                                          #
 # --------------------------------------------------------------------------- #
-def test_discovery_with_latents_enabled_uses_latent_nodes(
-    run_jobs_sync, smoke_db, smoke_lake
-):
+def test_discovery_with_latents_enabled_uses_latent_nodes(run_jobs_sync, smoke_db, smoke_lake):
     _register_production_pca_model(smoke_db)
 
     # Viability seeding/pre-screen is turned off for this scenario. WO182 FINDING:
@@ -359,22 +355,16 @@ def test_discovery_with_latents_enabled_uses_latent_nodes(
 
     # Built exactly as production does: the provider resolves the per-run latent
     # universe from the registered PRODUCTION model and seeds ind.latent nodes.
-    provider_on = create_genetic_candidate_provider(
-        request.genetic, request, latents_enabled=True
-    )
+    provider_on = create_genetic_candidate_provider(request.genetic, request, latents_enabled=True)
     assert "ind.latent" in provider_on._latent_universe.indicator_kinds
     assert provider_on._latent_universe.n_latents > 0
-    assert _population_has_latent(provider_on.population), (
-        "a PRODUCTION model must seed latent genome nodes"
-    )
+    assert _population_has_latent(provider_on.population), "a PRODUCTION model must seed latent genome nodes"
 
     run_id = _run_discovery(request)
     payload = strategy_search_jobs.results_payload_from_db(run_id)
     assert payload is not None
     assert payload["status"] == "completed"
-    assert _run_has_latent_genome(payload), (
-        "latent nodes must survive into the persisted population"
-    )
+    assert _run_has_latent_genome(payload), "latent nodes must survive into the persisted population"
 
     # WO153 seam: latents OFF → the universe never exposes ind.latent, so no latent
     # node can be seeded or mutated in, and the run still completes.
@@ -384,9 +374,7 @@ def test_discovery_with_latents_enabled_uses_latent_nodes(
         min_seed_signals=0,
         prescreen_min_signals=0,
     )
-    provider_off = create_genetic_candidate_provider(
-        off_request.genetic, off_request, latents_enabled=False
-    )
+    provider_off = create_genetic_candidate_provider(off_request.genetic, off_request, latents_enabled=False)
     assert "ind.latent" not in provider_off._latent_universe.indicator_kinds
     assert not _population_has_latent(provider_off.population)
 
@@ -400,9 +388,7 @@ def test_discovery_with_latents_enabled_uses_latent_nodes(
 # --------------------------------------------------------------------------- #
 # 3. Cancellation mid-run                                                      #
 # --------------------------------------------------------------------------- #
-def test_cancellation_mid_run_leaves_consistent_state(
-    run_jobs_sync, smoke_db, smoke_lake, monkeypatch
-):
+def test_cancellation_mid_run_leaves_consistent_state(run_jobs_sync, smoke_db, smoke_lake, monkeypatch):
     from q_backend.tasks.fanin import set_cancelled
 
     threads_before = threading.active_count()
@@ -465,9 +451,7 @@ _DB_FAMILIES = {
     ),
     "backtest_jobs": (
         backtest_jobs,
-        lambda s: create_backtest_run(
-            s, backtest_config_id=uuid.uuid4(), config={}, status="running"
-        ),
+        lambda s: create_backtest_run(s, backtest_config_id=uuid.uuid4(), config={}, status="running"),
     ),
 }
 _REDIS_FAMILIES = {
@@ -477,12 +461,8 @@ _REDIS_FAMILIES = {
 }
 
 
-@pytest.mark.parametrize(
-    "family", list(_DB_FAMILIES) + list(_REDIS_FAMILIES)
-)
-def test_orphaned_run_reconciled_on_startup(
-    run_jobs_sync, monkeypatch, tmp_path, family
-):
+@pytest.mark.parametrize("family", list(_DB_FAMILIES) + list(_REDIS_FAMILIES))
+def test_orphaned_run_reconciled_on_startup(run_jobs_sync, monkeypatch, tmp_path, family):
     # alpha_research reconcile reads a lake checkpoint; a fresh empty lake makes
     # the "no checkpoint" (orphaned) branch deterministic.
     monkeypatch.setenv("Q_DATA_LAKE_ROOT", str(tmp_path))
@@ -533,9 +513,7 @@ def test_orphaned_run_reconciled_on_startup(
 # --------------------------------------------------------------------------- #
 # 5. Failed-candidate accounting                                              #
 # --------------------------------------------------------------------------- #
-def test_failed_candidates_are_accounted_for(
-    run_jobs_sync, smoke_db, smoke_lake, monkeypatch
-):
+def test_failed_candidates_are_accounted_for(run_jobs_sync, smoke_db, smoke_lake, monkeypatch):
     # Fail the per-candidate data load for half the candidates at the same seam a
     # candidate worker loads its frame; the worker isolates each failure into an
     # error CandidateResult and the finalizer tallies them into the result summary.
@@ -559,7 +537,4 @@ def test_failed_candidates_are_accounted_for(
     summary = payload["summary"]
     assert summary["failed_candidate_count"] > 0
     assert summary["failure_reasons"]
-    assert any(
-        "synthetic data-provider outage" in reason
-        for reason in summary["failure_reasons"]
-    )
+    assert any("synthetic data-provider outage" in reason for reason in summary["failure_reasons"])

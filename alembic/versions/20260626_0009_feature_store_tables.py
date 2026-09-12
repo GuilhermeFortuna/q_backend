@@ -56,9 +56,7 @@ def upgrade() -> None:
         sa.Column("provenance", sa.JSON(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["definition_id"], ["feature_definitions.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["definition_id"], ["feature_definitions.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "definition_id",

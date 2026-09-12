@@ -67,6 +67,4 @@ class StrategyCompileError(Exception):
         super().__init__(message)
         self.message = message
         self.status = status
-        self.errors = errors or [
-            ValidationErrorDetail(path="", code=code, message=message)
-        ]
+        self.errors = errors or [ValidationErrorDetail(path="", code=code, message=message)]

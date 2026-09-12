@@ -29,7 +29,7 @@ def _compute_pairs_signals_numba(
     spread_values = np.zeros(n, dtype=np.float64)
 
     cycle_len = formation_bars + trading_bars
-    
+
     # State variables
     position = 0  # 0: flat, 1: long spread (buy A, short B), -1: short spread (short A, buy B)
     start_price_a = 0.0
@@ -38,7 +38,7 @@ def _compute_pairs_signals_numba(
 
     for i in range(n):
         k = i % cycle_len
-        
+
         # At start of cycle, record starting prices
         if k == 0:
             start_price_a = price_a[i]
@@ -54,18 +54,18 @@ def _compute_pairs_signals_numba(
         # End of formation period: calculate standard deviation of spread
         if k == formation_bars - 1:
             formation_spreads = spread_values[i - formation_bars + 1 : i + 1]
-            
+
             mean_spread = 0.0
             for val in formation_spreads:
                 mean_spread += val
             mean_spread /= formation_bars
-            
+
             var_spread = 0.0
             for val in formation_spreads:
                 diff = val - mean_spread
                 var_spread += diff * diff
             var_spread /= formation_bars
-            
+
             sd_spread = np.sqrt(var_spread)
 
         # Trading period
@@ -96,7 +96,7 @@ def _compute_pairs_signals_numba(
 class GatevPairsStrategy(TradingStrategy):
     """
     Gatev, Goetzmann & Rouwenhorst (2006) Pairs Trading strategy.
-    
+
     Trades a synthetic spread asset: price = close_a - close_b.
     During the formation period, it calculates the historical standard deviation of the
     normalized spread. During the trading period, it goes long/short the spread when
@@ -119,9 +119,7 @@ class GatevPairsStrategy(TradingStrategy):
         **kwargs,
     ):
         if vol_estimator not in VOL_ESTIMATOR_CHOICES:
-            raise ValueError(
-                f"vol_estimator must be one of {VOL_ESTIMATOR_CHOICES}, got {vol_estimator!r}"
-            )
+            raise ValueError(f"vol_estimator must be one of {VOL_ESTIMATOR_CHOICES}, got {vol_estimator!r}")
         self.col_a = col_a
         self.col_b = col_b
         self.open_col_a = open_col_a
@@ -159,13 +157,13 @@ class GatevPairsStrategy(TradingStrategy):
 
         # Compute synthetic close as price difference
         df["close"] = df[self.col_a] - df[self.col_b]
-        
+
         # Open price spread
         if self.open_col_a in df.columns and self.open_col_b in df.columns:
             df["open"] = df[self.open_col_a] - df[self.open_col_b]
         else:
             df["open"] = df["close"]
-            
+
         df["high"] = df["close"]
         df["low"] = df["close"]
 
@@ -219,9 +217,7 @@ class GatevPairsStrategy(TradingStrategy):
             signals.append(Signal(symbol=symbol, action=SignalAction.SELL))
         return signals
 
-    def check_exit_conditions(
-        self, current_data: pd.Series, open_trades: List[Trade]
-    ) -> List[Signal]:
+    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
         symbol = resolve_symbol(current_data, self.symbol)
         if not open_trades:
             return []

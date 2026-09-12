@@ -194,8 +194,7 @@ class OptimizationRunner:
         self,
         study: optuna.Study,
         trial_number: int,
-        callbacks: list[Callable[[optuna.Study, optuna.trial.FrozenTrial], None]]
-        | None,
+        callbacks: list[Callable[[optuna.Study, optuna.trial.FrozenTrial], None]] | None,
     ) -> None:
         if not callbacks:
             return
@@ -209,8 +208,7 @@ class OptimizationRunner:
         trial: optuna.trial.Trial,
         trial_params: TrialParams,
         worker_result: BacktestWorkerResult,
-        callbacks: list[Callable[[optuna.Study, optuna.trial.FrozenTrial], None]]
-        | None,
+        callbacks: list[Callable[[optuna.Study, optuna.trial.FrozenTrial], None]] | None,
     ) -> None:
         if worker_result["status"] == "pruned":
             trial.set_user_attr("status", "pruned")
@@ -247,9 +245,7 @@ class OptimizationRunner:
         for key, value in worker_result["trial_user_attrs"].items():
             trial.set_user_attr(key, value)
 
-        objective_value = resolve_objective(
-            worker_result["metrics"], self.config.objective.mode
-        )
+        objective_value = resolve_objective(worker_result["metrics"], self.config.objective.mode)
         if isinstance(objective_value, list):
             study.tell(trial, values=tuple(objective_value))
         else:
@@ -261,8 +257,7 @@ class OptimizationRunner:
         study: optuna.Study,
         trial: optuna.trial.Trial,
         reason: str,
-        callbacks: list[Callable[[optuna.Study, optuna.trial.FrozenTrial], None]]
-        | None,
+        callbacks: list[Callable[[optuna.Study, optuna.trial.FrozenTrial], None]] | None,
     ) -> None:
         trial.set_user_attr("status", "pruned")
         trial.set_user_attr("error", reason)
@@ -273,8 +268,7 @@ class OptimizationRunner:
         self,
         study: optuna.Study,
         n_trials: int,
-        callbacks: list[Callable[[optuna.Study, optuna.trial.FrozenTrial], None]]
-        | None,
+        callbacks: list[Callable[[optuna.Study, optuna.trial.FrozenTrial], None]] | None,
         should_stop: Callable[[], bool] | None,
     ) -> None:
         """Fan trials out across worker processes via Optuna ask/tell.
@@ -319,9 +313,7 @@ class OptimizationRunner:
                             entries=self.config.backtest.entries,
                         )
                     except optuna.TrialPruned as exc:
-                        self._tell_validation_pruned(
-                            study, trial, str(exc), callbacks
-                        )
+                        self._tell_validation_pruned(study, trial, str(exc), callbacks)
                         dispatched += 1
                         continue
                     backtest_config = self._build_backtest_config(trial_params)
@@ -331,14 +323,11 @@ class OptimizationRunner:
 
                 for future, trial, trial_params in batch:
                     worker_result = future.result()
-                    self._tell_worker_result(
-                        study, trial, trial_params, worker_result, callbacks
-                    )
+                    self._tell_worker_result(study, trial, trial_params, worker_result, callbacks)
 
     def run(
         self,
-        callbacks: list[Callable[[optuna.Study, optuna.trial.FrozenTrial], None]]
-        | None = None,
+        callbacks: list[Callable[[optuna.Study, optuna.trial.FrozenTrial], None]] | None = None,
         n_trials: int | None = None,
         should_stop: Callable[[], bool] | None = None,
     ) -> OptimizationResult:
@@ -353,13 +342,9 @@ class OptimizationRunner:
         ``study.optimize`` path is used unchanged.
         """
         self.failures = []
-        trial_budget = (
-            self.config.study.n_trials if n_trials is None else n_trials
-        )
+        trial_budget = self.config.study.n_trials if n_trials is None else n_trials
 
-        use_parallel = self._ohlcv is not None and resolve_worker_count(
-            self._max_workers, trial_budget
-        ) > 1
+        use_parallel = self._ohlcv is not None and resolve_worker_count(self._max_workers, trial_budget) > 1
 
         disable_pruning = False
         if use_parallel and self.config.study.pruner != "none":

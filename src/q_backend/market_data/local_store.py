@@ -79,12 +79,7 @@ def _catalog_path() -> Path:
 
 
 def _ohlcv_series_dir(symbol: str, timeframe: str) -> Path:
-    return (
-        market_data_root()
-        / "ohlcv"
-        / _slug_symbol(symbol)
-        / timeframe.upper()
-    )
+    return market_data_root() / "ohlcv" / _slug_symbol(symbol) / timeframe.upper()
 
 
 def _year_parquet_path(symbol: str, timeframe: str, year: int) -> Path:
@@ -270,10 +265,7 @@ def _remove_catalog_entry(symbol: str, kind: str, timeframe: str = "") -> None:
         if not (
             row.get("symbol") == symbol
             and row.get("kind", _KIND_BARS) == kind
-            and (
-                kind == _KIND_TICKS
-                or str(row.get("timeframe", "")).upper() == tf
-            )
+            and (kind == _KIND_TICKS or str(row.get("timeframe", "")).upper() == tf)
         )
     ]
     _write_catalog(updated)
@@ -320,9 +312,7 @@ def _to_naive_utc(ts: pd.Timestamp) -> pd.Timestamp:
     return ts
 
 
-def read_ohlcv(
-    symbol: str, timeframe: str, start: datetime, end: datetime
-) -> list[OHLCV]:
+def read_ohlcv(symbol: str, timeframe: str, start: datetime, end: datetime) -> list[OHLCV]:
     tf = timeframe.upper()
     # The stored `time` column is tz-naive UTC; callers may pass either tz-naive
     # or tz-aware bounds (e.g. the Feature Lab sends ISO strings with an offset).
@@ -368,9 +358,7 @@ def _dataframe_to_columnar(df: pd.DataFrame) -> dict[str, np.ndarray]:
     return result
 
 
-def _merge_tick_frame(
-    existing: pd.DataFrame | None, incoming: pd.DataFrame
-) -> pd.DataFrame:
+def _merge_tick_frame(existing: pd.DataFrame | None, incoming: pd.DataFrame) -> pd.DataFrame:
     if existing is None or existing.empty:
         combined = incoming.copy()
     elif incoming.empty:
@@ -490,9 +478,7 @@ def write_ticks(symbol: str, arrays: dict[str, np.ndarray]) -> dict[str, Any]:
     return entry
 
 
-def read_ticks_columnar(
-    symbol: str, start: datetime, end: datetime
-) -> dict[str, np.ndarray]:
+def read_ticks_columnar(symbol: str, start: datetime, end: datetime) -> dict[str, np.ndarray]:
     start_msc = _naive_local_to_time_msc(start)
     end_msc = _naive_local_to_time_msc(end)
     if start_msc > end_msc:

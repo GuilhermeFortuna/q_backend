@@ -53,9 +53,7 @@ def test_backtest_config_for_walkforward_truncates_end():
         point_value=1.0,
         strategy="MACrossover",
     )
-    truncated = backtest_config_for_walkforward(
-        backtest, LockboxConfig(enabled=True, lockbox_pct=0.15)
-    )
+    truncated = backtest_config_for_walkforward(backtest, LockboxConfig(enabled=True, lockbox_pct=0.15))
     assert truncated.end < backtest.end
 
 

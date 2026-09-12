@@ -82,9 +82,7 @@ def upgrade() -> None:
         sa.Column("stopped_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["paper_account_id"], ["paper_accounts.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["paper_account_id"], ["paper_accounts.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
@@ -126,9 +124,7 @@ def upgrade() -> None:
         sa.Column("context", sa.JSON(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["deployment_id"], ["execution_deployments.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["deployment_id"], ["execution_deployments.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "deployment_id",
@@ -162,12 +158,8 @@ def upgrade() -> None:
         sa.Column("details", sa.JSON(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["deployment_id"], ["execution_deployments.id"], ondelete="CASCADE"
-        ),
-        sa.ForeignKeyConstraint(
-            ["decision_id"], ["execution_decisions.id"], ondelete="SET NULL"
-        ),
+        sa.ForeignKeyConstraint(["deployment_id"], ["execution_deployments.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["decision_id"], ["execution_decisions.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
@@ -202,12 +194,8 @@ def upgrade() -> None:
         sa.Column("details", sa.JSON(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["deployment_id"], ["execution_deployments.id"], ondelete="CASCADE"
-        ),
-        sa.ForeignKeyConstraint(
-            ["order_id"], ["execution_orders.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["deployment_id"], ["execution_deployments.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["order_id"], ["execution_orders.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "broker_mode",
@@ -240,9 +228,7 @@ def upgrade() -> None:
         sa.Column("closed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["deployment_id"], ["execution_deployments.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["deployment_id"], ["execution_deployments.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
@@ -272,15 +258,9 @@ def upgrade() -> None:
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["paper_account_id"], ["paper_accounts.id"], ondelete="CASCADE"
-        ),
-        sa.ForeignKeyConstraint(
-            ["deployment_id"], ["execution_deployments.id"], ondelete="CASCADE"
-        ),
-        sa.ForeignKeyConstraint(
-            ["fill_id"], ["execution_fills.id"], ondelete="SET NULL"
-        ),
+        sa.ForeignKeyConstraint(["paper_account_id"], ["paper_accounts.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["deployment_id"], ["execution_deployments.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["fill_id"], ["execution_fills.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
@@ -307,15 +287,9 @@ def upgrade() -> None:
         sa.Column("context", sa.JSON(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["deployment_id"], ["execution_deployments.id"], ondelete="CASCADE"
-        ),
-        sa.ForeignKeyConstraint(
-            ["decision_id"], ["execution_decisions.id"], ondelete="SET NULL"
-        ),
-        sa.ForeignKeyConstraint(
-            ["order_id"], ["execution_orders.id"], ondelete="SET NULL"
-        ),
+        sa.ForeignKeyConstraint(["deployment_id"], ["execution_deployments.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["decision_id"], ["execution_decisions.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(["order_id"], ["execution_orders.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
@@ -336,9 +310,7 @@ def upgrade() -> None:
         sa.Column("heartbeat_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["deployment_id"], ["execution_deployments.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["deployment_id"], ["execution_deployments.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "deployment_id",
@@ -358,19 +330,11 @@ def downgrade() -> None:
     op.drop_table("execution_worker_leases")
     op.drop_index("ix_execution_risk_events_deployment", table_name="execution_risk_events")
     op.drop_table("execution_risk_events")
-    op.drop_index(
-        "ix_execution_ledger_entries_deployment", table_name="execution_ledger_entries"
-    )
-    op.drop_index(
-        "ix_execution_ledger_entries_account", table_name="execution_ledger_entries"
-    )
+    op.drop_index("ix_execution_ledger_entries_deployment", table_name="execution_ledger_entries")
+    op.drop_index("ix_execution_ledger_entries_account", table_name="execution_ledger_entries")
     op.drop_table("execution_ledger_entries")
-    op.drop_index(
-        "uq_execution_net_positions_one_open", table_name="execution_net_positions"
-    )
-    op.drop_index(
-        "ix_execution_net_positions_deployment", table_name="execution_net_positions"
-    )
+    op.drop_index("uq_execution_net_positions_one_open", table_name="execution_net_positions")
+    op.drop_index("ix_execution_net_positions_deployment", table_name="execution_net_positions")
     op.drop_table("execution_net_positions")
     op.drop_index("ix_execution_fills_order", table_name="execution_fills")
     op.drop_index("ix_execution_fills_deployment", table_name="execution_fills")
@@ -380,15 +344,9 @@ def downgrade() -> None:
     op.drop_table("execution_orders")
     op.drop_index("ix_execution_decisions_deployment", table_name="execution_decisions")
     op.drop_table("execution_decisions")
-    op.drop_index(
-        "ix_execution_deployments_symbol_tf", table_name="execution_deployments"
-    )
-    op.drop_index(
-        "ix_execution_deployments_lifecycle", table_name="execution_deployments"
-    )
-    op.drop_index(
-        "ix_execution_deployments_paper_account", table_name="execution_deployments"
-    )
+    op.drop_index("ix_execution_deployments_symbol_tf", table_name="execution_deployments")
+    op.drop_index("ix_execution_deployments_lifecycle", table_name="execution_deployments")
+    op.drop_index("ix_execution_deployments_paper_account", table_name="execution_deployments")
     op.drop_table("execution_deployments")
     op.drop_table("execution_control_state")
     op.drop_index("ix_paper_accounts_name", table_name="paper_accounts")

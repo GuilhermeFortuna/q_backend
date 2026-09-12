@@ -60,9 +60,7 @@ class BacktestEngine:
     ) -> Optional[Trade]:
         trade = registry.trades.get(trade_id)
         if trade and trade.status != TradeStatus.CLOSED:
-            trade.commission += side_cost(
-                self.costs, exit_price, trade.quantity, trade.point_value
-            )
+            trade.commission += side_cost(self.costs, exit_price, trade.quantity, trade.point_value)
         return registry.close_trade(trade_id, exit_time, exit_price, exit_reason=exit_reason)
 
     def run(
@@ -94,9 +92,7 @@ class BacktestEngine:
             try:
                 data.index = pd.to_datetime(data.index)
             except Exception as e:
-                raise ValueError(
-                    "DataFrame index must be or be convertible to a DatetimeIndex."
-                ) from e
+                raise ValueError("DataFrame index must be or be convertible to a DatetimeIndex.") from e
 
         if parallel_mode == ParallelMode.DAY_TRADE:
             master_registry = TradeRegistry()
@@ -107,18 +103,12 @@ class BacktestEngine:
             # budgeted source of CPU parallelism in the backend, and a nested pool
             # per backtest would oversubscribe the cores when several jobs run.
             for _, chunk in data.groupby(data.index.date):
-                master_registry.merge(
-                    self._run_single_chunk(
-                        chunk, force_close_at_end=True, trade_start=trade_start
-                    )
-                )
+                master_registry.merge(self._run_single_chunk(chunk, force_close_at_end=True, trade_start=trade_start))
 
             return master_registry
 
         else:  # SEQUENTIAL
-            return self._run_single_chunk(
-                data, force_close_at_end=False, trade_start=trade_start
-            )
+            return self._run_single_chunk(data, force_close_at_end=False, trade_start=trade_start)
 
     def _run_single_chunk(
         self,
@@ -149,9 +139,7 @@ class BacktestEngine:
                     and "close" in chunk.columns
                 ):
                     period = int(col.split("_", 1)[1])
-                    chunk[col] = compute_atr(
-                        chunk["high"], chunk["low"], chunk["close"], period
-                    )
+                    chunk[col] = compute_atr(chunk["high"], chunk["low"], chunk["close"], period)
                 elif col.startswith("donchian_high_") or col.startswith("donchian_low_"):
                     prefix = "donchian_high_" if col.startswith("donchian_high_") else "donchian_low_"
                     donchian_periods.add(int(col.removeprefix(prefix)))
@@ -162,9 +150,7 @@ class BacktestEngine:
                     low_col = f"donchian_low_{period}"
                     if high_col in chunk.columns and low_col in chunk.columns:
                         continue
-                    upper, lower = compute_donchian_channels(
-                        chunk["high"], chunk["low"], period
-                    )
+                    upper, lower = compute_donchian_channels(chunk["high"], chunk["low"], period)
                     chunk[high_col] = upper
                     chunk[low_col] = lower
 
@@ -209,10 +195,7 @@ class BacktestEngine:
             # back to close for close-only series that carry no 'open' column.
             fill_price = current_data.get("open", current_data.get("close", 0.0))
 
-            is_last_bar_of_day = (
-                i == len(chunk) - 1
-                or chunk.index[i + 1].date() != timestamp.date()
-            )
+            is_last_bar_of_day = i == len(chunk) - 1 or chunk.index[i + 1].date() != timestamp.date()
 
             # A. Early force-close at close time (priority over executing pending list).
             if self.day_trade and current_time >= close_t:
@@ -231,9 +214,7 @@ class BacktestEngine:
             for sig in pending_exits:
                 if sig.action != SignalAction.CLOSE:
                     continue
-                open_trades = [
-                    t for t in registry.get_open_trades() if t.symbol == sig.symbol
-                ]
+                open_trades = [t for t in registry.get_open_trades() if t.symbol == sig.symbol]
                 for t in open_trades:
                     closed_trade = self._close_trade_with_costs(
                         registry, t.id, timestamp, fill_price, exit_reason=getattr(sig, "exit_reason", None) or "SIGNAL"
@@ -243,19 +224,11 @@ class BacktestEngine:
 
             # C. Execute entries queued on the previous bar.
             for sig in pending_entries:
-                order = self.sizer.size_signal(
-                    sig, fill_price, current_capital, current_data=current_data
-                )
+                order = self.sizer.size_signal(sig, fill_price, current_capital, current_data=current_data)
                 if order:
-                    max_size = self.sizer.max_position_size(
-                        fill_price, current_capital
-                    )
+                    max_size = self.sizer.max_position_size(fill_price, current_capital)
                     if max_size is not None:
-                        open_qty = sum(
-                            t.quantity
-                            for t in registry.get_open_trades()
-                            if t.symbol == order.symbol
-                        )
+                        open_qty = sum(t.quantity for t in registry.get_open_trades() if t.symbol == order.symbol)
                         remaining = max_size - open_qty
                         if remaining <= 0:
                             continue
@@ -273,9 +246,7 @@ class BacktestEngine:
                         entry_time=timestamp,
                         entry_price=fill_price,
                         point_value=point_val,
-                        commission=side_cost(
-                            self.costs, fill_price, order.quantity, point_val
-                        ),
+                        commission=side_cost(self.costs, fill_price, order.quantity, point_val),
                     )
                     registry.register_trade(trade)
 
@@ -290,7 +261,7 @@ class BacktestEngine:
                     else:
                         pending_exits = []
                     closed_symbols = {sig.symbol for sig in pending_exits}
-                    
+
                     strategy_exits = self.strategy.check_exit_conditions(
                         current_data, [t for t in registry.get_open_trades() if t.symbol not in closed_symbols]
                     )
@@ -306,18 +277,16 @@ class BacktestEngine:
                     pending_entries = []
             else:
                 if hasattr(self.strategy, "exit_strategy"):
-                    pending_exits = self.strategy.exit_strategy.check_exits(
-                        registry.get_open_trades(), current_data
-                    )
+                    pending_exits = self.strategy.exit_strategy.check_exits(registry.get_open_trades(), current_data)
                 else:
                     pending_exits = []
                 closed_symbols = {sig.symbol for sig in pending_exits}
-                
+
                 strategy_exits = self.strategy.check_exit_conditions(
                     current_data, [t for t in registry.get_open_trades() if t.symbol not in closed_symbols]
                 )
                 pending_exits.extend(strategy_exits)
-                
+
                 pending_entries = self.strategy.check_entry_conditions(current_data)
 
             # E. Daily force-close at the end of the last bar of the day.
@@ -343,4 +312,3 @@ class BacktestEngine:
                 self._close_trade_with_costs(registry, t.id, final_time, final_price, exit_reason="FORCE_CLOSE")
 
         return registry
-

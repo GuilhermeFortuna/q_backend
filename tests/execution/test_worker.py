@@ -79,9 +79,7 @@ def _synthetic_ohlcv(n: int = 80, *, freq: str = "h") -> pd.DataFrame:
 
 
 def test_lease_takeover_blocks_second_worker(db_session):
-    account = create_paper_account(
-        db_session, name="lease-account", initial_balance=Decimal("100000")
-    )
+    account = create_paper_account(db_session, name="lease-account", initial_balance=Decimal("100000"))
     deployment = create_execution_deployment(
         db_session,
         paper_account_id=account.id,
@@ -110,9 +108,7 @@ def test_lease_takeover_blocks_second_worker(db_session):
 
 
 def test_worker_poll_once_processes_new_bar(db_engine, db_session):
-    account = create_paper_account(
-        db_session, name="worker-account", initial_balance=Decimal("100000")
-    )
+    account = create_paper_account(db_session, name="worker-account", initial_balance=Decimal("100000"))
     deployment = create_execution_deployment(
         db_session,
         paper_account_id=account.id,
@@ -194,9 +190,7 @@ def test_worker_reconciles_pending_unknown_before_new_decisions(db_engine, db_se
         mark_incomplete_orders_unknown,
     )
 
-    account = create_paper_account(
-        db_session, name="recon-worker", initial_balance=Decimal("100000")
-    )
+    account = create_paper_account(db_session, name="recon-worker", initial_balance=Decimal("100000"))
     deployment = create_execution_deployment(
         db_session,
         paper_account_id=account.id,
@@ -249,9 +243,7 @@ def test_worker_reconciles_pending_unknown_before_new_decisions(db_engine, db_se
     )
     # Worker-level broker only drives reconciliation; report not-found so the
     # ambiguous order is resolved (and the deployment unblocked) at poll start.
-    recon_broker = FakeReconciliationBroker(
-        default=BrokerOrderState(status=BrokerOrderLookupStatus.NOT_FOUND)
-    )
+    recon_broker = FakeReconciliationBroker(default=BrokerOrderState(status=BrokerOrderLookupStatus.NOT_FOUND))
     settings = Settings(
         execution_worker_id="worker-a",
         execution_lease_ttl_seconds=60,
@@ -290,9 +282,7 @@ BENCHMARK_FIXTURES = (
 
 
 @pytest.mark.parametrize("symbol,timeframe,freq,bars", BENCHMARK_FIXTURES)
-def test_full_path_benchmark_p95_under_budget(
-    symbol: str, timeframe: str, freq: str, bars: int, db_engine
-):
+def test_full_path_benchmark_p95_under_budget(symbol: str, timeframe: str, freq: str, bars: int, db_engine):
     from q_backend.execution.brokers.base import PaperCostConfig
     from q_backend.storage.db.execution_models import ExecutionDeployment
 
@@ -318,9 +308,7 @@ def test_full_path_benchmark_p95_under_budget(
     factory = sessionmaker(bind=db_engine, expire_on_commit=False)
     deployment_id = None
     with factory() as session:
-        account = create_paper_account(
-            session, name=f"bench-{symbol}", initial_balance=Decimal("100000")
-        )
+        account = create_paper_account(session, name=f"bench-{symbol}", initial_balance=Decimal("100000"))
         deployment = create_execution_deployment(
             session,
             paper_account_id=account.id,

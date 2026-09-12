@@ -13,9 +13,7 @@ from q_backend.backtesting.strategy_registry import (
 )
 from q_backend.backtesting.tick.strategy import TickArrays
 
-TICK_STRATEGY_NAMES = [
-    info.name for info in list_registered_strategies() if info.engine == "tick"
-]
+TICK_STRATEGY_NAMES = [info.name for info in list_registered_strategies() if info.engine == "tick"]
 
 
 def _synthetic_ticks(n: int = 500) -> TickArrays:

@@ -46,13 +46,7 @@ def _parallel_coordinate_payload(
 ) -> dict[str, Any]:
     labels = objective_labels(config)
     is_multi = config.is_multi_objective()
-    param_names = sorted(
-        {
-            key
-            for trial in complete_trials
-            for key in trial.params
-        }
-    )
+    param_names = sorted({key for trial in complete_trials for key in trial.params})
     sorted_trials = sorted(complete_trials, key=lambda trial: trial.number)
     rows_capped = False
     if len(sorted_trials) > MAX_PCP_ROWS:
@@ -154,12 +148,10 @@ def _compute_param_importances(
         if config.is_multi_objective():
             result: dict[str, list[dict[str, Any]]] = {}
             for index, label in enumerate(labels):
-                target: Callable[[FrozenTrial], float] = (
-                    lambda trial, objective_index=index: trial.values[objective_index]  # type: ignore[index]
-                )
-                result[label] = _importance_entries(
-                    get_param_importances(study, target=target)
-                )
+                target: Callable[[FrozenTrial], float] = lambda trial, objective_index=index: trial.values[
+                    objective_index
+                ]  # type: ignore[index]
+                result[label] = _importance_entries(get_param_importances(study, target=target))
         else:
             result = {
                 labels[0]: _importance_entries(get_param_importances(study)),

@@ -7,9 +7,7 @@ from dataclasses import dataclass
 from q_backend.storage.settings import Settings
 from q_backend.strategy_builder.providers.factory import AiMisconfiguredError
 
-DEFAULT_GEMINI_MODELS = (
-    "gemini-2.5-flash|Gemini 2.5 Flash,gemini-2.5-pro|Gemini 2.5 Pro"
-)
+DEFAULT_GEMINI_MODELS = "gemini-2.5-flash|Gemini 2.5 Flash,gemini-2.5-pro|Gemini 2.5 Pro"
 
 
 @dataclass(frozen=True)
@@ -57,10 +55,7 @@ def build_curated_model_options(
     if parsed:
         return parsed
     default_model = settings.ai_strategy_model.strip()
-    if (
-        provider_id == settings.ai_strategy_provider.strip().lower()
-        and default_model
-    ):
+    if provider_id == settings.ai_strategy_provider.strip().lower() and default_model:
         return [CuratedModelOption(id=default_model, label=default_model)]
     return []
 
@@ -89,9 +84,7 @@ def resolve_provider_default_model(settings: Settings, provider_id: str) -> str:
             default_model = settings.ai_strategy_model.strip()
             if default_model:
                 return default_model
-        raise AiMisconfiguredError(
-            f"No curated models configured for provider '{provider_id}'."
-        )
+        raise AiMisconfiguredError(f"No curated models configured for provider '{provider_id}'.")
 
     if provider_id == settings.ai_strategy_provider.strip().lower():
         selected = settings.ai_strategy_model.strip()
@@ -108,9 +101,7 @@ def resolve_interpret_model(
     resolved_provider = (provider_id or settings.ai_strategy_provider).strip().lower()
     allowlist = build_model_allowlist(settings, resolved_provider)
     if not allowlist:
-        raise AiMisconfiguredError(
-            f"No curated models configured for provider '{resolved_provider}'."
-        )
+        raise AiMisconfiguredError(f"No curated models configured for provider '{resolved_provider}'.")
 
     if request_model is None or not request_model.strip():
         selected = resolve_provider_default_model(settings, resolved_provider)
@@ -121,8 +112,7 @@ def resolve_interpret_model(
         raise AiMisconfiguredError("Q_AI_STRATEGY_MODEL must be set.")
     if selected not in allowlist:
         raise AiMisconfiguredError(
-            f"Model '{selected}' is not in the configured allowlist. "
-            f"Allowed models: {', '.join(allowlist)}."
+            f"Model '{selected}' is not in the configured allowlist. " f"Allowed models: {', '.join(allowlist)}."
         )
     return selected
 

@@ -148,9 +148,7 @@ def evict_run(run_id: str) -> None:
     try:
         delete_job_progress(get_redis(), run_id, namespace=PROGRESS_NAMESPACE)
     except Exception:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
-        logger.debug(
-            "Redis progress delete unavailable for strategy search run %s", run_id
-        )
+        logger.debug("Redis progress delete unavailable for strategy search run %s", run_id)
     clear_partials(run_id)
     clear_job_keys(run_id)
 
@@ -161,9 +159,7 @@ def validate_strategy_search_request(config: StrategySearchConfig) -> None:
         primary_timeframe=config.backtest.timeframe,
         exogenous_series=config.exogenous_series,
     )
-    wf_end, _, _ = compute_lockbox_bounds(
-        config.backtest.start, config.backtest.end, config.lockbox
-    )
+    wf_end, _, _ = compute_lockbox_bounds(config.backtest.start, config.backtest.end, config.lockbox)
     split_windows(config.backtest.start, wf_end, config.walkforward)
 
 
@@ -171,9 +167,7 @@ def _load_run_frame(request: StrategySearchConfig) -> pd.DataFrame:
     if request.exogenous_series:
         return load_evaluation_frame(request)
     backtest = request.backtest
-    return load_ohlcv_frame(
-        backtest.symbol, backtest.timeframe, backtest.start, backtest.end
-    )
+    return load_ohlcv_frame(backtest.symbol, backtest.timeframe, backtest.start, backtest.end)
 
 
 def _serialize_search_config(config: StrategySearchConfig) -> dict[str, Any]:
@@ -213,9 +207,7 @@ def _persist_progress(job: StrategySearchJob) -> None:
             namespace=PROGRESS_NAMESPACE,
         )
     except Exception:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
-        logger.debug(
-            "Redis progress unavailable for strategy search run %s", job.run_id
-        )
+        logger.debug("Redis progress unavailable for strategy search run %s", job.run_id)
 
 
 def _persist_run_start(config: StrategySearchConfig) -> tuple[str, Optional[uuid.UUID]]:
@@ -279,15 +271,9 @@ def _build_result_summary(result: StrategySearchResult) -> dict[str, Any]:
     summary: dict[str, Any] = {
         "objective_mode": result.objective_mode.value,
         "candidate_count": len(result.candidates),
-        "ranked_count": sum(
-            1 for candidate in result.candidates if candidate.rank is not None
-        ),
-        "passed_gates_count": sum(
-            1 for candidate in result.candidates if candidate.passed_gates
-        ),
-        "failed_candidate_count": sum(
-            1 for candidate in result.candidates if candidate.status != "completed"
-        ),
+        "ranked_count": sum(1 for candidate in result.candidates if candidate.rank is not None),
+        "passed_gates_count": sum(1 for candidate in result.candidates if candidate.passed_gates),
+        "failed_candidate_count": sum(1 for candidate in result.candidates if candidate.status != "completed"),
         "failure_reasons": _failure_reason_counts(result.candidates),
         "best_candidate_id": best.candidate_id if best is not None else None,
         "best_strategy": best.strategy if best is not None else None,
@@ -317,9 +303,7 @@ def _build_candidate_trades_dataframes(
     for candidate in candidates:
         if not candidate.oos_trades:
             continue
-        trades[candidate.candidate_id] = pd.DataFrame(
-            [trade.model_dump(mode="json") for trade in candidate.oos_trades]
-        )
+        trades[candidate.candidate_id] = pd.DataFrame([trade.model_dump(mode="json") for trade in candidate.oos_trades])
     return trades
 
 
@@ -340,9 +324,7 @@ def _attach_exit_quality_fields(
 ) -> None:
     exit_quality = _exit_quality_from_diagnostics(diagnostics)
     if exit_quality is None and run_id is not None and candidate_id is not None:
-        exit_quality = _rebuild_exit_quality_from_lake(
-            run_id, candidate_id, bars=bars
-        )
+        exit_quality = _rebuild_exit_quality_from_lake(run_id, candidate_id, bars=bars)
     if exit_quality is not None:
         payload["exit_quality"] = exit_quality
     if diagnostics:
@@ -356,9 +338,7 @@ def _rebuild_exit_quality_from_lake(
     bars: pd.DataFrame | None = None,
 ) -> dict[str, Any] | None:
     try:
-        trades_df = read_strategy_search_candidate_artifact(
-            run_id, candidate_id, "oos_trades"
-        )
+        trades_df = read_strategy_search_candidate_artifact(run_id, candidate_id, "oos_trades")
     except FileNotFoundError:
         return None
     if trades_df.empty:
@@ -412,15 +392,11 @@ def _build_candidate_equity_dataframes(
         if candidate.oos_equity_curve is None:
             continue
         series = candidate.oos_equity_curve
-        equity[candidate.candidate_id] = pd.DataFrame(
-            {"time": series.index, "equity": series.values}
-        )
+        equity[candidate.candidate_id] = pd.DataFrame({"time": series.index, "equity": series.values})
     return equity
 
 
-def _write_lake_artifacts(
-    run_id: str, result: StrategySearchResult
-) -> Optional[dict[str, Any]]:
+def _write_lake_artifacts(run_id: str, result: StrategySearchResult) -> Optional[dict[str, Any]]:
     try:
         metadata = result.candidate_metadata or {}
         generation_leaderboards: dict[int, pd.DataFrame] | None = None
@@ -431,38 +407,25 @@ def _write_lake_artifacts(
                     candidate_metadata=metadata,
                     generation=generation_index,
                 )
-                for generation_index, generation_results in enumerate(
-                    result.all_generations
-                )
+                for generation_index, generation_results in enumerate(result.all_generations)
             }
         candidate_genomes = {
-            candidate_id: meta["genome"]
-            for candidate_id, meta in metadata.items()
-            if meta.get("genome") is not None
+            candidate_id: meta["genome"] for candidate_id, meta in metadata.items() if meta.get("genome") is not None
         }
         lockbox_equity = None
         genetic_summary = result.genetic_summary
-        if (
-            genetic_summary is not None
-            and genetic_summary.lockbox_equity_curve is not None
-        ):
+        if genetic_summary is not None and genetic_summary.lockbox_equity_curve is not None:
             series = genetic_summary.lockbox_equity_curve
             lockbox_equity = pd.DataFrame({"time": series.index, "equity": series.values})
         return write_strategy_search_artifacts(
             run_id,
-            _build_leaderboard_dataframe(
-                result.candidates, candidate_metadata=metadata
-            ),
+            _build_leaderboard_dataframe(result.candidates, candidate_metadata=metadata),
             _build_candidate_equity_dataframes(result.candidates),
-            candidate_trades=_build_candidate_trades_dataframes(
-                _candidates_for_persistence(result)
-            ),
+            candidate_trades=_build_candidate_trades_dataframes(_candidates_for_persistence(result)),
             generation_leaderboards=generation_leaderboards,
             candidate_genomes=candidate_genomes or None,
             lockbox_equity=lockbox_equity,
-            lockbox_metrics=(
-                genetic_summary.lockbox_metrics if genetic_summary is not None else None
-            ),
+            lockbox_metrics=(genetic_summary.lockbox_metrics if genetic_summary is not None else None),
         )
     except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         logger.warning("Failed to write strategy search lake artifacts: %s", exc)
@@ -482,8 +445,9 @@ def _persist_run_finish(job: StrategySearchJob, terminal_status: JobStatus) -> N
                 for candidate in candidates_to_persist:
                     meta = (metadata or {}).get(candidate.candidate_id, {})
                     from q_backend.optimization.hypothesis import extract_hypothesis_metadata
+
                     hyp_info = extract_hypothesis_metadata(meta.get("genome"))
-                    
+
                     profile_ver = meta.get("profile_version") or hyp_info.get("profile_version")
                     hyp_id = meta.get("hypothesis_id") or hyp_info.get("hypothesis_id")
                     hyp_rat = meta.get("hypothesis_rationale") or hyp_info.get("hypothesis_rationale")
@@ -576,15 +540,14 @@ def start_job(
 
     run_id, db_run_id = _persist_run_start(request)
     from q_backend.optimization.hypothesis import resolve_candidate_provider
+
     provider = resolve_candidate_provider(request)
     job = StrategySearchJob(
         run_id=run_id,
         db_run_id=db_run_id,
         request=request,
         total_candidates=_resolve_total_candidates(request, provider),
-        total_generations=(
-            request.genetic.generations if request.genetic is not None else None
-        ),
+        total_generations=(request.genetic.generations if request.genetic is not None else None),
     )
     _persist_progress(job)
 
@@ -625,16 +588,12 @@ def _cancel_orphaned_run(run_id: str) -> bool:
                 finished_at=_now(),
             )
     except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
-        logger.warning(
-            "Failed to cancel orphaned strategy search run %s: %s", run_id, exc
-        )
+        logger.warning("Failed to cancel orphaned strategy search run %s: %s", run_id, exc)
         return False
     try:
         delete_job_progress(get_redis(), run_id, namespace=PROGRESS_NAMESPACE)
     except Exception:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
-        logger.debug(
-            "Redis progress delete unavailable for strategy search run %s", run_id
-        )
+        logger.debug("Redis progress delete unavailable for strategy search run %s", run_id)
     return True
 
 
@@ -750,6 +709,7 @@ def dispatch_candidates(run_id: str, db_run_id_hex: str, config_json: str) -> No
         return
     db_run_id = uuid.UUID(db_run_id_hex) if db_run_id_hex else None
     from q_backend.optimization.hypothesis import resolve_candidate_provider
+
     provider = resolve_candidate_provider(request)
     candidates = list(provider.candidates())
     unsupported = []
@@ -769,9 +729,7 @@ def dispatch_candidates(run_id: str, db_run_id_hex: str, config_json: str) -> No
     )
     # Unsupported candidates need no evaluation — stash them up front.
     for offset, result in enumerate(unsupported):
-        stash_partial(
-            run_id, _UNSUPPORTED_OFFSET + offset, candidate_result_to_dict(result)
-        )
+        stash_partial(run_id, _UNSUPPORTED_OFFSET + offset, candidate_result_to_dict(result))
 
     _persist_progress(
         _progress_job(
@@ -794,18 +752,15 @@ def dispatch_candidates(run_id: str, db_run_id_hex: str, config_json: str) -> No
     from q_backend.tasks import actors
 
     for index in range(len(candidates)):
-        actors.evaluate_discovery_candidate.send(
-            run_id, db_run_id_hex, config_json, index
-        )
+        actors.evaluate_discovery_candidate.send(run_id, db_run_id_hex, config_json, index)
 
 
-def run_candidate(
-    run_id: str, db_run_id_hex: str, config_json: str, candidate_index: int
-) -> None:
+def run_candidate(run_id: str, db_run_id_hex: str, config_json: str, candidate_index: int) -> None:
     """Candidate worker: walk-forward evaluate one candidate strategy."""
     request = StrategySearchConfig.model_validate_json(config_json)
     db_run_id = uuid.UUID(db_run_id_hex) if db_run_id_hex else None
     from q_backend.optimization.hypothesis import resolve_candidate_provider
+
     provider = resolve_candidate_provider(request)
     candidates = list(provider.candidates())
     candidate = candidates[candidate_index]
@@ -869,9 +824,7 @@ def _walkforward_window_count(request: StrategySearchConfig) -> int:
     Used to convert the global completed-window counter into a fractional candidate
     count so the progress bar moves on every window, not just on candidate completion.
     """
-    wf_end, _, _ = compute_lockbox_bounds(
-        request.backtest.start, request.backtest.end, request.lockbox
-    )
+    wf_end, _, _ = compute_lockbox_bounds(request.backtest.start, request.backtest.end, request.lockbox)
     return len(split_windows(request.backtest.start, wf_end, request.walkforward))
 
 
@@ -911,9 +864,7 @@ def _persist_genetic_progress(
     )
 
 
-def dispatch_genetic_discovery(
-    run_id: str, db_run_id_hex: str, config_json: str
-) -> None:
+def dispatch_genetic_discovery(run_id: str, db_run_id_hex: str, config_json: str) -> None:
     """Genetic coordinator: mark RUNNING, build generation 0, dispatch its population."""
     request = StrategySearchConfig.model_validate_json(config_json)
     db_run_id = uuid.UUID(db_run_id_hex) if db_run_id_hex else None
@@ -1014,9 +965,7 @@ def _dispatch_generation(
     from q_backend.tasks import actors
 
     for index in alive_indices:
-        actors.evaluate_genetic_candidate.send(
-            run_id, db_run_id_hex, config_json, generation, index
-        )
+        actors.evaluate_genetic_candidate.send(run_id, db_run_id_hex, config_json, generation, index)
 
     # Whole generation pre-screened out: no actor will trip the fan-in barrier, so
     # breed/finalize now from the synthesized partials instead of hanging forever.
@@ -1040,9 +989,7 @@ def run_genetic_candidate(
 
     candidate_id: Optional[str] = None
     if not is_cancelled(run_id):
-        genome = Genome.model_validate(
-            genetic_staging.get_generation_genome(run_id, candidate_index)
-        )
+        genome = Genome.model_validate(genetic_staging.get_generation_genome(run_id, candidate_index))
         candidate_id = genome.genome_id
         candidate = search_candidate_for_genome(genome, request)
 
@@ -1072,9 +1019,7 @@ def run_genetic_candidate(
                 run_id=run_id,
             )
         except Exception as exc:  # noqa: BLE001 - isolate a single candidate failure
-            logger.exception(
-                "Genetic candidate %s failed for run %s", genome.genome_id, run_id
-            )
+            logger.exception("Genetic candidate %s failed for run %s", genome.genome_id, run_id)
             result = CandidateResult(
                 candidate_id=genome.genome_id,
                 strategy="CompositeStrategy",
@@ -1106,9 +1051,7 @@ def run_genetic_candidate(
         finalize_generation(run_id, db_run_id_hex, config_json, generation)
 
 
-def finalize_generation(
-    run_id: str, db_run_id_hex: str, config_json: str, generation: int
-) -> None:
+def finalize_generation(run_id: str, db_run_id_hex: str, config_json: str, generation: int) -> None:
     """Last worker of a generation: breed the next one, or finalize the whole run."""
     request = StrategySearchConfig.model_validate_json(config_json)
     genetic = request.genetic
@@ -1127,33 +1070,22 @@ def finalize_generation(
     provider.load_state(genetic_staging.get_provider_state(run_id))
 
     results_by_id = {
-        result.candidate_id: result
-        for result in (candidate_result_from_dict(p) for p in load_partials(run_id))
+        result.candidate_id: result for result in (candidate_result_from_dict(p) for p in load_partials(run_id))
     }
-    ordered = [
-        results_by_id[genome.genome_id]
-        for genome in provider.population
-        if genome.genome_id in results_by_id
-    ]
-    genetic_staging.append_generation_results(
-        run_id, generation, [candidate_result_to_dict(r) for r in ordered]
-    )
+    ordered = [results_by_id[genome.genome_id] for genome in provider.population if genome.genome_id in results_by_id]
+    genetic_staging.append_generation_results(run_id, generation, [candidate_result_to_dict(r) for r in ordered])
 
     cancelled = is_cancelled(run_id)
     next_generation = generation + 1
     if not cancelled and next_generation < genetic.generations:
         provider.report(ordered)
-        _dispatch_generation(
-            run_id, db_run_id_hex, config_json, provider, next_generation
-        )
+        _dispatch_generation(run_id, db_run_id_hex, config_json, provider, next_generation)
         return
 
     _finalize_genetic(run_id, db_run_id_hex, config_json, cancelled=cancelled)
 
 
-def _finalize_genetic(
-    run_id: str, db_run_id_hex: str, config_json: str, *, cancelled: bool
-) -> None:
+def _finalize_genetic(run_id: str, db_run_id_hex: str, config_json: str, *, cancelled: bool) -> None:
     """Rank across generations, run DSR + lock-box, persist results, mark terminal."""
     request = StrategySearchConfig.model_validate_json(config_json)
     db_run_id = uuid.UUID(db_run_id_hex) if db_run_id_hex else None
@@ -1164,9 +1096,7 @@ def _finalize_genetic(
         request=request,
         total_candidates=_resolve_total_candidates(
             request,
-            create_genetic_candidate_provider(
-                request.genetic, request, latents_enabled=request.latents_enabled
-            ),
+            create_genetic_candidate_provider(request.genetic, request, latents_enabled=request.latents_enabled),
         ),
         total_generations=request.genetic.generations,
     )
@@ -1183,9 +1113,7 @@ def _finalize_genetic(
         # verbatim by injecting the accumulated generations and metadata into a shell
         # instance — the math is identical to the in-process path.
         provider = GeneticCandidateProvider(request.genetic, request)
-        orchestrator = GeneticStrategySearchOrchestrator(
-            request, provider, _candidate_runner(request)
-        )
+        orchestrator = GeneticStrategySearchOrchestrator(request, provider, _candidate_runner(request))
         orchestrator._generations = all_generations
         orchestrator._candidate_metadata = metadata
         job.result = orchestrator.finalize()
@@ -1222,6 +1150,7 @@ def finalize_discovery(run_id: str, db_run_id_hex: str, config_json: str) -> Non
         ranked = _rank_results(results)
         best = ranked[0] if ranked and ranked[0].rank == 1 else None
         from q_backend.optimization.hypothesis import resolve_candidate_provider
+
         provider = resolve_candidate_provider(request)
         provider_metadata = {}
         if hasattr(provider, "candidate_metadata"):
@@ -1330,11 +1259,7 @@ def _serialize_candidate(
 def serialize_equity_points(series: pd.Series) -> list[dict[str, Any]]:
     points: list[dict[str, Any]] = []
     for timestamp, equity in series.items():
-        ts = (
-            timestamp.to_pydatetime()
-            if isinstance(timestamp, pd.Timestamp)
-            else timestamp
-        )
+        ts = timestamp.to_pydatetime() if isinstance(timestamp, pd.Timestamp) else timestamp
         points.append({"time": _isoformat(ts), "equity": float(equity)})
     return points
 
@@ -1477,9 +1402,7 @@ def get_status_payload(run_id: str) -> dict[str, Any] | None:
     try:
         cached = get_job_progress(get_redis(), run_id, namespace=PROGRESS_NAMESPACE)
     except Exception:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
-        logger.debug(
-            "Redis progress read unavailable for strategy search run %s", run_id
-        )
+        logger.debug("Redis progress read unavailable for strategy search run %s", run_id)
         cached = None
 
     # While the run is still active, candidate results aren't in the DB yet (they
@@ -1510,9 +1433,7 @@ def get_persisted_run_status(run_id: str) -> Optional[str]:
     return run.status if run is not None else None
 
 
-def _load_equity_curve_from_lake(
-    run_id: str, candidate_id: str
-) -> list[dict[str, Any]]:
+def _load_equity_curve_from_lake(run_id: str, candidate_id: str) -> list[dict[str, Any]]:
     df = read_strategy_search_candidate_artifact(run_id, candidate_id, "oos_equity")
     time_col = "time" if "time" in df.columns else df.columns[0]
     equity_col = "equity" if "equity" in df.columns else df.columns[1]
@@ -1544,12 +1465,8 @@ def results_payload_from_db(run_id: str) -> Optional[dict[str, Any]]:
     if run.status not in _FINISHED_STATUSES:
         return None
 
-    candidates = sorted(
-        run.candidates, key=lambda item: (item.rank or 10_000, item.candidate_id)
-    )
-    serialized = [
-        _serialize_db_candidate(candidate, run_id=run_id) for candidate in candidates
-    ]
+    candidates = sorted(run.candidates, key=lambda item: (item.rank or 10_000, item.candidate_id))
+    serialized = [_serialize_db_candidate(candidate, run_id=run_id) for candidate in candidates]
     best = next((item for item in serialized if item.get("rank") == 1), None)
 
     return {
@@ -1584,9 +1501,7 @@ def delete_run_lake_artifacts(run_id: str) -> None:
     try:
         delete_strategy_search_artifacts(run_id)
     except Exception as exc:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
-        logger.warning(
-            "Failed to delete strategy search lake artifacts for %s: %s", run_id, exc
-        )
+        logger.warning("Failed to delete strategy search lake artifacts for %s: %s", run_id, exc)
 
 
 def candidate_exists_in_run(run_id: str, candidate_id: str) -> bool:
@@ -1595,10 +1510,7 @@ def candidate_exists_in_run(run_id: str, candidate_id: str) -> bool:
         metadata = job.result.candidate_metadata or {}
         if candidate_id in metadata:
             return True
-        return any(
-            candidate.candidate_id == candidate_id
-            for candidate in job.result.candidates
-        )
+        return any(candidate.candidate_id == candidate_id for candidate in job.result.candidates)
 
     try:
         run_uuid = _parse_run_uuid(run_id)
@@ -1630,9 +1542,7 @@ def get_candidate_genome(run_id: str, candidate_id: str) -> dict[str, Any] | Non
 
     try:
         with session_scope() as session:
-            candidate = get_strategy_search_candidate(
-                session, run_id=run_uuid, candidate_id=candidate_id
-            )
+            candidate = get_strategy_search_candidate(session, run_id=run_uuid, candidate_id=candidate_id)
     except Exception:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
         candidate = None
 

@@ -127,6 +127,4 @@ def test_build_initial_population_byte_identical_with_empty_kind_weights() -> No
     explicit_rng = random.Random(5150)
     explicit = build_initial_population(explicit_rng, kind_weights={}, **kwargs)
 
-    assert [genome.model_dump() for genome in baseline] == [
-        genome.model_dump() for genome in explicit
-    ]
+    assert [genome.model_dump() for genome in baseline] == [genome.model_dump() for genome in explicit]

@@ -42,8 +42,7 @@ def _buy_result(
 ) -> ForwardDecisionResult:
     return ForwardDecisionResult(
         deployment_id=str(deployment_id),
-        bar_close_time=bar_close_time
-        or datetime(2024, 6, 1, 14, 0, tzinfo=timezone.utc),
+        bar_close_time=bar_close_time or datetime(2024, 6, 1, 14, 0, tzinfo=timezone.utc),
         bar_close_price=130005.0,
         signal_action=SignalAction.BUY,
         reason="test buy",
@@ -76,9 +75,7 @@ def _service(
     )
 
 
-def test_e2e_completed_bar_produces_one_durable_fill(
-    db_session, seeded_deployment, paper_cost_config
-):
+def test_e2e_completed_bar_produces_one_durable_fill(db_session, seeded_deployment, paper_cost_config):
     _, deployment, token = seeded_deployment
     clock = FixedClock(datetime(2024, 6, 1, 15, 0, tzinfo=timezone.utc))
     quotes = FakeQuoteSource(
@@ -133,9 +130,7 @@ def test_duplicate_bar_processing_is_idempotent(db_session, seeded_deployment, p
     assert first.outcome == DecisionOutcome.ORDER_FILLED
     assert second.duplicate is True
     assert fill_row_count(db_session) == 1
-    order_count = db_session.execute(
-        select(func.count()).select_from(ExecutionOrder)
-    ).scalar_one()
+    order_count = db_session.execute(select(func.count()).select_from(ExecutionOrder)).scalar_one()
     assert order_count == 1
 
 
@@ -226,9 +221,7 @@ def test_crash_windows_leave_expected_recovery_state(
         assert orders[0].status == expected_status.value
 
 
-def test_pause_blocks_new_orders_but_retains_position(
-    db_session, seeded_deployment, paper_cost_config
-):
+def test_pause_blocks_new_orders_but_retains_position(db_session, seeded_deployment, paper_cost_config):
     _, deployment, token = seeded_deployment
     clock = FixedClock(datetime(2024, 6, 1, 15, 0, tzinfo=timezone.utc))
     quotes = FakeQuoteSource(
@@ -245,9 +238,7 @@ def test_pause_blocks_new_orders_but_retains_position(
         cost_config=paper_cost_config,
         point_value=Decimal("0.2"),
     )
-    transition_deployment_lifecycle(
-        db_session, deployment.id, DeploymentLifecycle.PAUSED
-    )
+    transition_deployment_lifecycle(db_session, deployment.id, DeploymentLifecycle.PAUSED)
     db_session.refresh(deployment)
     result = service.process_completed_bar(
         db_session,

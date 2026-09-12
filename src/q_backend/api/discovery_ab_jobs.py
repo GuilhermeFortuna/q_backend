@@ -196,10 +196,7 @@ def _build_result(
         seed = child["seed"]
         arm = child["arm"]
         if child.get("terminal_status") != "completed":
-            reason = (
-                f"seed {seed} {arm}: child run {child['run_id']} "
-                f"ended {child.get('terminal_status')}"
-            )
+            reason = f"seed {seed} {arm}: child run {child['run_id']} " f"ended {child.get('terminal_status')}"
             notes.append(reason)
             dropped_pair_reasons.append(reason)
             continue

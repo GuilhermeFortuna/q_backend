@@ -72,9 +72,7 @@ def assert_neural_oos_only(
     leaked = series.notna() & (to_utc_series(times) <= train_end_ts)
     if leaked.any():
         first = int(leaked.to_numpy().nonzero()[0][0])
-        raise LeakageError(
-            f"Neural latent leak at index {first}: non-NaN value at or before train_end."
-        )
+        raise LeakageError(f"Neural latent leak at index {first}: non-NaN value at or before train_end.")
 
 
 def assert_causal(
@@ -100,13 +98,9 @@ def assert_causal(
         if pd.isna(full_val) and pd.isna(partial_val):
             continue
         if pd.isna(full_val) != pd.isna(partial_val):
-            raise LeakageError(
-                f"Leakage at index {t}: full={full_val!r}, prefix={partial_val!r}"
-            )
+            raise LeakageError(f"Leakage at index {t}: full={full_val!r}, prefix={partial_val!r}")
         if abs(float(full_val) - float(partial_val)) > atol + rtol * abs(float(full_val)):
-            raise LeakageError(
-                f"Leakage at index {t}: full={full_val!r}, prefix={partial_val!r}"
-            )
+            raise LeakageError(f"Leakage at index {t}: full={full_val!r}, prefix={partial_val!r}")
 
     if spec is not None and spec.source == "neural":
         if train_end is None:

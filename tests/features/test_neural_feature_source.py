@@ -131,9 +131,7 @@ def test_feature_id_differs_across_model_hashes(
     db_session,
     lake_root_path,
 ) -> None:
-    version_a, keys_a = _train_version(
-        db_session, lake_root_path, n_latents=3, model_key="pca_a"
-    )
+    version_a, keys_a = _train_version(db_session, lake_root_path, n_latents=3, model_key="pca_a")
     version_b, keys_b = _train_version(
         db_session,
         lake_root_path,
@@ -143,9 +141,7 @@ def test_feature_id_differs_across_model_hashes(
     )
     try:
         spec_a = get_feature_spec(keys_a[0])
-        spec_b = get_feature_spec(
-            neural_catalog_key(version_b.latent_names[0], version_b.model_hash)
-        )
+        spec_b = get_feature_spec(neural_catalog_key(version_b.latent_names[0], version_b.model_hash))
         assert spec_a.latent_index == spec_b.latent_index
         assert feature_id(spec_a, {}) != feature_id(spec_b, {})
     finally:

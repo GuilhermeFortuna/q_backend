@@ -75,9 +75,7 @@ class StrategyVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="strategy_version",
     )
 
-    __table_args__ = (
-        UniqueConstraint("strategy_id", "version", name="uq_strategy_versions_strategy_version"),
-    )
+    __table_args__ = (UniqueConstraint("strategy_id", "version", name="uq_strategy_versions_strategy_version"),)
 
 
 class BacktestConfig(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -98,9 +96,7 @@ class BacktestConfig(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         cascade="all, delete-orphan",
     )
 
-    __table_args__ = (
-        Index("ix_backtest_configs_strategy_version_id", "strategy_version_id"),
-    )
+    __table_args__ = (Index("ix_backtest_configs_strategy_version_id", "strategy_version_id"),)
 
 
 class BacktestRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -177,9 +173,7 @@ class OptimizationTrial(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     study: Mapped["OptimizationStudy"] = relationship(back_populates="trials")
 
-    __table_args__ = (
-        UniqueConstraint("study_id", "trial_number", name="uq_optimization_trials_study_trial"),
-    )
+    __table_args__ = (UniqueConstraint("study_id", "trial_number", name="uq_optimization_trials_study_trial"),)
 
 
 class WalkForwardRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -192,9 +186,7 @@ class WalkForwardRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=RunStatus.PENDING.value,
     )
     config: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
-    result_summary: Mapped[Optional[dict[str, Any]]] = mapped_column(
-        PortableJSON, nullable=True
-    )
+    result_summary: Mapped[Optional[dict[str, Any]]] = mapped_column(PortableJSON, nullable=True)
     lake_paths: Mapped[Optional[dict[str, Any]]] = mapped_column(PortableJSON, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -249,9 +241,7 @@ class StrategySearchRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=RunStatus.PENDING.value,
     )
     config: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
-    result_summary: Mapped[Optional[dict[str, Any]]] = mapped_column(
-        PortableJSON, nullable=True
-    )
+    result_summary: Mapped[Optional[dict[str, Any]]] = mapped_column(PortableJSON, nullable=True)
     lake_paths: Mapped[Optional[dict[str, Any]]] = mapped_column(PortableJSON, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -285,9 +275,7 @@ class StrategySearchCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     gate_flags: Mapped[list[str]] = mapped_column(PortableJSON, nullable=False, default=list)
     passed_gates: Mapped[bool] = mapped_column(nullable=False, default=False)
     oos_metrics: Mapped[Optional[dict[str, Any]]] = mapped_column(PortableJSON, nullable=True)
-    is_metrics_summary: Mapped[Optional[dict[str, Any]]] = mapped_column(
-        PortableJSON, nullable=True
-    )
+    is_metrics_summary: Mapped[Optional[dict[str, Any]]] = mapped_column(PortableJSON, nullable=True)
     best_params: Mapped[Optional[dict[str, Any]]] = mapped_column(PortableJSON, nullable=True)
     window_count: Mapped[int] = mapped_column(nullable=False, default=0)
     completed_windows: Mapped[int] = mapped_column(nullable=False, default=0)
@@ -301,20 +289,13 @@ class StrategySearchCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     exit_policy_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     exit_policy_label: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     last_exit_mutation_op: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    exit_param_names: Mapped[Optional[list[str]]] = mapped_column(
-        PortableJSON, nullable=True
-    )
-    diagnostics: Mapped[Optional[dict[str, Any]]] = mapped_column(
-        PortableJSON, nullable=True
-    )
+    exit_param_names: Mapped[Optional[list[str]]] = mapped_column(PortableJSON, nullable=True)
+    diagnostics: Mapped[Optional[dict[str, Any]]] = mapped_column(PortableJSON, nullable=True)
     profile_version: Mapped[Optional[int]] = mapped_column(nullable=True)
     hypothesis_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     hypothesis_rationale: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    hypothesis_required_features: Mapped[Optional[list[str]]] = mapped_column(
-        PortableJSON, nullable=True
-    )
+    hypothesis_required_features: Mapped[Optional[list[str]]] = mapped_column(PortableJSON, nullable=True)
     hypothesis_template_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-
 
     run: Mapped["StrategySearchRun"] = relationship(back_populates="candidates")
 
@@ -362,9 +343,7 @@ class FeatureVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     node_kind: Mapped[str] = mapped_column(String(128), nullable=False)
     param_keys: Mapped[list[str]] = mapped_column(PortableJSON, nullable=False, default=list)
-    default_params: Mapped[dict[str, Any]] = mapped_column(
-        PortableJSON, nullable=False, default=dict
-    )
+    default_params: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
     forward_window: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
     leakage_status: Mapped[str] = mapped_column(String(32), nullable=False)
     provenance: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
@@ -396,16 +375,10 @@ class EvaluationRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=RunStatus.PENDING.value,
     )
     feature_count: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
-    result_summary: Mapped[Optional[dict[str, Any]]] = mapped_column(
-        PortableJSON, nullable=True
-    )
+    result_summary: Mapped[Optional[dict[str, Any]]] = mapped_column(PortableJSON, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    started_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    finished_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     scores: Mapped[list["FeatureScoreRow"]] = relationship(
         back_populates="run",
@@ -433,13 +406,9 @@ class FeatureScoreRow(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     stability: Mapped[Optional[float]] = mapped_column(nullable=True)
     global_score: Mapped[Optional[float]] = mapped_column(nullable=True)
     cluster_id: Mapped[int] = mapped_column(nullable=False)
-    is_representative: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="false"
-    )
+    is_representative: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     leakage_status: Mapped[str] = mapped_column(String(32), nullable=False)
-    regime_ics: Mapped[dict[str, Any]] = mapped_column(
-        PortableJSON, nullable=False, default=dict
-    )
+    regime_ics: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
 
     run: Mapped["EvaluationRun"] = relationship(back_populates="scores")
 
@@ -472,17 +441,11 @@ class FeatureEvidenceRow(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     permutation_null_floor: Mapped[Optional[float]] = mapped_column(nullable=True)
     deflated_score: Mapped[Optional[float]] = mapped_column(nullable=True)
     decision: Mapped[str] = mapped_column(String(32), nullable=False)
-    rejection_reasons: Mapped[list[str]] = mapped_column(
-        PortableJSON, nullable=False, default=list
-    )
+    rejection_reasons: Mapped[list[str]] = mapped_column(PortableJSON, nullable=False, default=list)
     leakage_status: Mapped[str] = mapped_column(String(32), nullable=False)
-    is_representative: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True, server_default="true"
-    )
+    is_representative: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     cluster_id: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
-    attempted_feature_count: Mapped[int] = mapped_column(
-        nullable=False, default=1, server_default="1"
-    )
+    attempted_feature_count: Mapped[int] = mapped_column(nullable=False, default=1, server_default="1")
     diagnostics_artifact_id: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
 
@@ -547,12 +510,8 @@ class NeuralModelVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     train_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     n_latents: Mapped[int] = mapped_column(nullable=False)
     input_features: Mapped[list] = mapped_column(PortableJSON, nullable=False, default=list)
-    hyperparams: Mapped[dict[str, Any]] = mapped_column(
-        PortableJSON, nullable=False, default=dict
-    )
-    val_metrics: Mapped[dict[str, Any]] = mapped_column(
-        PortableJSON, nullable=False, default=dict
-    )
+    hyperparams: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
+    val_metrics: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
     latent_names: Mapped[list] = mapped_column(PortableJSON, nullable=False, default=list)
     artifact_path: Mapped[str] = mapped_column(String(1024), nullable=False)
 

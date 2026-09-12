@@ -17,9 +17,7 @@ def _require_mt5_live(service: MarketDataService | None = None) -> None:
     if service.mt5_available():
         return
     if get_data_source() == "mt5":
-        raise HTTPException(
-            status_code=503, detail="MetaTrader 5 terminal is offline."
-        )
+        raise HTTPException(status_code=503, detail="MetaTrader 5 terminal is offline.")
 
 
 def _data_source_payload(service: MarketDataService | None = None) -> dict:

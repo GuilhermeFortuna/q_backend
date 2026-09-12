@@ -83,10 +83,7 @@ class ProbeDataError(RuntimeError):
 
 
 def _complexity_penalty(genome: Genome, genetic: GeneticSearchConfig) -> float:
-    return (
-        genetic.complexity_lambda * genome_node_count(genome)
-        + genetic.complexity_mu * genome_param_count(genome)
-    )
+    return genetic.complexity_lambda * genome_node_count(genome) + genetic.complexity_mu * genome_param_count(genome)
 
 
 def _efficiency_gate_penalty(
@@ -158,9 +155,7 @@ def candidate_fitness_details(
         return genetic.error_floor, breakdown
 
     oos_trades = int((result.oos_metrics or {}).get("total_trades", 0))
-    if result.status == "no_result" or (
-        result.status == "completed" and oos_trades == 0
-    ):
+    if result.status == "no_result" or (result.status == "completed" and oos_trades == 0):
         progress = result.completed_windows / max(result.window_count, 1)
         progress_bonus = _NO_RESULT_PROGRESS_BONUS * progress
         breakdown["band"] = "no_result"
@@ -223,8 +218,7 @@ def _resolve_probe_frame(
         resolved = provider(run_cfg)
     except Exception as exc:
         raise ProbeDataError(
-            "probe-frame data provider failed for "
-            f"{backtest.symbol} {backtest.timeframe}: {exc}"
+            "probe-frame data provider failed for " f"{backtest.symbol} {backtest.timeframe}: {exc}"
         ) from exc
     if resolved is None or len(resolved) == 0:
         return None
@@ -335,6 +329,7 @@ class GeneticCandidateProvider:
             match_profile,
             compute_template_hash,
         )
+
         resolver_inst = resolver or FailClosedFeatureAdmissionResolver()
         symbol = search_config.backtest.symbol
         timeframe = search_config.backtest.timeframe
@@ -467,9 +462,7 @@ class GeneticCandidateProvider:
         champion = state.get("champion")
         self._champion = Genome.model_validate(champion) if champion else None
         self._population = [Genome.model_validate(g) for g in state["population"]]
-        self._genome_by_id = {
-            genome.genome_id: genome for genome in self._population
-        }
+        self._genome_by_id = {genome.genome_id: genome for genome in self._population}
 
     def report(self, results: list[CandidateResult]) -> None:
         scored: list[tuple[float, Genome, CandidateResult]] = []
@@ -487,11 +480,7 @@ class GeneticCandidateProvider:
             scored.append((fitness, genome, result))
             if fitness > self._best_fitness:
                 self._best_fitness = fitness
-            if (
-                result.status == "completed"
-                and result.passed_gates
-                and fitness > self._champion_fitness
-            ):
+            if result.status == "completed" and result.passed_gates and fitness > self._champion_fitness:
                 self._champion_fitness = fitness
                 self._champion = clone_genome(genome)
 
@@ -499,13 +488,8 @@ class GeneticCandidateProvider:
                 mutation_op = genome.metadata.get("last_mutation_op")
                 parent_ids = genome.metadata.get("parent_ids") or []
                 if mutation_op and parent_ids:
-                    parent_fitnesses = [
-                        self._parent_fitness_by_id.get(parent_id)
-                        for parent_id in parent_ids
-                    ]
-                    parent_fitnesses = [
-                        value for value in parent_fitnesses if value is not None
-                    ]
+                    parent_fitnesses = [self._parent_fitness_by_id.get(parent_id) for parent_id in parent_ids]
+                    parent_fitnesses = [value for value in parent_fitnesses if value is not None]
                     if parent_fitnesses:
                         parent_best = max(parent_fitnesses)
                         self._mutation_operator_weights = update_mutation_operator_weights(
@@ -531,9 +515,7 @@ class GeneticCandidateProvider:
 
         scored.sort(key=lambda item: item[0], reverse=True)
         reproducers = [(fitness, genome) for fitness, genome, _result in scored]
-        self._parent_fitness_by_id = {
-            genome.genome_id: fitness for fitness, genome in reproducers
-        }
+        self._parent_fitness_by_id = {genome.genome_id: fitness for fitness, genome in reproducers}
 
         next_population: list[Genome] = []
         elite_ids: set[str] = set()
@@ -599,11 +581,7 @@ class GeneticCandidateProvider:
             child_metadata.pop("last_mutation_op", None)
             child.metadata = child_metadata
             if self._rng.random() < self._effective_mutation_rate:
-                operator_weights = (
-                    self._mutation_operator_weights
-                    if self._genetic.adaptive_operator_weights
-                    else None
-                )
+                operator_weights = self._mutation_operator_weights if self._genetic.adaptive_operator_weights else None
                 child = mutate_genome(
                     self._rng,
                     child,
@@ -814,11 +792,7 @@ class GeneticStrategySearchOrchestrator:
         should_stop: Callable[[], bool] | None,
     ) -> list[CandidateResult]:
         workers = resolve_worker_count(genetic.max_workers, len(candidates))
-        if (
-            workers == 1
-            or eval_frame is None
-            or len(eval_frame) == 0
-        ):
+        if workers == 1 or eval_frame is None or len(eval_frame) == 0:
             return self._evaluate_generation_serial(
                 candidates,
                 genetic=genetic,
@@ -895,11 +869,7 @@ class GeneticStrategySearchOrchestrator:
         genetic = self.config.genetic
         assert genetic is not None
         ohlcv = getattr(self.backtest_runner, "_df", None)
-        eval_frame = (
-            self._probe_frame
-            if self._probe_frame is not None
-            else ohlcv
-        )
+        eval_frame = self._probe_frame if self._probe_frame is not None else ohlcv
 
         for _generation_index in range(genetic.generations):
             if should_stop is not None and should_stop():
@@ -1023,9 +993,7 @@ def select_search_orchestrator(
                 latents_enabled=config.latents_enabled,
             )
         if not isinstance(genetic_provider, GeneticCandidateProvider):
-            raise TypeError(
-                "Genetic search requires GeneticCandidateProvider when config.genetic is set"
-            )
+            raise TypeError("Genetic search requires GeneticCandidateProvider when config.genetic is set")
         return GeneticStrategySearchOrchestrator(
             config,
             genetic_provider,

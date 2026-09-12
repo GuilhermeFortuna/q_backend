@@ -97,10 +97,10 @@ def test_delete_storage_series(market_root):
 
 
 def test_start_ingest_rejects_unknown_timeframe(market_root):
-    with patch.object(market_data_service, "mt5_available", return_value=True), \
-        patch.object(
-            market_data_service.mt5_client, "is_supported", return_value=True
-        ):
+    with (
+        patch.object(market_data_service, "mt5_available", return_value=True),
+        patch.object(market_data_service.mt5_client, "is_supported", return_value=True),
+    ):
         with pytest.raises(Exception) as exc_info:
             start_storage_ingest(
                 IngestJobRequest(
@@ -140,9 +140,7 @@ def test_ingest_job_completes_with_faked_mt5(market_root, monkeypatch):
         def send(self, job_id, request_json):
             storage_jobs.run_ingest_job(job_id, request_json)
 
-    monkeypatch.setattr(
-        "q_backend.tasks.actors.run_storage_ingest", _SyncActor(), raising=False
-    )
+    monkeypatch.setattr("q_backend.tasks.actors.run_storage_ingest", _SyncActor(), raising=False)
     monkeypatch.setattr(
         "q_backend.tasks.worker_context.get_worker_market_data_service",
         lambda: market_data_service,
@@ -151,13 +149,11 @@ def test_ingest_job_completes_with_faked_mt5(market_root, monkeypatch):
     def _fake_ohlcv(symbol, timeframe, start, end):
         return _bars()
 
-    with patch.object(market_data_service, "mt5_available", return_value=True), \
-        patch.object(
-            market_data_service.mt5_client, "is_supported", return_value=True
-        ):
-        with patch.object(
-            market_data_service.mt5_client, "get_ohlcv", side_effect=_fake_ohlcv
-        ):
+    with (
+        patch.object(market_data_service, "mt5_available", return_value=True),
+        patch.object(market_data_service.mt5_client, "is_supported", return_value=True),
+    ):
+        with patch.object(market_data_service.mt5_client, "get_ohlcv", side_effect=_fake_ohlcv):
             job_id = start_storage_ingest(
                 IngestJobRequest(
                     symbol="PETR4",
@@ -188,9 +184,7 @@ def test_bars_ingest_via_remote_acquisition_provider(market_root, monkeypatch):
         def send(self, job_id, request_json):
             storage_jobs.run_ingest_job(job_id, request_json)
 
-    monkeypatch.setattr(
-        "q_backend.tasks.actors.run_storage_ingest", _SyncActor(), raising=False
-    )
+    monkeypatch.setattr("q_backend.tasks.actors.run_storage_ingest", _SyncActor(), raising=False)
     monkeypatch.setattr(
         "q_backend.tasks.worker_context.get_worker_market_data_service",
         lambda: market_data_service,
@@ -202,9 +196,7 @@ def test_bars_ingest_via_remote_acquisition_provider(market_root, monkeypatch):
 
     stub_remote = _StubRemote()
 
-    with patch.object(
-        market_data_service, "acquisition_provider", return_value=stub_remote
-    ):
+    with patch.object(market_data_service, "acquisition_provider", return_value=stub_remote):
         job_id = start_storage_ingest(
             IngestJobRequest(
                 symbol="PETR4",
@@ -232,9 +224,7 @@ def test_ingest_job_isolates_timeframe_failures(market_root, monkeypatch):
         def send(self, job_id, request_json):
             storage_jobs.run_ingest_job(job_id, request_json)
 
-    monkeypatch.setattr(
-        "q_backend.tasks.actors.run_storage_ingest", _SyncActor(), raising=False
-    )
+    monkeypatch.setattr("q_backend.tasks.actors.run_storage_ingest", _SyncActor(), raising=False)
     monkeypatch.setattr(
         "q_backend.tasks.worker_context.get_worker_market_data_service",
         lambda: market_data_service,
@@ -245,13 +235,11 @@ def test_ingest_job_isolates_timeframe_failures(market_root, monkeypatch):
             return []
         return _bars()
 
-    with patch.object(market_data_service, "mt5_available", return_value=True), \
-        patch.object(
-            market_data_service.mt5_client, "is_supported", return_value=True
-        ):
-        with patch.object(
-            market_data_service.mt5_client, "get_ohlcv", side_effect=_fake_ohlcv
-        ):
+    with (
+        patch.object(market_data_service, "mt5_available", return_value=True),
+        patch.object(market_data_service.mt5_client, "is_supported", return_value=True),
+    ):
+        with patch.object(market_data_service.mt5_client, "get_ohlcv", side_effect=_fake_ohlcv):
             job_id = start_storage_ingest(
                 IngestJobRequest(
                     symbol="VALE3",
@@ -301,9 +289,7 @@ def test_tick_ingest_job_completes_with_faked_mt5(market_root, monkeypatch):
         def send(self, job_id, request_json):
             storage_jobs.run_ingest_job(job_id, request_json)
 
-    monkeypatch.setattr(
-        "q_backend.tasks.actors.run_storage_ingest", _SyncActor(), raising=False
-    )
+    monkeypatch.setattr("q_backend.tasks.actors.run_storage_ingest", _SyncActor(), raising=False)
     monkeypatch.setattr(
         "q_backend.tasks.worker_context.get_worker_market_data_service",
         lambda: market_data_service,
@@ -315,10 +301,10 @@ def test_tick_ingest_job_completes_with_faked_mt5(market_root, monkeypatch):
         call_months.append(f"{start.year}-{start.month:02d}")
         return _synthetic_ticks()
 
-    with patch.object(market_data_service, "mt5_available", return_value=True), \
-        patch.object(
-            market_data_service.mt5_client, "is_supported", return_value=True
-        ):
+    with (
+        patch.object(market_data_service, "mt5_available", return_value=True),
+        patch.object(market_data_service.mt5_client, "is_supported", return_value=True),
+    ):
         with patch.object(
             market_data_service.mt5_client,
             "get_ticks_columnar",

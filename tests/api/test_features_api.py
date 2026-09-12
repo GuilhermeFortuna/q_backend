@@ -71,9 +71,7 @@ def test_list_features_returns_seeded_catalog(seeded_features: Session) -> None:
 
 
 def test_list_features_category_filter(seeded_features: Session) -> None:
-    momentum = list_features(
-        session=seeded_features, category="momentum", status=None
-    )
+    momentum = list_features(session=seeded_features, category="momentum", status=None)
     assert momentum["features"]
     assert all(item.category == "momentum" for item in momentum["features"])
     assert any(item.name == "rsi" for item in momentum["features"])
@@ -87,10 +85,7 @@ def test_list_features_status_filter(seeded_features: Session) -> None:
         status=FeatureStatus.EXPERIMENTAL.value,
     )
     assert experimental["features"]
-    assert all(
-        item.status == FeatureStatus.EXPERIMENTAL.value
-        for item in experimental["features"]
-    )
+    assert all(item.status == FeatureStatus.EXPERIMENTAL.value for item in experimental["features"])
 
 
 def test_get_feature_passport_rsi(seeded_features: Session) -> None:

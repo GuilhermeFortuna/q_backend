@@ -52,9 +52,7 @@ _FETCH_CUSHION_BARS = 5
 # In-process payload cache keyed by (deployment_id, bars). Each entry stores the
 # last completed bar's open time so a repeated poll with an unchanged last bar is
 # served without recomputing indicators; a new bar invalidates it.
-_CHART_CACHE: "OrderedDict[tuple[str, int], tuple[pd.Timestamp, DeploymentChartResponse]]" = (
-    OrderedDict()
-)
+_CHART_CACHE: "OrderedDict[tuple[str, int], tuple[pd.Timestamp, DeploymentChartResponse]]" = OrderedDict()
 _CHART_CACHE_MAX = 64
 
 
@@ -120,9 +118,7 @@ def _load_completed_frame(
     return frame
 
 
-def _cache_get(
-    key: tuple[str, int], last_open: pd.Timestamp
-) -> Optional[DeploymentChartResponse]:
+def _cache_get(key: tuple[str, int], last_open: pd.Timestamp) -> Optional[DeploymentChartResponse]:
     entry = _CHART_CACHE.get(key)
     if entry is None:
         return None
@@ -133,9 +129,7 @@ def _cache_get(
     return payload
 
 
-def _cache_put(
-    key: tuple[str, int], last_open: pd.Timestamp, payload: DeploymentChartResponse
-) -> None:
+def _cache_put(key: tuple[str, int], last_open: pd.Timestamp, payload: DeploymentChartResponse) -> None:
     _CHART_CACHE[key] = (last_open, payload)
     _CHART_CACHE.move_to_end(key)
     while len(_CHART_CACHE) > _CHART_CACHE_MAX:
@@ -175,10 +169,7 @@ def get_deployment_chart(
     if frame.empty:
         raise HTTPException(
             status_code=503,
-            detail=(
-                f"market data unavailable for '{symbol}' {timeframe}; "
-                "no completed bars could be loaded"
-            ),
+            detail=(f"market data unavailable for '{symbol}' {timeframe}; " "no completed bars could be loaded"),
         )
 
     last_open = frame.index[-1]
@@ -207,10 +198,7 @@ def get_deployment_chart(
         last_bar_close_time=last_bar_close,
         next_bar_close_time=next_bar_close,
         bars=[DeploymentChartBar(**bar) for bar in serialized["bars"]],
-        indicators=[
-            DeploymentChartIndicator(**indicator)
-            for indicator in serialized["indicators"]
-        ],
+        indicators=[DeploymentChartIndicator(**indicator) for indicator in serialized["indicators"]],
     )
     _cache_put(cache_key, last_open, payload)
     return payload

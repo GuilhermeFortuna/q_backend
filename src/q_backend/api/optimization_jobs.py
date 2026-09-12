@@ -312,8 +312,7 @@ def _serialize_db_trial(trial_metrics: dict[str, Any] | None, trial) -> dict[str
         "params": trial.params,
         "values": metrics.get("values"),
         "user_attrs": metrics.get("user_attrs", {}),
-        "state": metrics.get("state")
-        or _TRIAL_STATUS_TO_OPTUNA_STATE.get(trial.status, "WAITING"),
+        "state": metrics.get("state") or _TRIAL_STATUS_TO_OPTUNA_STATE.get(trial.status, "WAITING"),
     }
 
 
@@ -324,13 +323,9 @@ def _count_completed_trials(trials: list) -> int:
 def _optimization_config_from_study_config(
     config: dict[str, Any],
 ) -> dict[str, Any] | None:
-    config_for_validation = {
-        key: value for key, value in config.items() if key != "persisted_snapshot"
-    }
+    config_for_validation = {key: value for key, value in config.items() if key != "persisted_snapshot"}
     try:
-        return OptimizationConfig.model_validate(config_for_validation).model_dump(
-            mode="json"
-        )
+        return OptimizationConfig.model_validate(config_for_validation).model_dump(mode="json")
     except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.debug("Invalid optimization config stored for study")
         return None
@@ -346,9 +341,7 @@ def status_payload_from_db(study_id: str) -> dict[str, Any] | None:
         with session_scope() as session:
             study = get_optimization_study(session, study_uuid)
     except Exception as exc:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
-        logger.warning(
-            "Failed to load optimization study %s from DB: %s", study_id, exc
-        )
+        logger.warning("Failed to load optimization study %s from DB: %s", study_id, exc)
         return None
 
     if study is None:
@@ -358,13 +351,10 @@ def status_payload_from_db(study_id: str) -> dict[str, Any] | None:
     snapshot = config.get("persisted_snapshot", {})
     n_trials = config.get("study", {}).get("n_trials", 0)
     optimization_config = _optimization_config_from_study_config(config)
-    backtest_config = (
-        optimization_config.get("backtest") if optimization_config is not None else None
-    )
+    backtest_config = optimization_config.get("backtest") if optimization_config is not None else None
 
     serialized_trials = [
-        _serialize_db_trial(trial.metrics, trial)
-        for trial in sorted(study.trials, key=lambda item: item.trial_number)
+        _serialize_db_trial(trial.metrics, trial) for trial in sorted(study.trials, key=lambda item: item.trial_number)
     ]
 
     best_value = snapshot.get("best_value")
@@ -372,22 +362,19 @@ def status_payload_from_db(study_id: str) -> dict[str, Any] | None:
     best_trial = None
 
     if serialized_trials:
-        completed_trials = [
-            t for t in serialized_trials
-            if t.get("state") == "COMPLETE" and t.get("values")
-        ]
+        completed_trials = [t for t in serialized_trials if t.get("state") == "COMPLETE" and t.get("values")]
         if completed_trials:
             is_minimize = False
             if optimization_config:
                 mode = optimization_config.get("objective", {}).get("mode")
                 if mode == "minimize_drawdown":
                     is_minimize = True
-            
+
             if is_minimize:
                 best_t = min(completed_trials, key=lambda t: t["values"][0])
             else:
                 best_t = max(completed_trials, key=lambda t: t["values"][0])
-            
+
             if best_value is None:
                 best_value = best_t["values"][0]
                 best_params = best_t["params"]
@@ -409,9 +396,7 @@ def status_payload_from_db(study_id: str) -> dict[str, Any] | None:
     }
 
 
-def _enrich_status_with_config(
-    payload: dict[str, Any], study_id: str
-) -> dict[str, Any]:
+def _enrich_status_with_config(payload: dict[str, Any], study_id: str) -> dict[str, Any]:
     if payload.get("optimization_config") is not None:
         return payload
     db_payload = status_payload_from_db(study_id)
@@ -425,9 +410,7 @@ def _enrich_status_with_config(
     return enriched
 
 
-def _apply_cancel_overlay(
-    study_id: str, payload: dict[str, Any] | None
-) -> dict[str, Any] | None:
+def _apply_cancel_overlay(study_id: str, payload: dict[str, Any] | None) -> dict[str, Any] | None:
     """Reflect a raised cancel flag immediately, before DB/Redis mirrors catch up."""
     if payload is None:
         return None
@@ -450,9 +433,7 @@ def get_status_payload(study_id: str) -> dict[str, Any] | None:
     try:
         cached = get_job_progress(get_redis(), study_id)
         if cached is not None and db_payload is None:
-            return _apply_cancel_overlay(
-                study_id, _enrich_status_with_config(cached, study_id)
-            )
+            return _apply_cancel_overlay(study_id, _enrich_status_with_config(cached, study_id))
     except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.debug("Redis progress read unavailable for study %s", study_id)
 
@@ -467,11 +448,7 @@ def start_job(
     """Persist the study and dispatch it to the worker pool."""
     workers = _compute_study_workers(config, backtest_runner=backtest_runner)
 
-    if (
-        backtest_runner is None
-        and config.backtest.engine == "candle"
-        and market_data_service is not None
-    ):
+    if backtest_runner is None and config.backtest.engine == "candle" and market_data_service is not None:
         backtest = config.backtest
         prime_ohlcv_cache(
             market_data_service,
@@ -538,9 +515,7 @@ def _cancel_orphaned_study(study_id: str) -> bool:
                 return False
             update_optimization_study(session, study_uuid, status="cancelled")
     except Exception as exc:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
-        logger.warning(
-            "Failed to cancel orphaned optimization study %s: %s", study_id, exc
-        )
+        logger.warning("Failed to cancel orphaned optimization study %s: %s", study_id, exc)
         return False
     try:
         delete_job_progress(get_redis(), study_id)
@@ -614,15 +589,11 @@ def _build_worker_runner(
             ),
             None,
         )
-    frame = load_ohlcv_frame(
-        backtest.symbol, backtest.timeframe, backtest.start, backtest.end
-    )
+    frame = load_ohlcv_frame(backtest.symbol, backtest.timeframe, backtest.start, backtest.end)
     return DefaultBacktestRunner.from_frame_sliced(frame), frame
 
 
-def _distributed_config(
-    config: OptimizationConfig, study_id: str
-) -> OptimizationConfig:
+def _distributed_config(config: OptimizationConfig, study_id: str) -> OptimizationConfig:
     """Point a config at the shared Postgres study unique to this run."""
     worker_config = config.model_copy(deep=True)
     worker_config.study.storage = StorageConfig(type="shared")
@@ -665,14 +636,10 @@ def dispatch_study(study_id: str, db_study_id_hex: str, config_json: str) -> Non
     from q_backend.tasks import actors
 
     for chunk in _split_evenly(config.study.n_trials, leaf_messages):
-        actors.run_optimization_trials.send(
-            study_id, db_study_id_hex, config_json, chunk
-        )
+        actors.run_optimization_trials.send(study_id, db_study_id_hex, config_json, chunk)
 
 
-def run_trials_chunk(
-    study_id: str, db_study_id_hex: str, config_json: str, n_trials: int
-) -> None:
+def run_trials_chunk(study_id: str, db_study_id_hex: str, config_json: str, n_trials: int) -> None:
     """Trial worker: optimize a chunk of trials against the shared study."""
     config = OptimizationConfig.model_validate_json(config_json)
     db_study_id = uuid.UUID(db_study_id_hex) if db_study_id_hex else None
@@ -724,13 +691,9 @@ def finalize_study(study_id: str, db_study_id_hex: str, config_json: str) -> Non
     try:
         # n_trials=0 runs no new trials; it just loads the shared study and
         # computes the best/pareto result from the trials the workers produced.
-        result = OptimizationRunner(
-            _distributed_config(config, study_id), DefaultBacktestRunner()
-        ).run(n_trials=0)
+        result = OptimizationRunner(_distributed_config(config, study_id), DefaultBacktestRunner()).run(n_trials=0)
         job.result = result
-        job.completed_trials = sum(
-            1 for trial in result.study.trials if trial.state.is_finished()
-        )
+        job.completed_trials = sum(1 for trial in result.study.trials if trial.state.is_finished())
         job.best_params = result.best_params
         job.best_value = _best_value(result)
         job.workers = _compute_study_workers(config)
@@ -771,11 +734,7 @@ def results_payload(job: OptimizationJob) -> Optional[dict[str, Any]]:
         "objective_mode": job.config.objective.mode.value,
         "is_multi_objective": job.config.is_multi_objective(),
         "best_params": result.best_params,
-        "best_trial": (
-            serialize_trial(result.best_trial)
-            if result.best_trial is not None
-            else None
-        ),
+        "best_trial": (serialize_trial(result.best_trial) if result.best_trial is not None else None),
         "trials": [serialize_trial(t) for t in result.study.trials],
         "pareto_trials": [serialize_trial(t) for t in result.pareto_trials],
         "failures": result.failures,
@@ -791,9 +750,7 @@ def get_persisted_study_status(study_id: str) -> Optional[str]:
         with session_scope() as session:
             study = get_optimization_study(session, study_uuid)
     except Exception as exc:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
-        logger.warning(
-            "Failed to load optimization study %s from DB: %s", study_id, exc
-        )
+        logger.warning("Failed to load optimization study %s from DB: %s", study_id, exc)
         return None
     return study.status if study is not None else None
 
@@ -808,9 +765,7 @@ def results_payload_from_db(study_id: str) -> Optional[dict[str, Any]]:
         with session_scope() as session:
             study = get_optimization_study(session, study_uuid)
     except Exception as exc:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
-        logger.warning(
-            "Failed to load optimization study %s from DB: %s", study_id, exc
-        )
+        logger.warning("Failed to load optimization study %s from DB: %s", study_id, exc)
         return None
 
     if study is None:
@@ -821,9 +776,7 @@ def results_payload_from_db(study_id: str) -> Optional[dict[str, Any]]:
 
     config = study.config or {}
     snapshot = config.get("persisted_snapshot", {})
-    config_for_validation = {
-        key: value for key, value in config.items() if key != "persisted_snapshot"
-    }
+    config_for_validation = {key: value for key, value in config.items() if key != "persisted_snapshot"}
     try:
         opt_config = OptimizationConfig.model_validate(config_for_validation)
     except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
@@ -831,23 +784,14 @@ def results_payload_from_db(study_id: str) -> Optional[dict[str, Any]]:
         return None
 
     serialized_trials = [
-        _serialize_db_trial(trial.metrics, trial)
-        for trial in sorted(study.trials, key=lambda item: item.trial_number)
+        _serialize_db_trial(trial.metrics, trial) for trial in sorted(study.trials, key=lambda item: item.trial_number)
     ]
     trials_by_number = {trial["number"]: trial for trial in serialized_trials}
 
     best_trial_number = snapshot.get("best_trial_number")
-    best_trial = (
-        trials_by_number.get(best_trial_number)
-        if best_trial_number is not None
-        else None
-    )
+    best_trial = trials_by_number.get(best_trial_number) if best_trial_number is not None else None
     pareto_numbers = snapshot.get("pareto_trial_numbers", [])
-    pareto_trials = [
-        trials_by_number[number]
-        for number in pareto_numbers
-        if number in trials_by_number
-    ]
+    pareto_trials = [trials_by_number[number] for number in pareto_numbers if number in trials_by_number]
 
     return {
         "study_id": study_id,
@@ -886,10 +830,7 @@ def _optuna_reload_configs(
 ) -> list[OptimizationConfig]:
     candidates = [config]
     distributed = _distributed_config(config, study_id)
-    if (
-        distributed.study.name != config.study.name
-        or distributed.study.storage != config.study.storage
-    ):
+    if distributed.study.name != config.study.name or distributed.study.storage != config.study.storage:
         candidates.append(distributed)
     return candidates
 
@@ -903,9 +844,7 @@ def _load_study_for_analytics(
         try:
             study = load_existing_study(candidate)
         except Exception as exc:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
-            logger.warning(
-                "Failed to load optuna study for analytics %s: %s", study_id, exc
-            )
+            logger.warning("Failed to load optuna study for analytics %s: %s", study_id, exc)
             continue
         if study is not None:
             return study
@@ -952,18 +891,14 @@ def analytics_payload_from_db(study_id: str) -> Optional[dict[str, Any]]:
         with session_scope() as session:
             study = get_optimization_study(session, study_uuid)
     except Exception as exc:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
-        logger.warning(
-            "Failed to load optimization study %s from DB: %s", study_id, exc
-        )
+        logger.warning("Failed to load optimization study %s from DB: %s", study_id, exc)
         return None
 
     if study is None:
         return None
 
     config = study.config or {}
-    config_for_validation = {
-        key: value for key, value in config.items() if key != "persisted_snapshot"
-    }
+    config_for_validation = {key: value for key, value in config.items() if key != "persisted_snapshot"}
     try:
         opt_config = OptimizationConfig.model_validate(config_for_validation)
     except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded

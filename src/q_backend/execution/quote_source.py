@@ -13,9 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class TickReader(Protocol):
-    def __call__(
-        self, symbol: str
-    ) -> Optional[tuple[Decimal, Decimal, datetime]]: ...
+    def __call__(self, symbol: str) -> Optional[tuple[Decimal, Decimal, datetime]]: ...
 
 
 class SymbolSelector(Protocol):
@@ -72,7 +70,8 @@ def quote_source_from_market_data_service(service) -> QuoteSource:
             # no quote, so the execution worker simply takes no action this poll
             # and retries next tick. Log so a persistent outage is visible.
             logger.warning(
-                "MT5 connection failed while reading tick for %s", symbol,
+                "MT5 connection failed while reading tick for %s",
+                symbol,
                 exc_info=True,
             )
             return None

@@ -23,14 +23,10 @@ def build_strategy_from_compiled(
     try:
         request = BacktestRequest.model_validate(compiled_config)
     except Exception as exc:
-        raise UnsupportedForwardStrategyError(
-            "compiled_config is not a valid candle backtest configuration"
-        ) from exc
+        raise UnsupportedForwardStrategyError("compiled_config is not a valid candle backtest configuration") from exc
 
     if request.engine == "tick":
-        raise UnsupportedForwardStrategyError(
-            "tick/sub-second strategies are outside forward execution scope"
-        )
+        raise UnsupportedForwardStrategyError("tick/sub-second strategies are outside forward execution scope")
 
     entries, manager, exit_params = normalize_entries(request)
     if request.entries is not None:

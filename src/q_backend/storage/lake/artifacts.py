@@ -65,9 +65,7 @@ def write_backtest_artifacts(
 def read_backtest_artifact(run_id: str, kind: ArtifactKind) -> pd.DataFrame:
     path = _artifact_absolute_path(run_id, kind)
     if not path.is_file():
-        raise FileNotFoundError(
-            f"Backtest artifact '{kind}' not found for run '{run_id}'."
-        )
+        raise FileNotFoundError(f"Backtest artifact '{kind}' not found for run '{run_id}'.")
     return pd.read_parquet(path)
 
 
@@ -105,9 +103,7 @@ def write_encoder_ablation_result(job_id: str, payload: dict[str, Any]) -> str:
 def read_encoder_ablation_result(job_id: str) -> dict[str, Any]:
     path = _encoder_ablation_dir(job_id) / "result.json"
     if not path.is_file():
-        raise FileNotFoundError(
-            f"Encoder ablation result not found for job '{job_id}'."
-        )
+        raise FileNotFoundError(f"Encoder ablation result not found for job '{job_id}'.")
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -126,9 +122,7 @@ def write_discovery_ab_report(job_id: str, payload: dict[str, Any]) -> str:
 def read_discovery_ab_report(job_id: str) -> dict[str, Any]:
     path = _discovery_ab_dir(job_id) / "result.json"
     if not path.is_file():
-        raise FileNotFoundError(
-            f"Discovery A/B result not found for job '{job_id}'."
-        )
+        raise FileNotFoundError(f"Discovery A/B result not found for job '{job_id}'.")
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -143,9 +137,7 @@ def _walkforward_run_dir(run_id: str) -> Path:
     return lake_root() / "walkforward" / run_id
 
 
-def _walkforward_artifact_relative_path(
-    run_id: str, kind: WalkForwardArtifactKind
-) -> str:
+def _walkforward_artifact_relative_path(run_id: str, kind: WalkForwardArtifactKind) -> str:
     filenames = {
         "oos_equity": "oos_equity.parquet",
         "oos_trades": "oos_trades.parquet",
@@ -154,9 +146,7 @@ def _walkforward_artifact_relative_path(
     return f"walkforward/{run_id}/{filenames[kind]}"
 
 
-def _walkforward_artifact_absolute_path(
-    run_id: str, kind: WalkForwardArtifactKind
-) -> Path:
+def _walkforward_artifact_absolute_path(run_id: str, kind: WalkForwardArtifactKind) -> Path:
     return lake_root() / _walkforward_artifact_relative_path(run_id, kind)
 
 
@@ -180,14 +170,10 @@ def write_walkforward_artifacts(
     }
 
 
-def read_walkforward_artifact(
-    run_id: str, kind: WalkForwardArtifactKind
-) -> pd.DataFrame:
+def read_walkforward_artifact(run_id: str, kind: WalkForwardArtifactKind) -> pd.DataFrame:
     path = _walkforward_artifact_absolute_path(run_id, kind)
     if not path.is_file():
-        raise FileNotFoundError(
-            f"Walk-forward artifact '{kind}' not found for run '{run_id}'."
-        )
+        raise FileNotFoundError(f"Walk-forward artifact '{kind}' not found for run '{run_id}'.")
     return pd.read_parquet(path)
 
 
@@ -220,9 +206,7 @@ def _strategy_search_candidate_artifact_absolute_path(
     candidate_id: str,
     kind: StrategySearchCandidateArtifactKind,
 ) -> Path:
-    return lake_root() / _strategy_search_candidate_artifact_relative_path(
-        run_id, candidate_id, kind
-    )
+    return lake_root() / _strategy_search_candidate_artifact_relative_path(run_id, candidate_id, kind)
 
 
 def write_strategy_search_artifacts(
@@ -252,17 +236,13 @@ def write_strategy_search_artifacts(
         candidate_dir.mkdir(parents=True, exist_ok=True)
         equity_df.to_parquet(candidate_dir / "oos_equity.parquet", index=False)
         candidate_paths: dict[str, str] = {
-            "oos_equity": _strategy_search_candidate_artifact_relative_path(
-                run_id, candidate_id, "oos_equity"
-            ),
+            "oos_equity": _strategy_search_candidate_artifact_relative_path(run_id, candidate_id, "oos_equity"),
         }
         trades_df = trades_by_candidate.get(candidate_id)
         if trades_df is not None and not trades_df.empty:
             trades_df.to_parquet(candidate_dir / "oos_trades.parquet", index=False)
-            candidate_paths["oos_trades"] = (
-                _strategy_search_candidate_artifact_relative_path(
-                    run_id, candidate_id, "oos_trades"
-                )
+            candidate_paths["oos_trades"] = _strategy_search_candidate_artifact_relative_path(
+                run_id, candidate_id, "oos_trades"
             )
         lake_paths["candidates"][candidate_id] = candidate_paths
 
@@ -293,9 +273,7 @@ def write_strategy_search_artifacts(
             lockbox_equity.to_parquet(lockbox_dir / "equity.parquet", index=False)
             lockbox_paths["equity"] = f"strategy_search/{run_id}/lockbox/equity.parquet"
         if lockbox_metrics is not None:
-            (lockbox_dir / "metrics.json").write_text(
-                json.dumps(lockbox_metrics), encoding="utf-8"
-            )
+            (lockbox_dir / "metrics.json").write_text(json.dumps(lockbox_metrics), encoding="utf-8")
             lockbox_paths["metrics"] = f"strategy_search/{run_id}/lockbox/metrics.json"
         lake_paths["lockbox"] = lockbox_paths
 
@@ -305,18 +283,14 @@ def write_strategy_search_artifacts(
 def read_strategy_search_candidate_genome(run_id: str, candidate_id: str) -> dict[str, Any]:
     path = lake_root() / "strategy_search" / run_id / "candidates" / candidate_id / "genome.json"
     if not path.is_file():
-        raise FileNotFoundError(
-            f"Strategy search genome not found for run '{run_id}' candidate '{candidate_id}'."
-        )
+        raise FileNotFoundError(f"Strategy search genome not found for run '{run_id}' candidate '{candidate_id}'.")
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def read_strategy_search_artifact(run_id: str) -> pd.DataFrame:
     path = lake_root() / _strategy_search_leaderboard_relative_path(run_id)
     if not path.is_file():
-        raise FileNotFoundError(
-            f"Strategy search leaderboard not found for run '{run_id}'."
-        )
+        raise FileNotFoundError(f"Strategy search leaderboard not found for run '{run_id}'.")
     return pd.read_parquet(path)
 
 
@@ -328,8 +302,7 @@ def read_strategy_search_candidate_artifact(
     path = _strategy_search_candidate_artifact_absolute_path(run_id, candidate_id, kind)
     if not path.is_file():
         raise FileNotFoundError(
-            f"Strategy search candidate artifact '{kind}' not found for "
-            f"run '{run_id}' candidate '{candidate_id}'."
+            f"Strategy search candidate artifact '{kind}' not found for " f"run '{run_id}' candidate '{candidate_id}'."
         )
     return pd.read_parquet(path)
 
@@ -353,9 +326,7 @@ def _feature_matrix_dir(matrix_id: str) -> Path:
 
 def feature_matrix_exists(matrix_id: str) -> bool:
     matrix_dir = _feature_matrix_dir(matrix_id)
-    return (matrix_dir / "matrix.parquet").is_file() and (
-        matrix_dir / "manifest.json"
-    ).is_file()
+    return (matrix_dir / "matrix.parquet").is_file() and (matrix_dir / "manifest.json").is_file()
 
 
 def _frame_to_parquet(frame: pd.DataFrame) -> pd.DataFrame:
@@ -387,9 +358,7 @@ def write_feature_matrix(
     if not ordered.empty:
         ordered = ordered[sorted(ordered.columns)]
     _frame_to_parquet(ordered).to_parquet(matrix_dir / "matrix.parquet", index=False)
-    (matrix_dir / "manifest.json").write_text(
-        json.dumps(manifest, sort_keys=True), encoding="utf-8"
-    )
+    (matrix_dir / "manifest.json").write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
 
     return {
         "matrix": f"features/{matrix_id}/matrix.parquet",
@@ -402,9 +371,7 @@ def read_feature_matrix(matrix_id: str) -> StoredFeatureMatrix:
     matrix_path = matrix_dir / "matrix.parquet"
     manifest_path = matrix_dir / "manifest.json"
     if not matrix_path.is_file() or not manifest_path.is_file():
-        raise FileNotFoundError(
-            f"Feature matrix artifacts not found for matrix '{matrix_id}'."
-        )
+        raise FileNotFoundError(f"Feature matrix artifacts not found for matrix '{matrix_id}'.")
 
     frame = _frame_from_parquet(pd.read_parquet(matrix_path))
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -428,9 +395,7 @@ def write_feature_evidence(artifact_id: str, payload: dict[str, Any]) -> str:
 def read_feature_evidence(artifact_id: str) -> dict[str, Any]:
     path = _feature_evidence_dir(artifact_id) / "diagnostics.json"
     if not path.is_file():
-        raise FileNotFoundError(
-            f"Feature evidence diagnostics not found for '{artifact_id}'."
-        )
+        raise FileNotFoundError(f"Feature evidence diagnostics not found for '{artifact_id}'.")
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -465,9 +430,7 @@ def write_research_acceptance_seed(
 def read_research_acceptance_result(acceptance_id: str) -> dict[str, Any]:
     path = _research_acceptance_dir(acceptance_id) / "result.json"
     if not path.is_file():
-        raise FileNotFoundError(
-            f"Research acceptance result not found for '{acceptance_id}'."
-        )
+        raise FileNotFoundError(f"Research acceptance result not found for '{acceptance_id}'.")
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -488,9 +451,7 @@ def write_lockbox_consumption(manifest_hash: str, payload: dict[str, Any]) -> st
 def read_lockbox_consumption(manifest_hash: str) -> dict[str, Any]:
     path = _lockbox_consumption_dir(manifest_hash) / "record.json"
     if not path.is_file():
-        raise FileNotFoundError(
-            f"Lock-box consumption record not found for manifest '{manifest_hash}'."
-        )
+        raise FileNotFoundError(f"Lock-box consumption record not found for manifest '{manifest_hash}'.")
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -511,9 +472,7 @@ def write_alpha_research_checkpoint(job_id: str, payload: dict[str, Any]) -> str
 def read_alpha_research_checkpoint(job_id: str) -> dict[str, Any]:
     path = _alpha_research_dir(job_id) / "checkpoint.json"
     if not path.is_file():
-        raise FileNotFoundError(
-            f"Alpha-research checkpoint not found for job '{job_id}'."
-        )
+        raise FileNotFoundError(f"Alpha-research checkpoint not found for job '{job_id}'.")
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -530,9 +489,7 @@ def write_alpha_research_result(job_id: str, payload: dict[str, Any]) -> str:
 def read_alpha_research_result(job_id: str) -> dict[str, Any]:
     path = _alpha_research_dir(job_id) / "result.json"
     if not path.is_file():
-        raise FileNotFoundError(
-            f"Alpha-research result not found for job '{job_id}'."
-        )
+        raise FileNotFoundError(f"Alpha-research result not found for job '{job_id}'.")
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -553,9 +510,7 @@ def write_alpha_research_artifact(
 def read_alpha_research_artifact(job_id: str, artifact_name: str) -> dict[str, Any]:
     path = _alpha_research_dir(job_id) / f"{artifact_name}.json"
     if not path.is_file():
-        raise FileNotFoundError(
-            f"Alpha-research artifact '{artifact_name}' not found for job '{job_id}'."
-        )
+        raise FileNotFoundError(f"Alpha-research artifact '{artifact_name}' not found for job '{job_id}'.")
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -569,9 +524,7 @@ def _neural_model_artifact_relative_path(model_hash: str) -> str:
 
 def neural_model_exists(model_hash: str) -> bool:
     model_dir = _neural_model_dir(model_hash)
-    return (model_dir / "encoder.joblib").is_file() and (
-        model_dir / "manifest.json"
-    ).is_file()
+    return (model_dir / "encoder.joblib").is_file() and (model_dir / "manifest.json").is_file()
 
 
 def write_neural_model(
@@ -582,9 +535,7 @@ def write_neural_model(
 ) -> dict[str, str]:
     model_dir = _neural_model_dir(model_hash)
     if model_dir.exists() and (model_dir / "encoder.joblib").is_file():
-        raise FileExistsError(
-            f"Neural model artifact already exists for hash '{model_hash}'."
-        )
+        raise FileExistsError(f"Neural model artifact already exists for hash '{model_hash}'.")
     model_dir.mkdir(parents=True, exist_ok=True)
 
     payload = {
@@ -611,9 +562,7 @@ def write_neural_model(
         "val_metrics": encoder.val_metrics,
         "latent_names": encoder.latent_names,
     }
-    (model_dir / "manifest.json").write_text(
-        json.dumps(manifest, sort_keys=True), encoding="utf-8"
-    )
+    (model_dir / "manifest.json").write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
 
     return {
         "encoder": _neural_model_artifact_relative_path(model_hash),
@@ -625,9 +574,7 @@ def read_neural_model(model_hash: str) -> NeuralEncoder:
     model_dir = _neural_model_dir(model_hash)
     artifact_path = model_dir / "encoder.joblib"
     if not artifact_path.is_file():
-        raise FileNotFoundError(
-            f"Neural model artifact not found for hash '{model_hash}'."
-        )
+        raise FileNotFoundError(f"Neural model artifact not found for hash '{model_hash}'.")
 
     payload = joblib.load(artifact_path)
     if isinstance(payload, dict) and "state" in payload:
@@ -636,10 +583,7 @@ def read_neural_model(model_hash: str) -> NeuralEncoder:
         encoder = _load_legacy_pca_artifact(payload)
 
     if encoder.model_id != model_hash:
-        raise ValueError(
-            f"Artifact model_id '{encoder.model_id}' does not match requested hash "
-            f"'{model_hash}'."
-        )
+        raise ValueError(f"Artifact model_id '{encoder.model_id}' does not match requested hash " f"'{model_hash}'.")
     return encoder
 
 
@@ -673,7 +617,5 @@ def list_neural_model_hashes() -> list[str]:
 def read_neural_model_manifest(model_hash: str) -> dict[str, Any]:
     manifest_path = _neural_model_dir(model_hash) / "manifest.json"
     if not manifest_path.is_file():
-        raise FileNotFoundError(
-            f"Neural model manifest not found for hash '{model_hash}'."
-        )
+        raise FileNotFoundError(f"Neural model manifest not found for hash '{model_hash}'.")
     return json.loads(manifest_path.read_text(encoding="utf-8"))

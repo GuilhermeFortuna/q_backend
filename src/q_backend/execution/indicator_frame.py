@@ -37,22 +37,11 @@ def augment_indicator_frame(
     for col in exit_strategy.required_columns():
         if col in chunk.columns:
             continue
-        if (
-            col.startswith("atr_")
-            and "high" in chunk.columns
-            and "low" in chunk.columns
-            and "close" in chunk.columns
-        ):
+        if col.startswith("atr_") and "high" in chunk.columns and "low" in chunk.columns and "close" in chunk.columns:
             period = int(col.split("_", 1)[1])
-            chunk[col] = compute_atr(
-                chunk["high"], chunk["low"], chunk["close"], period
-            )
+            chunk[col] = compute_atr(chunk["high"], chunk["low"], chunk["close"], period)
         elif col.startswith("donchian_high_") or col.startswith("donchian_low_"):
-            prefix = (
-                "donchian_high_"
-                if col.startswith("donchian_high_")
-                else "donchian_low_"
-            )
+            prefix = "donchian_high_" if col.startswith("donchian_high_") else "donchian_low_"
             donchian_periods.add(int(col.removeprefix(prefix)))
 
     if donchian_periods and "high" in chunk.columns and "low" in chunk.columns:
@@ -61,9 +50,7 @@ def augment_indicator_frame(
             low_col = f"donchian_low_{period}"
             if high_col in chunk.columns and low_col in chunk.columns:
                 continue
-            upper, lower = compute_donchian_channels(
-                chunk["high"], chunk["low"], period
-            )
+            upper, lower = compute_donchian_channels(chunk["high"], chunk["low"], period)
             chunk[high_col] = upper
             chunk[low_col] = lower
     return chunk

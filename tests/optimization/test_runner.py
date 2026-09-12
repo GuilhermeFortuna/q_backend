@@ -50,9 +50,7 @@ def test_runner_single_objective_finds_best_params(single_objective_config):
     assert result.best_trial is not None
     assert "strategy__short_period" in result.best_params
     best_short = result.best_params["strategy__short_period"]
-    assert best_short == max(
-        call.strategy_params["short_period"] for call in runner_stub.calls
-    )
+    assert best_short == max(call.strategy_params["short_period"] for call in runner_stub.calls)
 
 
 def test_invalid_combos_pruned_before_backtest():
@@ -82,11 +80,7 @@ def test_invalid_combos_pruned_before_backtest():
     runner_stub = StubBacktestRunner()
     result = OptimizationRunner(config, runner_stub).run()
     assert runner_stub.call_count == 0
-    pruned = [
-        trial
-        for trial in result.study.trials
-        if trial.state == optuna.trial.TrialState.PRUNED
-    ]
+    pruned = [trial for trial in result.study.trials if trial.state == optuna.trial.TrialState.PRUNED]
     assert len(pruned) == config.study.n_trials
 
 
@@ -133,9 +127,7 @@ def test_multi_objective_returns_pareto_front(multi_objective_config):
     assert len(result.study.trials) == multi_objective_config.study.n_trials
 
 
-def test_default_backtest_runner_with_injected_data(
-    single_objective_config, sample_ohlcv_df
-):
+def test_default_backtest_runner_with_injected_data(single_objective_config, sample_ohlcv_df):
     def data_provider(_config):
         return sample_ohlcv_df
 

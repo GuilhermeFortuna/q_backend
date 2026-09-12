@@ -71,9 +71,7 @@ def evaluate_lockbox(
     if not lockbox.enabled:
         return None, True, None
 
-    _, lockbox_start, lockbox_end = compute_lockbox_bounds(
-        backtest.start, backtest.end, lockbox
-    )
+    _, lockbox_start, lockbox_end = compute_lockbox_bounds(backtest.start, backtest.end, lockbox)
     if lockbox_start is None or lockbox_end is None:
         return None, True, None
 

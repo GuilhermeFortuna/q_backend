@@ -76,9 +76,7 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def lookup_request_for_order(
-    order: ExecutionOrder, deployment: ExecutionDeployment
-) -> MarketOrderRequest:
+def lookup_request_for_order(order: ExecutionOrder, deployment: ExecutionDeployment) -> MarketOrderRequest:
     broker_mode = BrokerMode(order.broker_mode)
     return MarketOrderRequest(
         deployment_id=deployment.id,
@@ -125,13 +123,9 @@ def apply_filled_resolution(
         symbol=deployment.symbol,
         reconciling=True,
     )
-    finalize_order_reconciliation(
-        session, order.id, reconciled_by=reconciled_by, detail=detail, at=ts
-    )
+    finalize_order_reconciliation(session, order.id, reconciled_by=reconciled_by, detail=detail, at=ts)
     if order.decision_id is not None:
-        update_execution_decision_outcome(
-            session, order.decision_id, outcome=DecisionOutcome.ORDER_FILLED
-        )
+        update_execution_decision_outcome(session, order.decision_id, outcome=DecisionOutcome.ORDER_FILLED)
 
 
 def apply_failed_resolution(
@@ -152,13 +146,9 @@ def apply_failed_resolution(
         rejection_reason=reason,
         completed_at=ts,
     )
-    finalize_order_reconciliation(
-        session, order.id, reconciled_by=reconciled_by, detail=detail, at=ts
-    )
+    finalize_order_reconciliation(session, order.id, reconciled_by=reconciled_by, detail=detail, at=ts)
     if order.decision_id is not None:
-        update_execution_decision_outcome(
-            session, order.decision_id, outcome=DecisionOutcome.ORDER_REJECTED
-        )
+        update_execution_decision_outcome(session, order.decision_id, outcome=DecisionOutcome.ORDER_REJECTED)
 
 
 def resolve_order_manually(
@@ -230,13 +220,9 @@ class OrderReconciler:
         self._point_value = point_value
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
-    def reconcile_deployment(
-        self, session: Session, deployment: ExecutionDeployment
-    ) -> list[ReconciliationOutcome]:
+    def reconcile_deployment(self, session: Session, deployment: ExecutionDeployment) -> list[ReconciliationOutcome]:
         outcomes = []
-        for order in list_pending_reconciliation_orders(
-            session, deployment_id=deployment.id
-        ):
+        for order in list_pending_reconciliation_orders(session, deployment_id=deployment.id):
             outcomes.append(self._reconcile_order(session, order, deployment))
         return outcomes
 

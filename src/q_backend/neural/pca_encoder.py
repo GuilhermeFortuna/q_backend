@@ -50,16 +50,12 @@ class PCAEncoder:
     def _select_feature_columns(self, window: pd.DataFrame) -> list[str]:
         if list(window.columns) == list(self.config.input_features):
             return list(self.config.input_features)
-        missing = [
-            name for name in self.config.input_features if name not in window.columns
-        ]
+        missing = [name for name in self.config.input_features if name not in window.columns]
         if missing:
             raise ValueError(f"Input features missing from window: {missing}")
         return list(self.config.input_features)
 
-    def _split_fit_validation(
-        self, values: np.ndarray, holdout_fraction: float
-    ) -> tuple[np.ndarray, np.ndarray]:
+    def _split_fit_validation(self, values: np.ndarray, holdout_fraction: float) -> tuple[np.ndarray, np.ndarray]:
         if values.shape[0] < 2:
             return values, values[:0]
         holdout_rows = max(1, int(round(values.shape[0] * holdout_fraction)))
@@ -158,9 +154,7 @@ class PCAEncoder:
         }
 
     @classmethod
-    def load_from_artifact_state(
-        cls, config: EncoderConfig, state: dict[str, Any]
-    ) -> PCAEncoder:
+    def load_from_artifact_state(cls, config: EncoderConfig, state: dict[str, Any]) -> PCAEncoder:
         encoder = cls(config=config)
         encoder._scaler = state.get("scaler")
         encoder._pca = state.get("pca")

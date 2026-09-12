@@ -22,9 +22,7 @@ class CoveragePlan:
     missing: list[tuple[datetime, datetime]]
 
 
-def envelope_covers(
-    symbol: str, timeframe: str, start: datetime, end: datetime
-) -> bool:
+def envelope_covers(symbol: str, timeframe: str, start: datetime, end: datetime) -> bool:
     """True when the local store envelope fully contains ``[start, end]``."""
     local = local_store.available_range(symbol, timeframe)
     if local is None:
@@ -32,9 +30,7 @@ def envelope_covers(
     return local.start <= start and local.end >= end
 
 
-def plan_ohlcv_read(
-    symbol: str, timeframe: str, start: datetime, end: datetime
-) -> CoveragePlan:
+def plan_ohlcv_read(symbol: str, timeframe: str, start: datetime, end: datetime) -> CoveragePlan:
     """Plan an OHLCV read against the local parquet envelope.
 
     Returns up to two missing segments for the remote gateway to fill:

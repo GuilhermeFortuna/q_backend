@@ -58,6 +58,7 @@ def test_fixed_bracket_magnitude_uses_log_bounds_before_enable_injection():
     raw = _search_param_from_spec(sl_spec)
     assert isinstance(raw, LogFloatParam)
 
+
 def test_atr_chandelier_preset_searches_atr_period_and_rule_params():
     preset = _preset("atr_stop_chandelier")
     search_space, _fixed_params = derive_exit_preset_search_space(
@@ -86,8 +87,7 @@ def test_non_preset_exit_enable_params_are_pinned_off():
     preset_rules = {
         rule.enable_param
         for rule in list_exit_rules()
-        if rule.enable_param in preset.parameters
-        or any(name in preset.parameters for name in rule.param_names)
+        if rule.enable_param in preset.parameters or any(name in preset.parameters for name in rule.param_names)
     }
     for rule in list_exit_rules():
         if rule.enable_param in preset_rules:

@@ -104,9 +104,7 @@ def run_profile_feature_evidence(
     if profile is None:
         raise ValueError(f"Unknown profile_id '{profile_id}'.")
 
-    bars = _ohlcv_to_bars(
-        read_ohlcv_fresh(profile.symbol, profile.timeframe, start, end)
-    )
+    bars = _ohlcv_to_bars(read_ohlcv_fresh(profile.symbol, profile.timeframe, start, end))
     manifest = build_split_manifest(
         bars,
         symbol=profile.symbol,
@@ -124,11 +122,7 @@ def run_profile_feature_evidence(
         segment_bars=evidence_bars,
         feature_requests=requests,
     )
-    target_specs = [
-        spec
-        for spec in profile_target_specs(profile.target_horizons)
-        if spec.name == target_name
-    ]
+    target_specs = [spec for spec in profile_target_specs(profile.target_horizons) if spec.name == target_name]
     if not target_specs:
         raise ValueError(f"Unsupported target '{target_name}' for profile '{profile_id}'.")
 
@@ -154,16 +148,12 @@ def run_profile_feature_evidence(
             threshold=float(thresholds["redundancy_correlation_threshold"]),
         )
         scores = score_features(evaluations, clusters)
-        representative_by_cluster = {
-            cluster.cluster_id: cluster.representative for cluster in clusters
-        }
+        representative_by_cluster = {cluster.cluster_id: cluster.representative for cluster in clusters}
 
         batch: list[FeatureEvidence] = []
         for evaluation in evaluations:
             spec_entry = next(
-                entry
-                for entry in matrix.manifest["features"]
-                if entry["feature_id"] == evaluation.feature_id
+                entry for entry in matrix.manifest["features"] if entry["feature_id"] == evaluation.feature_id
             )
             feature_name = spec_entry["name"]
             spec = get_feature_spec(feature_name)
@@ -177,11 +167,7 @@ def run_profile_feature_evidence(
                 split_manifest_hash=manifest.manifest_hash,
             )
             cluster_id = next(
-                (
-                    cluster.cluster_id
-                    for cluster in clusters
-                    if evaluation.feature_id in cluster.feature_ids
-                ),
+                (cluster.cluster_id for cluster in clusters if evaluation.feature_id in cluster.feature_ids),
                 0,
             )
             batch.append(
@@ -302,9 +288,7 @@ def _row_to_evidence(row: FeatureEvidenceRow, diagnostics: dict[str, Any]) -> Fe
         n_obs=row.n_obs,
         fold_diagnostics=fold_diagnostics,
         regime_ics=dict(diagnostics.get("regime_ics", {})),
-        permutation_null_floor=row.permutation_null_floor
-        if row.permutation_null_floor is not None
-        else float("nan"),
+        permutation_null_floor=row.permutation_null_floor if row.permutation_null_floor is not None else float("nan"),
         deflated_score=row.deflated_score if row.deflated_score is not None else 0.0,
         decision=row.decision,  # type: ignore[arg-type]
         rejection_reasons=list(row.rejection_reasons or []),

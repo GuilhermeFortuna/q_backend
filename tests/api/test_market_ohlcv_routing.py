@@ -58,9 +58,7 @@ def test_ohlcv_available_range_uses_local_store_when_symbol_not_in_mt5(market_ro
             "q_backend.market_data.routing.symbol_selectable_in_mt5",
             return_value=False,
         ):
-            available = market_service.fetch_ohlcv_available_range(
-                market_data_service, "BGI$", "D1"
-            )
+            available = market_service.fetch_ohlcv_available_range(market_data_service, "BGI$", "D1")
 
     assert available is not None
     assert available.symbol == "BGI$"
@@ -75,9 +73,7 @@ def test_ohlcv_count_query_reads_local_store_when_symbol_not_in_mt5(market_root)
             "q_backend.market_data.routing.symbol_selectable_in_mt5",
             return_value=False,
         ):
-            rows = market_service.fetch_ohlcv_rows(
-                market_data_service, "BGI$", "D1", count=500, start=None, end=None
-            )
+            rows = market_service.fetch_ohlcv_rows(market_data_service, "BGI$", "D1", count=500, start=None, end=None)
 
     assert len(rows) == 2
     assert rows[-1].close == 41.0
@@ -91,9 +87,7 @@ def test_market_ohlcv_response_shape_for_local_bars(market_root):
             "q_backend.market_data.routing.symbol_selectable_in_mt5",
             return_value=False,
         ):
-            rows = market_service.fetch_ohlcv_rows(
-                market_data_service, "BGI$", "D1", count=500, start=None, end=None
-            )
+            rows = market_service.fetch_ohlcv_rows(market_data_service, "BGI$", "D1", count=500, start=None, end=None)
 
     payload = [market_service.ohlcv_to_bar_response(row) for row in rows]
     assert len(payload) == 2
@@ -166,9 +160,7 @@ def test_ohlcv_available_range_uses_remote_client_when_source_is_remote(market_r
             return_value="remote",
         ),
     ):
-        available = market_service.fetch_ohlcv_available_range(
-            market_data_service, "WIN$", "M5"
-        )
+        available = market_service.fetch_ohlcv_available_range(market_data_service, "WIN$", "M5")
 
     assert available is sentinel
     remote.get_available_ohlcv_range.assert_called_once_with("WIN$", "M5")
@@ -191,9 +183,7 @@ def test_ohlcv_uses_remote_client_when_source_is_remote_without_dates(market_roo
             return_value="remote",
         ),
     ):
-        rows = market_service.fetch_ohlcv_rows(
-            market_data_service, "WIN$", "M5", count=100, start=None, end=None
-        )
+        rows = market_service.fetch_ohlcv_rows(market_data_service, "WIN$", "M5", count=100, start=None, end=None)
 
     assert rows is bars_sentinel
     remote.get_available_ohlcv_range.assert_called_once_with("WIN$", "M5")
@@ -215,7 +205,7 @@ def test_ohlcv_remote_falls_back_to_local_when_remote_returns_none(market_root):
     local_available = MagicMock()
     local_available.start = datetime(2024, 3, 1)
     local_available.end = datetime(2024, 3, 10)
-    
+
     local_bars = [object()]
     local_client = MagicMock()
     local_client.get_ohlcv.return_value = local_bars
@@ -232,12 +222,8 @@ def test_ohlcv_remote_falls_back_to_local_when_remote_returns_none(market_root):
             return_value=local_available,
         ),
     ):
-        rows = market_service.fetch_ohlcv_rows(
-            market_data_service, "WIN$", "M5", count=100, start=None, end=None
-        )
+        rows = market_service.fetch_ohlcv_rows(market_data_service, "WIN$", "M5", count=100, start=None, end=None)
 
     assert rows is local_bars
     remote.get_available_ohlcv_range.assert_called_once_with("WIN$", "M5")
     local_client.get_ohlcv.assert_called_once_with("WIN$", "M5", local_available.start, local_available.end)
-
-

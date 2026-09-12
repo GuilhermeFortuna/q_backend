@@ -39,9 +39,7 @@ def symbol_selectable_in_mt5(service: MarketDataService, symbol: str) -> bool:
     return bool(mt5.symbol_select(symbol, True))
 
 
-def resolve_ohlcv_source(
-    service: MarketDataService, symbol: str, timeframe: str
-) -> Literal["local", "mt5", "remote"]:
+def resolve_ohlcv_source(service: MarketDataService, symbol: str, timeframe: str) -> Literal["local", "mt5", "remote"]:
     """Pick the OHLCV provider for a symbol/timeframe pair."""
     source = get_data_source()
     if source == "local":

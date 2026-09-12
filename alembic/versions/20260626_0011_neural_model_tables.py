@@ -59,9 +59,7 @@ def upgrade() -> None:
         sa.Column("artifact_path", sa.String(length=1024), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["model_id"], ["neural_models.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["model_id"], ["neural_models.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("model_hash", name="uq_neural_model_versions_model_hash"),
         sa.UniqueConstraint(
@@ -85,12 +83,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(
-        "ix_neural_model_versions_model_hash", table_name="neural_model_versions"
-    )
-    op.drop_index(
-        "ix_neural_model_versions_status", table_name="neural_model_versions"
-    )
+    op.drop_index("ix_neural_model_versions_model_hash", table_name="neural_model_versions")
+    op.drop_index("ix_neural_model_versions_status", table_name="neural_model_versions")
     op.drop_table("neural_model_versions")
     op.drop_index("ix_neural_models_symbol_timeframe", table_name="neural_models")
     op.drop_table("neural_models")

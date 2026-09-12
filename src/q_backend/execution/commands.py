@@ -18,23 +18,17 @@ from q_backend.storage.db.execution_repositories import (
 
 
 def start_deployment(session: Session, deployment_id: UUID) -> ExecutionDeployment:
-    return transition_deployment_lifecycle(
-        session, deployment_id, DeploymentLifecycle.RUNNING
-    )
+    return transition_deployment_lifecycle(session, deployment_id, DeploymentLifecycle.RUNNING)
 
 
 def pause_deployment(session: Session, deployment_id: UUID) -> ExecutionDeployment:
     """Stop evaluating new bars; retain the open position."""
-    return transition_deployment_lifecycle(
-        session, deployment_id, DeploymentLifecycle.PAUSED
-    )
+    return transition_deployment_lifecycle(session, deployment_id, DeploymentLifecycle.PAUSED)
 
 
 def stop_deployment(session: Session, deployment_id: UUID) -> ExecutionDeployment:
     """Terminate evaluation; retain the open position unless flatten is requested."""
-    return transition_deployment_lifecycle(
-        session, deployment_id, DeploymentLifecycle.STOPPED
-    )
+    return transition_deployment_lifecycle(session, deployment_id, DeploymentLifecycle.STOPPED)
 
 
 def enable_kill_switch(

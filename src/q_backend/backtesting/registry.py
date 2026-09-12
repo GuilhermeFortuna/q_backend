@@ -44,13 +44,9 @@ class TradeRegistry:
         # PnL = (Entry - Exit) * Quantity * Point Value for SELL
         multiplier = getattr(trade, "point_value", 1.0)
         if trade.action == OrderAction.BUY:
-            trade.pnl = (
-                (trade.exit_price - trade.entry_price) * trade.quantity * multiplier
-            )
+            trade.pnl = (trade.exit_price - trade.entry_price) * trade.quantity * multiplier
         else:
-            trade.pnl = (
-                (trade.entry_price - trade.exit_price) * trade.quantity * multiplier
-            )
+            trade.pnl = (trade.entry_price - trade.exit_price) * trade.quantity * multiplier
 
         # Subtract commissions
         trade.pnl -= trade.commission
@@ -127,9 +123,7 @@ class TradeRegistry:
                 losing_trades.append(t)
                 current_loss_streak += 1
                 current_win_streak = 0
-                max_consecutive_losses = max(
-                    max_consecutive_losses, current_loss_streak
-                )
+                max_consecutive_losses = max(max_consecutive_losses, current_loss_streak)
 
         total_pnl = sum(t.pnl for t in closed_trades if t.pnl is not None)
         total_commission = sum(t.commission for t in closed_trades)
@@ -154,9 +148,7 @@ class TradeRegistry:
             max_dd_pct = max(max_dd_pct, dd_pct)
 
         # Ratios
-        profit_factor = (
-            gross_profit / abs(gross_loss) if gross_loss != 0 else gross_profit
-        )
+        profit_factor = gross_profit / abs(gross_loss) if gross_loss != 0 else gross_profit
         recovery_factor = total_pnl / max_dd_val if max_dd_val > 0 else 0.0
         expectancy = total_pnl / total_trades
 

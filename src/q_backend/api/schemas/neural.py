@@ -85,4 +85,3 @@ class NeuralTrainStatusResponse(BaseModel):
     gate: Optional[dict[str, Any]] = None
     gate_error: Optional[str] = None
     error: Optional[str] = None
-

@@ -192,9 +192,7 @@ def test_encoder_ablation_completes_with_pca_and_ae_rows(
         if row["gate_error"] is None:
             assert np.isfinite(row["best_latent_ic"])
             assert np.isfinite(row["baseline_ic"])
-            assert row["ic_delta_vs_baseline"] == pytest.approx(
-                row["best_latent_ic"] - row["baseline_ic"]
-            )
+            assert row["ic_delta_vs_baseline"] == pytest.approx(row["best_latent_ic"] - row["baseline_ic"])
 
     lake_result = read_encoder_ablation_result(started["job_id"])
     assert lake_result["best_label"] == result["best_label"]
@@ -203,9 +201,7 @@ def test_encoder_ablation_completes_with_pca_and_ae_rows(
     versions = list_neural_model_versions(ablation_db_session)
     assert len(versions) == 2
     assert all(version.status == NeuralModelStatus.TRAINED.value for version in versions)
-    assert all(
-        version.status != NeuralModelStatus.PRODUCTION.value for version in versions
-    )
+    assert all(version.status != NeuralModelStatus.PRODUCTION.value for version in versions)
 
 
 def test_encoder_ablation_gate_error_row_does_not_abort_other_configs(

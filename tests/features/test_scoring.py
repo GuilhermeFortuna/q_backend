@@ -58,9 +58,7 @@ def test_perfectly_correlated_features_share_one_cluster():
     clusters = cluster_redundant(matrix, threshold=0.9)
     cluster_map = {tuple(c.feature_ids): c for c in clusters}
 
-    assert ("feat.a", "feat.b") in cluster_map or ["feat.a", "feat.b"] in [
-        c.feature_ids for c in clusters
-    ]
+    assert ("feat.a", "feat.b") in cluster_map or ["feat.a", "feat.b"] in [c.feature_ids for c in clusters]
     pair_cluster = next(c for c in clusters if "feat.a" in c.feature_ids)
     assert pair_cluster.feature_ids == ["feat.a", "feat.b"]
 

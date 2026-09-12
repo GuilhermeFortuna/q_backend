@@ -189,9 +189,7 @@ def get_strategy_builder_models() -> AiStrategyModelsResponse:
 
     for provider_id in provider_ids:
         try:
-            models.extend(
-                _gather_provider_models(settings, registry[provider_id], provider_id)
-            )
+            models.extend(_gather_provider_models(settings, registry[provider_id], provider_id))
         except Exception:
             logger.exception(
                 "Failed to gather models for provider '%s'; skipping.",
@@ -202,8 +200,7 @@ def get_strategy_builder_models() -> AiStrategyModelsResponse:
         provider=default_provider_id,
         default_model=settings.ai_strategy_model,
         providers=[
-            AiProviderOption(id=provider_id, label=PROVIDER_LABELS[provider_id])
-            for provider_id in provider_ids
+            AiProviderOption(id=provider_id, label=PROVIDER_LABELS[provider_id]) for provider_id in provider_ids
         ],
         models=models,
     )
@@ -228,13 +225,11 @@ def interpret_strategy_builder_request(
 ) -> AiStrategyResponse:
     """Interpret a natural-language request into a validated StrategySpec draft.
 
-  Returns ``change_notes``: short, concrete edits the model made to the draft on
-  this turn (empty for a first draft).
+    Returns ``change_notes``: short, concrete edits the model made to the draft on
+    this turn (empty for a first draft).
     """
     settings = get_settings()
-    requested_provider = (
-        request.provider or settings.ai_strategy_provider
-    ).strip().lower()
+    requested_provider = (request.provider or settings.ai_strategy_provider).strip().lower()
 
     if request.provider is not None and requested_provider not in SUPPORTED_PROVIDERS:
         raise HTTPException(

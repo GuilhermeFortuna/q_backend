@@ -75,13 +75,9 @@ class MarketDataService:
         server = os.getenv("MT5_SERVER")
         path = os.getenv("MT5_PATH")
 
-        logger.info(
-            f"Initializing MarketDataService with MT5 User: {login}, Server: {server}"
-        )
+        logger.info(f"Initializing MarketDataService with MT5 User: {login}, Server: {server}")
 
-        self.mt5_client = MetaTraderClient(
-            path=path, login=login, password=password, server=server
-        )
+        self.mt5_client = MetaTraderClient(path=path, login=login, password=password, server=server)
         self._remote_client = RemoteMt5Client()
         self._local_client = LocalParquetClient()
 
@@ -138,10 +134,7 @@ class MarketDataService:
             return self.mt5_client
         if self._remote_client.is_available():
             return self._remote_client
-        raise ConnectionError(
-            "no acquisition provider: MetaTrader5 not installed and no reachable "
-            "gateway"
-        )
+        raise ConnectionError("no acquisition provider: MetaTrader5 not installed and no reachable " "gateway")
 
     def mt5_available(self) -> bool:
         return self.mt5_client.is_available()
@@ -209,9 +202,7 @@ class MarketDataService:
             )
         return self.mt5_client
 
-    def _fetch_through_ohlcv(
-        self, symbol: str, timeframe: str, bars: List[OHLCV]
-    ) -> bool:
+    def _fetch_through_ohlcv(self, symbol: str, timeframe: str, bars: List[OHLCV]) -> bool:
         """Write-behind persist of gateway-fetched bars into the local store.
 
         Best-effort: a parquet write failure must never fail the caller, but
@@ -222,8 +213,7 @@ class MarketDataService:
             return True
         except Exception:  # noqa: BLE001 - fetch-through is best-effort; read must not fail
             logger.warning(
-                "Fetch-through write_ohlcv failed for %s/%s; serving remote bars "
-                "without caching.",
+                "Fetch-through write_ohlcv failed for %s/%s; serving remote bars " "without caching.",
                 symbol,
                 timeframe,
                 exc_info=True,
@@ -231,9 +221,7 @@ class MarketDataService:
             return False
 
     @staticmethod
-    def _merge_ohlcv_bars(
-        start: datetime, end: datetime, *groups: List[OHLCV]
-    ) -> List[OHLCV]:
+    def _merge_ohlcv_bars(start: datetime, end: datetime, *groups: List[OHLCV]) -> List[OHLCV]:
         by_time: dict[datetime, OHLCV] = {}
         for bars in groups:
             for bar in bars:
@@ -241,9 +229,7 @@ class MarketDataService:
                     by_time[bar.time] = bar
         return [by_time[t] for t in sorted(by_time)]
 
-    def _get_ohlcv_auto_remote(
-        self, symbol: str, timeframe: str, start: datetime, end: datetime
-    ) -> List[OHLCV]:
+    def _get_ohlcv_auto_remote(self, symbol: str, timeframe: str, start: datetime, end: datetime) -> List[OHLCV]:
         plan = plan_ohlcv_read(symbol, timeframe, start, end)
         if plan.serve_from == "local":
             return local_store.read_ohlcv(symbol, timeframe, start, end)
@@ -254,9 +240,7 @@ class MarketDataService:
             for seg_start, seg_end in plan.missing:
                 if envelope_covers(symbol, timeframe, start, end):
                     break
-                segment_bars = self._remote_client.get_ohlcv(
-                    symbol, timeframe, seg_start, seg_end
-                )
+                segment_bars = self._remote_client.get_ohlcv(symbol, timeframe, seg_start, seg_end)
                 if segment_bars:
                     fetched_segments.append(segment_bars)
                     if not self._fetch_through_ohlcv(symbol, timeframe, segment_bars):
@@ -272,16 +256,13 @@ class MarketDataService:
         local_bars = local_store.read_ohlcv(symbol, timeframe, start, end)
         return self._merge_ohlcv_bars(start, end, local_bars, *fetched_segments)
 
-    def _fetch_through_ticks(
-        self, symbol: str, arrays: dict[str, np.ndarray]
-    ) -> None:
+    def _fetch_through_ticks(self, symbol: str, arrays: dict[str, np.ndarray]) -> None:
         """Write-behind persist of gateway-fetched ticks into the local store."""
         try:
             local_store.write_ticks(symbol, arrays)
         except Exception:  # noqa: BLE001 - fetch-through is best-effort; read must not fail
             logger.warning(
-                "Fetch-through write_ticks failed for %s; serving remote ticks "
-                "without caching.",
+                "Fetch-through write_ticks failed for %s; serving remote ticks " "without caching.",
                 symbol,
                 exc_info=True,
             )
@@ -289,13 +270,8 @@ class MarketDataService:
     def get_symbol_info(self, symbol: str) -> Optional[dict]:
         return self._resolve_provider().get_symbol_info(symbol)
 
-    def get_ohlcv(
-        self, symbol: str, timeframe: str, start: datetime, end: datetime
-    ) -> List[OHLCV]:
-        if (
-            get_data_source() == "auto"
-            and resolve_ohlcv_source(self, symbol, timeframe) == "remote"
-        ):
+    def get_ohlcv(self, symbol: str, timeframe: str, start: datetime, end: datetime) -> List[OHLCV]:
+        if get_data_source() == "auto" and resolve_ohlcv_source(self, symbol, timeframe) == "remote":
             return self._get_ohlcv_auto_remote(symbol, timeframe, start, end)
 
         provider = self._resolve_ohlcv_provider(symbol, timeframe)
@@ -304,12 +280,8 @@ class MarketDataService:
             self._fetch_through_ohlcv(symbol, timeframe, bars)
         return bars
 
-    def get_available_ohlcv_range(
-        self, symbol: str, timeframe: str
-    ) -> Optional[OhlcvAvailableRange]:
-        return self._resolve_ohlcv_provider(symbol, timeframe).get_available_ohlcv_range(
-            symbol, timeframe
-        )
+    def get_available_ohlcv_range(self, symbol: str, timeframe: str) -> Optional[OhlcvAvailableRange]:
+        return self._resolve_ohlcv_provider(symbol, timeframe).get_available_ohlcv_range(symbol, timeframe)
 
     def get_ticks(self, symbol: str, start: datetime, end: datetime) -> List[Tick]:
         return self._resolve_provider().get_ticks(symbol, start, end)
@@ -323,9 +295,7 @@ class MarketDataService:
         use_cache: bool = True,
     ) -> dict[str, np.ndarray]:
         provider = self._resolve_provider()
-        arrays = provider.get_ticks_columnar(
-            symbol, start, end, flags=flags, use_cache=use_cache
-        )
+        arrays = provider.get_ticks_columnar(symbol, start, end, flags=flags, use_cache=use_cache)
         if provider is self._remote_client and len(arrays.get("time_msc", [])) > 0:
             self._fetch_through_ticks(symbol, arrays)
         return arrays

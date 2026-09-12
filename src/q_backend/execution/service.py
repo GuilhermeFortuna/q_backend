@@ -187,9 +187,7 @@ class ExecutionService:
             risk_config=deployment.risk_config,
         )
         requested_qty = (
-            Decimal(str(eval_result.requested_quantity))
-            if eval_result.requested_quantity is not None
-            else None
+            Decimal(str(eval_result.requested_quantity)) if eval_result.requested_quantity is not None else None
         )
         decision = create_execution_decision(
             session,
@@ -197,18 +195,14 @@ class ExecutionService:
             bar_close_time=eval_result.bar_close_time,
             identity=identity,
             signal_action=eval_result.signal_action,
-            outcome=DecisionOutcome.HOLD
-            if eval_result.signal_action == SignalAction.HOLD
-            else DecisionOutcome.SIGNAL,
+            outcome=DecisionOutcome.HOLD if eval_result.signal_action == SignalAction.HOLD else DecisionOutcome.SIGNAL,
             requested_quantity=requested_qty,
             reason=eval_result.reason,
             context={"timing": eval_result.timing.model_dump()},
         )
 
         if eval_result.signal_action == SignalAction.HOLD and not flatten:
-            update_deployment_last_bar_close(
-                session, deployment.id, eval_result.bar_close_time
-            )
+            update_deployment_last_bar_close(session, deployment.id, eval_result.bar_close_time)
             self._commit(session)
             timing = timing.model_copy(update={"total_ms": _elapsed_ms(started)})
             return BarProcessResult(
@@ -220,11 +214,7 @@ class ExecutionService:
             )
 
         position = get_open_net_position(session, deployment.id)
-        position_side = (
-            PositionSide(position.side)
-            if position is not None and position.is_open
-            else PositionSide.FLAT
-        )
+        position_side = PositionSide(position.side) if position is not None and position.is_open else PositionSide.FLAT
         position_qty = position.quantity if position is not None else Decimal("0")
 
         if flatten:
@@ -259,12 +249,8 @@ class ExecutionService:
                 requested_quantity=requested_qty,
             )
             if mapped is None:
-                update_execution_decision_outcome(
-                    session, decision.id, outcome=DecisionOutcome.HOLD
-                )
-                update_deployment_last_bar_close(
-                    session, deployment.id, eval_result.bar_close_time
-                )
+                update_execution_decision_outcome(session, decision.id, outcome=DecisionOutcome.HOLD)
+                update_deployment_last_bar_close(session, deployment.id, eval_result.bar_close_time)
                 self._commit(session)
                 timing = timing.model_copy(update={"total_ms": _elapsed_ms(started)})
                 return BarProcessResult(
@@ -284,11 +270,7 @@ class ExecutionService:
         quote = self._quote_source.get_quote(deployment.symbol)
         now = self._clock()
         lease = get_worker_lease(session, deployment.id)
-        lease_held = (
-            lease is not None
-            and lease.worker_id == worker_id
-            and lease.lease_token == lease_token
-        )
+        lease_held = lease is not None and lease.worker_id == worker_id and lease.lease_token == lease_token
         orders = list_orders_for_deployment(session, deployment.id)
         control = get_execution_control_state(session)
         risk_cfg = deployment.risk_config or account.risk_config or {}
@@ -320,12 +302,8 @@ class ExecutionService:
             position_quantity=position_qty,
             cash_balance=account.cash_balance,
             equity=snapshot.equity,
-            daily_realized_pnl=sum_realized_pnl_since(
-                session, account.id, _utc_day_start(now)
-            ),
-            max_daily_loss=Decimal(str(max_daily_loss))
-            if max_daily_loss is not None
-            else None,
+            daily_realized_pnl=sum_realized_pnl_since(session, account.id, _utc_day_start(now)),
+            max_daily_loss=Decimal(str(max_daily_loss)) if max_daily_loss is not None else None,
             max_notional=Decimal(str(max_notional)) if max_notional is not None else None,
             point_value=point_value,
             cost_config=cost_config,
@@ -333,9 +311,7 @@ class ExecutionService:
             allow_lifecycle_bypass=allow_lifecycle_bypass or flatten,
         )
         rejection = self._risk_gate.evaluate(ctx)
-        timing = timing.model_copy(
-            update={"risk_ms": (time.perf_counter() - risk_started) * 1000.0}
-        )
+        timing = timing.model_copy(update={"risk_ms": (time.perf_counter() - risk_started) * 1000.0})
         if rejection is not None:
             record_risk_event(
                 session,
@@ -351,9 +327,7 @@ class ExecutionService:
                 outcome=DecisionOutcome.RISK_REJECTED,
                 context={"rejection": rejection.model_dump(mode="json")},
             )
-            update_deployment_last_bar_close(
-                session, deployment.id, eval_result.bar_close_time
-            )
+            update_deployment_last_bar_close(session, deployment.id, eval_result.bar_close_time)
             self._commit(session)
             timing = timing.model_copy(update={"total_ms": _elapsed_ms(started)})
             return BarProcessResult(
@@ -410,9 +384,7 @@ class ExecutionService:
                 decision.id,
                 outcome=DecisionOutcome.ORDER_UNKNOWN,
             )
-            update_deployment_last_bar_close(
-                session, deployment.id, eval_result.bar_close_time
-            )
+            update_deployment_last_bar_close(session, deployment.id, eval_result.bar_close_time)
             self._commit(session)
             timing = timing.model_copy(update={"total_ms": _elapsed_ms(started)})
             return BarProcessResult(
@@ -425,11 +397,7 @@ class ExecutionService:
             )
 
         if not submission.accepted or submission.fill is None:
-            reason = (
-                submission.rejection.message
-                if submission.rejection is not None
-                else "broker rejected order"
-            )
+            reason = submission.rejection.message if submission.rejection is not None else "broker rejected order"
             transition_execution_order(
                 session,
                 order.id,
@@ -442,9 +410,7 @@ class ExecutionService:
                 decision.id,
                 outcome=DecisionOutcome.ORDER_REJECTED,
             )
-            update_deployment_last_bar_close(
-                session, deployment.id, eval_result.bar_close_time
-            )
+            update_deployment_last_bar_close(session, deployment.id, eval_result.bar_close_time)
             self._commit(session)
             timing = timing.model_copy(update={"total_ms": _elapsed_ms(started)})
             return BarProcessResult(
@@ -472,18 +438,14 @@ class ExecutionService:
                 decision.id,
                 outcome=DecisionOutcome.ORDER_FILLED,
             )
-            update_deployment_last_bar_close(
-                session, deployment.id, eval_result.bar_close_time
-            )
+            update_deployment_last_bar_close(session, deployment.id, eval_result.bar_close_time)
             self._commit(session)
         except Exception:
             # Already-handled by the state machine: the fill may or may not have
             # reached the broker, so the order becomes UNKNOWN/PENDING for the
             # WO178 reconciler and we re-raise. Log the traceback first so the
             # persistence failure is never silent.
-            logger.exception(
-                "Fill persistence failed for order %s; marking UNKNOWN", order.id
-            )
+            logger.exception("Fill persistence failed for order %s; marking UNKNOWN", order.id)
             session.rollback()
             with session.begin():
                 transition_execution_order(

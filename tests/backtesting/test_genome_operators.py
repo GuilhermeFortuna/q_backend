@@ -260,18 +260,15 @@ def test_provider_adaptive_mutation_rate_trajectory():
     assert provider.effective_mutation_rate == pytest.approx(0.15)
 
     flat_results = [
-        _completed_result(candidate.candidate_id, robustness_score=1.0)
-        for candidate in provider.candidates()
+        _completed_result(candidate.candidate_id, robustness_score=1.0) for candidate in provider.candidates()
     ]
     provider.report(flat_results)
     flat_results = [
-        _completed_result(candidate.candidate_id, robustness_score=1.0)
-        for candidate in provider.candidates()
+        _completed_result(candidate.candidate_id, robustness_score=1.0) for candidate in provider.candidates()
     ]
     provider.report(flat_results)
     flat_results = [
-        _completed_result(candidate.candidate_id, robustness_score=1.0)
-        for candidate in provider.candidates()
+        _completed_result(candidate.candidate_id, robustness_score=1.0) for candidate in provider.candidates()
     ]
     provider.report(flat_results)
     assert provider.stagnation_generations >= 2
@@ -393,10 +390,7 @@ def test_structural_diversity_signal_without_backtests():
         provider.report(results)
         diversity_spy.assert_called()
 
-    fingerprints = {
-        genome_structural_fingerprint(genome)
-        for genome in provider.population
-    }
+    fingerprints = {genome_structural_fingerprint(genome) for genome in provider.population}
     assert len(fingerprints) >= 1
 
 
@@ -411,16 +405,10 @@ def test_fixed_rate_when_min_equals_max():
         adaptive_operator_weights=False,
     )
     provider = GeneticCandidateProvider(genetic, _search_config())
-    flat = [
-        _completed_result(candidate.candidate_id, robustness_score=0.0)
-        for candidate in provider.candidates()
-    ]
+    flat = [_completed_result(candidate.candidate_id, robustness_score=0.0) for candidate in provider.candidates()]
     for _ in range(3):
         provider.report(flat)
-        flat = [
-            _completed_result(candidate.candidate_id, robustness_score=0.0)
-            for candidate in provider.candidates()
-        ]
+        flat = [_completed_result(candidate.candidate_id, robustness_score=0.0) for candidate in provider.candidates()]
     assert provider.effective_mutation_rate == pytest.approx(0.2)
 
 
@@ -451,4 +439,3 @@ def test_build_random_reversion_builds_valid_rsi_genome():
     validate_genome(genome, max_depth=12, max_node_count=24)
     osc_node = next(node for node in genome.nodes if node.kind.startswith("ind."))
     assert osc_node.kind == "ind.rsi"
-

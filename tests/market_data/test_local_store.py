@@ -56,9 +56,7 @@ def test_reingest_overlapping_range_deduplicates(market_root):
     local_store.write_ohlcv("VALE3", "H1", first)
     local_store.write_ohlcv("VALE3", "H1", second)
 
-    rows = local_store.read_ohlcv(
-        "VALE3", "H1", datetime(2024, 1, 1), datetime(2024, 1, 10)
-    )
+    rows = local_store.read_ohlcv("VALE3", "H1", datetime(2024, 1, 1), datetime(2024, 1, 10))
     assert len(rows) == 7
     assert rows[3].close == pytest.approx(204.0)
     assert rows[0].close == pytest.approx(101.0)

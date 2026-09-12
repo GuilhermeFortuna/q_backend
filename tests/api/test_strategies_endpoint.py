@@ -5,21 +5,23 @@ from q_backend.backtesting.strategy_registry import StrategyCategory
 def test_list_strategies_returns_all_registered():
     response = list_strategies()
     names = [item.name for item in response["strategies"]]
-    assert names == sorted([
-        "BollingerReversion",
-        "CompositeStrategy",
-        "DonchianBreakout",
-        "FMA",
-        "GatevPairs",
-        "HurstTrendBlend",
-        "MACD",
-        "MACrossover",
-        "RSIMeanReversion",
-        "TRB",
-        "TickMaBreakout",
-        "TSMOM",
-        "VMA",
-    ])
+    assert names == sorted(
+        [
+            "BollingerReversion",
+            "CompositeStrategy",
+            "DonchianBreakout",
+            "FMA",
+            "GatevPairs",
+            "HurstTrendBlend",
+            "MACD",
+            "MACrossover",
+            "RSIMeanReversion",
+            "TRB",
+            "TickMaBreakout",
+            "TSMOM",
+            "VMA",
+        ]
+    )
 
 
 def test_list_strategies_macrossover_schema():

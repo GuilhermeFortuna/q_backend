@@ -38,9 +38,7 @@ class RSIMeanReversionStrategy(TradingStrategy):
         df["prev_rsi"] = df["rsi"].shift(1)
 
         df["buy_signal"] = (df["prev_rsi"] <= self.oversold) & (df["rsi"] > self.oversold)
-        df["sell_signal"] = (df["prev_rsi"] <= self.overbought) & (
-            df["rsi"] > self.overbought
-        )
+        df["sell_signal"] = (df["prev_rsi"] <= self.overbought) & (df["rsi"] > self.overbought)
         return df
 
     def get_chart_indicators(self) -> List[ChartIndicatorSpec]:
@@ -62,9 +60,7 @@ class RSIMeanReversionStrategy(TradingStrategy):
             signals.append(Signal(symbol=symbol, action=SignalAction.SELL))
         return signals
 
-    def check_exit_conditions(
-        self, current_data: pd.Series, open_trades: List[Trade]
-    ) -> List[Signal]:
+    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
         symbol = resolve_symbol(current_data, self.symbol)
         if not open_trades:
             return []
@@ -82,9 +78,7 @@ class RSIMeanReversionStrategy(TradingStrategy):
         return signals
 
 
-def _build_rsi_mean_reversion(
-    params: dict[str, Any], symbol: str
-) -> RSIMeanReversionStrategy:
+def _build_rsi_mean_reversion(params: dict[str, Any], symbol: str) -> RSIMeanReversionStrategy:
     return RSIMeanReversionStrategy(
         period=int(params["period"]),
         oversold=float(params["oversold"]),

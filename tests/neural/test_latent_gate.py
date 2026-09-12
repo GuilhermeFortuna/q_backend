@@ -187,8 +187,7 @@ def _patch_latent_frame(monkeypatch, bars_df: pd.DataFrame, *, correlate: bool):
             train_end = train_end.tz_localize("UTC")
         values[df["time"] <= train_end] = np.nan
         columns = {
-            name: values if index == 0 else np.full(len(df), np.nan)
-            for index, name in enumerate(encoder.latent_names)
+            name: values if index == 0 else np.full(len(df), np.nan) for index, name in enumerate(encoder.latent_names)
         }
         return pd.DataFrame(columns, index=df["time"])
 
@@ -224,9 +223,7 @@ def test_evaluate_latents_uses_read_through_seam(
         unregister_neural_model_features(keys)
 
 
-def test_latent_feature_set_one_request_per_latent(
-    seeded_session: Session, sample_market, lake_root_path
-) -> None:
+def test_latent_feature_set_one_request_per_latent(seeded_session: Session, sample_market, lake_root_path) -> None:
     version, keys = _train_version(seeded_session, sample_market)
     try:
         requests = latent_feature_set(version)
@@ -257,9 +254,9 @@ def test_evaluate_latents_persists_run_and_scores(
         assert run is not None
         assert run.status == "completed"
 
-        score_rows = seeded_session.execute(
-            select(FeatureScoreRow).where(FeatureScoreRow.run_id == run.id)
-        ).scalars().all()
+        score_rows = (
+            seeded_session.execute(select(FeatureScoreRow).where(FeatureScoreRow.run_id == run.id)).scalars().all()
+        )
         assert len(score_rows) == version.n_latents
         assert {row.feature_name for row in score_rows} == set(keys)
     finally:

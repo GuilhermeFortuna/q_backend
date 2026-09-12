@@ -42,9 +42,7 @@ def get_backtest_status(run_id: str):
     """Return the current status of an async backtest run."""
     payload = backtest_jobs.get_status_payload(run_id)
     if payload is None:
-        raise HTTPException(
-            status_code=404, detail=f"Backtest run '{run_id}' not found."
-        )
+        raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.")
     return payload
 
 

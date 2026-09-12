@@ -98,10 +98,7 @@ def _node_under_test_genome(kind: str) -> dict:
 
 
 def _node_output_columns(kind: str) -> list[str]:
-    return [
-        "g_nut" if port == "out" else f"g_nut__{port}"
-        for port in NODE_SPECS[kind].output_ports
-    ]
+    return ["g_nut" if port == "out" else f"g_nut__{port}" for port in NODE_SPECS[kind].output_ports]
 
 
 def _synthetic_frame(periods: int = 120) -> pd.DataFrame:
@@ -123,9 +120,7 @@ def _synthetic_frame(periods: int = 120) -> pd.DataFrame:
 
 def _node_compute_fn(kind: str, column: str):
     def _fn(bars: pd.DataFrame) -> FeatureSeries:
-        strategy = CompositeStrategy(
-            genome=_node_under_test_genome(kind), params={}, symbol="TEST"
-        )
+        strategy = CompositeStrategy(genome=_node_under_test_genome(kind), params={}, symbol="TEST")
         result = strategy.compute_indicators(bars)
         return FeatureSeries(
             feature_id=f"{kind}:{column}",
@@ -170,9 +165,7 @@ def test_node_harness_catches_a_forward_looking_leak() -> None:
     def _leaky(bars: pd.DataFrame) -> FeatureSeries:
         # shift(-1) peeks one bar into the future — the canonical leakage.
         leaked = bars["close"].shift(-1).reset_index(drop=True)
-        return FeatureSeries(
-            feature_id="leaky_node", series=leaked, warmup_bars=0, leakage_status="suspect"
-        )
+        return FeatureSeries(feature_id="leaky_node", series=leaked, warmup_bars=0, leakage_status="suspect")
 
     with pytest.raises(LeakageError):
         assert_causal(_leaky, frame, sample_indices=[30, 60, 90])

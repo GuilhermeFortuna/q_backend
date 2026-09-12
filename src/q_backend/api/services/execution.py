@@ -141,9 +141,7 @@ def _deployment_summary(deployment: ExecutionDeployment) -> DeploymentSummaryRes
     return DeploymentSummaryResponse.model_validate(deployment)
 
 
-def create_account(
-    session: Session, body: PaperAccountCreateRequest
-) -> PaperAccountResponse:
+def create_account(session: Session, body: PaperAccountCreateRequest) -> PaperAccountResponse:
     if get_paper_account_by_name(session, body.name) is not None:
         raise HTTPException(status_code=409, detail="paper account name already exists")
     try:
@@ -164,9 +162,7 @@ def create_account(
         raise _http_from_db(exc) from exc
 
 
-def list_accounts(
-    session: Session, *, limit: int, offset: int
-) -> PaperAccountListResponse:
+def list_accounts(session: Session, *, limit: int, offset: int) -> PaperAccountListResponse:
     try:
         items, total = list_paper_accounts(session, limit=limit, offset=offset)
     except SQLAlchemyError as exc:
@@ -186,9 +182,7 @@ def get_account(session: Session, account_id: uuid.UUID) -> PaperAccountResponse
     return PaperAccountResponse.model_validate(account)
 
 
-def create_deployment(
-    session: Session, body: DeploymentCreateRequest
-) -> DeploymentDetailResponse:
+def create_deployment(session: Session, body: DeploymentCreateRequest) -> DeploymentDetailResponse:
     settings = get_settings()
     account = get_paper_account(session, body.paper_account_id)
     if account is None:
@@ -218,9 +212,7 @@ def create_deployment(
                 risk_config=body.identity.risk_config,
             )
         else:
-            raise ExecutionValidationError(
-                "either source_backtest_run_id or identity is required"
-            )
+            raise ExecutionValidationError("either source_backtest_run_id or identity is required")
         deployment = create_execution_deployment(
             session,
             paper_account_id=body.paper_account_id,
@@ -263,9 +255,7 @@ def list_deployments(
     )
 
 
-def get_deployment_detail(
-    session: Session, deployment_id: uuid.UUID
-) -> DeploymentDetailResponse:
+def get_deployment_detail(session: Session, deployment_id: uuid.UUID) -> DeploymentDetailResponse:
     deployment = get_execution_deployment(session, deployment_id)
     if deployment is None:
         raise HTTPException(status_code=404, detail="deployment not found")
@@ -279,9 +269,7 @@ def get_deployment_detail(
         compiled_config=deployment.compiled_config,
         sizing_config=deployment.sizing_config,
         risk_config=deployment.risk_config,
-        open_position=PositionResponse.model_validate(position)
-        if position is not None
-        else None,
+        open_position=PositionResponse.model_validate(position) if position is not None else None,
         worker_lease=_lease_response(lease, now=now) if lease is not None else None,
         latest_decision=_decision_response(latest) if latest is not None else None,
         unknown_order_count=count_unknown_orders(session, deployment_id=deployment_id),
@@ -315,9 +303,7 @@ def apply_deployment_action(
             message = "stop accepted"
             pending = None
         else:
-            deployment = set_pending_deployment_action(
-                session, deployment_id, action="flatten"
-            )
+            deployment = set_pending_deployment_action(session, deployment_id, action="flatten")
             message = "flatten queued for worker"
             pending = deployment.pending_action
         record_audit_event(
@@ -633,9 +619,7 @@ def get_kill_switch(session: Session) -> KillSwitchResponse:
     )
 
 
-def update_kill_switch(
-    session: Session, body: KillSwitchUpdateRequest
-) -> KillSwitchUpdateResponse:
+def update_kill_switch(session: Session, body: KillSwitchUpdateRequest) -> KillSwitchUpdateResponse:
     if not body.confirm:
         raise HTTPException(
             status_code=400,
@@ -692,9 +676,7 @@ def get_execution_health(
         active_leases = 0
         for deployment in deployments:
             lease = leases.get(deployment.id)
-            lease_view = (
-                _lease_response(lease, now=now) if lease is not None else None
-            )
+            lease_view = _lease_response(lease, now=now) if lease is not None else None
             if lease_view is not None and lease_view.is_active:
                 active_leases += 1
             latest = get_latest_decision(session, deployment.id)
@@ -704,12 +686,8 @@ def get_execution_health(
                     lifecycle=deployment.lifecycle,
                     worker_lease=lease_view,
                     last_bar_close_time=deployment.last_bar_close_time,
-                    latest_decision=_decision_response(latest)
-                    if latest is not None
-                    else None,
-                    unknown_order_count=count_unknown_orders(
-                        session, deployment_id=deployment.id
-                    ),
+                    latest_decision=_decision_response(latest) if latest is not None else None,
+                    unknown_order_count=count_unknown_orders(session, deployment_id=deployment.id),
                     pending_action=deployment.pending_action,
                 )
             )

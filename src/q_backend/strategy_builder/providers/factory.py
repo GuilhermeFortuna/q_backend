@@ -30,9 +30,7 @@ class AiDisabledError(RuntimeError):
 
 def _validate_ai_enabled(settings: Settings) -> None:
     if not settings.ai_strategy_enabled:
-        raise AiDisabledError(
-            "AI strategy interpretation is disabled. Set Q_AI_STRATEGY_ENABLED=true to enable."
-        )
+        raise AiDisabledError("AI strategy interpretation is disabled. Set Q_AI_STRATEGY_ENABLED=true to enable.")
 
 
 def _validate_default_provider_name(settings: Settings) -> str:

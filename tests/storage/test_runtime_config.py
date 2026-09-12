@@ -10,9 +10,7 @@ from q_backend.storage import runtime_config
 @pytest.fixture(autouse=True)
 def isolated_config(tmp_path, monkeypatch):
     """Point the runtime config at a temp file and clear gateway env vars."""
-    monkeypatch.setenv(
-        "Q_RUNTIME_CONFIG_PATH", str(tmp_path / "runtime_config.json")
-    )
+    monkeypatch.setenv("Q_RUNTIME_CONFIG_PATH", str(tmp_path / "runtime_config.json"))
     monkeypatch.delenv("Q_MT5_GATEWAY_URL", raising=False)
     monkeypatch.delenv("Q_MT5_GATEWAY_TOKEN", raising=False)
     yield

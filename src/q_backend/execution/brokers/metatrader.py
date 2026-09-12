@@ -129,11 +129,7 @@ class MetaTraderBroker:
             )
         account = self._runtime.account_info()
         available = account is not None
-        message = (
-            "MT5 live adapter connected"
-            if available
-            else "MT5 live adapter cannot read account_info"
-        )
+        message = "MT5 live adapter connected" if available else "MT5 live adapter cannot read account_info"
         return BrokerHealth(
             broker_mode=BrokerMode.MT5_LIVE,
             is_available=available,
@@ -184,9 +180,11 @@ class MetaTraderBroker:
             return BrokerSubmissionResult(
                 outcome=BrokerSubmissionOutcome.REJECTED,
                 rejection=BrokerRejection(
-                    code=BrokerRejectionCode.INVALID_QUANTITY
-                    if "volume" in str(exc)
-                    else BrokerRejectionCode.UNSUPPORTED_FILL_POLICY,
+                    code=(
+                        BrokerRejectionCode.INVALID_QUANTITY
+                        if "volume" in str(exc)
+                        else BrokerRejectionCode.UNSUPPORTED_FILL_POLICY
+                    ),
                     message=str(exc),
                 ),
                 cost_config=cost_config,
@@ -518,15 +516,10 @@ class MetaTraderBroker:
         matches = [
             deal
             for deal in deals
-            if int(getattr(deal, "magic", 0)) == magic
-            or str(getattr(deal, "comment", "")).startswith(comment)
+            if int(getattr(deal, "magic", 0)) == magic or str(getattr(deal, "comment", "")).startswith(comment)
         ]
         if fallback_deal_id:
-            matches = [
-                deal
-                for deal in matches
-                if str(int(getattr(deal, "ticket", 0))) == fallback_deal_id
-            ] or matches
+            matches = [deal for deal in matches if str(int(getattr(deal, "ticket", 0))) == fallback_deal_id] or matches
 
         if not matches:
             return None

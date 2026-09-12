@@ -47,9 +47,7 @@ def export_results(
     with best_params_path.open("w", encoding="utf-8") as handle:
         json.dump(best_params, handle, indent=2)
 
-    best_trial_payload = (
-        serialize_trial(result.best_trial) if result.best_trial is not None else None
-    )
+    best_trial_payload = serialize_trial(result.best_trial) if result.best_trial is not None else None
     with best_trial_path.open("w", encoding="utf-8") as handle:
         json.dump(best_trial_payload, handle, indent=2, default=str)
 
@@ -63,9 +61,7 @@ def export_results(
         "study_name": config.study.name,
         "n_trials": len(study.trials),
         "objective_mode": config.objective.mode.value,
-        "best_values": (
-            result.best_trial.values if result.best_trial is not None else None
-        ),
+        "best_values": (result.best_trial.values if result.best_trial is not None else None),
         "failure_count": len(result.failures),
         "exported_at": datetime.now(timezone.utc).isoformat(),
     }

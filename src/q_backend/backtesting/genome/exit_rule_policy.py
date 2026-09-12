@@ -15,7 +15,6 @@ from q_backend.backtesting.strategy_registry import (
     StrategyParamSpec,
 )
 
-
 EXIT_RULE_POLICY_METADATA_KEY = "exit_rule_policy"
 
 
@@ -59,10 +58,7 @@ def selected_exit_policy_presets(preset_ids: list[str] | None) -> list[ExitPrese
 
 
 def build_exit_rule_policy(preset: ExitPreset) -> dict[str, Any]:
-    params = {
-        name: {"param": genome_exit_param_ref(name)}
-        for name in preset_exit_param_names(preset)
-    }
+    params = {name: {"param": genome_exit_param_ref(name)} for name in preset_exit_param_names(preset)}
     return {
         "preset_id": preset.id,
         "params": params,
@@ -162,9 +158,7 @@ def resolve_exit_params_from_policy(
             genome_key = str(binding["param"])
             spec = GENOME_PARAM_BOUNDS.get(genome_key)
             runtime[exit_name] = (
-                trial_params[genome_key]
-                if genome_key in trial_params
-                else (spec.default if spec is not None else 0)
+                trial_params[genome_key] if genome_key in trial_params else (spec.default if spec is not None else 0)
             )
         else:
             runtime[exit_name] = binding
@@ -204,9 +198,7 @@ def _round_to_sig(value: float, sig: int = 1) -> float:
     return round(value, digits)
 
 
-def _genome_exit_bounds(
-    spec: StrategyParamSpec, *, is_enable: bool
-) -> tuple[float, float | None, float | None]:
+def _genome_exit_bounds(spec: StrategyParamSpec, *, is_enable: bool) -> tuple[float, float | None, float | None]:
     """Translate a curated exit spec into ``(min, max, step)`` for ``GENOME_PARAM_BOUNDS``.
 
     WO87 Task 6: discovery samples exit magnitudes from these bounds via the genome

@@ -58,19 +58,13 @@ class TestAndManager:
 
 class TestMajorityManager:
     def test_two_longs_one_short(self, majority_manager):
-        assert (
-            majority_manager.combine([Stance.LONG, Stance.LONG, Stance.SHORT])
-            == Stance.LONG
-        )
+        assert majority_manager.combine([Stance.LONG, Stance.LONG, Stance.SHORT]) == Stance.LONG
 
     def test_tie_below_threshold(self, majority_manager):
         assert majority_manager.combine([Stance.LONG, Stance.SHORT]) == Stance.FLAT
 
     def test_single_long_below_threshold(self, majority_manager):
-        assert (
-            majority_manager.combine([Stance.LONG, Stance.FLAT, Stance.FLAT])
-            == Stance.FLAT
-        )
+        assert majority_manager.combine([Stance.LONG, Stance.FLAT, Stance.FLAT]) == Stance.FLAT
 
     def test_threshold_one(self):
         manager = get_manager("majority", {"vote_threshold": 1})

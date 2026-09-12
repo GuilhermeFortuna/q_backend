@@ -88,12 +88,12 @@ def test_repair_dead_genome_becomes_tradeable():
 
 
 def test_threshold_bounds_allow_diff_centered_values():
-  bounds = GENOME_PARAM_BOUNDS["threshold"]
-  rng = random.Random(42)
-  for _ in range(100):
-      value = rng.uniform(bounds.min, bounds.max)
-      assert bounds.min <= value <= bounds.max
-      assert bounds.min <= 0.0 <= bounds.max
+    bounds = GENOME_PARAM_BOUNDS["threshold"]
+    rng = random.Random(42)
+    for _ in range(100):
+        value = rng.uniform(bounds.min, bounds.max)
+        assert bounds.min <= value <= bounds.max
+        assert bounds.min <= 0.0 <= bounds.max
 
 
 def test_generation_viability_lift_with_probe_enabled():
@@ -116,11 +116,7 @@ def test_generation_viability_lift_with_probe_enabled():
         min_seed_signals=1,
         repair_max_attempts=8,
     )
-    disabled_fraction = population_tradeable_fraction(
-        disabled, df, min_signals=1, max_nodes=24, max_depth=12
-    )
-    enabled_fraction = population_tradeable_fraction(
-        enabled, df, min_signals=1, max_nodes=24, max_depth=12
-    )
+    disabled_fraction = population_tradeable_fraction(disabled, df, min_signals=1, max_nodes=24, max_depth=12)
+    enabled_fraction = population_tradeable_fraction(enabled, df, min_signals=1, max_nodes=24, max_depth=12)
     assert enabled_fraction > disabled_fraction
     assert enabled_fraction >= 0.8

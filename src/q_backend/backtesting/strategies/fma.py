@@ -102,9 +102,7 @@ class FMAStrategy(TradingStrategy):
             signals.append(Signal(symbol=symbol, action=SignalAction.SELL))
         return signals
 
-    def check_exit_conditions(
-        self, current_data: pd.Series, open_trades: List[Trade]
-    ) -> List[Signal]:
+    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
         symbol = resolve_symbol(current_data, self.symbol)
         if self._timestamp_to_bar is None:
             return []
@@ -131,8 +129,7 @@ register_strategy(
     name="FMA",
     label="Fixed MA (Lai–Lau)",
     description=(
-        "Price vs moving-average crossover with a fixed bar-count holding "
-        "period (Lai & Lau 2006 FMA rule)."
+        "Price vs moving-average crossover with a fixed bar-count holding " "period (Lai & Lau 2006 FMA rule)."
     ),
     params=[
         StrategyParamSpec(

@@ -25,9 +25,7 @@ def _signal_bar_indices(result: pd.DataFrame, column: str) -> list[int]:
 
 class TestVMAStrategy:
     def test_crossover_signals_on_expected_bars(self):
-        strategy = build_strategy(
-            "VMA", {"period": 3, "band_pct": 0.0, "ma_type": "sma"}, "TEST"
-        )
+        strategy = build_strategy("VMA", {"period": 3, "band_pct": 0.0, "ma_type": "sma"}, "TEST")
         df = _closes_frame([100.0, 100.0, 100.0, 102.0, 97.0, 97.0, 97.0])
         result = strategy.compute_indicators(df)
 
@@ -38,9 +36,7 @@ class TestVMAStrategy:
         assert sell_bars == [4]
 
     def test_band_suppresses_near_ma_cross(self):
-        strategy = build_strategy(
-            "VMA", {"period": 3, "band_pct": 1.0, "ma_type": "sma"}, "TEST"
-        )
+        strategy = build_strategy("VMA", {"period": 3, "band_pct": 1.0, "ma_type": "sma"}, "TEST")
         df = _closes_frame([100.0, 100.0, 100.0, 100.5])
         result = strategy.compute_indicators(df)
 
@@ -48,9 +44,7 @@ class TestVMAStrategy:
         assert not result["sell_signal"].any()
 
     def test_zero_band_still_triggers_on_same_series(self):
-        strategy = build_strategy(
-            "VMA", {"period": 3, "band_pct": 0.0, "ma_type": "sma"}, "TEST"
-        )
+        strategy = build_strategy("VMA", {"period": 3, "band_pct": 0.0, "ma_type": "sma"}, "TEST")
         df = _closes_frame([100.0, 100.0, 100.0, 100.5])
         result = strategy.compute_indicators(df)
         assert result["buy_signal"].iloc[3]
@@ -148,9 +142,7 @@ class TestTRBStrategy:
         assert sell_bars == [5]
 
     def test_current_close_excluded_from_channel(self):
-        strategy = build_strategy(
-            "TRB", {"period": 3, "band_pct": 0.0, "holding_period": 10}, "TEST"
-        )
+        strategy = build_strategy("TRB", {"period": 3, "band_pct": 0.0, "holding_period": 10}, "TEST")
         df = _closes_frame([10.0, 11.0, 12.0, 13.0])
         result = strategy.compute_indicators(df)
 

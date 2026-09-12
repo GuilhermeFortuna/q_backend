@@ -33,9 +33,7 @@ def stash_partial(
     client.expire(key, _TTL_SECONDS)
 
 
-def load_partials(
-    job_id: str, *, client: Optional[redis.Redis] = None
-) -> list[dict[str, Any]]:
+def load_partials(job_id: str, *, client: Optional[redis.Redis] = None) -> list[dict[str, Any]]:
     """Return all stashed partials (order unspecified; callers sort as needed)."""
     client = client or get_redis()
     raw = client.hgetall(_key(job_id))

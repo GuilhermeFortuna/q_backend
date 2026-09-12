@@ -200,9 +200,7 @@ class CandleCase:
     surface: str
     make_strategy: Callable[[], TradingStrategy]
     make_sizer: Callable[[], PositionSizer] = field(
-        default=lambda: build_position_sizer(
-            FixedQuantityPositionSizing(quantity=1.0), point_value=POINT_VALUE
-        )
+        default=lambda: build_position_sizer(FixedQuantityPositionSizing(quantity=1.0), point_value=POINT_VALUE)
     )
     n_bars: int = 400
     seed: int = 20240609
@@ -271,14 +269,11 @@ CANDLE_CASES: dict[str, CandleCase] = {
             name="ma_crossover_atr_exits",
             surface="Indicator-family exits (atr_sl + atr_tp): engine auto-computes "
             "the atr_N column the exit strategy requires.",
-            make_strategy=_ma(
-                {**BASE_MA_PARAMS, "stop_loss_atr": 2.0, "take_profit_atr": 3.0, "atr_period": 14}
-            ),
+            make_strategy=_ma({**BASE_MA_PARAMS, "stop_loss_atr": 2.0, "take_profit_atr": 3.0, "atr_period": 14}),
         ),
         CandleCase(
             name="ma_crossover_trailing",
-            surface="Trailing family (percent trailing stop): stateful in-trade "
-            "extreme tracking across bars.",
+            surface="Trailing family (percent trailing stop): stateful in-trade " "extreme tracking across bars.",
             make_strategy=_ma({**BASE_MA_PARAMS, "trailing_stop_pct": 0.03}),
         ),
         CandleCase(
@@ -289,8 +284,7 @@ CANDLE_CASES: dict[str, CandleCase] = {
         ),
         CandleCase(
             name="ma_crossover_time_stop",
-            surface="Time family (max bars in trade): stateful bar counter forces "
-            "the exit after N bars.",
+            surface="Time family (max bars in trade): stateful bar counter forces " "the exit after N bars.",
             make_strategy=_ma({**BASE_MA_PARAMS, "max_bars_in_trade": 10}),
         ),
         CandleCase(
@@ -305,24 +299,17 @@ CANDLE_CASES: dict[str, CandleCase] = {
         ),
         CandleCase(
             name="composite_or_macd_macrossover",
-            surface="Multi-entry OR composition (MACrossover OR MACD) via the signal "
-            "manager.",
-            make_strategy=lambda: build_composite_entry(
-                _composite_entries_or_and(), "or", {}, {}, SYMBOL
-            ),
+            surface="Multi-entry OR composition (MACrossover OR MACD) via the signal " "manager.",
+            make_strategy=lambda: build_composite_entry(_composite_entries_or_and(), "or", {}, {}, SYMBOL),
         ),
         CandleCase(
             name="composite_and_macd_macrossover",
-            surface="Multi-entry AND composition (MACrossover AND MACD) via the "
-            "signal manager.",
-            make_strategy=lambda: build_composite_entry(
-                _composite_entries_or_and(), "and", {}, {}, SYMBOL
-            ),
+            surface="Multi-entry AND composition (MACrossover AND MACD) via the " "signal manager.",
+            make_strategy=lambda: build_composite_entry(_composite_entries_or_and(), "and", {}, {}, SYMBOL),
         ),
         CandleCase(
             name="composite_majority_three",
-            surface="Multi-entry Majority composition (3 strategies, vote_threshold=2) "
-            "via the signal manager.",
+            surface="Multi-entry Majority composition (3 strategies, vote_threshold=2) " "via the signal manager.",
             make_strategy=lambda: build_composite_entry(
                 [
                     {"strategy": "MACrossover", "params": dict(BASE_MA_PARAMS)},
@@ -342,9 +329,7 @@ CANDLE_CASES: dict[str, CandleCase] = {
             name="genome_ma_session_gate",
             surface="CompositeStrategy genome with a context feature "
             "(feature.session_window gating an MA crossover via logic.and).",
-            make_strategy=lambda: CompositeStrategy(
-                genome=copy.deepcopy(CTX_GENOME), params={}, symbol=SYMBOL
-            ),
+            make_strategy=lambda: CompositeStrategy(genome=copy.deepcopy(CTX_GENOME), params={}, symbol=SYMBOL),
         ),
         CandleCase(
             name="ma_crossover_safety_margin_sizing",
@@ -352,9 +337,7 @@ CANDLE_CASES: dict[str, CandleCase] = {
             "count from capital instead of a fixed quantity.",
             make_strategy=_ma(dict(BASE_MA_PARAMS)),
             make_sizer=lambda: build_position_sizer(
-                FixedSafetyMarginPositionSizing(
-                    safety_margin_per_contract=5_000.0, min_contracts=1
-                ),
+                FixedSafetyMarginPositionSizing(safety_margin_per_contract=5_000.0, min_contracts=1),
                 point_value=POINT_VALUE,
             ),
         ),
@@ -461,8 +444,7 @@ def _assert_or_regen(name: str, payload: dict[str, Any], regen: bool) -> None:
         raise AssertionError(
             f"Golden mismatch for {name!r}. The engine output no longer matches the "
             f"committed golden. If this change is intended, regenerate with "
-            f"--regen-goldens and justify the diff in your commit/WO message.\n\n"
-            + _diff(name, expected, actual)
+            f"--regen-goldens and justify the diff in your commit/WO message.\n\n" + _diff(name, expected, actual)
         )
 
 
@@ -569,16 +551,12 @@ def test_backtest_live_parity(name: str, with_open_trade: bool) -> None:
 
     assert len(results) == len(data)
     for result in results:
-        assert result.bar_close_time in ref_by_close, (
-            f"{name}: no reference row for close {result.bar_close_time}"
-        )
+        assert result.bar_close_time in ref_by_close, f"{name}: no reference row for close {result.bar_close_time}"
         ref_exits, ref_entries = ref_by_close[result.bar_close_time]
         fwd_exits, fwd_entries = _signals_from_result(result)
         assert signals_equal(ref_exits, fwd_exits), (
-            f"{name}: exit-signal parity mismatch at {result.bar_close_time} "
-            f"(open_trade={with_open_trade})"
+            f"{name}: exit-signal parity mismatch at {result.bar_close_time} " f"(open_trade={with_open_trade})"
         )
         assert signals_equal(ref_entries, fwd_entries), (
-            f"{name}: entry-signal parity mismatch at {result.bar_close_time} "
-            f"(open_trade={with_open_trade})"
+            f"{name}: entry-signal parity mismatch at {result.bar_close_time} " f"(open_trade={with_open_trade})"
         )

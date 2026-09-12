@@ -33,9 +33,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
-        "ix_walkforward_runs_status", "walkforward_runs", ["status"], unique=False
-    )
+    op.create_index("ix_walkforward_runs_status", "walkforward_runs", ["status"], unique=False)
     op.create_index(
         "ix_walkforward_runs_created_at",
         "walkforward_runs",
@@ -60,9 +58,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["run_id"], ["walkforward_runs.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "run_id", "window_number", name="uq_walkforward_windows_run_window"
-        ),
+        sa.UniqueConstraint("run_id", "window_number", name="uq_walkforward_windows_run_window"),
     )
 
 

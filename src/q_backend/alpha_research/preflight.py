@@ -39,10 +39,7 @@ class PreflightResult:
 
 
 def _bars_to_frame(records: list[Any]) -> pd.DataFrame:
-    rows = [
-        record.model_dump() if hasattr(record, "model_dump") else dict(record)
-        for record in records
-    ]
+    rows = [record.model_dump() if hasattr(record, "model_dump") else dict(record) for record in records]
     return pd.DataFrame(rows).sort_values("time").reset_index(drop=True)
 
 
@@ -100,8 +97,7 @@ def run_data_preflight(
             manifest=None,
             bars=None,
             reasons=[
-                f"Requested profile_version {profile_version} does not match "
-                f"active version {profile.version}."
+                f"Requested profile_version {profile_version} does not match " f"active version {profile.version}."
             ],
             coverage={},
         )
@@ -141,10 +137,7 @@ def run_data_preflight(
             profile=profile,
             manifest=None,
             bars=bars,
-            reasons=[
-                f"Insufficient bar count ({len(bars)} < {_MIN_TOTAL_BARS}) for a "
-                "three-way research split."
-            ],
+            reasons=[f"Insufficient bar count ({len(bars)} < {_MIN_TOTAL_BARS}) for a " "three-way research split."],
             coverage=coverage,
         )
 
@@ -157,8 +150,7 @@ def run_data_preflight(
             manifest=None,
             bars=bars,
             reasons=[
-                f"Local series continuity break of {max_gap_days:.1f} days exceeds "
-                f"{_MAX_GAP_DAYS}-day limit."
+                f"Local series continuity break of {max_gap_days:.1f} days exceeds " f"{_MAX_GAP_DAYS}-day limit."
             ],
             coverage=coverage,
         )
@@ -176,8 +168,7 @@ def run_data_preflight(
             manifest=manifest,
             bars=bars,
             reasons=[
-                f"Evidence segment has {manifest.evidence.bar_count} bars; "
-                f"profile requires at least {min_obs}."
+                f"Evidence segment has {manifest.evidence.bar_count} bars; " f"profile requires at least {min_obs}."
             ],
             coverage={
                 **coverage,

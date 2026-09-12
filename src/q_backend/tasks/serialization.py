@@ -18,9 +18,7 @@ from q_backend.optimization.walkforward import WalkForwardWindowResult
 # --- walk-forward window partials -------------------------------------------------
 
 
-def window_partial_to_dict(
-    result: WalkForwardWindowResult, is_objective: Optional[float]
-) -> dict[str, Any]:
+def window_partial_to_dict(result: WalkForwardWindowResult, is_objective: Optional[float]) -> dict[str, Any]:
     return {
         "index": result.index,
         "train_start": result.train_start.isoformat(),

@@ -201,9 +201,7 @@ def test_get_ohlcv_round_trip_naive_brasilia_time():
         client = RemoteMt5Client(base_url=base_url)
         from datetime import datetime
 
-        bars = client.get_ohlcv(
-            "WIN$", "M1", datetime(2023, 11, 14), datetime(2023, 11, 15)
-        )
+        bars = client.get_ohlcv("WIN$", "M1", datetime(2023, 11, 14), datetime(2023, 11, 15))
 
     assert len(bars) == 3
     for bar, epoch in zip(bars, epochs):
@@ -214,17 +212,13 @@ def test_get_ohlcv_round_trip_naive_brasilia_time():
 
 def test_get_ohlcv_absent_spread_column_maps_to_none():
     state = _FakeState()
-    state.ohlcv_npz = _ohlcv_npz(
-        [1_700_000_000], include_spread=False, include_real_volume=False
-    )
+    state.ohlcv_npz = _ohlcv_npz([1_700_000_000], include_spread=False, include_real_volume=False)
 
     with _fake_gateway(state) as (base_url, _st):
         from datetime import datetime
 
         client = RemoteMt5Client(base_url=base_url)
-        bars = client.get_ohlcv(
-            "WIN$", "M1", datetime(2023, 11, 14), datetime(2023, 11, 15)
-        )
+        bars = client.get_ohlcv("WIN$", "M1", datetime(2023, 11, 14), datetime(2023, 11, 15))
 
     assert len(bars) == 1
     assert bars[0].spread is None
@@ -301,9 +295,7 @@ def test_schema_major_mismatch_is_unavailable(caplog):
     }
     with _fake_gateway(state) as (base_url, _st):
         client = RemoteMt5Client(base_url=base_url)
-        with caplog.at_level(
-            logging.ERROR, logger="q_backend.market_data.clients.remote"
-        ):
+        with caplog.at_level(logging.ERROR, logger="q_backend.market_data.clients.remote"):
             assert client.is_available() is False
 
     assert "incompatible" in caplog.text
@@ -317,9 +309,7 @@ def test_503_maps_to_connection_error():
 
         client = RemoteMt5Client(base_url=base_url)
         with pytest.raises(ConnectionError):
-            client.get_ohlcv(
-                "WIN$", "M1", datetime(2026, 1, 1), datetime(2026, 1, 2)
-            )
+            client.get_ohlcv("WIN$", "M1", datetime(2026, 1, 1), datetime(2026, 1, 2))
 
 
 def test_400_maps_to_value_error():
@@ -330,9 +320,7 @@ def test_400_maps_to_value_error():
 
         client = RemoteMt5Client(base_url=base_url)
         with pytest.raises(ValueError):
-            client.get_ohlcv(
-                "WIN$", "ZZ", datetime(2026, 1, 1), datetime(2026, 1, 2)
-            )
+            client.get_ohlcv("WIN$", "ZZ", datetime(2026, 1, 1), datetime(2026, 1, 2))
 
 
 def test_token_sent_when_configured():

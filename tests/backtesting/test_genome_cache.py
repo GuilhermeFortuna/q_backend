@@ -30,12 +30,8 @@ def test_cache_keys_differ_only_on_changed_param_subgraph():
     params_a = {**REGISTRY_DEFAULT_PARAMS["MACrossover"], "short_period": 10}
     params_b = {**REGISTRY_DEFAULT_PARAMS["MACrossover"], "short_period": 12}
 
-    plan_a = CompositeStrategy(
-        genome=MA_CROSSOVER_GENOME, params=params_a, symbol="TEST"
-    ).plan
-    plan_b = CompositeStrategy(
-        genome=MA_CROSSOVER_GENOME, params=params_b, symbol="TEST"
-    ).plan
+    plan_a = CompositeStrategy(genome=MA_CROSSOVER_GENOME, params=params_a, symbol="TEST").plan
+    plan_b = CompositeStrategy(genome=MA_CROSSOVER_GENOME, params=params_b, symbol="TEST").plan
 
     keys_a = {node.node.id: node.cache_key for node in plan_a.sorted_nodes}
     keys_b = {node.node.id: node.cache_key for node in plan_b.sorted_nodes}

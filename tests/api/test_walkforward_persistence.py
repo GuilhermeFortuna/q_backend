@@ -139,9 +139,7 @@ def _start_persisted_job(api_session_scope, *, n_trials: int = 2):
         return walkforward_jobs.start_job(_request(n_trials=n_trials))
 
 
-def test_walkforward_end_to_end_persists_db_and_lake(
-    run_jobs_sync, api_db_session, api_session_scope, lake_root_path
-):
+def test_walkforward_end_to_end_persists_db_and_lake(run_jobs_sync, api_db_session, api_session_scope, lake_root_path):
     job = _start_persisted_job(api_session_scope, n_trials=2)
     api_db_session.expire_all()
 
@@ -204,9 +202,7 @@ def test_walkforward_results_rebuild_after_restart(run_jobs_sync, api_session_sc
     assert len(rebuilt["windows"]) >= 2
 
 
-def test_walkforward_cancel_skips_windows(
-    run_jobs_sync, api_db_session, api_session_scope
-):
+def test_walkforward_cancel_skips_windows(run_jobs_sync, api_db_session, api_session_scope):
     # A run cancelled before its windows execute finalizes as cancelled.
     with (
         patch("q_backend.api.walkforward_jobs.session_scope", api_session_scope),
@@ -222,9 +218,7 @@ def test_walkforward_cancel_skips_windows(
     assert run.status == "cancelled"
 
 
-def test_list_and_delete_walkforward(
-    run_jobs_sync, api_db_session, api_session_scope, lake_root_path
-):
+def test_list_and_delete_walkforward(run_jobs_sync, api_db_session, api_session_scope, lake_root_path):
     job = _start_persisted_job(api_session_scope, n_trials=2)
     api_db_session.expire_all()
 

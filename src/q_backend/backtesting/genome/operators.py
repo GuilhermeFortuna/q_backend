@@ -69,9 +69,7 @@ MUTATION_OPERATORS = (
     "add_node",
     "remove_node",
 ) + EXIT_MUTATION_OPERATORS
-DEFAULT_MUTATION_OPERATOR_WEIGHTS: dict[str, float] = {
-    op: 1.0 for op in MUTATION_OPERATORS
-}
+DEFAULT_MUTATION_OPERATOR_WEIGHTS: dict[str, float] = {op: 1.0 for op in MUTATION_OPERATORS}
 
 
 def genome_node_count(genome: Genome) -> int:
@@ -244,8 +242,7 @@ def _archetype_choice_weights(
     }
     return {
         archetype: max(
-            kind_weights.get(kind, 1.0)
-            for kind in _filter_indicator_kinds(archetype_kinds[archetype], indicator_kinds)
+            kind_weights.get(kind, 1.0) for kind in _filter_indicator_kinds(archetype_kinds[archetype], indicator_kinds)
         )
         for archetype in archetypes
     }
@@ -272,11 +269,7 @@ def update_mutation_operator_weights(
 
 
 def _cuttable_nodes(genome: Genome) -> list[GenomeNode]:
-    return [
-        node
-        for node in genome.nodes
-        if node.kind.startswith(("ind.", "cmp.", "logic."))
-    ]
+    return [node for node in genome.nodes if node.kind.startswith(("ind.", "cmp.", "logic."))]
 
 
 def _compatible_cut_nodes(cut_a: GenomeNode, cuts_b: list[GenomeNode]) -> list[GenomeNode]:
@@ -351,7 +344,6 @@ def _copy_subtree_with_new_ids(
     return copied, id_map, counter
 
 
-
 def _reachable_node_ids(genome: Genome) -> set[str]:
     nodes_by_id = {node.id: node for node in genome.nodes}
     seeds: list[str] = []
@@ -395,9 +387,7 @@ def _rewire_consumers(
         for raw_input in node.inputs:
             parent_id, port = parse_input_ref(raw_input)
             if parent_id == old_root_id:
-                rewired_inputs.append(
-                    f"{new_root_id}:{port}" if ":" in raw_input else new_root_id
-                )
+                rewired_inputs.append(f"{new_root_id}:{port}" if ":" in raw_input else new_root_id)
             else:
                 rewired_inputs.append(raw_input)
         node.inputs = rewired_inputs
@@ -410,11 +400,7 @@ def _rewire_consumers(
 
 
 def _max_numeric_node_suffix(node_ids: set[str]) -> int:
-    suffixes = [
-        int(node_id[1:])
-        for node_id in node_ids
-        if node_id.startswith("n") and node_id[1:].isdigit()
-    ]
+    suffixes = [int(node_id[1:]) for node_id in node_ids if node_id.startswith("n") and node_id[1:].isdigit()]
     return max(suffixes, default=0)
 
 
@@ -432,11 +418,7 @@ def _prune_subtree_leaves(
             if parent_id in subtree_ids:
                 dependents[parent_id] = dependents.get(parent_id, 0) + 1
 
-    leaves = [
-        node_id
-        for node_id in subtree_ids
-        if node_id != keep_root and dependents.get(node_id, 0) == 0
-    ]
+    leaves = [node_id for node_id in subtree_ids if node_id != keep_root and dependents.get(node_id, 0) == 0]
     if not leaves:
         return subtree_ids
     pruned = set(subtree_ids)
@@ -528,11 +510,7 @@ def _crossover_attempt(
     if not compatible_b:
         return child
 
-    multi_node = [
-        node
-        for node in compatible_b
-        if len(_subtree_node_ids(parent_b, node.id)) > 1
-    ]
+    multi_node = [node for node in compatible_b if len(_subtree_node_ids(parent_b, node.id)) > 1]
     if prefer_subtree and multi_node:
         cut_b = rng.choice(multi_node)
         try:
@@ -744,15 +722,11 @@ def mutate_genome(
     elif op == "remove_node":
         mutated = _mutate_remove_node(rng, genome, max_nodes=max_nodes, max_depth=max_depth)
     elif op == "swap_exit_policy":
-        mutated = _mutate_swap_exit_policy(
-            rng, genome, preset_ids=exit_policy_preset_ids
-        )
+        mutated = _mutate_swap_exit_policy(rng, genome, preset_ids=exit_policy_preset_ids)
     elif op == "add_exit_stop":
         mutated = _mutate_add_exit_stop(rng, genome)
     elif op == "replace_exit_with_preset":
-        mutated = _mutate_replace_exit_with_preset(
-            rng, genome, preset_ids=exit_policy_preset_ids
-        )
+        mutated = _mutate_replace_exit_with_preset(rng, genome, preset_ids=exit_policy_preset_ids)
     elif op == "drop_exit_policy":
         mutated = _mutate_drop_exit_policy(genome)
     else:
@@ -810,8 +784,7 @@ def _mutate_swap_indicator(
     compatible = [
         kind
         for kind in swap_kinds(tuple(indicator_kinds))
-        if _node_output_type(kind) == old_type
-        and NODE_SPECS[kind].min_inputs == NODE_SPECS[node.kind].min_inputs
+        if _node_output_type(kind) == old_type and NODE_SPECS[kind].min_inputs == NODE_SPECS[node.kind].min_inputs
     ]
     if not compatible:
         return child
@@ -913,11 +886,7 @@ def _mutate_swap_exit(
     max_depth: int,
 ) -> Genome:
     child = clone_genome(genome)
-    bool_nodes = [
-        node.id
-        for node in child.nodes
-        if _primary_output_type(node) == "bool_series"
-    ]
+    bool_nodes = [node.id for node in child.nodes if _primary_output_type(node) == "bool_series"]
     if len(bool_nodes) < 2:
         return child
     child.exit_long = NodeRef(ref=rng.choice(bool_nodes))
@@ -953,11 +922,7 @@ def _mutate_add_node(
         GenomeNode(id=new_id, kind=kind, params=params, inputs=[close_id] if spec.min_inputs > 0 else [])
     )
 
-    bool_nodes = [
-        node.id
-        for node in child.nodes
-        if _primary_output_type(node) == "bool_series"
-    ]
+    bool_nodes = [node.id for node in child.nodes if _primary_output_type(node) == "bool_series"]
     if bool_nodes:
         if rng.random() < 0.5:
             child.entry_long = NodeRef(ref=rng.choice(bool_nodes))
@@ -975,9 +940,7 @@ def _mutate_remove_node(
 ) -> Genome:
     child = clone_genome(genome)
     removable = [
-        node
-        for node in child.nodes
-        if not node.kind.startswith("source.") and not node.kind.startswith("exit.")
+        node for node in child.nodes if not node.kind.startswith("source.") and not node.kind.startswith("exit.")
     ]
     if len(removable) <= 2:
         return child
@@ -993,11 +956,7 @@ def _mutate_remove_node(
     for attr in ("entry_long", "entry_short", "exit_long", "exit_short"):
         ref = getattr(child, attr)
         if ref.ref.split(":")[0] == target.id:
-            bool_nodes = [
-                node.id
-                for node in child.nodes
-                if _primary_output_type(node) == "bool_series"
-            ]
+            bool_nodes = [node.id for node in child.nodes if _primary_output_type(node) == "bool_series"]
             if not bool_nodes:
                 raise GenomeValidationError("no bool nodes after removal")
             setattr(child, attr, NodeRef(ref=bool_nodes[0]))
@@ -1049,43 +1008,35 @@ def _build_random_crossover(
     nodes = [
         GenomeNode(id=close_id, kind=SOURCE_KIND, params={}, inputs=[]),
     ]
-    short_input, next_idx = _maybe_wrap_with_transform(
-        rng, nodes=nodes, source_id=close_id, next_node_index=7
-    )
-    long_input, next_idx = _maybe_wrap_with_transform(
-        rng, nodes=nodes, source_id=close_id, next_node_index=next_idx
-    )
+    short_input, next_idx = _maybe_wrap_with_transform(rng, nodes=nodes, source_id=close_id, next_node_index=7)
+    long_input, next_idx = _maybe_wrap_with_transform(rng, nodes=nodes, source_id=close_id, next_node_index=next_idx)
     nodes.extend(
         [
-        GenomeNode(
-            id=short_id,
-            kind=short_kind,
-            params={
-                key: _random_param_ref(rng, key) for key in sorted(short_spec.allowed_param_keys)
-            },
-            inputs=[short_input],
-        ),
-        GenomeNode(
-            id=long_id,
-            kind=long_kind,
-            params={
-                key: _random_param_ref(rng, key) for key in sorted(long_spec.allowed_param_keys)
-            },
-            inputs=[long_input],
-        ),
-        GenomeNode(id=diff_id, kind="ind.diff", params={}, inputs=[short_id, long_id]),
-        GenomeNode(
-            id=buy_id,
-            kind="cmp.cross_above",
-            params={"threshold": _random_param_ref(rng, "threshold")},
-            inputs=[diff_id],
-        ),
-        GenomeNode(
-            id=sell_id,
-            kind="cmp.cross_below",
-            params={"threshold": {"param": "threshold", "negate": True}},
-            inputs=[diff_id],
-        ),
+            GenomeNode(
+                id=short_id,
+                kind=short_kind,
+                params={key: _random_param_ref(rng, key) for key in sorted(short_spec.allowed_param_keys)},
+                inputs=[short_input],
+            ),
+            GenomeNode(
+                id=long_id,
+                kind=long_kind,
+                params={key: _random_param_ref(rng, key) for key in sorted(long_spec.allowed_param_keys)},
+                inputs=[long_input],
+            ),
+            GenomeNode(id=diff_id, kind="ind.diff", params={}, inputs=[short_id, long_id]),
+            GenomeNode(
+                id=buy_id,
+                kind="cmp.cross_above",
+                params={"threshold": _random_param_ref(rng, "threshold")},
+                inputs=[diff_id],
+            ),
+            GenomeNode(
+                id=sell_id,
+                kind="cmp.cross_below",
+                params={"threshold": {"param": "threshold", "negate": True}},
+                inputs=[diff_id],
+            ),
         ]
     )
 
@@ -1127,31 +1078,27 @@ def _build_random_reversion(
     nodes = [
         GenomeNode(id=close_id, kind=SOURCE_KIND, params={}, inputs=[]),
     ]
-    osc_input, _next_idx = _maybe_wrap_with_transform(
-        rng, nodes=nodes, source_id=close_id, next_node_index=5
-    )
+    osc_input, _next_idx = _maybe_wrap_with_transform(rng, nodes=nodes, source_id=close_id, next_node_index=5)
     nodes.extend(
         [
-        GenomeNode(
-            id=osc_id,
-            kind=osc_kind,
-            params={
-                key: _random_param_ref(rng, key) for key in sorted(osc_spec.allowed_param_keys)
-            },
-            inputs=[osc_input] if osc_spec.max_inputs > 0 else [],
-        ),
-        GenomeNode(
-            id=buy_id,
-            kind="cmp.cross_above",
-            params={"threshold": {"param": "oversold"}},
-            inputs=[osc_id],
-        ),
-        GenomeNode(
-            id=sell_id,
-            kind="cmp.cross_below",
-            params={"threshold": {"param": "overbought"}},
-            inputs=[osc_id],
-        ),
+            GenomeNode(
+                id=osc_id,
+                kind=osc_kind,
+                params={key: _random_param_ref(rng, key) for key in sorted(osc_spec.allowed_param_keys)},
+                inputs=[osc_input] if osc_spec.max_inputs > 0 else [],
+            ),
+            GenomeNode(
+                id=buy_id,
+                kind="cmp.cross_above",
+                params={"threshold": {"param": "oversold"}},
+                inputs=[osc_id],
+            ),
+            GenomeNode(
+                id=sell_id,
+                kind="cmp.cross_below",
+                params={"threshold": {"param": "overbought"}},
+                inputs=[osc_id],
+            ),
         ]
     )
 
@@ -1184,18 +1131,13 @@ def _build_random_breakout(
     buy_id = "n3"
     sell_id = "n4"
 
-    available_styles = tuple(
-        style
-        for style in _BREAKOUT_STYLES
-        if _BREAKOUT_STYLE_KIND[style] in indicator_kinds
-    ) or _BREAKOUT_STYLES
+    available_styles = (
+        tuple(style for style in _BREAKOUT_STYLES if _BREAKOUT_STYLE_KIND[style] in indicator_kinds) or _BREAKOUT_STYLES
+    )
     if not weights:
         style = rng.choice(available_styles)
     else:
-        style_weights = {
-            style: weights.get(_BREAKOUT_STYLE_KIND[style], 1.0)
-            for style in available_styles
-        }
+        style_weights = {style: weights.get(_BREAKOUT_STYLE_KIND[style], 1.0) for style in available_styles}
         style = _choose_seeding(rng, available_styles, style_weights)
     nodes = [GenomeNode(id=close_id, kind=SOURCE_KIND, params={}, inputs=[])]
 
@@ -1205,9 +1147,7 @@ def _build_random_breakout(
             GenomeNode(
                 id=ind_id,
                 kind="ind.donchian",
-                params={
-                    key: _random_param_ref(rng, key) for key in sorted(spec.allowed_param_keys)
-                },
+                params={key: _random_param_ref(rng, key) for key in sorted(spec.allowed_param_keys)},
                 inputs=[],
             )
         )
@@ -1245,9 +1185,7 @@ def _build_random_breakout(
             GenomeNode(
                 id=ind_id,
                 kind="ind.bollinger",
-                params={
-                    key: _random_param_ref(rng, key) for key in sorted(spec.allowed_param_keys)
-                },
+                params={key: _random_param_ref(rng, key) for key in sorted(spec.allowed_param_keys)},
                 inputs=[close_id],
             )
         )
@@ -1292,9 +1230,7 @@ def _build_random_breakout(
             GenomeNode(
                 id=ind_id,
                 kind="ind.trb_channel",
-                params={
-                    key: _random_param_ref(rng, key) for key in sorted(spec.allowed_param_keys)
-                },
+                params={key: _random_param_ref(rng, key) for key in sorted(spec.allowed_param_keys)},
                 inputs=[close_id],
             )
         )
@@ -1446,9 +1382,7 @@ def _tradeable_registry_fallback(
     genome_id: str,
     generation: int,
 ) -> Genome:
-    template = Genome.model_validate(
-        copy.deepcopy(REGISTRY_GENOME_FIXTURES["MACrossover"])
-    )
+    template = Genome.model_validate(copy.deepcopy(REGISTRY_GENOME_FIXTURES["MACrossover"]))
     return clone_genome(template, genome_id=genome_id, generation=generation)
 
 
@@ -1594,15 +1528,15 @@ def build_initial_population(
 ) -> list[Genome]:
     weights = kind_weights or {}
     population: list[Genome] = []
-    
+
     # Hypothesis templates seeding
     seed_genomes = seed_genomes or []
     seed_count = population_size // 2
-    
+
     # 1. Inject up to seed_count hypothesis seed genomes first
     num_hyp_seeds = min(len(seed_genomes), seed_count)
     probe_enabled = ohlcv is not None and len(ohlcv) > 0 and min_seed_signals > 0
-    
+
     for index in range(num_hyp_seeds):
         genome = clone_genome(
             seed_genomes[index],
@@ -1619,7 +1553,7 @@ def build_initial_population(
             )
         except GenomeValidationError:
             pass
-        
+
         if probe_enabled:
             genome = _ensure_tradeable_genome(
                 rng,
@@ -1637,22 +1571,19 @@ def build_initial_population(
     # 2. Fill the remaining seed count using registry fixtures
     remaining_seeds = seed_count - len(population)
     random_count = population_size - seed_count
-    
+
     registry_items = list(REGISTRY_GENOME_FIXTURES.items())
     registry_names = tuple(name for name, _ in registry_items)
 
     for index in range(remaining_seeds):
         if weights:
             registry_name_weights = {
-                name: weights.get(_registry_primary_kind(fixture), 1.0)
-                for name, fixture in registry_items
+                name: weights.get(_registry_primary_kind(fixture), 1.0) for name, fixture in registry_items
             }
             chosen_name = _choose_seeding(rng, registry_names, registry_name_weights)
         else:
             chosen_name = rng.choice(registry_names)
-        template = Genome.model_validate(
-            copy.deepcopy(REGISTRY_GENOME_FIXTURES[chosen_name])
-        )
+        template = Genome.model_validate(copy.deepcopy(REGISTRY_GENOME_FIXTURES[chosen_name]))
         template = clone_genome(
             template,
             genome_id=f"gen0-seed-{index}",

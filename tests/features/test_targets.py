@@ -120,9 +120,7 @@ def _varied_bars(n: int = 120) -> pd.DataFrame:
     low = np.minimum(open_, close) - 0.5
     volume = np.full(n, 1000.0)
     times = pd.date_range("2023-01-01", periods=n, freq="h", tz="UTC")
-    return pd.DataFrame(
-        {"time": times, "open": open_, "high": high, "low": low, "close": close, "volume": volume}
-    )
+    return pd.DataFrame({"time": times, "open": open_, "high": high, "low": low, "close": close, "volume": volume})
 
 
 def _perturb_close(bars: pd.DataFrame, index: int, delta: float) -> pd.DataFrame:
@@ -149,9 +147,7 @@ def test_target_does_not_depend_on_bars_beyond_horizon(name: str) -> None:
         if pd.isna(base):
             assert pd.isna(after)
         else:
-            assert after == pytest.approx(base), (
-                f"{name}[{t}] changed after perturbing bar {beyond} > t+horizon"
-            )
+            assert after == pytest.approx(base), f"{name}[{t}] changed after perturbing bar {beyond} > t+horizon"
 
 
 @pytest.mark.parametrize("name", ["fwd_return", "fwd_log_return"])
@@ -187,9 +183,7 @@ def test_training_eligible_labels_do_not_bleed_past_train_end() -> None:
     train_positions = [position[ts] for ts in train_idx]
     assert train_positions, "expected a non-empty training-eligible set"
     for t in train_positions:
-        assert t + horizon < split_point, (
-            f"train label at bar {t} reaches {t + horizon} >= split_point {split_point}"
-        )
+        assert t + horizon < split_point, f"train label at bar {t} reaches {t + horizon} >= split_point {split_point}"
 
     first_test_pos = position[test_idx[0]]
     assert first_test_pos >= split_point + embargo

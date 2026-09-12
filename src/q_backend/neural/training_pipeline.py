@@ -44,9 +44,7 @@ def build_training_feature_window(
     end: datetime,
     input_features: tuple[str, ...],
 ) -> pd.DataFrame:
-    requests = [
-        FeatureRequest(name=name, version=None, params={}) for name in input_features
-    ]
+    requests = [FeatureRequest(name=name, version=None, params={}) for name in input_features]
     matrix = build_feature_matrix(
         symbol,
         timeframe,
@@ -58,10 +56,7 @@ def build_training_feature_window(
     # ``build_feature_matrix`` keys columns by ``feature_id`` (e.g. ``rsi.v1.<hash>``),
     # but the encoder matches on the bare feature name. Rename via the manifest so the
     # window the encoder receives uses names — otherwise every feature reads as missing.
-    names_by_id = {
-        str(row["feature_id"]): str(row["name"])
-        for row in matrix.manifest.get("features", [])
-    }
+    names_by_id = {str(row["feature_id"]): str(row["name"]) for row in matrix.manifest.get("features", [])}
     return matrix.frame.rename(columns=lambda fid: names_by_id.get(fid, fid))
 
 

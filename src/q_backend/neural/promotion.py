@@ -13,9 +13,7 @@ from q_backend.storage.db.models import NeuralModel, NeuralModelStatus, NeuralMo
 from q_backend.storage.db.repositories import get_neural_model_version, set_neural_model_status
 
 ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
-    NeuralModelStatus.TRAINED.value: frozenset(
-        {NeuralModelStatus.CANDIDATE.value, NeuralModelStatus.ARCHIVED.value}
-    ),
+    NeuralModelStatus.TRAINED.value: frozenset({NeuralModelStatus.CANDIDATE.value, NeuralModelStatus.ARCHIVED.value}),
     NeuralModelStatus.CANDIDATE.value: frozenset(
         {
             NeuralModelStatus.PRODUCTION.value,
@@ -73,21 +71,15 @@ def promote_neural_model(
     """Transition a neural model version after validating the status graph."""
     version = get_neural_model_version(session, model_hash)
     if version is None:
-        raise NeuralModelNotFoundError(
-            f"NeuralModelVersion with hash '{model_hash}' not found"
-        )
+        raise NeuralModelNotFoundError(f"NeuralModelVersion with hash '{model_hash}' not found")
 
     allowed = ALLOWED_TRANSITIONS.get(version.status, frozenset())
     if target_status not in allowed:
-        raise IllegalNeuralStatusTransition(
-            f"Illegal status transition from '{version.status}' to '{target_status}'"
-        )
+        raise IllegalNeuralStatusTransition(f"Illegal status transition from '{version.status}' to '{target_status}'")
 
     if target_status == NeuralModelStatus.PRODUCTION.value:
         if version.model is None:
-            raise ValueError(
-                f"Neural model version '{model_hash}' has no parent model."
-            )
+            raise ValueError(f"Neural model version '{model_hash}' has no parent model.")
         _demote_other_production_versions(
             session,
             symbol=version.model.symbol,

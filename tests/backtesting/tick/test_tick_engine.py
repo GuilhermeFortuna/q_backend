@@ -91,9 +91,7 @@ def test_day_trade_matches_sequential_single_day():
     seq_pnl = seq_registry.get_performance_metrics(10000.0)["total_pnl"]
     day_pnl = day_registry.get_performance_metrics(10000.0)["total_pnl"]
     assert seq_pnl == day_pnl
-    assert len(seq_registry.get_closed_trades()) == len(
-        day_registry.get_closed_trades()
-    )
+    assert len(seq_registry.get_closed_trades()) == len(day_registry.get_closed_trades())
 
 
 def test_parity_with_candle_engine_loose():

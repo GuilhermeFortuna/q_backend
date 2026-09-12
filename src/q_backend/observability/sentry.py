@@ -24,12 +24,8 @@ from q_backend.storage.settings import Settings
 logger = logging.getLogger(__name__)
 
 _REDACTED = "[redacted]"
-_SENSITIVE_FIELDS = frozenset(
-    {"prompt", "message", "conversation", "description", "content"}
-)
-_TRADING_TAGS = frozenset(
-    {"symbol", "strategy", "backtest_id", "study_id", "dataset", "worker_id"}
-)
+_SENSITIVE_FIELDS = frozenset({"prompt", "message", "conversation", "description", "content"})
+_TRADING_TAGS = frozenset({"symbol", "strategy", "backtest_id", "study_id", "dataset", "worker_id"})
 _COMPONENTS = frozenset({"api", "worker", "cli"})
 _initialized = False
 
@@ -68,6 +64,7 @@ def get_git_sha() -> str:
     """Resolve the git SHA, fallback to 'unknown'."""
     try:
         import subprocess
+
         res = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
             stdout=subprocess.PIPE,

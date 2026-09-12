@@ -25,7 +25,6 @@ from q_backend.backtesting.strategies.rsi_mean_reversion import RSIMeanReversion
 from q_backend.backtesting.strategies.trb import TRBStrategy
 from q_backend.backtesting.strategies.vma import VMAStrategy
 
-
 REGISTERED_NAMES = [
     "BollingerReversion",
     "CompositeStrategy",
@@ -48,22 +47,24 @@ def test_all_strategies_registered():
     assert names == sorted(REGISTERED_NAMES)
 
 
-@pytest.mark.parametrize("name,expected_class", [
-    ("MACrossover", MACrossoverStrategy),
-    ("RSIMeanReversion", RSIMeanReversionStrategy),
-    ("BollingerReversion", BollingerReversionStrategy),
-    ("MACD", MACDStrategy),
-    ("DonchianBreakout", DonchianBreakoutStrategy),
-    ("VMA", VMAStrategy),
-    ("FMA", FMAStrategy),
-    ("TRB", TRBStrategy),
-    ("HurstTrendBlend", HurstTrendBlendStrategy),
-    ("GatevPairs", GatevPairsStrategy),
-])
+@pytest.mark.parametrize(
+    "name,expected_class",
+    [
+        ("MACrossover", MACrossoverStrategy),
+        ("RSIMeanReversion", RSIMeanReversionStrategy),
+        ("BollingerReversion", BollingerReversionStrategy),
+        ("MACD", MACDStrategy),
+        ("DonchianBreakout", DonchianBreakoutStrategy),
+        ("VMA", VMAStrategy),
+        ("FMA", FMAStrategy),
+        ("TRB", TRBStrategy),
+        ("HurstTrendBlend", HurstTrendBlendStrategy),
+        ("GatevPairs", GatevPairsStrategy),
+    ],
+)
 def test_build_strategy_dispatches(name, expected_class):
     strategy = build_strategy(name, {}, "TEST")
     assert isinstance(strategy, expected_class)
-
 
 
 def test_build_strategy_ma_crossover_with_params():

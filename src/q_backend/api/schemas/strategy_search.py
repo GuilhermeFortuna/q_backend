@@ -65,7 +65,6 @@ class StrategySearchCandidateResponse(BaseModel):
     hypothesis_template_hash: Optional[str] = None
 
 
-
 class StrategySearchResultsResponse(BaseModel):
     run_id: str
     status: str

@@ -20,9 +20,7 @@ class _FakeProvider:
         self._bars = bars
         self.calls: list[tuple[str, str, datetime, datetime]] = []
 
-    def get_ohlcv(
-        self, symbol: str, timeframe: str, start: datetime, end: datetime
-    ) -> list[OHLCV]:
+    def get_ohlcv(self, symbol: str, timeframe: str, start: datetime, end: datetime) -> list[OHLCV]:
         self.calls.append((symbol, timeframe, start, end))
         return list(self._bars)
 
@@ -62,9 +60,7 @@ def test_new_bars_for_consumer_respects_watermark():
     now = base + timedelta(hours=5)
     coordinator = BarCoordinator(provider=provider, clock=lambda: now)
     consumer = DeploymentBarConsumer("d1", "WIN$", "H1")
-    batch = coordinator.poll([consumer], initial_window_bars=10)[
-        BarStreamKey("WIN$", "H1")
-    ]
+    batch = coordinator.poll([consumer], initial_window_bars=10)[BarStreamKey("WIN$", "H1")]
 
     watermark = base + timedelta(hours=2)  # close of second bar
     consumer = DeploymentBarConsumer("d1", "WIN$", "H1", last_evaluated_close=watermark)

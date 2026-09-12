@@ -127,9 +127,7 @@ def _trim_conversation_history(
         line = _format_conversation_turn(msg)
         additional = len(line) + (1 if kept_reversed else 0)
 
-        if kept_reversed and (
-            len(kept_reversed) >= max_turns or char_count + additional > char_budget
-        ):
+        if kept_reversed and (len(kept_reversed) >= max_turns or char_count + additional > char_budget):
             break
 
         kept_reversed.append(msg)
@@ -148,18 +146,12 @@ def build_user_prompt(
     sections: list[str] = [f"User message:\n{request.message.strip()}"]
 
     if request.current_spec is not None:
-        sections.append(
-            "Current StrategySpec draft:\n"
-            + json.dumps(request.current_spec, indent=2, sort_keys=True)
-        )
+        sections.append("Current StrategySpec draft:\n" + json.dumps(request.current_spec, indent=2, sort_keys=True))
 
     if request.validation_errors:
-        errors_payload = [
-            error.model_dump(mode="json") for error in request.validation_errors
-        ]
+        errors_payload = [error.model_dump(mode="json") for error in request.validation_errors]
         sections.append(
-            "Previous validation errors to repair:\n"
-            + json.dumps(errors_payload, indent=2, sort_keys=True)
+            "Previous validation errors to repair:\n" + json.dumps(errors_payload, indent=2, sort_keys=True)
         )
 
     history = _dedupe_trailing_user_message(request.conversation, request.message)
@@ -174,7 +166,5 @@ def build_user_prompt(
             history_lines.insert(0, _EARLIER_TURNS_OMITTED)
         sections.append("Conversation history:\n" + "\n".join(history_lines))
 
-    sections.append(
-        "Respond with JSON only. Do not include commentary outside the JSON object."
-    )
+    sections.append("Respond with JSON only. Do not include commentary outside the JSON object.")
     return "\n\n".join(sections)

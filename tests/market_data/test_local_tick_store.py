@@ -23,9 +23,7 @@ def market_root(tmp_path, monkeypatch):
 def _synthetic_ticks_two_months() -> dict[str, np.ndarray]:
     jan_base = datetime(2024, 1, 15, 10, 0, 0)
     feb_base = datetime(2024, 2, 10, 10, 0, 0)
-    time_msc = [
-        _naive_local_to_time_msc(jan_base + timedelta(seconds=i)) for i in range(5)
-    ] + [
+    time_msc = [_naive_local_to_time_msc(jan_base + timedelta(seconds=i)) for i in range(5)] + [
         _naive_local_to_time_msc(feb_base + timedelta(seconds=i)) for i in range(5)
     ]
     n = len(time_msc)
@@ -67,9 +65,7 @@ def test_reingest_overlapping_range_deduplicates(market_root):
     local_store.write_ticks("VALE3", arrays)
     local_store.write_ticks("VALE3", overlap)
 
-    result = local_store.read_ticks_columnar(
-        "VALE3", datetime(2024, 1, 1), datetime(2024, 3, 1)
-    )
+    result = local_store.read_ticks_columnar("VALE3", datetime(2024, 1, 1), datetime(2024, 3, 1))
     assert len(result["time_msc"]) == 10
     assert result["bid"][0] == pytest.approx(109.99)
 

@@ -137,9 +137,7 @@ def _seed_gate_result(session: Session, version) -> EvaluationRun:
     return run
 
 
-def test_list_neural_models_returns_trained_versions(
-    api_db_session: Session, lake_root_path
-) -> None:
+def test_list_neural_models_returns_trained_versions(api_db_session: Session, lake_root_path) -> None:
     version = _train_version(api_db_session, lake_root_path)
     response = list_neural_models(session=api_db_session, status=None)
     assert len(response["models"]) == 1
@@ -150,9 +148,7 @@ def test_list_neural_models_returns_trained_versions(
     assert item.val_metrics["reconstruction_r2"] is not None
 
 
-def test_list_neural_models_honors_status_filter(
-    api_db_session: Session, lake_root_path
-) -> None:
+def test_list_neural_models_honors_status_filter(api_db_session: Session, lake_root_path) -> None:
     version = _train_version(api_db_session, lake_root_path, model_key="api_filter")
     set_neural_model_status(
         api_db_session,
@@ -160,21 +156,15 @@ def test_list_neural_models_honors_status_filter(
         status=NeuralModelStatus.CANDIDATE.value,
     )
 
-    candidates = list_neural_models(
-        session=api_db_session, status=NeuralModelStatus.CANDIDATE.value
-    )
+    candidates = list_neural_models(session=api_db_session, status=NeuralModelStatus.CANDIDATE.value)
     assert len(candidates["models"]) == 1
     assert candidates["models"][0].model_hash == version.model_hash
 
-    trained = list_neural_models(
-        session=api_db_session, status=NeuralModelStatus.TRAINED.value
-    )
+    trained = list_neural_models(session=api_db_session, status=NeuralModelStatus.TRAINED.value)
     assert trained["models"] == []
 
 
-def test_get_neural_model_returns_detail_and_gate_result(
-    api_db_session: Session, lake_root_path
-) -> None:
+def test_get_neural_model_returns_detail_and_gate_result(api_db_session: Session, lake_root_path) -> None:
     version = _train_version(api_db_session, lake_root_path, model_key="api_detail")
     _seed_gate_result(api_db_session, version)
 
@@ -194,9 +184,7 @@ def test_get_neural_model_unknown_returns_404(api_db_session: Session) -> None:
     assert exc_info.value.status_code == 404
 
 
-def test_update_neural_model_status_legal_transition(
-    api_db_session: Session, lake_root_path
-) -> None:
+def test_update_neural_model_status_legal_transition(api_db_session: Session, lake_root_path) -> None:
     version = _train_version(api_db_session, lake_root_path, model_key="api_promote")
     set_neural_model_status(
         api_db_session,
@@ -212,9 +200,7 @@ def test_update_neural_model_status_legal_transition(
     assert updated.status == NeuralModelStatus.PRODUCTION.value
 
 
-def test_update_neural_model_status_illegal_transition_returns_409(
-    api_db_session: Session, lake_root_path
-) -> None:
+def test_update_neural_model_status_illegal_transition_returns_409(api_db_session: Session, lake_root_path) -> None:
     version = _train_version(api_db_session, lake_root_path, model_key="api_illegal")
 
     with pytest.raises(HTTPException) as exc_info:
@@ -280,9 +266,12 @@ def test_start_neural_training_returns_job_id(
         columns=request.input_features,
     )
 
-    with patch("q_backend.api.neural_jobs.session_scope", test_session_scope), patch(
-        "q_backend.neural.training_pipeline.build_training_feature_window",
-        lambda *_args, **_kwargs: frame,
+    with (
+        patch("q_backend.api.neural_jobs.session_scope", test_session_scope),
+        patch(
+            "q_backend.neural.training_pipeline.build_training_feature_window",
+            lambda *_args, **_kwargs: frame,
+        ),
     ):
         started = start_neural_training(request)
 

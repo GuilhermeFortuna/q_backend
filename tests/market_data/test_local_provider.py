@@ -46,9 +46,7 @@ def test_local_get_ohlcv_matches_written_bars(market_root):
     local_store.write_ohlcv("PETR4", "D1", bars)
 
     client = LocalParquetClient()
-    result = client.get_ohlcv(
-        "PETR4", "D1", datetime(2024, 6, 1), datetime(2024, 6, 2)
-    )
+    result = client.get_ohlcv("PETR4", "D1", datetime(2024, 6, 1), datetime(2024, 6, 2))
 
     assert len(result) == 2
     assert result[0].model_dump() == bars[0].model_dump()
@@ -97,9 +95,7 @@ def test_local_get_ticks_columnar_matches_written_arrays(market_root):
     local_store.write_ticks("PETR4", arrays)
 
     client = LocalParquetClient()
-    result = client.get_ticks_columnar(
-        "PETR4", datetime(2024, 6, 1, 10, 0, 0), datetime(2024, 6, 1, 10, 0, 2)
-    )
+    result = client.get_ticks_columnar("PETR4", datetime(2024, 6, 1, 10, 0, 0), datetime(2024, 6, 1, 10, 0, 2))
 
     assert len(result["time_msc"]) == 3
     np.testing.assert_array_equal(result["time_msc"], arrays["time_msc"])

@@ -146,7 +146,7 @@ def test_sizers_always_yield_integer_quantities():
 
     # 3. Fixed Safety Margin Sizer
     fsm_sizer = FixedSafetyMarginSizer(safety_margin_per_contract=3000.0)
-    order_fsm = fsm_sizer.size_signal(sig, PRICE, 8000.0) # 8000 / 3000 = 2.666...
+    order_fsm = fsm_sizer.size_signal(sig, PRICE, 8000.0)  # 8000 / 3000 = 2.666...
     assert order_fsm is not None
     assert order_fsm.quantity == 2.0
     assert order_fsm.quantity.is_integer()
@@ -161,4 +161,3 @@ def test_sizers_always_yield_integer_quantities():
     assert order_iv is not None
     assert order_iv.quantity == 666.0
     assert order_iv.quantity.is_integer()
-

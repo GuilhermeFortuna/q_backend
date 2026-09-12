@@ -73,9 +73,7 @@ def test_resolve_latent_universe_without_production_model(db_session) -> None:
     assert universe.n_latents == 0
 
 
-def test_resolve_latent_universe_with_production_model(
-    db_session, lake_root_path
-) -> None:
+def test_resolve_latent_universe_with_production_model(db_session, lake_root_path) -> None:
     version = _train_version(db_session, lake_root_path, model_key="uni_a")
     _promote(db_session, version)
 
@@ -86,9 +84,7 @@ def test_resolve_latent_universe_with_production_model(
     assert universe.n_latents == len(version.latent_names)
 
 
-def test_resolve_latent_universe_uses_newest_when_multiple_production(
-    db_session, lake_root_path, caplog
-) -> None:
+def test_resolve_latent_universe_uses_newest_when_multiple_production(db_session, lake_root_path, caplog) -> None:
     older = _train_version(db_session, lake_root_path, model_key="uni_old", train_end_day=10)
     newer = _train_version(db_session, lake_root_path, model_key="uni_new", train_end_day=12)
     _promote(db_session, older)

@@ -44,11 +44,7 @@ def test_dsr_hand_computed_normal_returns():
     kurtosis = 3.0
 
     sr0 = expected_max_sharpe(num_trials, mu=0.0, sigma=1.0)
-    denominator = math.sqrt(
-        1.0
-        - skewness * sr_observed
-        + ((kurtosis - 1.0) / 4.0) * sr_observed * sr_observed
-    )
+    denominator = math.sqrt(1.0 - skewness * sr_observed + ((kurtosis - 1.0) / 4.0) * sr_observed * sr_observed)
     z = (sr_observed - sr0) * math.sqrt(num_observations - 1) / denominator
 
     expected = 0.5 * math.erfc(-z / math.sqrt(2.0))

@@ -88,9 +88,7 @@ class TradingStrategy(ABC):
         pass
 
     @abstractmethod
-    def check_exit_conditions(
-        self, current_data: pd.Series, open_trades: List[Trade]
-    ) -> List[Signal]:
+    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
         """
         Evaluates exit conditions for currently open trades.
         Returns CLOSE Signals if exit conditions (e.g., stop loss, take profit, indicator cross) are met.
@@ -173,9 +171,7 @@ class MACrossoverStrategy(TradingStrategy):
         df = data.copy()
 
         if "close" not in df.columns:
-            raise ValueError(
-                "Data must contain a 'close' column for the MA Crossover strategy."
-            )
+            raise ValueError("Data must contain a 'close' column for the MA Crossover strategy.")
 
         # Compute moving averages
         df["ma_short"] = compute_ma(df["close"], self.short_period, self.short_ma_type)
@@ -189,14 +185,10 @@ class MACrossoverStrategy(TradingStrategy):
 
         # Precompute buy/sell triggers to avoid iterative lookback inside row loop
         # BUY when delta crosses above threshold
-        df["buy_signal"] = (df["delta"] > self.threshold) & (
-            df["prev_delta"] <= self.threshold
-        )
+        df["buy_signal"] = (df["delta"] > self.threshold) & (df["prev_delta"] <= self.threshold)
 
         # SELL when delta crosses below -threshold
-        df["sell_signal"] = (df["delta"] < -self.threshold) & (
-            df["prev_delta"] >= -self.threshold
-        )
+        df["sell_signal"] = (df["delta"] < -self.threshold) & (df["prev_delta"] >= -self.threshold)
 
         return df
 
@@ -246,9 +238,7 @@ class MACrossoverStrategy(TradingStrategy):
 
         return signals
 
-    def check_exit_conditions(
-        self, current_data: pd.Series, open_trades: List[Trade]
-    ) -> List[Signal]:
+    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
         """
         Generates exit signals for open trades.
         - Closes BUY (long) positions if delta crosses below -threshold.

@@ -129,11 +129,7 @@ def _time_windows(index: pd.Index, n_windows: int) -> list[pd.Index]:
     if n == 0 or n_windows <= 0:
         return []
     edges = np.linspace(0, n, n_windows + 1, dtype=int)
-    return [
-        index[edges[i] : edges[i + 1]]
-        for i in range(n_windows)
-        if edges[i + 1] > edges[i]
-    ]
+    return [index[edges[i] : edges[i + 1]] for i in range(n_windows) if edges[i + 1] > edges[i]]
 
 
 def _stability_score(window_rank_ics: list[float]) -> float:
@@ -225,16 +221,12 @@ def evaluate_feature(
 
     windows = _time_windows(aligned_feature.index, n_windows)
     window_rank_ics = [
-        _rank_ic(aligned_feature.loc[window], aligned_target.loc[window])
-        for window in windows
-        if len(window) >= 2
+        _rank_ic(aligned_feature.loc[window], aligned_target.loc[window]) for window in windows if len(window) >= 2
     ]
     stability = _stability_score(window_rank_ics)
 
     if close is not None:
-        regime_ics = _compute_regime_ics(
-            aligned_feature, aligned_target, close, regimes=regimes
-        )
+        regime_ics = _compute_regime_ics(aligned_feature, aligned_target, close, regimes=regimes)
     else:
         regime_ics = {label: float("nan") for label in _regime_labels(regimes)}
 
@@ -251,9 +243,7 @@ def evaluate_feature(
     )
 
 
-def _manifest_entry_for_feature(
-    manifest: dict[str, Any], feature_id: str
-) -> dict[str, Any] | None:
+def _manifest_entry_for_feature(manifest: dict[str, Any], feature_id: str) -> dict[str, Any] | None:
     for entry in manifest.get("features", []):
         if entry.get("feature_id") == feature_id:
             return entry
@@ -272,17 +262,13 @@ def _resolve_leakage_status(
     if bars is None or manifest_entry is None:
         return status
 
-    spec = get_feature_spec(
-        manifest_entry["name"], version=manifest_entry.get("version")
-    )
+    spec = get_feature_spec(manifest_entry["name"], version=manifest_entry.get("version"))
     params = manifest_entry.get("params", {})
     n = len(bars)
     if n == 0:
         return status
 
-    sample_indices = sorted(
-        {min(50, n - 1), min(120, n - 1), min(200, n - 1), n - 1}
-    )
+    sample_indices = sorted({min(50, n - 1), min(120, n - 1), min(200, n - 1), n - 1})
     sample_indices = [idx for idx in sample_indices if idx >= 0]
 
     def _compute(frame: pd.DataFrame):

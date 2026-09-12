@@ -299,9 +299,7 @@ def test_health_worker_offline_fixture(api_db_session: Session):
 
 
 def test_health_with_running_deployment_and_lease(api_db_session: Session):
-    account = create_paper_account(
-        api_db_session, name="health-account", initial_balance=Decimal("100000")
-    )
+    account = create_paper_account(api_db_session, name="health-account", initial_balance=Decimal("100000"))
     deployment = create_execution_deployment(
         api_db_session,
         paper_account_id=account.id,
@@ -376,9 +374,7 @@ def _seed_pending_unknown(session):
         mark_incomplete_orders_unknown,
     )
 
-    account = create_paper_account(
-        session, name="recon-acct", initial_balance=Decimal("100000")
-    )
+    account = create_paper_account(session, name="recon-acct", initial_balance=Decimal("100000"))
     deployment = create_execution_deployment(
         session,
         paper_account_id=account.id,
@@ -430,9 +426,7 @@ def test_pending_reconciliation_list_and_manual_resolve(api_db_session: Session)
 
     _, deployment, order = _seed_pending_unknown(api_db_session)
 
-    listing = execution_service.list_pending_reconciliation(
-        api_db_session, deployment.id, limit=50, offset=0
-    )
+    listing = execution_service.list_pending_reconciliation(api_db_session, deployment.id, limit=50, offset=0)
     assert listing.total == 1
     assert listing.items[0].id == order.id
     assert listing.items[0].reconciliation_state == "pending"
@@ -456,9 +450,7 @@ def test_pending_reconciliation_list_and_manual_resolve(api_db_session: Session)
     assert resolved.order.reconciled_by == "operator-9"
 
     # No longer pending / unknown.
-    after = execution_service.list_pending_reconciliation(
-        api_db_session, deployment.id, limit=50, offset=0
-    )
+    after = execution_service.list_pending_reconciliation(api_db_session, deployment.id, limit=50, offset=0)
     assert after.total == 0
     detail_after = execution_service.get_deployment_detail(api_db_session, deployment.id)
     assert detail_after.unknown_order_count == 0
@@ -485,17 +477,13 @@ def test_manual_resolve_conflict_when_not_pending(api_db_session: Session):
     execution_service.resolve_order(
         api_db_session,
         order.id,
-        OrderResolutionRequest(
-            outcome="not_filled", actor="op", reason="no fill"
-        ),
+        OrderResolutionRequest(outcome="not_filled", actor="op", reason="no fill"),
     )
     with pytest.raises(HTTPException) as exc:
         execution_service.resolve_order(
             api_db_session,
             order.id,
-            OrderResolutionRequest(
-                outcome="not_filled", actor="op", reason="again"
-            ),
+            OrderResolutionRequest(outcome="not_filled", actor="op", reason="again"),
         )
     assert exc.value.status_code == 409
 

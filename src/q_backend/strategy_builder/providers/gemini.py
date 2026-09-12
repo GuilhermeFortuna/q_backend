@@ -82,7 +82,7 @@ class GeminiInterpreterProvider:
             if not isinstance(models_list, list):
                 logger.info("AI provider returned an unexpected models response structure.")
                 return []
-            
+
             model_ids: list[str] = []
             for entry in models_list:
                 if not isinstance(entry, dict):
@@ -93,11 +93,11 @@ class GeminiInterpreterProvider:
                 supported_methods = entry.get("supportedGenerationMethods", [])
                 if not isinstance(supported_methods, list) or "generateContent" not in supported_methods:
                     continue
-                
+
                 # return ids stripped of the `models/` prefix
                 clean_id = name
                 if clean_id.startswith("models/"):
-                    clean_id = clean_id[len("models/"):]
+                    clean_id = clean_id[len("models/") :]
                 model_ids.append(clean_id)
             return model_ids
         except (KeyError, TypeError, json.JSONDecodeError) as exc:
@@ -117,22 +117,15 @@ class GeminiInterpreterProvider:
         selected_model = model or self.model
         clean_model = selected_model
         if clean_model.startswith("models/"):
-            clean_model = clean_model[len("models/"):]
+            clean_model = clean_model[len("models/") :]
 
         payload: dict[str, Any] = {
-            "system_instruction": {
-                "parts": [{"text": system_prompt}]
-            },
-            "contents": [
-                {
-                    "role": "user",
-                    "parts": [{"text": user_prompt}]
-                }
-            ],
+            "system_instruction": {"parts": [{"text": system_prompt}]},
+            "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
             "generationConfig": {
                 "temperature": 0.2,
                 "responseMimeType": "application/json",
-            }
+            },
         }
         if self.max_output_tokens > 0:
             payload["generationConfig"]["maxOutputTokens"] = self.max_output_tokens
@@ -205,9 +198,7 @@ class GeminiInterpreterProvider:
                     if isinstance(parts_list, list):
                         has_parts = True
                         text_content = "".join(
-                            part.get("text", "")
-                            for part in parts_list
-                            if isinstance(part, dict) and "text" in part
+                            part.get("text", "") for part in parts_list if isinstance(part, dict) and "text" in part
                         )
 
         if not has_parts or not text_content.strip():

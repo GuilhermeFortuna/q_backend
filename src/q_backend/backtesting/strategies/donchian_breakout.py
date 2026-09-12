@@ -22,9 +22,7 @@ class DonchianBreakoutStrategy(TradingStrategy):
     def compute_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
         df = data.copy()
         if "close" not in df.columns or "high" not in df.columns or "low" not in df.columns:
-            raise ValueError(
-                "Data must contain 'close', 'high', and 'low' columns for Donchian strategy."
-            )
+            raise ValueError("Data must contain 'close', 'high', and 'low' columns for Donchian strategy.")
 
         upper, lower = compute_donchian_channels(df["high"], df["low"], self.period)
         df["donchian_upper"] = upper
@@ -34,12 +32,8 @@ class DonchianBreakoutStrategy(TradingStrategy):
         df["prev_donchian_upper"] = df["donchian_upper"].shift(1)
         df["prev_donchian_lower"] = df["donchian_lower"].shift(1)
 
-        df["buy_signal"] = (df["prev_close"] <= df["prev_donchian_upper"]) & (
-            df["close"] > df["donchian_upper"]
-        )
-        df["sell_signal"] = (df["prev_close"] >= df["prev_donchian_lower"]) & (
-            df["close"] < df["donchian_lower"]
-        )
+        df["buy_signal"] = (df["prev_close"] <= df["prev_donchian_upper"]) & (df["close"] > df["donchian_upper"])
+        df["sell_signal"] = (df["prev_close"] >= df["prev_donchian_lower"]) & (df["close"] < df["donchian_lower"])
         return df
 
     def get_chart_indicators(self) -> List[ChartIndicatorSpec]:
@@ -67,9 +61,7 @@ class DonchianBreakoutStrategy(TradingStrategy):
             signals.append(Signal(symbol=symbol, action=SignalAction.SELL))
         return signals
 
-    def check_exit_conditions(
-        self, current_data: pd.Series, open_trades: List[Trade]
-    ) -> List[Signal]:
+    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
         symbol = resolve_symbol(current_data, self.symbol)
         if not open_trades:
             return []
@@ -87,9 +79,7 @@ class DonchianBreakoutStrategy(TradingStrategy):
         return signals
 
 
-def _build_donchian_breakout(
-    params: dict[str, Any], symbol: str
-) -> DonchianBreakoutStrategy:
+def _build_donchian_breakout(params: dict[str, Any], symbol: str) -> DonchianBreakoutStrategy:
     return DonchianBreakoutStrategy(period=int(params["period"]), symbol=symbol)
 
 

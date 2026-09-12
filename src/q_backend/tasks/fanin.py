@@ -26,9 +26,7 @@ def _cancel_key(job_id: str) -> str:
     return f"job:cancel:{job_id}"
 
 
-def init_counter(
-    job_id: str, total: int, *, client: Optional[redis.Redis] = None
-) -> None:
+def init_counter(job_id: str, total: int, *, client: Optional[redis.Redis] = None) -> None:
     """Seed the fan-in counter for a job with the number of leaf units."""
     client = client or get_redis()
     client.set(_counter_key(job_id), total, ex=_TTL_SECONDS)

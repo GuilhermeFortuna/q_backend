@@ -37,21 +37,13 @@ class StrategyParamSpec(BaseModel):
     def validate_search_bounds(self) -> StrategyParamSpec:
         if self.search_min is not None and self.search_max is not None:
             if self.search_min >= self.search_max:
-                raise ValueError(
-                    f"search_min must be < search_max for param '{self.name}'"
-                )
+                raise ValueError(f"search_min must be < search_max for param '{self.name}'")
         if self.search_scale == "log":
             if self.type != "float":
-                raise ValueError(
-                    f"search_scale='log' only valid for float params: '{self.name}'"
-                )
-            effective_low = (
-                self.search_min if self.search_min is not None else self.min
-            )
+                raise ValueError(f"search_scale='log' only valid for float params: '{self.name}'")
+            effective_low = self.search_min if self.search_min is not None else self.min
             if effective_low is None or effective_low <= 0:
-                raise ValueError(
-                    f"search_scale='log' requires positive effective low for '{self.name}'"
-                )
+                raise ValueError(f"search_scale='log' requires positive effective low for '{self.name}'")
         return self
 
 
@@ -137,6 +129,7 @@ def register_strategy(
     # Automatically append exit strategy parameters to candle strategies
     if engine == "candle" and name != "CompositeStrategy":
         from q_backend.backtesting.exit_strategy import get_exit_strategy_params
+
         existing_names = {p.name for p in params}
         for exit_param in get_exit_strategy_params():
             if exit_param.name not in existing_names:
@@ -197,6 +190,7 @@ def load_and_register_custom_strategies() -> None:
                 merged = default_params.copy()
                 merged.update(params)
                 return base_build(merged, symbol)
+
             return custom_build
 
         # Register the custom strategy
@@ -220,6 +214,7 @@ def load_and_register_custom_strategies() -> None:
 
 def get_registered_strategy(name: str) -> RegisteredStrategy:
     import q_backend.backtesting.strategies  # noqa: F401
+
     load_and_register_custom_strategies()
     try:
         return _STRATEGY_REGISTRY[name]
@@ -229,6 +224,7 @@ def get_registered_strategy(name: str) -> RegisteredStrategy:
 
 def list_registered_strategies() -> list[StrategyInfo]:
     import q_backend.backtesting.strategies  # noqa: F401
+
     load_and_register_custom_strategies()
     return sorted(
         (entry.info for entry in _STRATEGY_REGISTRY.values()),

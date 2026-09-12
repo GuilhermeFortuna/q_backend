@@ -55,9 +55,7 @@ def _to_utc_timestamp(value: datetime | pd.Timestamp) -> pd.Timestamp:
 
 
 def _classical_feature_names() -> frozenset[str]:
-    return frozenset(
-        spec.name for spec in list_feature_specs() if spec.source == "classical"
-    )
+    return frozenset(spec.name for spec in list_feature_specs() if spec.source == "classical")
 
 
 def _target_spec(target_name: str, horizon: int) -> TargetSpec:
@@ -99,9 +97,7 @@ def resolve_oos_evaluation_range(
     )
     oos_times = [bar.time for bar in bars if _to_utc_timestamp(bar.time) > train_end_ts]
     if len(oos_times) < MIN_OBS:
-        raise ValueError(
-            f"Need at least {MIN_OBS} OOS bars after train_end; found {len(oos_times)}."
-        )
+        raise ValueError(f"Need at least {MIN_OBS} OOS bars after train_end; found {len(oos_times)}.")
 
     oos_start = _to_utc_timestamp(oos_times[0]).to_pydatetime()
     oos_end = _to_utc_timestamp(oos_times[-1]).to_pydatetime()
@@ -126,9 +122,7 @@ def _baseline_threshold(baseline_ic: float) -> float:
     return baseline_ic * (1.0 + GATE_MARGIN)
 
 
-def _max_abs_ic(
-    rows: list[FeatureScoreRow], *, feature_names: frozenset[str] | None = None
-) -> float:
+def _max_abs_ic(rows: list[FeatureScoreRow], *, feature_names: frozenset[str] | None = None) -> float:
     values: list[float] = []
     for row in rows:
         if feature_names is not None and row.feature_name not in feature_names:
@@ -142,11 +136,7 @@ def _max_abs_ic(
 
 
 def _load_score_rows(session: Session, run_id) -> list[FeatureScoreRow]:
-    return list(
-        session.execute(
-            select(FeatureScoreRow).where(FeatureScoreRow.run_id == run_id)
-        ).scalars()
-    )
+    return list(session.execute(select(FeatureScoreRow).where(FeatureScoreRow.run_id == run_id)).scalars())
 
 
 def _find_completed_run(
@@ -174,10 +164,7 @@ def _find_completed_run(
     ).scalars()
 
     for run in runs:
-        if (
-            _to_utc_timestamp(run.start) == start_ts
-            and _to_utc_timestamp(run.end) == end_ts
-        ):
+        if _to_utc_timestamp(run.start) == start_ts and _to_utc_timestamp(run.end) == end_ts:
             return run
     return None
 
@@ -230,14 +217,10 @@ def classical_baseline_ic(
 
 
 def _latent_catalog_keys(version: NeuralModelVersion) -> frozenset[str]:
-    return frozenset(
-        neural_catalog_key(name, version.model_hash) for name in version.latent_names
-    )
+    return frozenset(neural_catalog_key(name, version.model_hash) for name in version.latent_names)
 
 
-def find_latest_latent_evaluation_run(
-    session: Session, version: NeuralModelVersion
-) -> EvaluationRun | None:
+def find_latest_latent_evaluation_run(session: Session, version: NeuralModelVersion) -> EvaluationRun | None:
     """Return the newest completed evaluation run for this version's latents."""
     latent_keys = _latent_catalog_keys(version)
     if not latent_keys:
@@ -261,9 +244,7 @@ def find_latest_latent_evaluation_run(
     return None
 
 
-def read_latest_latent_gate_result(
-    session: Session, version: NeuralModelVersion
-) -> LatentGateResult | None:
+def read_latest_latent_gate_result(session: Session, version: NeuralModelVersion) -> LatentGateResult | None:
     """Read the persisted latest gate result without running a new evaluation."""
     run = find_latest_latent_evaluation_run(session, version)
     if run is None:
@@ -287,9 +268,7 @@ def read_latest_latent_gate_result(
     if classical_run is not None:
         classical_rows = _load_score_rows(session, classical_run.id)
         classical_names = _classical_feature_names()
-        classical_only = [
-            row for row in classical_rows if row.feature_name in classical_names
-        ]
+        classical_only = [row for row in classical_rows if row.feature_name in classical_names]
         if classical_only:
             baseline_ic = _max_abs_ic(classical_only)
 
@@ -350,9 +329,7 @@ def evaluate_latents(
         feature_set=latent_feature_set(version),
     )
     latent_rows = _load_score_rows(session, latent_run.id)
-    latent_keys = frozenset(
-        neural_catalog_key(name, version.model_hash) for name in version.latent_names
-    )
+    latent_keys = frozenset(neural_catalog_key(name, version.model_hash) for name in version.latent_names)
     latent_scores = [row for row in latent_rows if row.feature_name in latent_keys]
 
     best_latent_ic = _max_abs_ic(latent_scores)
