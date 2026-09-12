@@ -1,8 +1,11 @@
 from q_backend.storage.settings import Settings, get_settings
 
 
-def test_settings_defaults():
-    settings = Settings()
+def test_settings_defaults(monkeypatch):
+    monkeypatch.delenv("Q_DATABASE_URL", raising=False)
+    monkeypatch.delenv("Q_REDIS_URL", raising=False)
+    monkeypatch.delenv("Q_DATA_LAKE_ROOT", raising=False)
+    settings = Settings(_env_file=None)
     assert settings.database_url == "postgresql+psycopg://q:q@localhost:5434/q"
     assert settings.redis_url == "redis://localhost:6380/0"
     assert settings.data_lake_root == "data/lake"
