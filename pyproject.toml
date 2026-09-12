@@ -36,6 +36,8 @@ q-optimize = "q_backend.cli.q_optimize:main"
 q-train-encoder = "q_backend.cli.q_train_encoder:main"
 q-promote-encoder = "q_backend.cli.q_promote_encoder:main"
 q-execution = "q_backend.cli.q_execution:main"
+q-outbox = "q_backend.cli.q_outbox:main"
+
 
 [dependency-groups]
 dev = [
