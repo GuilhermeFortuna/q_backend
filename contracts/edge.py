@@ -32,7 +32,19 @@ DealsResponse = list["ExecutionDeal"]
 
 @dataclass(frozen=True)
 class EdgeErrorResponse:
-    code: Literal['invalid_timeframe', 'symbol_not_found', 'range_unavailable', 'tick_range_too_large', 'invalid_flags', 'mt5_unavailable', 'unauthorized', 'not_found', 'internal_error', 'duplicate_intent', 'schema_major_mismatch']
+    code: Literal[
+        "invalid_timeframe",
+        "symbol_not_found",
+        "range_unavailable",
+        "tick_range_too_large",
+        "invalid_flags",
+        "mt5_unavailable",
+        "unauthorized",
+        "not_found",
+        "internal_error",
+        "duplicate_intent",
+        "schema_major_mismatch",
+    ]
     error: str
 
 
@@ -70,7 +82,7 @@ class ExecutionOrder:
     deviation: int | None = None
     magic: int | None = None
     price: float | None = None
-    side: Literal['buy', 'sell'] | None = None
+    side: Literal["buy", "sell"] | None = None
     sl: float | None = None
     tp: float | None = None
     type: int | None = None

@@ -29,12 +29,24 @@ class StreamEnvelope:
     epoch: str
     origin_ts: str
     payload: str | dict[str, Any]
-    payload_kind: Literal['arrow_ipc', 'control']
+    payload_kind: Literal["arrow_ipc", "control"]
     payload_schema: str
     producer_id: str
     schema_major: int
     seq: int
-    topic: Literal['bars.completed', 'bars.forming', 'decisions', 'deployments', 'fills', 'jobs.progress', 'jobs.terminal', 'ledger', 'orders', 'quotes', 'risk']
+    topic: Literal[
+        "bars.completed",
+        "bars.forming",
+        "decisions",
+        "deployments",
+        "fills",
+        "jobs.progress",
+        "jobs.terminal",
+        "ledger",
+        "orders",
+        "quotes",
+        "risk",
+    ]
 
 
 @dataclass(frozen=True)
