@@ -13,3 +13,7 @@ run = "uv run pytest"
 [tasks.q-optimize]
 description = "Run strategy parameter optimization from YAML config"
 run = "uv run q-optimize"
+
+[tasks.contracts-check]
+description = "Check vendored contract code against the pinned contracts commit"
+run = "make contracts-check"
