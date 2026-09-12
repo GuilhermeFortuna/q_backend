@@ -32,12 +32,14 @@ EXPECTED_TABLES = {
     "execution_risk_events",
     "execution_worker_leases",
     "execution_audit_events",
+    "stream_outbox",
+    "stream_outbox_topic_state",
 }
 
 FORBIDDEN_TABLE_NAMES = {"ohlcv", "ticks", "bars", "features", "tick", "candles"}
 
 
-def test_metadata_has_twenty_nine_tables():
+def test_metadata_tables():
     table_names = set(Base.metadata.tables.keys())
     assert table_names == EXPECTED_TABLES
 
