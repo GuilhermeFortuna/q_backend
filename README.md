@@ -983,3 +983,22 @@ See [`docs/design/feature-intelligence.md`](../q_frontend/docs/design/feature-in
 ## 🔒 Security & Developer Notes
 * **Local In-Memory Execution:** No trading keys or credentials are sent outside your local machine.
 * **CORS Policy:** Programmed with open CORS middleware (`allow_origins=["*"]`) for easy interaction with the React/Tauri frontend during local development. Make sure to lock down origins when deploying outside a local staging environment.
+
+## ✅ Validation and Git Hooks
+
+`./scripts/ci.sh` runs the full pipeline — vendored contract drift, migrations,
+lint, format, tests — and is exactly what CI runs. The contract stage reaches
+the `q_contracts` repository; when working offline, point it at a local clone:
+
+```bash
+CONTRACTS_REPO=/path/to/q_contracts ./scripts/ci.sh
+```
+
+Git hooks live in `.githooks/` and are inactive in a fresh clone until the hook
+path is configured. Enable them once per checkout:
+
+```bash
+make hooks
+```
+
+`pre-commit` runs `ruff` and `black`; `pre-push` runs `scripts/ci.sh`.

@@ -67,8 +67,5 @@ jobs:
       - name: Sync dependencies
         run: uv sync --frozen
 
-      - name: Check vendored contracts
-        run: make contracts-check
-
       - name: Run CI Pipeline
         run: ./scripts/ci.sh

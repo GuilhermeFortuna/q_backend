@@ -36,19 +36,26 @@ if [ -z "${CI:-}" ]; then
   fi
 fi
 
-# 2. Database Migrations
+# 2. Vendored contract drift
+# Runs here rather than only in the GitHub workflow, so that a pre-push hook
+# catches drift instead of leaving it for CI to find. Needs to reach the
+# contracts repository; point CONTRACTS_REPO at a local clone when offline.
+echo "==> Checking vendored contracts (make contracts-check)..."
+make contracts-check
+
+# 3. Database Migrations
 echo "==> Applying database migrations (alembic upgrade head)..."
 uv run alembic upgrade head
 
-# 3. Linting
+# 4. Linting
 echo "==> Running linter (ruff check .)..."
 uv run ruff check .
 
-# 4. Code Formatting Check
+# 5. Code Formatting Check
 echo "==> Checking code formatting (black --check .)..."
 uv run black --check .
 
-# 5. Automated Tests
+# 6. Automated Tests
 echo "==> Running test suite (pytest)..."
 uv run pytest
 

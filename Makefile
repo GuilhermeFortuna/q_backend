@@ -1,4 +1,4 @@
-.PHONY: contracts contracts-check
+.PHONY: contracts contracts-check hooks
 
 CONTRACTS_REPO ?= https://github.com/GuilhermeFortuna/q_contracts.git
 
@@ -24,3 +24,7 @@ contracts-check:
 			--language python --out "$$generated_tmp"; \
 	fi; \
 	diff -ru --exclude='__pycache__' --exclude='*.pyc' contracts "$$generated_tmp/python/q_contracts"
+
+hooks:
+	git config core.hooksPath .githooks
+	@echo "Git hooks enabled from .githooks"
