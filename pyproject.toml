@@ -42,7 +42,7 @@ q-outbox = "q_backend.cli.q_outbox:main"
 [dependency-groups]
 dev = [
     "black",
-    "fakeredis>=2.26.0",
+    "fakeredis[lua]>=2.26.0",
     "ruff>=0.9.0",
 ]
 
