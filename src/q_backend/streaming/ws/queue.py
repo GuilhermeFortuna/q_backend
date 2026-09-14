@@ -62,6 +62,11 @@ class TopicQueue:
             return entry
         return self._entries.popleft() if self._entries else None
 
+    def oldest_seq(self) -> int | None:
+        """Lowest sequence still queued: the first entry a clear would discard."""
+        entries = self._coalesced.values() if self.policy.on_overflow == "coalesce" else self._entries
+        return min((entry.seq for entry in entries), default=None)
+
     def clear(self) -> None:
         self._entries.clear()
         self._coalesced.clear()

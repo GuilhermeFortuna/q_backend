@@ -41,3 +41,11 @@ def test_non_durable_lag_queue_marks_the_first_dropped_sequence():
 
     assert queue.offer(_entry(3)) is OfferResult.OVERFLOW
     assert queue.lagging_from_seq == 3
+
+
+def test_oldest_seq_names_the_first_entry_a_clear_would_discard():
+    queue = TopicQueue("bars.completed", TOPICS["bars.completed"], capacity=3)
+    assert queue.oldest_seq() is None
+    queue.offer(_entry(4))
+    queue.offer(_entry(5))
+    assert queue.oldest_seq() == 4
