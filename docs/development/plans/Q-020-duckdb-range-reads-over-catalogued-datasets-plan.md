@@ -248,7 +248,7 @@ tests/market_data/lake_query/                    new test package
 - [x] 4. Add `duckdb>=1.5.5` to `pyproject.toml`, run `uv lock`, and confirm that
    `uv run python -c "import duckdb; print(duckdb.__version__)"` works and that
    `uv run pytest tests/market_data -q` is still green. Commit.
-5. Write failing tests in `tests/market_data/lake_query/test_lake_query.py`:
+- [x] 5. Write failing tests in `tests/market_data/lake_query/test_lake_query.py`:
    - With `TZ=Asia/Tokyo` and `time.tzset()`, and the module instance reset,
      `query_cursor()` returns `UTC` for `current_setting('TimeZone')`, and a
      second cursor also returns `UTC`.
