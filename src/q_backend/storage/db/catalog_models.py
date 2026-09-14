@@ -37,6 +37,7 @@ class Dataset(Base):
         back_populates="dataset",
         cascade="all, delete-orphan",
         order_by="DatasetFile.ordinal",
+        lazy="selectin",
     )
 
     __table_args__ = (
