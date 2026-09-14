@@ -8,11 +8,16 @@ import signal
 import sys
 import threading
 
+import redis
+
 from q_backend.market_data.clients.remote import RemoteMt5Client
+from q_backend.observability.systemd import EX_CONFIG, notify_ready
 from q_backend.storage.settings import get_settings
 from q_backend.streaming.market.publisher import MarketDataPublisher, MarketPublisherConfig
 from q_backend.streaming.publisher import EphemeralPublisher
 from q_backend.streaming.redis_binary import get_binary_redis
+
+logger = logging.getLogger("q_backend.cli.q_market_publisher")
 
 
 def _csv(value: str) -> tuple[str, ...]:
@@ -32,10 +37,31 @@ def main(argv: list[str] | None = None) -> int:
     symbols = _csv(args.symbols if args.symbols is not None else settings.stream_symbols)
     if not symbols:
         sys.stderr.write("no symbols configured\n")
-        return 1
+        return EX_CONFIG
     timeframes = _csv(args.timeframes if args.timeframes is not None else settings.stream_bar_timeframes)
     logging.basicConfig(level=logging.INFO)
     client = get_binary_redis()
+
+    stop = threading.Event()
+    signal.signal(signal.SIGTERM, lambda *_: stop.set())
+    signal.signal(signal.SIGINT, lambda *_: stop.set())
+
+    # Wait for Redis connection with capped backoff before notifying readiness
+    backoff = 0.5
+    max_backoff = 30.0
+    while not stop.is_set():
+        try:
+            client.ping()
+            notify_ready()
+            break
+        except redis.RedisError as exc:
+            logger.warning("Redis not ready: %s. Retrying in %.2fs", exc, backoff)
+            stop.wait(backoff)
+            backoff = min(backoff * 2, max_backoff)
+
+    if stop.is_set():
+        return 0
+
     publisher = MarketDataPublisher(
         RemoteMt5Client(),
         {
@@ -50,9 +76,6 @@ def main(argv: list[str] | None = None) -> int:
             bar_poll_interval_s=settings.stream_bar_poll_interval_s,
         ),
     )
-    stop = threading.Event()
-    signal.signal(signal.SIGTERM, lambda *_: stop.set())
-    signal.signal(signal.SIGINT, lambda *_: stop.set())
     publisher.run_forever(stop)
     return 0
 

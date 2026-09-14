@@ -275,7 +275,7 @@ Every long-running `.service.in` shares: `EnvironmentFile=%h/.config/q/backend.e
    `ConnectionError` for 2 s, the callback is not called, and it is called once
    after the client recovers. Confirm they fail, implement, wire `notify_ready`
    in `q_outbox_relay.py`, and confirm they pass. Commit.
-6. [ ] Write failing tests in `tests/cli/test_q_market_publisher_readiness.py`: with
+6. [x] Write failing tests in `tests/cli/test_q_market_publisher_readiness.py`: with
    no symbols, `main([])` returns 78; with `fakeredis` and the fake gateway
    stopped (from Q-013's `tests/streaming/fake_gateway.py`), `READY=1` reaches the
    notify socket before the first poll. Confirm they fail, implement, and confirm
