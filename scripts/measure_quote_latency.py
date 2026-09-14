@@ -43,7 +43,10 @@ def main() -> None:
         print("no quote ticks observed")
         return
     values = np.asarray(latency_ms)
-    print(f"symbol={args.symbol} ticks={len(values)} p50_ms={np.percentile(values, 50):.1f} " f"p95_ms={np.percentile(values, 95):.1f} max_ms={values.max():.1f}")
+    print(
+        f"symbol={args.symbol} ticks={len(values)} p50_ms={np.percentile(values, 50):.1f} "
+        f"p95_ms={np.percentile(values, 95):.1f} max_ms={values.max():.1f}"
+    )
 
 
 if __name__ == "__main__":

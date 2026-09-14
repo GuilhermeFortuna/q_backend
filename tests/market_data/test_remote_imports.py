@@ -11,8 +11,7 @@ def test_remote_client_import_does_not_load_metatrader5() -> None:
         [
             sys.executable,
             "-c",
-            "import q_backend.market_data.clients.remote, sys; "
-            "print('MetaTrader5' in sys.modules)",
+            "import q_backend.market_data.clients.remote, sys; " "print('MetaTrader5' in sys.modules)",
         ],
         check=True,
         capture_output=True,

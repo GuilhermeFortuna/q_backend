@@ -13,4 +13,5 @@ def __getattr__(name: str):
         return MetaTraderClient
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
+
 __all__ = ["MetaTraderClient"]
