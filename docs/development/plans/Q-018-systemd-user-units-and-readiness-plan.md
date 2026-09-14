@@ -297,7 +297,7 @@ Every long-running `.service.in` shares: `EnvironmentFile=%h/.config/q/backend.e
    `systemd-analyze --user verify` exits 0 on the rendered services (skipped
    without the binary). Confirm they fail, implement, and confirm they pass.
    Commit.
-9. [ ] Write `scripts/install-user-units.sh` with `--dest`, `--quadlet-dest`,
+9. [x] Write `scripts/install-user-units.sh` with `--dest`, `--quadlet-dest`,
    `--no-sync`, and `--uninstall`. Write failing tests: two runs into temporary
    destinations produce identical trees with unchanged modification times on the
    second run; `--uninstall` removes exactly the installed files; with a
