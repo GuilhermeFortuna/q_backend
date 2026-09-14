@@ -1,0 +1,245 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "catalog/dataset-manifest",
+  "title": "DatasetManifest",
+  "description": "The authoritative, immutable record describing a catalog-addressed lake dataset.",
+  "type": "object",
+  "required": [
+    "dataset_id",
+    "subject",
+    "version",
+    "supersedes",
+    "state",
+    "published_at",
+    "checksum_algorithm",
+    "files",
+    "arrow_schema",
+    "row_count",
+    "time_range",
+    "tombstone"
+  ],
+  "properties": {
+    "dataset_id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "description": "Opaque immutable UUID assigned at publication; never reused, rejects path separators and dot segments."
+    },
+    "subject": {
+      "type": "object",
+      "required": ["kind", "symbol"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "description": "Subject data kind, e.g. 'bars' or 'ticks'."
+        },
+        "symbol": {
+          "type": "string",
+          "description": "Instrument symbol name, e.g. 'WINFUT' or 'PETR4'."
+        },
+        "timeframe": {
+          "type": "string",
+          "description": "Bar timeframe when kind is 'bars', e.g. 'M15', 'H1', 'D1'."
+        }
+      },
+      "additionalProperties": false,
+      "description": "What this dataset is data about."
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Monotonically increasing version integer within a subject, starting at 1."
+    },
+    "supersedes": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        }
+      ],
+      "description": "The dataset_id of the earlier version this dataset replaces, or null if it is version 1."
+    },
+    "state": {
+      "type": "string",
+      "enum": ["publishing", "published", "tombstoned", "deleted"],
+      "description": "Lifecycle state declared in lifecycle.yaml."
+    },
+    "published_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 UTC instant at which this dataset was published."
+    },
+    "checksum_algorithm": {
+      "type": "string",
+      "enum": ["sha256", "sha512", "blake3", "md5"],
+      "description": "Cryptographic checksum algorithm used across all entries in files."
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "size_bytes", "checksum"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^(?![/\\\\])(?!.*(?:^|[/\\\\])\\.\\.(?:[/\\\\]|$)).+$",
+            "description": "Lake-relative file path; rejects leading path separators and parent directory ('..') components."
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "File size in bytes."
+          },
+          "checksum": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]+$",
+            "description": "Hexadecimal digest under the manifest's checksum_algorithm."
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "Every file belonging to the dataset, with size and digest for reader verification."
+    },
+    "arrow_schema": {
+      "type": "object",
+      "required": ["fields"],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "type"],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "nullable": {
+                "type": "boolean"
+              },
+              "tz": {
+                "type": "string"
+              },
+              "unit": {
+                "type": "string"
+              },
+              "doc": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false,
+      "description": "Inline field declaration matching schema/api/arrow/* form."
+    },
+    "row_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total number of rows covered across all files in the dataset."
+    },
+    "time_range": {
+      "type": "object",
+      "required": ["start", "end"],
+      "properties": {
+        "start": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Inclusive start timestamp of the dataset's time column."
+        },
+        "end": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Inclusive end timestamp of the dataset's time column."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Inclusive time coverage bounds."
+    },
+    "tombstone": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": ["tombstoned_at", "deletable_after"],
+          "properties": {
+            "tombstoned_at": {
+              "type": "string",
+              "format": "date-time",
+              "description": "RFC 3339 UTC instant when the dataset was marked tombstoned."
+            },
+            "deletable_after": {
+              "type": "string",
+              "format": "date-time",
+              "description": "RFC 3339 UTC instant after which file deletion is legally permitted."
+            }
+          },
+          "additionalProperties": false
+        }
+      ],
+      "description": "Tombstone record; null while published, required with grace period when tombstoned."
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "tombstoned"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "tombstone": {
+            "type": "object",
+            "required": ["tombstoned_at", "deletable_after"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "published"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "tombstone": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "publishing"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "tombstone": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,11 +1,38 @@
 {
   "name": "ticks",
   "fields": [
-    {"name": "time_msc", "type": "timestamp[ms]", "nullable": false, "tz": "naive-wallclock-America/Sao_Paulo", "doc": "raw MT5 millisecond timestamp"},
-    {"name": "bid", "type": "float64", "nullable": false},
-    {"name": "ask", "type": "float64", "nullable": false},
-    {"name": "last", "type": "float64", "nullable": false},
-    {"name": "volume", "type": "float64", "nullable": false},
-    {"name": "flags", "type": "int32", "nullable": false, "doc": "MT5 tick flag bitfield, passed through unmodified"}
+    {
+      "name": "time_msc",
+      "type": "timestamp[ms]",
+      "nullable": false,
+      "tz": "naive-wallclock-America/Sao_Paulo",
+      "doc": "raw MT5 millisecond timestamp"
+    },
+    {
+      "name": "bid",
+      "type": "float64",
+      "nullable": false
+    },
+    {
+      "name": "ask",
+      "type": "float64",
+      "nullable": false
+    },
+    {
+      "name": "last",
+      "type": "float64",
+      "nullable": false
+    },
+    {
+      "name": "volume",
+      "type": "float64",
+      "nullable": false
+    },
+    {
+      "name": "flags",
+      "type": "int32",
+      "nullable": false,
+      "doc": "MT5 tick flag bitfield, passed through unmodified"
+    }
   ]
 }

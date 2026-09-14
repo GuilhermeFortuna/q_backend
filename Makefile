@@ -11,7 +11,9 @@ contracts:
 	mkdir -p contracts; \
 	cp -R "$$contracts_tmp/q_contracts/generated/python/q_contracts/." contracts/; \
 	mkdir -p contracts/schema/api/arrow; \
-	cp "$$contracts_tmp/q_contracts/schema/api/arrow/"*.schema.json contracts/schema/api/arrow/
+	cp "$$contracts_tmp/q_contracts/schema/api/arrow/"*.schema.json contracts/schema/api/arrow/; \
+	mkdir -p contracts/schema/catalog; \
+	cp "$$contracts_tmp/q_contracts/schema/catalog/dataset-manifest.schema.json" contracts/schema/catalog/
 
 contracts-check:
 	contracts_tmp="$$(mktemp -d)"; \
@@ -27,8 +29,11 @@ contracts-check:
 	fi; \
 	mkdir -p "$$generated_tmp/python/q_contracts/schema/api/arrow"; \
 	cp "$$contracts_tmp/q_contracts/schema/api/arrow/"*.schema.json "$$generated_tmp/python/q_contracts/schema/api/arrow/"; \
+	mkdir -p "$$generated_tmp/python/q_contracts/schema/catalog"; \
+	cp "$$contracts_tmp/q_contracts/schema/catalog/dataset-manifest.schema.json" "$$generated_tmp/python/q_contracts/schema/catalog/"; \
 	diff -ru --exclude='__pycache__' --exclude='*.pyc' --exclude='schema' contracts "$$generated_tmp/python/q_contracts"; \
-	python3 -c 'import json, pathlib, sys; left=pathlib.Path("contracts/schema/api/arrow"); right=pathlib.Path("'"$$generated_tmp"'/python/q_contracts/schema/api/arrow"); names=sorted(p.name for p in left.glob("*.schema.json")); sys.exit(names != sorted(p.name for p in right.glob("*.schema.json")) or any(json.loads((left / n).read_text()) != json.loads((right / n).read_text()) for n in names))'
+	python3 -c 'import json, pathlib, sys; left=pathlib.Path("contracts/schema/api/arrow"); right=pathlib.Path("'"$$generated_tmp"'/python/q_contracts/schema/api/arrow"); names=sorted(p.name for p in left.glob("*.schema.json")); sys.exit(names != sorted(p.name for p in right.glob("*.schema.json")) or any(json.loads((left / n).read_text()) != json.loads((right / n).read_text()) for n in names))'; \
+	python3 -c 'import json, pathlib, sys; left=pathlib.Path("contracts/schema/catalog/dataset-manifest.schema.json"); right=pathlib.Path("'"$$generated_tmp"'/python/q_contracts/schema/catalog/dataset-manifest.schema.json"); sys.exit(not left.exists() or not right.exists() or json.loads(left.read_text()) != json.loads(right.read_text()))'
 
 hooks:
 	git config core.hooksPath .githooks
