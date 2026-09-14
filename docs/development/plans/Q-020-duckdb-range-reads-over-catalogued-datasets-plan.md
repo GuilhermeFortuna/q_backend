@@ -245,7 +245,7 @@ tests/market_data/lake_query/                    new test package
    baseline. Record the before measurement with
    `uv run python scripts/lake_read_digest.py --fixture tests/fixtures/lake --runs 50`
    in the commit message. Commit.
-4. Add `duckdb>=1.5.5` to `pyproject.toml`, run `uv lock`, and confirm that
+- [x] 4. Add `duckdb>=1.5.5` to `pyproject.toml`, run `uv lock`, and confirm that
    `uv run python -c "import duckdb; print(duckdb.__version__)"` works and that
    `uv run pytest tests/market_data -q` is still green. Commit.
 5. Write failing tests in `tests/market_data/lake_query/test_lake_query.py`:

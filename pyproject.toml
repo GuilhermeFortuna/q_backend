@@ -28,6 +28,7 @@ dependencies = [
     "torch>=2.6.0",
     "httpx>=0.28.1",
     "sentry-sdk>=2.64.0",
+    "duckdb>=1.5.5",
 ]
 
 [project.scripts]
