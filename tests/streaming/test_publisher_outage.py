@@ -53,20 +53,40 @@ def test_publisher_closed_port_all_kinds_complete(
 ) -> None:
     """With the stream publisher pointed at a closed port, every job kind still
 
-    completes under the harness within its time budget and its terminal event
-    is committed to the outbox.
+    completes under the harness, the time it loses to the dead publisher stays
+    within budget, and its terminal event is committed to the outbox.
+
+    Only time spent in Redis commands against the closed port is measured. The
+    job's own compute scales with host speed and load (a shared 4-vCPU runner
+    takes ~2x as long as a dev box), so a whole-job wall-clock budget is flaky
+    without saying anything about publisher stalls.
     """
-    bad_client = redis.Redis(host="127.0.0.1", port=6399)
+    closed_port = 6399
+    bad_client = redis.Redis(host="127.0.0.1", port=closed_port)
     set_publisher_client(bad_client)
 
-    per_job_budget_seconds = 15.0
-    t0 = time.monotonic()
-    job_id = _run_kind(kind, run_jobs_sync, monkeypatch)
-    elapsed = time.monotonic() - t0
+    stalled = {"seconds": 0.0, "calls": 0}
+    original_execute = redis.Redis.execute_command
 
-    assert elapsed < per_job_budget_seconds, (
-        f"Job kind '{kind}' took {elapsed:.2f}s, exceeding budget of {per_job_budget_seconds}s "
-        "when stream publisher is pointed at a closed port."
+    def timed_execute(self, *args, **kwargs):
+        if self.connection_pool.connection_kwargs.get("port") != closed_port:
+            return original_execute(self, *args, **kwargs)
+        started = time.monotonic()
+        try:
+            return original_execute(self, *args, **kwargs)
+        finally:
+            stalled["seconds"] += time.monotonic() - started
+            stalled["calls"] += 1
+
+    monkeypatch.setattr(redis.Redis, "execute_command", timed_execute)
+
+    publisher_budget_seconds = 2.0
+    job_id = _run_kind(kind, run_jobs_sync, monkeypatch)
+
+    assert stalled["calls"] > 0, f"Job kind '{kind}' never reached the closed-port publisher; test is vacuous."
+    assert stalled["seconds"] < publisher_budget_seconds, (
+        f"Job kind '{kind}' spent {stalled['seconds']:.2f}s in {stalled['calls']} Redis calls to a closed "
+        f"port, exceeding budget of {publisher_budget_seconds}s."
     )
 
     events = _get_terminal_events(run_jobs_sync.harness_session_factory, kind, job_id)
