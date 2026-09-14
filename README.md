@@ -127,7 +127,7 @@ Exit-rule policies (WO80) attach composable catalog exits to a genome via `metad
 
 `CompositeStrategy` hydrates `ExitStrategy` from the merged trial params (enable/magnitude ranges include `0`). Exit-rule exits run through the engine's standard `exit_strategy.check_exits` path before genome signal exits. This differs from WO79 registry preset expansion, which clones whole strategy candidates for Discovery sweep.
 
-Full grammar and design rationale: [`docs/design/genetic-strategy-search.md`](../q_frontend/docs/design/genetic-strategy-search.md) (§2–§3).
+Full grammar and design rationale: [`docs/design/genetic-strategy-search.md`](https://github.com/GuilhermeFortuna/q_frontend/blob/81ceb04a1c90704b2bcdfe0695ddd0aab14aac82/docs/design/genetic-strategy-search.md) (§2–§3).
 
 #### Genetic synthesis (`optimization/genetic_search.py`)
 
@@ -153,7 +153,7 @@ When `StrategySearchConfig.genetic` is set, a post-evolution **finalize** step a
 * **Held-out lock-box** — optional `lockbox` config carves the final 10–15% of the date range **before** walk-forward windows; the champion is backtested once on that tail with no re-optimization. `lockbox_metrics` and `lockbox_passed` are persisted on the run summary.
 * **Parsimony penalty** — fitness subtracts `complexity_lambda × node_count + complexity_mu × param_count` during evolution (WO39).
 
-High DSR and a passing lock-box are **screening signals, not proof** of live edge. See [`docs/design/genetic-strategy-search.md`](../q_frontend/docs/design/genetic-strategy-search.md) §5.4.
+High DSR and a passing lock-box are **screening signals, not proof** of live edge. See [`docs/design/genetic-strategy-search.md`](https://github.com/GuilhermeFortuna/q_frontend/blob/81ceb04a1c90704b2bcdfe0695ddd0aab14aac82/docs/design/genetic-strategy-search.md) §5.4.
 
 * **Position sizers:** `fixed_quantity`, `fixed_safety_margin`, and `inverse_volatility` (vol targeting). The inverse-volatility sizer reads an annualized `volatility` column from the signal bar passed through the engine fill row — strategies such as `TSMOM` expose this column; without it the sizer skips the order. Sizing formula:
 
@@ -264,7 +264,7 @@ Feature matrices are cached by deterministic `matrix_id` (symbol, timeframe, dat
 
 ### 4. Feature Intelligence (`features`)
 
-Phase 1–2 platform for first-class features: registry, point-in-time computation, lake-cached matrices, Postgres-backed store, evaluation metrics, and scoring. Design rationale and work-order status: [`docs/design/feature-intelligence.md`](../q_frontend/docs/design/feature-intelligence.md).
+Phase 1–2 platform for first-class features: registry, point-in-time computation, lake-cached matrices, Postgres-backed store, evaluation metrics, and scoring. Design rationale and work-order status: [`docs/design/feature-intelligence.md`](https://github.com/GuilhermeFortuna/q_frontend/blob/81ceb04a1c90704b2bcdfe0695ddd0aab14aac82/docs/design/feature-intelligence.md).
 
 * **Registry (`features/registry.py`)** — code-defined feature catalog synced to Postgres on API startup (`sync_registry_to_db`, idempotent; never downgrades a human-promoted status).
 * **Compute (`features/compute.py`, `leakage.py`)** — named feature series on OHLCV bars with lookback trim and leakage checks.
@@ -972,7 +972,7 @@ Worker count is resolved by `q_backend.optimization.parallel.resolve_worker_coun
 * **`GET /api/v1/feature-eval/{run_id}`**
   * *Description:* Evaluation run status plus `leaderboard`, `clusters`, and `heatmap` payloads.
 
-See [`docs/design/feature-intelligence.md`](../q_frontend/docs/design/feature-intelligence.md) for PIT/leakage contracts, target definitions, and scoring weights.
+See [`docs/design/feature-intelligence.md`](https://github.com/GuilhermeFortuna/q_frontend/blob/81ceb04a1c90704b2bcdfe0695ddd0aab14aac82/docs/design/feature-intelligence.md) for PIT/leakage contracts, target definitions, and scoring weights.
 
 ### Local market storage
 * **`GET /api/v1/storage/inventory`**
