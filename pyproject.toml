@@ -37,6 +37,7 @@ q-train-encoder = "q_backend.cli.q_train_encoder:main"
 q-promote-encoder = "q_backend.cli.q_promote_encoder:main"
 q-execution = "q_backend.cli.q_execution:main"
 q-outbox = "q_backend.cli.q_outbox:main"
+q-outbox-relay = "q_backend.cli.q_outbox_relay:main"
 
 
 [dependency-groups]
