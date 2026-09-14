@@ -11,6 +11,9 @@ from q_backend.market_data.service import MarketDataService
 
 FULL_ROUTE_INVENTORY: list[tuple[str, str]] = [
     ("GET", "/"),
+    ("GET", "/api/v1/stream/jobs/snapshot"),
+    ("GET", "/api/v1/stream/{topic}/history"),
+    ("GET", "/api/v1/stream/{topic}/latest"),
     ("GET", "/api/v1/system/health"),
     ("GET", "/api/v1/system/data-source"),
     ("PUT", "/api/v1/system/data-source"),
@@ -105,6 +108,9 @@ FULL_ROUTE_INVENTORY: list[tuple[str, str]] = [
 
 FULL_OPENAPI_PATHS: list[str] = [
     "/",
+    "/api/v1/stream/jobs/snapshot",
+    "/api/v1/stream/{topic}/history",
+    "/api/v1/stream/{topic}/latest",
     "/api/v1/system/health",
     "/api/v1/system/data-source",
     "/api/v1/strategies",

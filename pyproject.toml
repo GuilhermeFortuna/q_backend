@@ -46,6 +46,7 @@ q-market-publisher = "q_backend.cli.q_market_publisher:main"
 dev = [
     "black",
     "fakeredis[lua]>=2.26.0",
+    "jsonschema>=4.23.0",
     "ruff>=0.9.0",
 ]
 

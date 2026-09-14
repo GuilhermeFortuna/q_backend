@@ -3,6 +3,7 @@ import base64
 import json
 from typing import Any
 
+from q_backend.storage.db.outbox_models import OutboxEvent
 from q_contracts.stream import StreamEnvelope
 from q_contracts.topics import TOPICS
 
@@ -90,6 +91,43 @@ def decode_entry(fields: Mapping[bytes | str, bytes | str]) -> tuple[StreamEnvel
         key=header.get("key"),
     )
     return envelope, p_bytes
+
+
+def envelope_to_dict(envelope: StreamEnvelope) -> dict[str, Any]:
+    """Convert a stream envelope to a JSON-serializable mapping."""
+    data: dict[str, Any] = {
+        "topic": envelope.topic,
+        "schema_major": envelope.schema_major,
+        "seq": envelope.seq,
+        "epoch": envelope.epoch,
+        "producer_id": envelope.producer_id,
+        "origin_ts": envelope.origin_ts,
+        "payload_kind": envelope.payload_kind,
+        "payload_schema": envelope.payload_schema,
+        "payload": envelope.payload,
+    }
+    if envelope.key is not None:
+        data["key"] = envelope.key
+    return data
+
+
+def outbox_event_to_envelope(event: OutboxEvent) -> StreamEnvelope:
+    """Rebuild a logical envelope from a durable outbox row."""
+    origin_ts = event.origin_ts.isoformat()
+    if event.origin_ts.tzinfo is not None:
+        origin_ts = origin_ts.replace("+00:00", "Z")
+    return StreamEnvelope(
+        topic=event.topic,  # type: ignore[arg-type]
+        schema_major=1,
+        seq=event.seq,
+        epoch=event.epoch,
+        producer_id=event.producer_id,
+        origin_ts=origin_ts,
+        payload_kind=event.payload_kind,  # type: ignore[arg-type]
+        payload_schema=event.payload_schema,
+        payload=dict(event.payload),
+        key=dict(event.routing_key) if event.routing_key is not None else None,
+    )
 
 
 def routing_key_string(topic: str, routing_key: Mapping[str, str]) -> str:
