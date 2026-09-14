@@ -19,6 +19,10 @@ def set_job_progress(
     namespace: str = "job",
 ) -> None:
     client.set(_progress_key(job_id, namespace), json.dumps(payload), ex=ttl_seconds)
+    from q_backend.streaming.jobs import NAMESPACE_TO_KIND, publish_job_progress
+
+    kind = NAMESPACE_TO_KIND.get(namespace, "optimization" if namespace == "job" else namespace)
+    publish_job_progress(kind, job_id, payload, client=client)
 
 
 def get_job_progress(
