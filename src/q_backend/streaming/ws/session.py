@@ -151,8 +151,11 @@ class StreamSession:
                     result = await self.redis.xread(streams, count=XREAD_COUNT, block=XREAD_BLOCK_MS)
                 await self._watch_epochs()
             except RedisError:
-                await self._controls.put({"reason": "stream_unavailable"})
-                await self._close_after_controls()
+                # The reader is the sole task that can detect a broken Redis
+                # connection.  Send the protocol rejection before returning so
+                # `run()` can cancel the writer and close the session.
+                await self.websocket.send_text(text_frame({"reason": "stream_unavailable"}))
+                await self.websocket.close(code=1011)
                 return
             for key, entries in result:
                 topic = _id(key).removeprefix("q:stream:")
@@ -224,8 +227,3 @@ class StreamSession:
                 sent = True
             if not sent:
                 await asyncio.sleep(0.001)
-
-    async def _close_after_controls(self) -> None:
-        while not self._controls.empty():
-            await asyncio.sleep(0)
-        await self.websocket.close(code=1011)
