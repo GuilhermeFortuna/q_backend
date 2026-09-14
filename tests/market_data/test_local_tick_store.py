@@ -7,16 +7,28 @@ from datetime import datetime, timedelta
 import numpy as np
 import pyarrow.parquet as pq
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from q_backend.market_data import local_store
+from q_backend.market_data.catalog import service as catalog_service
+from q_backend.market_data.catalog.service import LakeCatalog
 from q_backend.market_data.clients.metatrader import _naive_local_to_time_msc
 from q_backend.market_data.tick_cache import COLUMNAR_TICK_KEYS, _TICK_DTYPE_MAP
+from q_backend.storage.db.base import Base
 
 
 @pytest.fixture
 def market_root(tmp_path, monkeypatch):
     root = tmp_path / "market"
+    root.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("Q_MARKET_DATA_ROOT", str(root))
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    sm = sessionmaker(bind=engine)
+    catalog = LakeCatalog(session_factory=sm, root=root)
+    monkeypatch.setattr(catalog_service, "_catalog_instance", catalog)
     return root
 
 
@@ -51,8 +63,8 @@ def test_write_read_round_trip_two_months(market_root):
     assert len(result["time_msc"]) == 3
     assert np.all(result["time_msc"][1:] > result["time_msc"][:-1])
     assert result["bid"][0] == pytest.approx(100.09)
-    assert (market_root / "ticks" / "PETR4" / "2024-01.parquet").is_file()
-    assert (market_root / "ticks" / "PETR4" / "2024-02.parquet").is_file()
+    assert len(list((market_root / "ticks" / "PETR4").glob("2024-01.*.parquet"))) == 1
+    assert len(list((market_root / "ticks" / "PETR4").glob("2024-02.*.parquet"))) == 1
 
 
 def test_reingest_overlapping_range_deduplicates(market_root):
@@ -78,8 +90,9 @@ def test_reingest_overlapping_range_deduplicates(market_root):
 
 def test_persisted_schema_matches_columnar_contract(market_root):
     local_store.write_ticks("WIN$", _synthetic_ticks_two_months())
-    path = market_root / "ticks" / "WIN$" / "2024-01.parquet"
-    table = pq.read_table(path)
+    matching = list((market_root / "ticks").glob("*/2024-01.*.parquet"))
+    assert len(matching) == 1
+    table = pq.read_table(matching[0])
     assert list(table.column_names) == list(COLUMNAR_TICK_KEYS)
     for col in COLUMNAR_TICK_KEYS:
         arr = table[col].to_numpy(zero_copy_only=False)
@@ -92,7 +105,9 @@ def test_delete_ticks_removes_files_and_catalog(market_root):
 
     local_store.delete_ticks("ITUB4")
     assert local_store.list_inventory() == []
-    assert not (market_root / "ticks" / "ITUB4").exists()
+    # Files remain on disk under tombstone semantics until swept
+    parquet_files = list((market_root / "ticks" / "ITUB4").glob("*.parquet"))
+    assert len(parquet_files) > 0
 
 
 def test_tick_available_range_from_catalog(market_root):

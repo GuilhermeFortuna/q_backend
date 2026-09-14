@@ -1,37 +1,33 @@
-"""Portable local OHLCV and tick parquet store (WO48 / WO50).
+"""Portable local OHLCV and tick parquet store (WO48 / WO50 / Q-017).
 
-Layout under ``market_data_root``::
-
-    ohlcv/{symbol_slug}/{timeframe}/{YYYY}.parquet
-    ticks/{symbol_slug}/{YYYY-MM}.parquet
-    catalog.json
+Delegates storage, publication, and resolution to the database-backed LakeCatalog.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
-import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
-import pyarrow as pa
 import pyarrow.parquet as pq
 
+from q_backend.market_data.catalog.partitions import Subject
+from q_backend.market_data.catalog.repository import current_dataset, list_current_datasets
+from q_backend.market_data.catalog.service import get_lake_catalog
 from q_backend.market_data.clients.metatrader import (
     OhlcvAvailableRange,
     _empty_ticks_columnar,
     _naive_local_to_time_msc,
-    _time_msc_to_naive_local,
 )
 from q_backend.market_data.models import OHLCV
 from q_backend.market_data.tick_cache import COLUMNAR_TICK_KEYS, _TICK_DTYPE_MAP
-from q_backend.market_data.timezone import to_brasilia_naive
+from q_backend.market_data.timezone import BRASILIA_TZ
+from q_backend.storage.db.catalog_models import Dataset
 from q_backend.storage.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -74,72 +70,42 @@ def _slug_symbol(symbol: str) -> str:
     return re.sub(r"[^\w.$-]+", "_", symbol)
 
 
-def _catalog_path() -> Path:
-    return market_data_root() / "catalog.json"
-
-
-def _ohlcv_series_dir(symbol: str, timeframe: str) -> Path:
-    return market_data_root() / "ohlcv" / _slug_symbol(symbol) / timeframe.upper()
-
-
-def _year_parquet_path(symbol: str, timeframe: str, year: int) -> Path:
-    return _ohlcv_series_dir(symbol, timeframe) / f"{year}.parquet"
-
-
-def _ticks_series_dir(symbol: str) -> Path:
-    return market_data_root() / "ticks" / _slug_symbol(symbol)
-
-
-def _month_parquet_path(symbol: str, month_key: str) -> Path:
-    return _ticks_series_dir(symbol) / f"{month_key}.parquet"
-
-
-def _normalize_catalog_entry(row: dict[str, Any]) -> dict[str, Any]:
-    normalized = dict(row)
-    kind = normalized.get("kind")
-    if kind not in (_KIND_BARS, _KIND_TICKS):
-        normalized["kind"] = _KIND_BARS if normalized.get("timeframe") else _KIND_TICKS
-    return normalized
-
-
-def _catalog_entry_key(row: dict[str, Any]) -> tuple[str, str, str]:
-    entry = _normalize_catalog_entry(row)
-    kind = str(entry["kind"])
-    symbol = str(entry.get("symbol", ""))
-    if kind == _KIND_TICKS:
-        return symbol, kind, ""
-    timeframe = str(entry.get("timeframe", "")).upper()
-    return symbol, kind, timeframe
-
-
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
-def _read_catalog() -> list[dict[str, Any]]:
-    path = _catalog_path()
-    if not path.is_file():
-        return []
-    try:
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
-        if isinstance(data, list):
-            return [_normalize_catalog_entry(row) for row in data]
-        logger.warning("Catalog %s is not a JSON array", path)
-        return []
-    except Exception as exc:  # noqa: BLE001 - best-effort catalog read; logged, returns empty
-        logger.warning("Failed to read catalog %s: %s", path, exc)
-        return []
+def _to_brasilia_iso(dt: datetime) -> str:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(BRASILIA_TZ).replace(tzinfo=None).isoformat()
 
 
-def _write_catalog(entries: list[dict[str, Any]]) -> None:
-    path = _catalog_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(entries, f, indent=2)
-        f.write("\n")
-    tmp.replace(path)
+def _to_brasilia_naive(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(BRASILIA_TZ).replace(tzinfo=None)
+
+
+def _to_utc_iso(dt: datetime) -> str:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _dataset_to_inventory_entry(d: Dataset) -> dict[str, Any]:
+    total_bytes = sum(f.size_bytes for f in d.files)
+    entry: dict[str, Any] = {
+        "symbol": d.symbol,
+        "kind": d.kind,
+        "start": _to_brasilia_iso(d.time_start),
+        "end": _to_brasilia_iso(d.time_end),
+        "rows": d.row_count,
+        "bytes": total_bytes,
+        "updated_at": _to_utc_iso(d.published_at),
+    }
+    if d.kind == _KIND_BARS:
+        entry["timeframe"] = d.timeframe.upper()
+    return entry
 
 
 def _bars_to_dataframe(bars: list[OHLCV]) -> pd.DataFrame:
@@ -173,209 +139,11 @@ def _dataframe_to_bars(df: pd.DataFrame) -> list[OHLCV]:
     return bars
 
 
-def _merge_year_frame(existing: pd.DataFrame | None, incoming: pd.DataFrame) -> pd.DataFrame:
-    if existing is None or existing.empty:
-        combined = incoming.copy()
-    elif incoming.empty:
-        combined = existing.copy()
-    else:
-        combined = pd.concat([existing, incoming], ignore_index=True)
-    if combined.empty:
-        return combined
-    combined["time"] = pd.to_datetime(combined["time"])
-    combined = combined.sort_values("time")
-    combined = combined.drop_duplicates(subset=["time"], keep="last")
-    return combined.reset_index(drop=True)
-
-
-def _write_year_parquet(path: Path, df: pd.DataFrame) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    table = pa.Table.from_pandas(df[list(_OHLCV_COLUMNS)], preserve_index=False)
-    pq.write_table(table, path)
-
-
 def _read_year_parquet(path: Path) -> pd.DataFrame:
     table = pq.read_table(path)
     df = table.to_pandas()
     df["time"] = pd.to_datetime(df["time"])
     return df
-
-
-def _summarize_series(symbol: str, timeframe: str) -> dict[str, Any] | None:
-    series_dir = _ohlcv_series_dir(symbol, timeframe)
-    if not series_dir.is_dir():
-        return None
-    year_files = sorted(series_dir.glob("*.parquet"))
-    if not year_files:
-        return None
-
-    total_rows = 0
-    total_bytes = 0
-    min_time: pd.Timestamp | None = None
-    max_time: pd.Timestamp | None = None
-
-    for year_file in year_files:
-        total_bytes += year_file.stat().st_size
-        df = _read_year_parquet(year_file)
-        if df.empty:
-            continue
-        total_rows += len(df)
-        file_min = pd.Timestamp(df["time"].min())
-        file_max = pd.Timestamp(df["time"].max())
-        min_time = file_min if min_time is None else min(min_time, file_min)
-        max_time = file_max if max_time is None else max(max_time, file_max)
-
-    if total_rows == 0 or min_time is None or max_time is None:
-        return None
-
-    return {
-        "symbol": symbol,
-        "kind": _KIND_BARS,
-        "timeframe": timeframe.upper(),
-        "start": min_time.isoformat(),
-        "end": max_time.isoformat(),
-        "rows": total_rows,
-        "bytes": total_bytes,
-        "updated_at": _utc_now_iso(),
-    }
-
-
-def _upsert_catalog_entry(entry: dict[str, Any]) -> None:
-    entry = _normalize_catalog_entry(entry)
-    catalog = _read_catalog()
-    key = _catalog_entry_key(entry)
-    updated = [row for row in catalog if _catalog_entry_key(row) != key]
-    updated.append(entry)
-    updated.sort(
-        key=lambda row: (
-            row.get("symbol", ""),
-            row.get("kind", _KIND_BARS),
-            row.get("timeframe", ""),
-        )
-    )
-    _write_catalog(updated)
-
-
-def _remove_catalog_entry(symbol: str, kind: str, timeframe: str = "") -> None:
-    catalog = _read_catalog()
-    tf = timeframe.upper()
-    updated = [
-        row
-        for row in catalog
-        if not (
-            row.get("symbol") == symbol
-            and row.get("kind", _KIND_BARS) == kind
-            and (kind == _KIND_TICKS or str(row.get("timeframe", "")).upper() == tf)
-        )
-    ]
-    _write_catalog(updated)
-
-
-def write_ohlcv(symbol: str, timeframe: str, bars: list[OHLCV]) -> dict[str, Any]:
-    """Merge bars into year-partitioned parquet files and refresh the catalog entry."""
-    tf = timeframe.upper()
-    if not bars:
-        entry = _summarize_series(symbol, tf)
-        if entry is None:
-            return {
-                "symbol": symbol,
-                "kind": _KIND_BARS,
-                "timeframe": tf,
-                "start": None,
-                "end": None,
-                "rows": 0,
-                "bytes": 0,
-                "updated_at": _utc_now_iso(),
-            }
-        _upsert_catalog_entry(entry)
-        return entry
-
-    df = _bars_to_dataframe(bars)
-    for year, year_df in df.groupby(df["time"].dt.year):
-        year_int = int(year)
-        path = _year_parquet_path(symbol, tf, year_int)
-        existing = _read_year_parquet(path) if path.is_file() else None
-        merged = _merge_year_frame(existing, year_df)
-        _write_year_parquet(path, merged)
-
-    entry = _summarize_series(symbol, tf)
-    if entry is None:
-        raise RuntimeError(f"Failed to summarize OHLCV series for {symbol}/{tf}")
-    _upsert_catalog_entry(entry)
-    return entry
-
-
-def _to_naive_utc(ts: pd.Timestamp) -> pd.Timestamp:
-    """Drop tz info, normalizing to UTC, so bounds match the naive-UTC store."""
-    if ts.tz is not None:
-        return ts.tz_convert("UTC").tz_localize(None)
-    return ts
-
-
-def read_ohlcv(symbol: str, timeframe: str, start: datetime, end: datetime) -> list[OHLCV]:
-    tf = timeframe.upper()
-    # The stored `time` column is tz-naive UTC; callers may pass either tz-naive
-    # or tz-aware bounds (e.g. the Feature Lab sends ISO strings with an offset).
-    # Normalize tz-aware bounds to naive UTC so the comparison below never hits
-    # pandas' "Invalid comparison between tz-naive and tz-aware" TypeError.
-    start_ts = _to_naive_utc(pd.Timestamp(start))
-    end_ts = _to_naive_utc(pd.Timestamp(end))
-    if start_ts > end_ts:
-        return []
-
-    years = range(start_ts.year, end_ts.year + 1)
-    frames: list[pd.DataFrame] = []
-    for year in years:
-        path = _year_parquet_path(symbol, tf, year)
-        if path.is_file():
-            frames.append(_read_year_parquet(path))
-
-    if not frames:
-        return []
-
-    combined = pd.concat(frames, ignore_index=True)
-    combined["time"] = pd.to_datetime(combined["time"])
-    if getattr(combined["time"].dt, "tz", None) is not None:
-        combined["time"] = combined["time"].dt.tz_convert("UTC").dt.tz_localize(None)
-    mask = (combined["time"] >= start_ts) & (combined["time"] <= end_ts)
-    filtered = combined.loc[mask].sort_values("time")
-    return _dataframe_to_bars(filtered)
-
-
-def _arrays_to_dataframe(arrays: dict[str, np.ndarray]) -> pd.DataFrame:
-    if len(arrays.get("time_msc", [])) == 0:
-        return pd.DataFrame(columns=list(COLUMNAR_TICK_KEYS))
-    return pd.DataFrame({col: arrays[col] for col in COLUMNAR_TICK_KEYS})
-
-
-def _dataframe_to_columnar(df: pd.DataFrame) -> dict[str, np.ndarray]:
-    if df.empty:
-        return _empty_ticks_columnar()
-    ordered = df.sort_values("time_msc")
-    result: dict[str, np.ndarray] = {}
-    for col in COLUMNAR_TICK_KEYS:
-        result[col] = ordered[col].to_numpy(dtype=_TICK_DTYPE_MAP[col], copy=False)
-    return result
-
-
-def _merge_tick_frame(existing: pd.DataFrame | None, incoming: pd.DataFrame) -> pd.DataFrame:
-    if existing is None or existing.empty:
-        combined = incoming.copy()
-    elif incoming.empty:
-        combined = existing.copy()
-    else:
-        combined = pd.concat([existing, incoming], ignore_index=True)
-    if combined.empty:
-        return combined
-    combined = combined.sort_values("time_msc")
-    combined = combined.drop_duplicates(subset=["time_msc"], keep="last")
-    return combined.reset_index(drop=True)
-
-
-def _write_month_ticks(path: Path, df: pd.DataFrame) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    table = pa.Table.from_pandas(df[list(COLUMNAR_TICK_KEYS)], preserve_index=False)
-    pq.write_table(table, path)
 
 
 def _read_month_ticks(path: Path) -> pd.DataFrame:
@@ -388,108 +156,118 @@ def _read_month_ticks(path: Path) -> pd.DataFrame:
     return df
 
 
-def _month_key_from_msc(msc: int) -> str:
-    dt = _time_msc_to_naive_local(msc)
-    return f"{dt.year}-{dt.month:02d}"
+def _dataframe_to_columnar(df: pd.DataFrame) -> dict[str, np.ndarray]:
+    if df.empty:
+        return _empty_ticks_columnar()
+    ordered = df.sort_values("time_msc")
+    result: dict[str, np.ndarray] = {}
+    for col in COLUMNAR_TICK_KEYS:
+        result[col] = ordered[col].to_numpy(dtype=_TICK_DTYPE_MAP[col], copy=False)
+    return result
 
 
-def _iter_month_keys(start: datetime, end: datetime) -> list[str]:
-    start_local = to_brasilia_naive(start)
-    end_local = to_brasilia_naive(end)
-    cursor = datetime(start_local.year, start_local.month, 1)
-    end_month = datetime(end_local.year, end_local.month, 1)
-    keys: list[str] = []
-    while cursor <= end_month:
-        keys.append(f"{cursor.year}-{cursor.month:02d}")
-        if cursor.month == 12:
-            cursor = datetime(cursor.year + 1, 1, 1)
-        else:
-            cursor = datetime(cursor.year, cursor.month + 1, 1)
-    return keys
+def write_ohlcv(symbol: str, timeframe: str, bars: list[OHLCV]) -> dict[str, Any]:
+    """Publish bars into year-partitioned parquet files and record in the catalog."""
+    tf = timeframe.upper()
+    catalog = get_lake_catalog()
 
+    if not bars:
+        with catalog.session_factory() as session:
+            dataset = current_dataset(session, Subject(kind=_KIND_BARS, symbol=symbol, timeframe=tf))
+            if dataset is not None:
+                return _dataset_to_inventory_entry(dataset)
+        return {
+            "symbol": symbol,
+            "kind": _KIND_BARS,
+            "timeframe": tf,
+            "start": None,
+            "end": None,
+            "rows": 0,
+            "bytes": 0,
+            "updated_at": _utc_now_iso(),
+        }
 
-def _summarize_ticks(symbol: str) -> dict[str, Any] | None:
-    series_dir = _ticks_series_dir(symbol)
-    if not series_dir.is_dir():
-        return None
-    month_files = sorted(series_dir.glob("*.parquet"))
-    if not month_files:
-        return None
-
-    total_rows = 0
-    total_bytes = 0
-    min_msc: int | None = None
-    max_msc: int | None = None
-
-    for month_file in month_files:
-        total_bytes += month_file.stat().st_size
-        df = _read_month_ticks(month_file)
-        if df.empty:
-            continue
-        total_rows += len(df)
-        file_min = int(df["time_msc"].min())
-        file_max = int(df["time_msc"].max())
-        min_msc = file_min if min_msc is None else min(min_msc, file_min)
-        max_msc = file_max if max_msc is None else max(max_msc, file_max)
-
-    if total_rows == 0 or min_msc is None or max_msc is None:
-        return None
-
-    return {
-        "symbol": symbol,
-        "kind": _KIND_TICKS,
-        "start": _time_msc_to_naive_local(min_msc).isoformat(),
-        "end": _time_msc_to_naive_local(max_msc).isoformat(),
-        "rows": total_rows,
-        "bytes": total_bytes,
-        "updated_at": _utc_now_iso(),
-    }
+    df = _bars_to_dataframe(bars)
+    dataset = catalog.publish_bars(symbol, tf, df)
+    return _dataset_to_inventory_entry(dataset)
 
 
 def write_ticks(symbol: str, arrays: dict[str, np.ndarray]) -> dict[str, Any]:
-    """Merge columnar ticks into month-partitioned parquet and refresh catalog."""
+    """Publish columnar ticks into month-partitioned parquet and record in the catalog."""
+    catalog = get_lake_catalog()
     if len(arrays.get("time_msc", [])) == 0:
-        entry = _summarize_ticks(symbol)
-        if entry is None:
-            return {
-                "symbol": symbol,
-                "kind": _KIND_TICKS,
-                "start": None,
-                "end": None,
-                "rows": 0,
-                "bytes": 0,
-                "updated_at": _utc_now_iso(),
-            }
-        _upsert_catalog_entry(entry)
-        return entry
+        with catalog.session_factory() as session:
+            dataset = current_dataset(session, Subject(kind=_KIND_TICKS, symbol=symbol, timeframe=""))
+            if dataset is not None:
+                return _dataset_to_inventory_entry(dataset)
+        return {
+            "symbol": symbol,
+            "kind": _KIND_TICKS,
+            "start": None,
+            "end": None,
+            "rows": 0,
+            "bytes": 0,
+            "updated_at": _utc_now_iso(),
+        }
 
-    df = _arrays_to_dataframe(arrays)
-    df["_month"] = df["time_msc"].map(lambda msc: _month_key_from_msc(int(msc)))
-    for month_key, month_df in df.groupby("_month", sort=True):
-        path = _month_parquet_path(symbol, str(month_key))
-        existing = _read_month_ticks(path) if path.is_file() else None
-        merged = _merge_tick_frame(existing, month_df.drop(columns=["_month"]))
-        _write_month_ticks(path, merged)
+    dataset = catalog.publish_ticks(symbol, arrays)
+    return _dataset_to_inventory_entry(dataset)
 
-    entry = _summarize_ticks(symbol)
-    if entry is None:
-        raise RuntimeError(f"Failed to summarize tick series for {symbol}")
-    _upsert_catalog_entry(entry)
-    return entry
+
+def _to_naive_utc(ts: pd.Timestamp) -> pd.Timestamp:
+    """Drop tz info, normalizing to UTC, so bounds match the naive store."""
+    if ts.tz is not None:
+        return ts.tz_convert("UTC").tz_localize(None)
+    return ts
+
+
+def read_ohlcv(symbol: str, timeframe: str, start: datetime, end: datetime) -> list[OHLCV]:
+    """
+    Read OHLCV bars from catalog-addressed parquet files.
+
+    The stored `time` column is tz-naive Brasília wall-clock; callers may pass
+    either tz-naive or tz-aware bounds. Bound comparisons normalize to naive UTC/local
+    so comparisons never raise tz-naive/tz-aware TypeErrors.
+    """
+    tf = timeframe.upper()
+    start_ts = _to_naive_utc(pd.Timestamp(start))
+    end_ts = _to_naive_utc(pd.Timestamp(end))
+    if start_ts > end_ts:
+        return []
+
+    catalog = get_lake_catalog()
+    subject = Subject(kind=_KIND_BARS, symbol=symbol, timeframe=tf)
+    paths = catalog.files_for_range(subject, start, end)
+    if not paths:
+        return []
+
+    frames = [_read_year_parquet(path) for path in paths if path.is_file()]
+    if not frames:
+        return []
+
+    combined = pd.concat(frames, ignore_index=True)
+    combined["time"] = pd.to_datetime(combined["time"])
+    if getattr(combined["time"].dt, "tz", None) is not None:
+        combined["time"] = combined["time"].dt.tz_convert("UTC").dt.tz_localize(None)
+    mask = (combined["time"] >= start_ts) & (combined["time"] <= end_ts)
+    filtered = combined.loc[mask].sort_values("time")
+    return _dataframe_to_bars(filtered)
 
 
 def read_ticks_columnar(symbol: str, start: datetime, end: datetime) -> dict[str, np.ndarray]:
+    """Read ticks from catalog-addressed month parquet files."""
     start_msc = _naive_local_to_time_msc(start)
     end_msc = _naive_local_to_time_msc(end)
     if start_msc > end_msc:
         return _empty_ticks_columnar()
 
-    frames: list[pd.DataFrame] = []
-    for month_key in _iter_month_keys(start, end):
-        path = _month_parquet_path(symbol, month_key)
-        if path.is_file():
-            frames.append(_read_month_ticks(path))
+    catalog = get_lake_catalog()
+    subject = Subject(kind=_KIND_TICKS, symbol=symbol, timeframe="")
+    paths = catalog.files_for_range(subject, start, end)
+    if not paths:
+        return _empty_ticks_columnar()
 
+    frames = [_read_month_ticks(path) for path in paths if path.is_file()]
     if not frames:
         return _empty_ticks_columnar()
 
@@ -499,95 +277,51 @@ def read_ticks_columnar(symbol: str, start: datetime, end: datetime) -> dict[str
     return _dataframe_to_columnar(filtered)
 
 
-def tick_available_range(symbol: str) -> dict[str, Any] | None:
-    catalog = _read_catalog()
-    for row in catalog:
-        if row.get("symbol") == symbol and row.get("kind") == _KIND_TICKS:
-            return row
-    return _summarize_ticks(symbol)
+def delete_ohlcv(symbol: str, timeframe: str) -> None:
+    """Tombstone the specified bars dataset in the catalog (files are retained for grace period)."""
+    catalog = get_lake_catalog()
+    catalog.delete_subject(Subject(kind=_KIND_BARS, symbol=symbol, timeframe=timeframe.upper()))
 
 
 def delete_ticks(symbol: str) -> None:
-    series_dir = _ticks_series_dir(symbol)
-    if series_dir.is_dir():
-        shutil.rmtree(series_dir, ignore_errors=True)
-    _remove_catalog_entry(symbol, _KIND_TICKS)
-
-
-def available_range(symbol: str, timeframe: str) -> OhlcvAvailableRange | None:
-    tf = timeframe.upper()
-    catalog = _read_catalog()
-    for row in catalog:
-        if (
-            row.get("symbol") == symbol
-            and row.get("kind", _KIND_BARS) == _KIND_BARS
-            and str(row.get("timeframe", "")).upper() == tf
-        ):
-            start = pd.Timestamp(row["start"]).to_pydatetime()
-            end = pd.Timestamp(row["end"]).to_pydatetime()
-            return OhlcvAvailableRange(
-                symbol=symbol,
-                timeframe=tf,
-                start=start,
-                end=end,
-                bar_count=int(row.get("rows", 0)),
-            )
-    return _summarize_series_as_range(symbol, tf)
-
-
-def _summarize_series_as_range(symbol: str, timeframe: str) -> OhlcvAvailableRange | None:
-    entry = _summarize_series(symbol, timeframe)
-    if entry is None:
-        return None
-    return OhlcvAvailableRange(
-        symbol=symbol,
-        timeframe=timeframe.upper(),
-        start=pd.Timestamp(entry["start"]).to_pydatetime(),
-        end=pd.Timestamp(entry["end"]).to_pydatetime(),
-        bar_count=int(entry["rows"]),
-    )
+    """Tombstone the specified ticks dataset in the catalog (files are retained for grace period)."""
+    catalog = get_lake_catalog()
+    catalog.delete_subject(Subject(kind=_KIND_TICKS, symbol=symbol, timeframe=""))
 
 
 def list_inventory() -> list[dict[str, Any]]:
-    catalog = _read_catalog()
-    if catalog:
-        return catalog
-
-    entries: list[dict[str, Any]] = []
-    ohlcv_root = market_data_root() / "ohlcv"
-    if ohlcv_root.is_dir():
-        for symbol_dir in sorted(ohlcv_root.iterdir()):
-            if not symbol_dir.is_dir():
-                continue
-            for tf_dir in sorted(symbol_dir.iterdir()):
-                if not tf_dir.is_dir():
-                    continue
-                symbol = symbol_dir.name
-                timeframe = tf_dir.name
-                entry = _summarize_series(symbol, timeframe)
-                if entry is not None:
-                    entries.append(entry)
-
-    ticks_root = market_data_root() / "ticks"
-    if ticks_root.is_dir():
-        for symbol_dir in sorted(ticks_root.iterdir()):
-            if not symbol_dir.is_dir():
-                continue
-            entry = _summarize_ticks(symbol_dir.name)
-            if entry is not None:
-                entries.append(entry)
-
-    if entries:
-        _write_catalog(entries)
-    return entries
+    """Return list of inventory items representing all currently published datasets."""
+    catalog = get_lake_catalog()
+    with catalog.session_factory() as session:
+        datasets = list_current_datasets(session)
+        return [_dataset_to_inventory_entry(d) for d in datasets]
 
 
-def delete_ohlcv(symbol: str, timeframe: str) -> None:
+def available_range(symbol: str, timeframe: str) -> OhlcvAvailableRange | None:
+    """Return available datetime range and bar count for a bars series from the catalog."""
     tf = timeframe.upper()
-    series_dir = _ohlcv_series_dir(symbol, tf)
-    if series_dir.is_dir():
-        shutil.rmtree(series_dir, ignore_errors=True)
-    _remove_catalog_entry(symbol, _KIND_BARS, tf)
+    catalog = get_lake_catalog()
+    with catalog.session_factory() as session:
+        dataset = current_dataset(session, Subject(kind=_KIND_BARS, symbol=symbol, timeframe=tf))
+        if dataset is None:
+            return None
+        return OhlcvAvailableRange(
+            symbol=symbol,
+            timeframe=tf,
+            start=_to_brasilia_naive(dataset.time_start),
+            end=_to_brasilia_naive(dataset.time_end),
+            bar_count=int(dataset.row_count),
+        )
+
+
+def tick_available_range(symbol: str) -> dict[str, Any] | None:
+    """Return available range dictionary for a ticks series from the catalog."""
+    catalog = get_lake_catalog()
+    with catalog.session_factory() as session:
+        dataset = current_dataset(session, Subject(kind=_KIND_TICKS, symbol=symbol, timeframe=""))
+        if dataset is None:
+            return None
+        return _dataset_to_inventory_entry(dataset)
 
 
 def stored_symbols() -> list[dict[str, Any]]:
