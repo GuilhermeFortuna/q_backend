@@ -260,9 +260,10 @@ def record_job_terminal(
                 recorded_at=event_ts,
             )
             .on_conflict_do_nothing()
+            .returning(JobTerminalMarker.kind)
         )
-        res = session.execute(stmt)
-        if res.rowcount == 0:
+        res = session.execute(stmt).first()
+        if res is None:
             return False
     elif dialect_name == "sqlite":
         stmt = (
@@ -275,9 +276,10 @@ def record_job_terminal(
                 recorded_at=event_ts,
             )
             .on_conflict_do_nothing()
+            .returning(JobTerminalMarker.kind)
         )
-        res = session.execute(stmt)
-        if res.rowcount == 0:
+        res = session.execute(stmt).first()
+        if res is None:
             return False
     else:
         existing = session.scalar(

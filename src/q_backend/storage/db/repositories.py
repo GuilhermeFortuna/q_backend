@@ -29,6 +29,11 @@ from q_backend.storage.db.models import (
     WalkForwardRun,
     WalkForwardWindow,
 )
+from q_backend.streaming.jobs import (
+    STATUS_TO_STREAM,
+    clear_job_terminal_marker,
+    record_job_terminal,
+)
 
 _ACTIVE_RUN_STATUSES = (RunStatus.PENDING.value, RunStatus.RUNNING.value)
 
@@ -247,6 +252,21 @@ def update_backtest_run(
     if is_saved is not None:
         backtest_run.is_saved = is_saved
     session.flush()
+
+    if status is not None:
+        stream_status = STATUS_TO_STREAM.get(status.lower())
+        if stream_status in ("completed", "failed", "cancelled"):
+            record_job_terminal(
+                session,
+                kind="backtest",
+                job_id=str(run_id),
+                raw_status=status,
+                error=error_message or backtest_run.error_message,
+                finished_at=finished_at or backtest_run.finished_at,
+            )
+        elif stream_status == "running":
+            clear_job_terminal_marker(session, "backtest", str(run_id))
+
     return backtest_run
 
 
@@ -278,6 +298,24 @@ def update_optimization_study(
     if config is not None:
         study.config = config
     session.flush()
+
+    if status is not None:
+        stream_status = STATUS_TO_STREAM.get(status.lower())
+        job_id = study_id.hex if hasattr(study_id, "hex") else str(study_id).replace("-", "")
+        if stream_status in ("completed", "failed", "cancelled"):
+            err = None
+            if config and isinstance(config, dict) and "persisted_snapshot" in config:
+                err = config["persisted_snapshot"].get("error")
+            record_job_terminal(
+                session,
+                kind="optimization",
+                job_id=job_id,
+                raw_status=status,
+                error=err,
+            )
+        elif stream_status == "running":
+            clear_job_terminal_marker(session, "optimization", job_id)
+
     return study
 
 
@@ -478,6 +516,21 @@ def update_walkforward_run(
     if started_at is not None:
         run.started_at = started_at
     session.flush()
+
+    if status is not None:
+        stream_status = STATUS_TO_STREAM.get(status.lower())
+        if stream_status in ("completed", "failed", "cancelled"):
+            record_job_terminal(
+                session,
+                kind="walkforward",
+                job_id=str(run_id),
+                raw_status=status,
+                error=error_message or run.error_message,
+                finished_at=finished_at or run.finished_at,
+            )
+        elif stream_status == "running":
+            clear_job_terminal_marker(session, "walkforward", str(run_id))
+
     return run
 
 
@@ -600,6 +653,21 @@ def update_strategy_search_run(
     if started_at is not None:
         run.started_at = started_at
     session.flush()
+
+    if status is not None:
+        stream_status = STATUS_TO_STREAM.get(status.lower())
+        if stream_status in ("completed", "failed", "cancelled"):
+            record_job_terminal(
+                session,
+                kind="strategy_search",
+                job_id=str(run_id),
+                raw_status=status,
+                error=error_message or run.error_message,
+                finished_at=finished_at or run.finished_at,
+            )
+        elif stream_status == "running":
+            clear_job_terminal_marker(session, "strategy_search", str(run_id))
+
     return run
 
 
