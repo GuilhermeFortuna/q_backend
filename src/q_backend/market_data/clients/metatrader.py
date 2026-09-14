@@ -1,10 +1,18 @@
 import logging
 import threading
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any, Union, Callable, TypeVar
 
 import numpy as np
+
+from q_backend.market_data.clients.shared import (
+    COPY_TICKS_ALL,
+    COPY_TICKS_TRADE,
+    OhlcvAvailableRange,
+    _RECENT_TICKS_WINDOWS,
+    _empty_ticks_columnar,
+    _time_msc_to_naive_local,
+)
 
 try:
     import MetaTrader5 as mt5
@@ -29,15 +37,6 @@ from q_backend.market_data.timezone import (
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
-
-
-@dataclass(frozen=True)
-class OhlcvAvailableRange:
-    symbol: str
-    timeframe: str
-    start: datetime
-    end: datetime
-    bar_count: int
 
 
 # Match the market OHLCV endpoint max; large single requests trigger MT5 "Invalid params".
@@ -67,24 +66,6 @@ def _to_naive_local(dt: datetime) -> datetime:
 
 def _bar_open_time(rates, index: int) -> datetime:
     return unix_seconds_to_brasilia_naive(int(rates[index]["time"]))
-
-
-def _empty_ticks_columnar() -> dict[str, np.ndarray]:
-    return {
-        "time_msc": np.array([], dtype=np.int64),
-        "bid": np.array([], dtype=np.float64),
-        "ask": np.array([], dtype=np.float64),
-        "last": np.array([], dtype=np.float64),
-        "volume": np.array([], dtype=np.float64),
-        "flags": np.array([], dtype=np.int32),
-    }
-
-
-def _time_msc_to_naive_local(msc: int) -> datetime:
-    sec = msc // 1000
-    ms_remainder = msc % 1000
-    base = unix_seconds_to_brasilia_naive(sec)
-    return base + timedelta(milliseconds=ms_remainder)
 
 
 def _naive_local_to_time_msc(dt: datetime) -> int:
@@ -152,14 +133,6 @@ def _map_tick_rows(ticks) -> List[Tick]:
 # Escalating look-back windows for fetching the most recent ticks. We widen the
 # range until we have enough ticks (covers off-hours / illiquid symbols) without
 # scanning unbounded history.
-_RECENT_TICKS_WINDOWS = (
-    timedelta(minutes=10),
-    timedelta(hours=1),
-    timedelta(hours=6),
-    timedelta(days=1),
-)
-
-
 def _rates_to_ohlcv_list(rates) -> List[OHLCV]:
     """Convert MT5 structured numpy array to OHLCV models without row iteration."""
     if rates is None or len(rates) == 0:
@@ -230,29 +203,15 @@ def _resolve_mt5_timeframe(timeframe: str) -> int:
     return _mt5_timeframe(name)
 
 
-def _default_copy_ticks_all() -> int:
-    if mt5 is None:
-        return 1
-    return int(mt5.COPY_TICKS_ALL)
-
-
-def _default_copy_ticks_trade() -> int:
-    if mt5 is None:
-        return 2
-    return int(mt5.COPY_TICKS_TRADE)
-
-
-COPY_TICKS_ALL = _default_copy_ticks_all()
-COPY_TICKS_TRADE = _default_copy_ticks_trade()
 TICK_FLAG_BUY = int(getattr(mt5, "TICK_FLAG_BUY", 32)) if mt5 is not None else 32
 TICK_FLAG_SELL = int(getattr(mt5, "TICK_FLAG_SELL", 64)) if mt5 is not None else 64
 
 
 def resolve_copy_ticks_flags(tick_flags: str | None) -> int:
     if tick_flags is None or tick_flags.lower() == "all":
-        return _default_copy_ticks_all()
+        return COPY_TICKS_ALL
     if tick_flags.lower() == "trade":
-        return _default_copy_ticks_trade()
+        return COPY_TICKS_TRADE
     raise ValueError(f"Invalid tick_flags '{tick_flags}'. Expected 'all' or 'trade'.")
 
 

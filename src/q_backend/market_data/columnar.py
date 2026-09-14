@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from q_backend.market_data.clients.metatrader import _time_msc_to_naive_local
+from q_backend.market_data.clients.shared import _time_msc_to_naive_local
 from q_backend.market_data.models import Tick
 
 

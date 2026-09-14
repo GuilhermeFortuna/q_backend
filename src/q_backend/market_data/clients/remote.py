@@ -38,7 +38,7 @@ from typing import Any, Optional
 import httpx
 import numpy as np
 
-from q_backend.market_data.clients.metatrader import (
+from q_backend.market_data.clients.shared import (
     COPY_TICKS_ALL,
     COPY_TICKS_TRADE,
     OhlcvAvailableRange,
