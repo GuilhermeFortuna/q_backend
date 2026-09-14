@@ -18,7 +18,13 @@ import httpx
 import yaml
 
 
-def _load_base_config(config_path: Path, trials: int) -> dict[str, Any]:
+def _load_base_config(
+    config_path: Path,
+    trials: int,
+    symbol: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
+) -> dict[str, Any]:
     if config_path.exists():
         with open(config_path, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f)
@@ -58,6 +64,13 @@ def _load_base_config(config_path: Path, trials: int) -> dict[str, Any]:
     if "storage" not in cfg["study"] or cfg["study"]["storage"].get("type") != "memory":
         cfg["study"]["storage"] = {"type": "memory"}
 
+    if symbol:
+        cfg.setdefault("backtest", {})["symbol"] = symbol
+    if start:
+        cfg.setdefault("backtest", {})["start"] = start
+    if end:
+        cfg.setdefault("backtest", {})["end"] = end
+
     return cfg
 
 
@@ -67,12 +80,17 @@ def run_benchmark(
     trials: int,
     poll_interval: float,
     config_path: Path,
+    symbol: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
 ) -> int:
     base_url = base_url.rstrip("/")
     print(f"=== Job Overhead Benchmark ===")
     print(f"Target: {base_url}/api/v1/optimize")
     print(f"Runs: {runs}, Trials per run: {trials}")
     print(f"Poll interval: {poll_interval}s")
+    if symbol:
+        print(f"Symbol: {symbol}")
     print()
 
     durations: list[float] = []
@@ -80,7 +98,7 @@ def run_benchmark(
     client = httpx.Client(base_url=base_url, timeout=30.0)
 
     for run_idx in range(1, runs + 1):
-        config = _load_base_config(config_path, trials)
+        config = _load_base_config(config_path, trials, symbol=symbol, start=start, end=end)
         config["study"]["name"] = f"bench_overhead_run_{run_idx}_{int(time.time())}"
 
         t0 = time.perf_counter()
@@ -144,6 +162,9 @@ def main() -> None:
         default="configs/optimization/examples/ma_crossover_sharpe.yaml",
         help="Path to optimization configuration YAML template",
     )
+    parser.add_argument("--symbol", type=str, default=None, help="Override backtest symbol (e.g. PETR4)")
+    parser.add_argument("--start", type=str, default=None, help="Override backtest start ISO string")
+    parser.add_argument("--end", type=str, default=None, help="Override backtest end ISO string")
 
     args = parser.parse_args()
     config_file = Path(args.config_path)
@@ -155,6 +176,9 @@ def main() -> None:
             trials=args.trials,
             poll_interval=args.poll_interval,
             config_path=config_file,
+            symbol=args.symbol,
+            start=args.start,
+            end=args.end,
         )
     )
 
