@@ -34,6 +34,22 @@ async def _publish_progress(client, seq: int, topic: str = "jobs.progress") -> s
     return _id(await client.xadd(stream_key(topic), {b"h": json.dumps(header).encode(), b"p": b"{}"}))
 
 
+def _fields(topic: str, seq: int, *, epoch: str = "epoch-1", key: dict[str, str] | None = None) -> dict[bytes, bytes]:
+    header = {
+        "topic": topic,
+        "schema_major": 1,
+        "seq": seq,
+        "epoch": epoch,
+        "producer_id": "test",
+        "origin_ts": "2026-09-14T00:00:00Z",
+        "payload_kind": "control",
+        "payload_schema": "schema/stream/envelope.schema.json",
+    }
+    if key:
+        header["key"] = key
+    return {b"h": json.dumps(header).encode(), b"p": b"{}"}
+
+
 def _id(value: bytes) -> str:
     return value.decode()
 
@@ -62,6 +78,49 @@ def test_reader_places_post_subscription_entry_in_its_topic_queue():
             await asyncio.gather(task, return_exceptions=True)
             await client.flushdb()
             await client.aclose()
+
+    asyncio.run(exercise())
+
+
+def test_durable_overflow_suspends_the_topic_at_the_first_unqueued_sequence(monkeypatch):
+    """Continuing a durable topic after overflow would silently omit its gap."""
+
+    async def exercise():
+        client = redis.asyncio.Redis.from_url(TEST_REDIS_URL, decode_responses=False)
+        session = StreamSession(_Socket(), client)
+        monkeypatch.setattr("q_backend.streaming.ws.session.QUEUE_CAPACITY", {"jobs.terminal": 2})
+        await session._subscribe(["jobs.terminal"], {})
+        for seq in (1, 2, 3):
+            await session._offer_entry("jobs.terminal", f"1-{seq}".encode(), _fields("jobs.terminal", seq))
+        assert await session._controls.get() == {
+            "topics": {"jobs.terminal": {"cursor": "0-0", "epoch": "", "last_seq": 0}}
+        }
+        assert (await session._controls.get())["topic"] == "jobs.terminal"
+        assert await session._controls.get() == {"topic": "jobs.terminal", "from_seq": 3}
+        assert "jobs.terminal" in session.suspended
+        assert len(session.queues["jobs.terminal"]) == 0
+        await client.aclose()
+
+    asyncio.run(exercise())
+
+
+def test_epoch_change_notice_is_queued_before_the_new_epoch_entry():
+    """Delivering an entry first makes its sequence uninterpretable to the client."""
+
+    async def exercise():
+        client = redis.asyncio.Redis.from_url(TEST_REDIS_URL, decode_responses=False)
+        session = StreamSession(_Socket(), client)
+        await session._subscribe(["jobs.terminal"], {})
+        await session._controls.get()
+        session.epochs["jobs.terminal"] = "epoch-1"
+        await session._offer_entry("jobs.terminal", b"2-0", _fields("jobs.terminal", 1, epoch="epoch-2"))
+        assert await session._controls.get() == {
+            "topic": "jobs.terminal",
+            "new_epoch": "epoch-2",
+            "previous_epoch": "epoch-1",
+        }
+        assert session.queues["jobs.terminal"].pop().seq == 1
+        await client.aclose()
 
     asyncio.run(exercise())
 
