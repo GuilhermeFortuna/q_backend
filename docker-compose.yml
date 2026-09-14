@@ -3,7 +3,7 @@
 # Default (infra only — use with native backend/worker for MetaTrader5):
 #   docker compose up -d
 #
-# Full stack in containers (no live MT5):
+# Full stack in containers (no live MT5) — also used by workspace `./research`:
 #   docker compose --profile containerized up --build
 #
 # Recommended Windows workflow from monorepo root:
@@ -50,15 +50,27 @@ services:
       Q_DATABASE_URL: postgresql+psycopg://q:q@postgres:5432/q
       Q_REDIS_URL: redis://redis:6379/0
       Q_DATA_LAKE_ROOT: /data/lake
+      Q_MARKET_DATA_ROOT: /data/market
       Q_TICK_CACHE_DIR: /data/tick_cache
-      Q_WORKER_PROCESSES: ${Q_WORKER_PROCESSES:-28}
+      Q_RUNTIME_CONFIG_PATH: /data/runtime_config.json
+      Q_WORKER_PROCESSES: ${Q_WORKER_PROCESSES:-14}
     volumes:
-      - backend_data:/data
+      - ./data:/data
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/system/health')\"",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
     restart: unless-stopped
 
   worker:
@@ -74,19 +86,20 @@ services:
       Q_DATABASE_URL: postgresql+psycopg://q:q@postgres:5432/q
       Q_REDIS_URL: redis://redis:6379/0
       Q_DATA_LAKE_ROOT: /data/lake
+      Q_MARKET_DATA_ROOT: /data/market
       Q_TICK_CACHE_DIR: /data/tick_cache
-      Q_WORKER_PROCESSES: ${Q_WORKER_PROCESSES:-28}
+      Q_RUNTIME_CONFIG_PATH: /data/runtime_config.json
+      Q_WORKER_PROCESSES: ${Q_WORKER_PROCESSES:-14}
     volumes:
-      - backend_data:/data
+      - ./data:/data
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       backend:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
   postgres_data:
-  backend_data:

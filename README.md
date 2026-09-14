@@ -572,6 +572,8 @@ If Podman or user units are not used, start Postgres and Redis via Docker Compos
 docker compose up -d
 ```
 For a fully containerized API + worker stack (no live MT5), use `docker compose --profile containerized up --build`.
+That profile bind-mounts `./data` into the containers (`Q_MARKET_DATA_ROOT=/data/market`, lake, tick cache).
+From the workspace root, `./research` starts this profile, launches the Tauri Research UI, and tears everything down on Ctrl+C.
 Apply database migrations:
 ```bash
 uv run alembic upgrade head

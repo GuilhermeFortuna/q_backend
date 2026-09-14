@@ -15,6 +15,7 @@ ENV UV_LINK_MODE=copy \
 
 COPY pyproject.toml uv.lock ./
 COPY src ./src
+COPY contracts ./contracts
 COPY alembic ./alembic
 COPY alembic.ini ./
 COPY docker/metatrader5-stub ./docker/metatrader5-stub
