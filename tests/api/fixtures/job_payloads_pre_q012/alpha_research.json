@@ -1,0 +1,67 @@
+{
+  "status": {
+    "checkpoint": {
+      "coverage": {
+        "bar_count": 0,
+        "requested_end": "<NORMALIZED_TIMESTAMP>",
+        "requested_start": "<NORMALIZED_TIMESTAMP>",
+        "symbol": "CCM$",
+        "timeframe": "H1"
+      },
+      "job_id": "<NORMALIZED_ID>",
+      "preflight_complete": true,
+      "request": {
+        "catalog_version": null,
+        "compute_budget": null,
+        "end": "<NORMALIZED_TIMESTAMP>",
+        "profile_id": "ccm_h1_swing",
+        "profile_version": null,
+        "start": "<NORMALIZED_TIMESTAMP>",
+        "target_name": "fwd_return"
+      }
+    },
+    "detail": "No local OHLCV bars found for the requested date range.",
+    "error": null,
+    "job_id": "<NORMALIZED_ID>",
+    "progress": 1.0,
+    "result": {
+      "acceptance": null,
+      "champion": null,
+      "coverage": {
+        "bar_count": 0,
+        "requested_end": "<NORMALIZED_TIMESTAMP>",
+        "requested_start": "<NORMALIZED_TIMESTAMP>",
+        "symbol": "CCM$",
+        "timeframe": "H1"
+      },
+      "feature_evidence_summary": [],
+      "hypothesis_manifest": [],
+      "inconclusive_reasons": [
+        "No local OHLCV bars found for the requested date range."
+      ],
+      "profile_id": "ccm_h1_swing",
+      "provenance": {
+        "backend_version": "<NORMALIZED_ID>3b221f41",
+        "catalog_version": 1,
+        "profile_id": "ccm_h1_swing"
+      },
+      "split_manifest": null,
+      "stages": [
+        {
+          "detail": "No local OHLCV bars found for the requested date range.",
+          "name": "preflight",
+          "status": "failed"
+        }
+      ],
+      "verdict": "inconclusive"
+    },
+    "stages": [
+      {
+        "detail": "No local OHLCV bars found for the requested date range.",
+        "name": "preflight",
+        "status": "failed"
+      }
+    ],
+    "status": "completed"
+  }
+}

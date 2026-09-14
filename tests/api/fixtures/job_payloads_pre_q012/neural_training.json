@@ -1,0 +1,15 @@
+{
+  "status": {
+    "error": null,
+    "gate": null,
+    "gate_error": null,
+    "job_id": "<NORMALIZED_ID>",
+    "model_hash": "<NORMALIZED_HASH>",
+    "progress": "done",
+    "status": "completed",
+    "val_metrics": {
+      "explained_variance": "<NAN>",
+      "reconstruction_r2": 1.0
+    }
+  }
+}

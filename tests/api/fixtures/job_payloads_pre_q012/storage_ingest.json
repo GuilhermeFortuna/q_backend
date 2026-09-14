@@ -1,0 +1,19 @@
+{
+  "status": {
+    "detail": "Ingestion completed for PETR4",
+    "error": null,
+    "job_id": "<NORMALIZED_ID>",
+    "progress": 1.0,
+    "results": [
+      {
+        "end": "<NORMALIZED_TIMESTAMP>",
+        "error": null,
+        "rows": 1,
+        "start": "<NORMALIZED_TIMESTAMP>",
+        "status": "completed",
+        "timeframe": "D1"
+      }
+    ],
+    "status": "completed"
+  }
+}

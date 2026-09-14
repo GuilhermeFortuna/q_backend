@@ -1,0 +1,239 @@
+{
+  "result": {
+    "bars": [
+      {
+        "close": 100.0,
+        "high": 101.0,
+        "low": 99.0,
+        "open": 100.0,
+        "timestamp": "<NORMALIZED_TIMESTAMP>",
+        "volume": 1000
+      },
+      {
+        "close": 104.844255,
+        "high": 105.844255,
+        "low": 103.844255,
+        "open": 104.844255,
+        "timestamp": "<NORMALIZED_TIMESTAMP>",
+        "volume": 1000
+      },
+      {
+        "close": 108.51471,
+        "high": 109.51471,
+        "low": 107.51471,
+        "open": 108.51471,
+        "timestamp": "<NORMALIZED_TIMESTAMP>",
+        "volume": 1000
+      },
+      {
+        "close": 110.12495,
+        "high": 111.12495,
+        "low": 109.12495,
+        "open": 110.12495,
+        "timestamp": "<NORMALIZED_TIMESTAMP>",
+        "volume": 1000
+      },
+      {
+        "close": 109.292974,
+        "high": 110.292974,
+        "low": 108.292974,
+        "open": 109.292974,
+        "timestamp": "<NORMALIZED_TIMESTAMP>",
+        "volume": 1000
+      },
+      {
+        "close": 106.234721,
+        "high": 107.234721,
+        "low": 105.234721,
+        "open": 106.234721,
+        "timestamp": "<NORMALIZED_TIMESTAMP>",
+        "volume": 1000
+      },
+      {
+        "close": 101.7112,
+        "high": 102.7112,
+        "low": 100.7112,
+        "open": 101.7112,
+        "timestamp": "<NORMALIZED_TIMESTAMP>",
+        "volume": 1000
+      },
+      {
+        "close": 96.842168,
+        "high": 97.842168,
+        "low": 95.842168,
+        "open": 96.842168,
+        "timestamp": "<NORMALIZED_TIMESTAMP>",
+        "volume": 1000
+      },
+      {
+        "close": 92.831975,
+        "high": 93.831975,
+        "low": 91.831975,
+        "open": 92.831975,
+        "timestamp": "<NORMALIZED_TIMESTAMP>",
+        "volume": 1000
+      },
+      {
+        "close": 90.674699,
+        "high": 91.674699,
+        "low": 89.674699,
+        "open": 90.674699,
+        "timestamp": "<NORMALIZED_TIMESTAMP>",
+        "volume": 1000
+      },
+      {
+        "close": 90.910757,
+        "high": 91.910757,
+        "low": 89.910757,
+        "open": 90.910757,
+        "timestamp": "<NORMALIZED_TIMESTAMP>",
+        "volume": 1000
+      },
+      {
+        "close": 93.494597,
+        "high": 94.494597,
+        "low": 92.494597,
+        "open": 93.494597,
+        "timestamp": "<NORMALIZED_TIMESTAMP>",
+        "volume": 1000
+      },
+      {
+        "close": 97.805845,
+        "high": 98.805845,
+        "low": 96.805845,
+        "open": 97.805845,
+        "timestamp": "<NORMALIZED_TIMESTAMP>",
+        "volume": 1000
+      },
+      {
+        "close": 102.8012,
+        "high": 103.8012,
+        "low": 101.8012,
+        "open": 102.8012,
+        "timestamp": "<NORMALIZED_TIMESTAMP>",
+        "volume": 1000
+      },
+      {
+        "close": 107.269866,
+        "high": 108.269866,
+        "low": 106.269866,
+        "open": 107.269866,
+        "timestamp": "<NORMALIZED_TIMESTAMP>",
+        "volume": 1000
+      }
+    ],
+    "indicators": [
+      {
+        "color": "#c9a227",
+        "key": "e0__ma_short",
+        "label": "e0 \u00b7 SMA Short (3)",
+        "pane": "price",
+        "values": [
+          null,
+          null,
+          104.452988,
+          107.827972,
+          109.310878,
+          108.550882,
+          105.746299,
+          101.59603,
+          97.128448,
+          93.449614,
+          91.472477,
+          91.693351,
+          94.0704,
+          98.033881,
+          102.625637
+        ]
+      },
+      {
+        "color": "#6eb5ff",
+        "key": "e0__ma_long",
+        "label": "e0 \u00b7 SMA Long (6)",
+        "pane": "price",
+        "values": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          106.501935,
+          106.787135,
+          105.453454,
+          102.839665,
+          99.597956,
+          96.534253,
+          94.410899,
+          93.760007,
+          94.753179,
+          97.159494
+        ]
+      },
+      {
+        "color": "#c9a227",
+        "key": "e0__delta",
+        "label": "e0 \u00b7 Delta",
+        "pane": "oscillator",
+        "values": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          2.048947,
+          -1.040837,
+          -3.857424,
+          -5.711217,
+          -6.148342,
+          -5.061776,
+          -2.717548,
+          0.310393,
+          3.280702,
+          5.466143
+        ]
+      }
+    ],
+    "metrics": {
+      "avg_loss": -1.191806,
+      "avg_win": 0.0,
+      "expectancy": -1.191806,
+      "losing_trades": 1,
+      "max_consecutive_losses": 1,
+      "max_consecutive_wins": 0,
+      "max_drawdown_pct": 1.2e-05,
+      "max_drawdown_value": 1.191806,
+      "profit_factor": 0.0,
+      "recovery_factor": -1.0,
+      "total_commission": 0.0,
+      "total_pnl": -1.191806,
+      "total_trades": 1,
+      "win_loss_ratio": 0.0,
+      "win_rate": 0.0,
+      "winning_trades": 0
+    },
+    "run_id": "<NORMALIZED_ID>",
+    "trades": [
+      {
+        "action": "SELL",
+        "commission": 0.0,
+        "entry_price": 96.842168,
+        "entry_time": "<NORMALIZED_TIMESTAMP>",
+        "exit_price": 102.8012,
+        "exit_reason": "SIGNAL",
+        "exit_time": "<NORMALIZED_TIMESTAMP>",
+        "id": "<NORMALIZED_ID>",
+        "order_id": "<NORMALIZED_ID>",
+        "pnl": -1.191806,
+        "point_value": 0.2,
+        "quantity": 1.0,
+        "status": "CLOSED",
+        "symbol": "WIN$"
+      }
+    ]
+  },
+  "status": {
+    "error": null,
+    "run_id": "<NORMALIZED_ID>",
+    "status": "completed"
+  }
+}

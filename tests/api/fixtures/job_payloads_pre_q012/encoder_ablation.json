@@ -1,0 +1,28 @@
+{
+  "status": {
+    "error": null,
+    "job_id": "<NORMALIZED_ID>",
+    "progress": "1/1",
+    "result": {
+      "best_label": null,
+      "horizon": 3,
+      "rows": [
+        {
+          "baseline_ic": null,
+          "best_latent_ic": null,
+          "encoder_kind": "pca",
+          "gate_error": "Need at least 100 OOS bars after train_end; found 27.",
+          "ic_delta_vs_baseline": null,
+          "label": "pca",
+          "model_hash": "<NORMALIZED_HASH>",
+          "passed": null,
+          "recon_r2": 1.0
+        }
+      ],
+      "symbol": "SYNABL",
+      "target": "fwd_return",
+      "timeframe": "H1"
+    },
+    "status": "completed"
+  }
+}

@@ -1,0 +1,212 @@
+{
+  "result": {
+    "best": null,
+    "candidates": [
+      {
+        "best_params": null,
+        "candidate_id": "MACrossover",
+        "completed_windows": 0,
+        "efficiency": null,
+        "error": null,
+        "gate_flags": [],
+        "hypothesis_id": null,
+        "hypothesis_rationale": null,
+        "hypothesis_required_features": null,
+        "hypothesis_template_hash": null,
+        "is_metrics_summary": null,
+        "objective_value": null,
+        "oos_metrics": null,
+        "passed_gates": false,
+        "profile_version": null,
+        "rank": null,
+        "robustness_score": null,
+        "status": "no_result",
+        "strategy": "MACrossover",
+        "window_count": 6
+      }
+    ],
+    "lake_paths": {
+      "candidates": {
+        "MACrossover": {
+          "oos_equity": "strategy_search/<NORMALIZED_ID>/candidates/MACrossover/oos_equity.parquet"
+        }
+      },
+      "leaderboard": "strategy_search/<NORMALIZED_ID>/leaderboard.parquet"
+    },
+    "objective_mode": "maximize_net_profit",
+    "run_id": "<NORMALIZED_ID>",
+    "search_config": {
+      "backtest": {
+        "day_trade": false,
+        "day_trade_close_time": "17:00",
+        "day_trade_end_time": "16:00",
+        "day_trade_start_time": "09:00",
+        "display_timeframe": "M1",
+        "end": "<NORMALIZED_TIMESTAMP>",
+        "engine": "candle",
+        "entry_manager": {
+          "kind": "or",
+          "params": {}
+        },
+        "exit_params": {},
+        "initial_capital": 10000.0,
+        "parallel_mode": "SEQUENTIAL",
+        "point_value": 1.0,
+        "start": "<NORMALIZED_TIMESTAMP>",
+        "strategy": "MACrossover",
+        "symbol": "WIN$",
+        "timeframe": "D1"
+      },
+      "exit_presets": {
+        "enabled": false,
+        "include_baseline": true,
+        "pin_non_preset_exits_off": true
+      },
+      "exit_quality_scoring": {
+        "enabled": false
+      },
+      "exogenous_series": [],
+      "gates": {
+        "efficiency_high": 1.5,
+        "efficiency_low": 0.3,
+        "min_completed_windows": 1,
+        "min_oos_trades": 1
+      },
+      "include_risk_search": false,
+      "latents_enabled": true,
+      "objective": {
+        "mode": "maximize_net_profit"
+      },
+      "strategies": [
+        "MACrossover"
+      ],
+      "study": {
+        "continue_on_trial_error": false,
+        "n_trials": 2,
+        "name": "Discovery WIN$ sweep",
+        "pruner": "none",
+        "seed": 42,
+        "storage": {
+          "type": "memory"
+        }
+      },
+      "walkforward": {
+        "min_windows": 2,
+        "mode": "rolling",
+        "test_days": 15,
+        "train_days": 30
+      }
+    },
+    "status": "completed",
+    "summary": {
+      "best_candidate_id": null,
+      "best_efficiency": null,
+      "best_objective_value": null,
+      "best_strategy": null,
+      "candidate_count": 1,
+      "failed_candidate_count": 1,
+      "failure_reasons": {
+        "no out-of-sample metrics": 1
+      },
+      "objective_mode": "maximize_net_profit",
+      "passed_gates_count": 0,
+      "ranked_count": 0
+    }
+  },
+  "status": {
+    "backtest_config": {
+      "day_trade": false,
+      "day_trade_close_time": "17:00",
+      "day_trade_end_time": "16:00",
+      "day_trade_start_time": "09:00",
+      "display_timeframe": "M1",
+      "end": "<NORMALIZED_TIMESTAMP>",
+      "engine": "candle",
+      "entry_manager": {
+        "kind": "or",
+        "params": {}
+      },
+      "exit_params": {},
+      "initial_capital": 10000.0,
+      "parallel_mode": "SEQUENTIAL",
+      "point_value": 1.0,
+      "start": "<NORMALIZED_TIMESTAMP>",
+      "strategy": "MACrossover",
+      "symbol": "WIN$",
+      "timeframe": "D1"
+    },
+    "candidate_id": "MACrossover",
+    "current_candidate": 1,
+    "error": null,
+    "logs": [],
+    "phase": null,
+    "run_id": "<NORMALIZED_ID>",
+    "search_config": {
+      "backtest": {
+        "day_trade": false,
+        "day_trade_close_time": "17:00",
+        "day_trade_end_time": "16:00",
+        "day_trade_start_time": "09:00",
+        "display_timeframe": "M1",
+        "end": "<NORMALIZED_TIMESTAMP>",
+        "engine": "candle",
+        "entry_manager": {
+          "kind": "or",
+          "params": {}
+        },
+        "exit_params": {},
+        "initial_capital": 10000.0,
+        "parallel_mode": "SEQUENTIAL",
+        "point_value": 1.0,
+        "start": "<NORMALIZED_TIMESTAMP>",
+        "strategy": "MACrossover",
+        "symbol": "WIN$",
+        "timeframe": "D1"
+      },
+      "exit_presets": {
+        "enabled": false,
+        "include_baseline": true,
+        "pin_non_preset_exits_off": true
+      },
+      "exit_quality_scoring": {
+        "enabled": false
+      },
+      "exogenous_series": [],
+      "gates": {
+        "efficiency_high": 1.5,
+        "efficiency_low": 0.3,
+        "min_completed_windows": 1,
+        "min_oos_trades": 1
+      },
+      "include_risk_search": false,
+      "latents_enabled": true,
+      "objective": {
+        "mode": "maximize_net_profit"
+      },
+      "strategies": [
+        "MACrossover"
+      ],
+      "study": {
+        "continue_on_trial_error": false,
+        "n_trials": 2,
+        "name": "Discovery WIN$ sweep",
+        "pruner": "none",
+        "seed": 42,
+        "storage": {
+          "type": "memory"
+        }
+      },
+      "walkforward": {
+        "min_windows": 2,
+        "mode": "rolling",
+        "test_days": 15,
+        "train_days": 30
+      }
+    },
+    "status": "completed",
+    "strategy": "MACrossover",
+    "total_candidates": 1,
+    "total_windows": null,
+    "window_index": null
+  }
+}

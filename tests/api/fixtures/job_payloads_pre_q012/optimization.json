@@ -1,0 +1,422 @@
+{
+  "result": {
+    "best_params": {
+      "risk__quantity": 1.731994,
+      "risk__type": "fixed_quantity",
+      "strategy__long_period": 20,
+      "strategy__short_period": 3
+    },
+    "best_trial": {
+      "number": 0,
+      "params": {
+        "risk__quantity": 1.731994,
+        "risk__type": "fixed_quantity",
+        "strategy__long_period": 20,
+        "strategy__short_period": 3
+      },
+      "state": "COMPLETE",
+      "user_attrs": {
+        "manager_params": {},
+        "metrics": {
+          "avg_loss": -17.134802,
+          "avg_win": 0.0,
+          "expectancy": -17.134802,
+          "losing_trades": 1,
+          "max_consecutive_losses": 1,
+          "max_consecutive_wins": 0,
+          "max_drawdown_pct": 0.000171,
+          "max_drawdown_value": 17.134802,
+          "profit_factor": 0.0,
+          "recovery_factor": -1.0,
+          "return_drawdown_ratio": -1.0,
+          "sharpe_ratio": -2.851146,
+          "total_commission": 0.0,
+          "total_pnl": -17.134802,
+          "total_return_pct": -0.000171,
+          "total_trades": 1,
+          "trade_sharpe_ratio": 0.0,
+          "win_loss_ratio": 0.0,
+          "win_rate": 0.0,
+          "winning_trades": 0
+        },
+        "risk_params": {
+          "quantity": 1.731994,
+          "type": "fixed_quantity"
+        },
+        "status": "complete",
+        "strategy_params": {
+          "long_period": 20,
+          "short_period": 3
+        },
+        "total_trades": 1
+      },
+      "values": [
+        -17.134802
+      ]
+    },
+    "failures": [],
+    "is_multi_objective": false,
+    "objective_mode": "maximize_net_profit",
+    "pareto_trials": [],
+    "study_id": "<NORMALIZED_ID>",
+    "trials": [
+      {
+        "number": 0,
+        "params": {
+          "risk__quantity": 1.731994,
+          "risk__type": "fixed_quantity",
+          "strategy__long_period": 20,
+          "strategy__short_period": 3
+        },
+        "state": "COMPLETE",
+        "user_attrs": {
+          "manager_params": {},
+          "metrics": {
+            "avg_loss": -17.134802,
+            "avg_win": 0.0,
+            "expectancy": -17.134802,
+            "losing_trades": 1,
+            "max_consecutive_losses": 1,
+            "max_consecutive_wins": 0,
+            "max_drawdown_pct": 0.000171,
+            "max_drawdown_value": 17.134802,
+            "profit_factor": 0.0,
+            "recovery_factor": -1.0,
+            "return_drawdown_ratio": -1.0,
+            "sharpe_ratio": -2.851146,
+            "total_commission": 0.0,
+            "total_pnl": -17.134802,
+            "total_return_pct": -0.000171,
+            "total_trades": 1,
+            "trade_sharpe_ratio": 0.0,
+            "win_loss_ratio": 0.0,
+            "win_rate": 0.0,
+            "winning_trades": 0
+          },
+          "risk_params": {
+            "quantity": 1.731994,
+            "type": "fixed_quantity"
+          },
+          "status": "complete",
+          "strategy_params": {
+            "long_period": 20,
+            "short_period": 3
+          },
+          "total_trades": 1
+        },
+        "values": [
+          -17.134802
+        ]
+      },
+      {
+        "number": 1,
+        "params": {
+          "risk__quantity": 1.155995,
+          "risk__type": "fixed_quantity",
+          "strategy__long_period": 11,
+          "strategy__short_period": 4
+        },
+        "state": "COMPLETE",
+        "user_attrs": {
+          "manager_params": {},
+          "metrics": {
+            "avg_loss": -19.617939,
+            "avg_win": 0.0,
+            "expectancy": -19.617939,
+            "losing_trades": 2,
+            "max_consecutive_losses": 2,
+            "max_consecutive_wins": 0,
+            "max_drawdown_pct": 0.000392,
+            "max_drawdown_value": 39.235877,
+            "profit_factor": 0.0,
+            "recovery_factor": -1.0,
+            "return_drawdown_ratio": -1.0,
+            "sharpe_ratio": -4.099079,
+            "total_commission": 0.0,
+            "total_pnl": -39.235877,
+            "total_return_pct": -0.000392,
+            "total_trades": 2,
+            "trade_sharpe_ratio": -67.259436,
+            "win_loss_ratio": 0.0,
+            "win_rate": 0.0,
+            "winning_trades": 0
+          },
+          "risk_params": {
+            "quantity": 1.155995,
+            "type": "fixed_quantity"
+          },
+          "status": "complete",
+          "strategy_params": {
+            "long_period": 11,
+            "short_period": 4
+          },
+          "total_trades": 2
+        },
+        "values": [
+          -39.235877
+        ]
+      }
+    ]
+  },
+  "status": {
+    "backtest_config": {
+      "costs": null,
+      "day_trade": false,
+      "day_trade_close_time": "17:00",
+      "day_trade_end_time": "16:00",
+      "day_trade_start_time": "09:00",
+      "display_timeframe": "M1",
+      "end": "<NORMALIZED_TIMESTAMP>",
+      "engine": "candle",
+      "entries": null,
+      "entry_manager": {
+        "kind": "or",
+        "params": {}
+      },
+      "exit_params": {},
+      "initial_capital": 100000.0,
+      "parallel_mode": "SEQUENTIAL",
+      "point_value": 1.0,
+      "start": "<NORMALIZED_TIMESTAMP>",
+      "strategy": "MACrossover",
+      "symbol": "WIN$",
+      "tick_flags": null,
+      "timeframe": "D1"
+    },
+    "best_params": {
+      "risk__quantity": 1.731994,
+      "risk__type": "fixed_quantity",
+      "strategy__long_period": 20,
+      "strategy__short_period": 3
+    },
+    "best_trial": {
+      "number": 0,
+      "params": {
+        "risk__quantity": 1.731994,
+        "risk__type": "fixed_quantity",
+        "strategy__long_period": 20,
+        "strategy__short_period": 3
+      },
+      "state": "COMPLETE",
+      "user_attrs": {
+        "manager_params": {},
+        "metrics": {
+          "avg_loss": -17.134802,
+          "avg_win": 0.0,
+          "expectancy": -17.134802,
+          "losing_trades": 1,
+          "max_consecutive_losses": 1,
+          "max_consecutive_wins": 0,
+          "max_drawdown_pct": 0.000171,
+          "max_drawdown_value": 17.134802,
+          "profit_factor": 0.0,
+          "recovery_factor": -1.0,
+          "return_drawdown_ratio": -1.0,
+          "sharpe_ratio": -2.851146,
+          "total_commission": 0.0,
+          "total_pnl": -17.134802,
+          "total_return_pct": -0.000171,
+          "total_trades": 1,
+          "trade_sharpe_ratio": 0.0,
+          "win_loss_ratio": 0.0,
+          "win_rate": 0.0,
+          "winning_trades": 0
+        },
+        "risk_params": {
+          "quantity": 1.731994,
+          "type": "fixed_quantity"
+        },
+        "status": "complete",
+        "strategy_params": {
+          "long_period": 20,
+          "short_period": 3
+        },
+        "total_trades": 1
+      },
+      "values": [
+        -17.134802
+      ]
+    },
+    "best_value": -17.134802,
+    "completed_trials": 2,
+    "error": null,
+    "n_trials": 2,
+    "optimization_config": {
+      "backtest": {
+        "costs": null,
+        "day_trade": false,
+        "day_trade_close_time": "17:00",
+        "day_trade_end_time": "16:00",
+        "day_trade_start_time": "09:00",
+        "display_timeframe": "M1",
+        "end": "<NORMALIZED_TIMESTAMP>",
+        "engine": "candle",
+        "entries": null,
+        "entry_manager": {
+          "kind": "or",
+          "params": {}
+        },
+        "exit_params": {},
+        "initial_capital": 100000.0,
+        "parallel_mode": "SEQUENTIAL",
+        "point_value": 1.0,
+        "start": "<NORMALIZED_TIMESTAMP>",
+        "strategy": "MACrossover",
+        "symbol": "WIN$",
+        "tick_flags": null,
+        "timeframe": "D1"
+      },
+      "fixed_params": {},
+      "objective": {
+        "mode": "maximize_net_profit"
+      },
+      "search_space": {
+        "manager_params": {},
+        "risk_params": {
+          "quantity": {
+            "high": 2.0,
+            "low": 1.0,
+            "step": null,
+            "type": "float"
+          },
+          "type": {
+            "choices": [
+              "fixed_quantity"
+            ],
+            "type": "categorical"
+          }
+        },
+        "strategy_params": {
+          "long_period": {
+            "high": 20,
+            "low": 10,
+            "step": 1,
+            "type": "int"
+          },
+          "short_period": {
+            "high": 5,
+            "low": 2,
+            "step": 1,
+            "type": "int"
+          }
+        }
+      },
+      "study": {
+        "continue_on_trial_error": false,
+        "direction": null,
+        "max_workers": null,
+        "n_trials": 2,
+        "name": "WIN$ MA sweep",
+        "pruner": "none",
+        "sampler": null,
+        "seed": 42,
+        "storage": {
+          "path": null,
+          "type": "memory",
+          "url": null
+        }
+      }
+    },
+    "status": "done",
+    "study_id": "<NORMALIZED_ID>",
+    "trials": [
+      {
+        "number": 0,
+        "params": {
+          "risk__quantity": 1.731994,
+          "risk__type": "fixed_quantity",
+          "strategy__long_period": 20,
+          "strategy__short_period": 3
+        },
+        "state": "COMPLETE",
+        "user_attrs": {
+          "manager_params": {},
+          "metrics": {
+            "avg_loss": -17.134802,
+            "avg_win": 0.0,
+            "expectancy": -17.134802,
+            "losing_trades": 1,
+            "max_consecutive_losses": 1,
+            "max_consecutive_wins": 0,
+            "max_drawdown_pct": 0.000171,
+            "max_drawdown_value": 17.134802,
+            "profit_factor": 0.0,
+            "recovery_factor": -1.0,
+            "return_drawdown_ratio": -1.0,
+            "sharpe_ratio": -2.851146,
+            "total_commission": 0.0,
+            "total_pnl": -17.134802,
+            "total_return_pct": -0.000171,
+            "total_trades": 1,
+            "trade_sharpe_ratio": 0.0,
+            "win_loss_ratio": 0.0,
+            "win_rate": 0.0,
+            "winning_trades": 0
+          },
+          "risk_params": {
+            "quantity": 1.731994,
+            "type": "fixed_quantity"
+          },
+          "status": "complete",
+          "strategy_params": {
+            "long_period": 20,
+            "short_period": 3
+          },
+          "total_trades": 1
+        },
+        "values": [
+          -17.134802
+        ]
+      },
+      {
+        "number": 1,
+        "params": {
+          "risk__quantity": 1.155995,
+          "risk__type": "fixed_quantity",
+          "strategy__long_period": 11,
+          "strategy__short_period": 4
+        },
+        "state": "COMPLETE",
+        "user_attrs": {
+          "manager_params": {},
+          "metrics": {
+            "avg_loss": -19.617939,
+            "avg_win": 0.0,
+            "expectancy": -19.617939,
+            "losing_trades": 2,
+            "max_consecutive_losses": 2,
+            "max_consecutive_wins": 0,
+            "max_drawdown_pct": 0.000392,
+            "max_drawdown_value": 39.235877,
+            "profit_factor": 0.0,
+            "recovery_factor": -1.0,
+            "return_drawdown_ratio": -1.0,
+            "sharpe_ratio": -4.099079,
+            "total_commission": 0.0,
+            "total_pnl": -39.235877,
+            "total_return_pct": -0.000392,
+            "total_trades": 2,
+            "trade_sharpe_ratio": -67.259436,
+            "win_loss_ratio": 0.0,
+            "win_rate": 0.0,
+            "winning_trades": 0
+          },
+          "risk_params": {
+            "quantity": 1.155995,
+            "type": "fixed_quantity"
+          },
+          "status": "complete",
+          "strategy_params": {
+            "long_period": 11,
+            "short_period": 4
+          },
+          "total_trades": 2
+        },
+        "values": [
+          -39.235877
+        ]
+      }
+    ],
+    "workers": 2
+  }
+}

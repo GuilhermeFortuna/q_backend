@@ -1,0 +1,71 @@
+{
+  "status": {
+    "detail": null,
+    "error": null,
+    "job_id": "<NORMALIZED_ID>",
+    "progress": 1.0,
+    "result": {
+      "child_runs": [
+        {
+          "arm": "control",
+          "latents_enabled": false,
+          "run_id": "<NORMALIZED_ID>",
+          "seed": 1,
+          "terminal_status": "completed"
+        },
+        {
+          "arm": "treatment",
+          "latents_enabled": true,
+          "run_id": "<NORMALIZED_ID>",
+          "seed": 1,
+          "terminal_status": "completed"
+        },
+        {
+          "arm": "control",
+          "latents_enabled": false,
+          "run_id": "<NORMALIZED_ID>",
+          "seed": 2,
+          "terminal_status": "completed"
+        },
+        {
+          "arm": "treatment",
+          "latents_enabled": true,
+          "run_id": "<NORMALIZED_ID>",
+          "seed": 2,
+          "terminal_status": "completed"
+        }
+      ],
+      "complete_pairs": 2,
+      "control": {
+        "mean": -97.305057,
+        "values": [
+          1.0,
+          -195.610115
+        ]
+      },
+      "dropped_pair_reasons": [],
+      "metric": "oos_objective",
+      "minimum_complete_pairs": 2,
+      "n_seeds": 2,
+      "paired_delta": {
+        "cohens_d": 0.0,
+        "mean": 0.0,
+        "p_value": 1.0,
+        "values": [
+          0.0,
+          0.0
+        ]
+      },
+      "requested_seeds": 2,
+      "treatment": {
+        "mean": -97.305057,
+        "values": [
+          1.0,
+          -195.610115
+        ]
+      },
+      "verdict": "no_effect"
+    },
+    "status": "completed"
+  }
+}

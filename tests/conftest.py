@@ -130,6 +130,7 @@ def run_jobs_sync(monkeypatch, tmp_path):
     from q_backend.api import alpha_research_jobs as arj
     from q_backend.api import neural_jobs as nj
     from q_backend.api import optimization_jobs as oj
+    from q_backend.api import storage_jobs as stj
     from q_backend.api import strategy_search_jobs as sj
     from q_backend.api import walkforward_jobs as wj
     from q_backend.optimization.models import StorageConfig
@@ -137,15 +138,132 @@ def run_jobs_sync(monkeypatch, tmp_path):
 
     # Route every Redis user (fan-in counters, partial staging, progress mirrors,
     # cross-generation genetic state) at one in-memory fakeredis.
-    for module in (fanin, staging, genetic_staging, oj, wj, sj, bj, nj, eaj, dab, arj):
+    for module in (fanin, staging, genetic_staging, oj, wj, sj, bj, nj, eaj, dab, arj, stj):
         if hasattr(module, "get_redis"):
             monkeypatch.setattr(module, "get_redis", lambda: fake, raising=False)
+
+    # Temporary market and lake directories for storage & artifacts
+    market_root = tmp_path / "market_data"
+    market_root.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("Q_MARKET_DATA_ROOT", str(market_root))
+
+    lake_root = tmp_path / "lake_root"
+    lake_root.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("Q_DATA_LAKE_ROOT", str(lake_root))
+    from q_backend.storage.settings import get_settings
+
+    get_settings.cache_clear()
+
+    # SQLite session for jobs requiring database persistence
+    from contextlib import contextmanager
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+    from q_backend.storage.db.base import Base
+    import q_backend.storage.db.models  # noqa: F401
+    import q_backend.storage.db.execution_models  # noqa: F401
+    import q_backend.storage.db.outbox_models  # noqa: F401
+    from q_backend.storage.db.outbox_models import OutboxTopicState
+    from q_contracts.topics import TOPICS
+
+    harness_engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(harness_engine)
+    harness_session_factory = sessionmaker(
+        bind=harness_engine,
+        autoflush=False,
+        autocommit=False,
+        expire_on_commit=False,
+    )
+
+    @contextmanager
+    def _harness_session_scope():
+        session = harness_session_factory()
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    # Seed durable topics in topic state table
+    with _harness_session_scope() as sess:
+        for name, policy in TOPICS.items():
+            if policy.topic_class == "durable":
+                sess.add(
+                    OutboxTopicState(
+                        topic=name,
+                        epoch="20260912-00000001",
+                        last_seq=0,
+                        last_relayed_seq=0,
+                    )
+                )
+
+    monkeypatch.setattr("q_backend.storage.db.engine.session_scope", _harness_session_scope)
+    for module in (oj, wj, sj, bj, nj, eaj, dab, arj):
+        if hasattr(module, "session_scope"):
+            monkeypatch.setattr(module, "session_scope", _harness_session_scope)
+    monkeypatch.setattr("q_backend.optimization.genetic_search.session_scope", _harness_session_scope, raising=False)
+
+    fake.harness_engine = harness_engine
+    fake.harness_session_factory = harness_session_factory
+    fake.harness_session_scope = _harness_session_scope
 
     # Feed synthetic market data to the window/candidate workers.
     monkeypatch.setattr("q_backend.tasks.data.load_ohlcv_frame", _synthetic_ohlcv)
     for module in (wj, sj):
         if hasattr(module, "load_ohlcv_frame"):
             monkeypatch.setattr(module, "load_ohlcv_frame", _synthetic_ohlcv, raising=False)
+
+    # Provider for storage ingest and backtest
+    class _HarnessAcquisitionProvider:
+        def get_ohlcv(self, symbol, timeframe, start, end):
+            from q_backend.market_data.models import OHLCV
+
+            return [
+                OHLCV(
+                    time=start,
+                    open=100.0,
+                    high=101.0,
+                    low=99.0,
+                    close=100.5,
+                    tick_volume=1000,
+                ),
+            ]
+
+    class _HarnessMarketDataService:
+        def acquisition_provider(self):
+            return _HarnessAcquisitionProvider()
+
+        def get_ohlcv(self, symbol, timeframe, start, end):
+            from q_backend.market_data.models import OHLCV
+
+            df = _synthetic_ohlcv(symbol, timeframe, start, end)
+            return [
+                OHLCV(
+                    time=idx.to_pydatetime(),
+                    open=float(row["open"]),
+                    high=float(row["high"]),
+                    low=float(row["low"]),
+                    close=float(row["close"]),
+                    tick_volume=int(row["volume"]),
+                )
+                for idx, row in df.iterrows()
+            ]
+
+    monkeypatch.setattr(
+        "q_backend.tasks.worker_context.get_worker_market_data_service",
+        lambda: _HarnessMarketDataService(),
+    )
+    monkeypatch.setattr(
+        "q_backend.api.dependencies.market_data_service",
+        _HarnessMarketDataService(),
+    )
 
     # Distributed Optuna needs storage that persists across the trial workers and the
     # finalizer; a temp SQLite file gives that without Postgres.
@@ -200,6 +318,7 @@ def run_jobs_sync(monkeypatch, tmp_path):
     monkeypatch.setattr(actors, "run_neural_training", _SyncActor(nj.run_training_job))
     monkeypatch.setattr(actors, "run_encoder_ablation", _SyncActor(eaj.run_encoder_ablation_job))
     monkeypatch.setattr(actors, "run_discovery_ab", _SyncActor(dab.run_discovery_ab_job))
+    monkeypatch.setattr(actors, "run_storage_ingest", _SyncActor(stj.run_ingest_job))
     monkeypatch.setattr(
         actors,
         "run_alpha_research",

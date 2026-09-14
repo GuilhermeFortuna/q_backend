@@ -1,0 +1,672 @@
+{
+  "result": {
+    "efficiency": 3.942345,
+    "equity_curve": [
+      {
+        "equity": 10000.0,
+        "time": "<NORMALIZED_TIMESTAMP>"
+      },
+      {
+        "equity": 9986.526748,
+        "time": "<NORMALIZED_TIMESTAMP>"
+      },
+      {
+        "equity": 9975.899604,
+        "time": "<NORMALIZED_TIMESTAMP>"
+      },
+      {
+        "equity": 9959.511816,
+        "time": "<NORMALIZED_TIMESTAMP>"
+      },
+      {
+        "equity": 9945.549892,
+        "time": "<NORMALIZED_TIMESTAMP>"
+      },
+      {
+        "equity": 9932.295438,
+        "time": "<NORMALIZED_TIMESTAMP>"
+      },
+      {
+        "equity": 9919.29009,
+        "time": "<NORMALIZED_TIMESTAMP>"
+      },
+      {
+        "equity": 9907.915636,
+        "time": "<NORMALIZED_TIMESTAMP>"
+      },
+      {
+        "equity": 9893.230797,
+        "time": "<NORMALIZED_TIMESTAMP>"
+      },
+      {
+        "equity": 9879.151009,
+        "time": "<NORMALIZED_TIMESTAMP>"
+      },
+      {
+        "equity": 9879.151009,
+        "time": "<NORMALIZED_TIMESTAMP>"
+      }
+    ],
+    "lake_paths": {
+      "oos_equity": "walkforward/<NORMALIZED_ID>/oos_equity.parquet",
+      "oos_trades": "walkforward/<NORMALIZED_ID>/oos_trades.parquet",
+      "windows": "walkforward/<NORMALIZED_ID>/windows.parquet"
+    },
+    "oos_metrics": {
+      "max_drawdown": 120.848991,
+      "max_drawdown_pct": 0.012085,
+      "return_drawdown_ratio": -1.0,
+      "sharpe_ratio": -4.466719,
+      "total_pnl": -120.848991,
+      "total_return_pct": -0.012085,
+      "total_trades": 9,
+      "trade_sharpe_ratio": -11.396389,
+      "win_rate": 0.0
+    },
+    "optimization_config": {
+      "backtest": {
+        "costs": null,
+        "day_trade": false,
+        "day_trade_close_time": "17:00",
+        "day_trade_end_time": "16:00",
+        "day_trade_start_time": "09:00",
+        "display_timeframe": "M1",
+        "end": "<NORMALIZED_TIMESTAMP>",
+        "engine": "candle",
+        "entries": null,
+        "entry_manager": {
+          "kind": "or",
+          "params": {}
+        },
+        "exit_params": {},
+        "initial_capital": 10000.0,
+        "parallel_mode": "SEQUENTIAL",
+        "point_value": 1.0,
+        "start": "<NORMALIZED_TIMESTAMP>",
+        "strategy": "MACrossover",
+        "symbol": "WIN$",
+        "tick_flags": null,
+        "timeframe": "D1"
+      },
+      "fixed_params": {},
+      "objective": {
+        "mode": "maximize_net_profit"
+      },
+      "search_space": {
+        "manager_params": {},
+        "risk_params": {
+          "quantity": {
+            "high": 1.0,
+            "low": 1.0,
+            "step": null,
+            "type": "float"
+          },
+          "type": {
+            "choices": [
+              "fixed_quantity"
+            ],
+            "type": "categorical"
+          }
+        },
+        "strategy_params": {
+          "long_period": {
+            "high": 8,
+            "low": 6,
+            "step": 1,
+            "type": "int"
+          },
+          "short_period": {
+            "high": 4,
+            "low": 2,
+            "step": 1,
+            "type": "int"
+          }
+        }
+      },
+      "study": {
+        "continue_on_trial_error": false,
+        "direction": null,
+        "max_workers": null,
+        "n_trials": 2,
+        "name": "WF WIN$ MA",
+        "pruner": "none",
+        "sampler": null,
+        "seed": 42,
+        "storage": {
+          "path": null,
+          "type": "memory",
+          "url": null
+        }
+      }
+    },
+    "run_id": "<NORMALIZED_ID>",
+    "status": "completed",
+    "walkforward_config": {
+      "max_workers": null,
+      "min_windows": 2,
+      "mode": "rolling",
+      "test_days": 15,
+      "train_days": 30
+    },
+    "windows": [
+      {
+        "best_params": {
+          "manager_params": {},
+          "risk__quantity": 1.0,
+          "risk__type": "fixed_quantity",
+          "risk_params": {
+            "quantity": 1.0,
+            "type": "fixed_quantity"
+          },
+          "strategy__long_period": 8,
+          "strategy__short_period": 3,
+          "strategy_params": {
+            "long_period": 8,
+            "short_period": 3
+          }
+        },
+        "index": 0,
+        "is_metrics": {
+          "avg_loss": -12.769066,
+          "avg_win": 0.0,
+          "expectancy": -12.769066,
+          "losing_trades": 2,
+          "max_consecutive_losses": 2,
+          "max_consecutive_wins": 0,
+          "max_drawdown_pct": 0.002554,
+          "max_drawdown_value": 25.538132,
+          "profit_factor": 0.0,
+          "recovery_factor": -1.0,
+          "return_drawdown_ratio": -1.0,
+          "sharpe_ratio": -4.155831,
+          "total_commission": 0.0,
+          "total_pnl": -25.538132,
+          "total_return_pct": -0.002554,
+          "total_trades": 2,
+          "trade_sharpe_ratio": -24.711111,
+          "win_loss_ratio": 0.0,
+          "win_rate": 0.0,
+          "winning_trades": 0
+        },
+        "oos_metrics": {
+          "avg_loss": -12.050198,
+          "avg_win": 0.0,
+          "expectancy": -12.050198,
+          "losing_trades": 2,
+          "max_consecutive_losses": 2,
+          "max_consecutive_wins": 0,
+          "max_drawdown_pct": 0.00241,
+          "max_drawdown_value": 24.100396,
+          "profit_factor": 0.0,
+          "recovery_factor": -1.0,
+          "return_drawdown_ratio": -1.0,
+          "sharpe_ratio": -5.968073,
+          "total_commission": 0.0,
+          "total_pnl": -24.100396,
+          "total_return_pct": -0.00241,
+          "total_trades": 2,
+          "trade_sharpe_ratio": -24.542138,
+          "win_loss_ratio": 0.0,
+          "win_rate": 0.0,
+          "winning_trades": 0
+        },
+        "status": "completed",
+        "test_end": "<NORMALIZED_TIMESTAMP>",
+        "test_start": "<NORMALIZED_TIMESTAMP>",
+        "train_end": "<NORMALIZED_TIMESTAMP>",
+        "train_start": "<NORMALIZED_TIMESTAMP>"
+      },
+      {
+        "best_params": {
+          "manager_params": {},
+          "risk__quantity": 1.0,
+          "risk__type": "fixed_quantity",
+          "risk_params": {
+            "quantity": 1.0,
+            "type": "fixed_quantity"
+          },
+          "strategy__long_period": 7,
+          "strategy__short_period": 4,
+          "strategy_params": {
+            "long_period": 7,
+            "short_period": 4
+          }
+        },
+        "index": 1,
+        "is_metrics": {
+          "avg_loss": -14.164475,
+          "avg_win": 0.0,
+          "expectancy": -14.164475,
+          "losing_trades": 2,
+          "max_consecutive_losses": 2,
+          "max_consecutive_wins": 0,
+          "max_drawdown_pct": 0.002833,
+          "max_drawdown_value": 28.32895,
+          "profit_factor": 0.0,
+          "recovery_factor": -1.0,
+          "return_drawdown_ratio": -1.0,
+          "sharpe_ratio": -4.166179,
+          "total_commission": 0.0,
+          "total_pnl": -28.32895,
+          "total_return_pct": -0.002833,
+          "total_trades": 2,
+          "trade_sharpe_ratio": -41.995918,
+          "win_loss_ratio": 0.0,
+          "win_rate": 0.0,
+          "winning_trades": 0
+        },
+        "oos_metrics": {
+          "avg_loss": -15.174856,
+          "avg_win": 0.0,
+          "expectancy": -15.174856,
+          "losing_trades": 2,
+          "max_consecutive_losses": 2,
+          "max_consecutive_wins": 0,
+          "max_drawdown_pct": 0.003035,
+          "max_drawdown_value": 30.349712,
+          "profit_factor": 0.0,
+          "recovery_factor": -1.0,
+          "return_drawdown_ratio": -1.0,
+          "sharpe_ratio": -5.99376,
+          "total_commission": 0.0,
+          "total_pnl": -30.349712,
+          "total_return_pct": -0.003035,
+          "total_trades": 2,
+          "trade_sharpe_ratio": -36.259979,
+          "win_loss_ratio": 0.0,
+          "win_rate": 0.0,
+          "winning_trades": 0
+        },
+        "status": "completed",
+        "test_end": "<NORMALIZED_TIMESTAMP>",
+        "test_start": "<NORMALIZED_TIMESTAMP>",
+        "train_end": "<NORMALIZED_TIMESTAMP>",
+        "train_start": "<NORMALIZED_TIMESTAMP>"
+      },
+      {
+        "best_params": {
+          "manager_params": {},
+          "risk__quantity": 1.0,
+          "risk__type": "fixed_quantity",
+          "risk_params": {
+            "quantity": 1.0,
+            "type": "fixed_quantity"
+          },
+          "strategy__long_period": 8,
+          "strategy__short_period": 3,
+          "strategy_params": {
+            "long_period": 8,
+            "short_period": 3
+          }
+        },
+        "index": 2,
+        "is_metrics": {
+          "avg_loss": -12.478799,
+          "avg_win": 0.0,
+          "expectancy": -12.478799,
+          "losing_trades": 3,
+          "max_consecutive_losses": 3,
+          "max_consecutive_wins": 0,
+          "max_drawdown_pct": 0.003744,
+          "max_drawdown_value": 37.436397,
+          "profit_factor": 0.0,
+          "recovery_factor": -1.0,
+          "return_drawdown_ratio": -1.0,
+          "sharpe_ratio": -5.166697,
+          "total_commission": 0.0,
+          "total_pnl": -37.436397,
+          "total_return_pct": -0.003744,
+          "total_trades": 3,
+          "trade_sharpe_ratio": -21.304026,
+          "win_loss_ratio": 0.0,
+          "win_rate": 0.0,
+          "winning_trades": 0
+        },
+        "oos_metrics": {
+          "avg_loss": -13.254454,
+          "avg_win": 0.0,
+          "expectancy": -13.254454,
+          "losing_trades": 1,
+          "max_consecutive_losses": 1,
+          "max_consecutive_wins": 0,
+          "max_drawdown_pct": 0.001325,
+          "max_drawdown_value": 13.254454,
+          "profit_factor": 0.0,
+          "recovery_factor": -1.0,
+          "return_drawdown_ratio": -1.0,
+          "sharpe_ratio": -4.09878,
+          "total_commission": 0.0,
+          "total_pnl": -13.254454,
+          "total_return_pct": -0.001325,
+          "total_trades": 1,
+          "trade_sharpe_ratio": 0.0,
+          "win_loss_ratio": 0.0,
+          "win_rate": 0.0,
+          "winning_trades": 0
+        },
+        "status": "completed",
+        "test_end": "<NORMALIZED_TIMESTAMP>",
+        "test_start": "<NORMALIZED_TIMESTAMP>",
+        "train_end": "<NORMALIZED_TIMESTAMP>",
+        "train_start": "<NORMALIZED_TIMESTAMP>"
+      },
+      {
+        "best_params": {
+          "manager_params": {},
+          "risk__quantity": 1.0,
+          "risk__type": "fixed_quantity",
+          "risk_params": {
+            "quantity": 1.0,
+            "type": "fixed_quantity"
+          },
+          "strategy__long_period": 8,
+          "strategy__short_period": 3,
+          "strategy_params": {
+            "long_period": 8,
+            "short_period": 3
+          }
+        },
+        "index": 3,
+        "is_metrics": {
+          "avg_loss": -12.85253,
+          "avg_win": 0.0,
+          "expectancy": -12.85253,
+          "losing_trades": 2,
+          "max_consecutive_losses": 2,
+          "max_consecutive_wins": 0,
+          "max_drawdown_pct": 0.002571,
+          "max_drawdown_value": 25.70506,
+          "profit_factor": 0.0,
+          "recovery_factor": -1.0,
+          "return_drawdown_ratio": -1.0,
+          "sharpe_ratio": -4.169059,
+          "total_commission": 0.0,
+          "total_pnl": -25.70506,
+          "total_return_pct": -0.002571,
+          "total_trades": 2,
+          "trade_sharpe_ratio": -65.534334,
+          "win_loss_ratio": 0.0,
+          "win_rate": 0.0,
+          "winning_trades": 0
+        },
+        "oos_metrics": {
+          "avg_loss": -12.189901,
+          "avg_win": 0.0,
+          "expectancy": -12.189901,
+          "losing_trades": 2,
+          "max_consecutive_losses": 2,
+          "max_consecutive_wins": 0,
+          "max_drawdown_pct": 0.002438,
+          "max_drawdown_value": 24.379802,
+          "profit_factor": 0.0,
+          "recovery_factor": -1.0,
+          "return_drawdown_ratio": -1.0,
+          "sharpe_ratio": -6.000192,
+          "total_commission": 0.0,
+          "total_pnl": -24.379802,
+          "total_return_pct": -0.002438,
+          "total_trades": 2,
+          "trade_sharpe_ratio": -43.325583,
+          "win_loss_ratio": 0.0,
+          "win_rate": 0.0,
+          "winning_trades": 0
+        },
+        "status": "completed",
+        "test_end": "<NORMALIZED_TIMESTAMP>",
+        "test_start": "<NORMALIZED_TIMESTAMP>",
+        "train_end": "<NORMALIZED_TIMESTAMP>",
+        "train_start": "<NORMALIZED_TIMESTAMP>"
+      },
+      {
+        "best_params": {
+          "manager_params": {},
+          "risk__quantity": 1.0,
+          "risk__type": "fixed_quantity",
+          "risk_params": {
+            "quantity": 1.0,
+            "type": "fixed_quantity"
+          },
+          "strategy__long_period": 8,
+          "strategy__short_period": 3,
+          "strategy_params": {
+            "long_period": 8,
+            "short_period": 3
+          }
+        },
+        "index": 4,
+        "is_metrics": {
+          "avg_loss": -13.316579,
+          "avg_win": 0.0,
+          "expectancy": -13.316579,
+          "losing_trades": 3,
+          "max_consecutive_losses": 3,
+          "max_consecutive_wins": 0,
+          "max_drawdown_pct": 0.003995,
+          "max_drawdown_value": 39.949736,
+          "profit_factor": 0.0,
+          "recovery_factor": -1.0,
+          "return_drawdown_ratio": -1.0,
+          "sharpe_ratio": -5.155485,
+          "total_commission": 0.0,
+          "total_pnl": -39.949736,
+          "total_return_pct": -0.003995,
+          "total_trades": 3,
+          "trade_sharpe_ratio": -18.248413,
+          "win_loss_ratio": 0.0,
+          "win_rate": 0.0,
+          "winning_trades": 0
+        },
+        "oos_metrics": {
+          "avg_loss": -14.684838,
+          "avg_win": 0.0,
+          "expectancy": -14.684838,
+          "losing_trades": 1,
+          "max_consecutive_losses": 1,
+          "max_consecutive_wins": 0,
+          "max_drawdown_pct": 0.001468,
+          "max_drawdown_value": 14.684838,
+          "profit_factor": 0.0,
+          "recovery_factor": -1.0,
+          "return_drawdown_ratio": -1.0,
+          "sharpe_ratio": -4.09878,
+          "total_commission": 0.0,
+          "total_pnl": -14.684838,
+          "total_return_pct": -0.001468,
+          "total_trades": 1,
+          "trade_sharpe_ratio": 0.0,
+          "win_loss_ratio": 0.0,
+          "win_rate": 0.0,
+          "winning_trades": 0
+        },
+        "status": "completed",
+        "test_end": "<NORMALIZED_TIMESTAMP>",
+        "test_start": "<NORMALIZED_TIMESTAMP>",
+        "train_end": "<NORMALIZED_TIMESTAMP>",
+        "train_start": "<NORMALIZED_TIMESTAMP>"
+      },
+      {
+        "best_params": {
+          "manager_params": {},
+          "risk__quantity": 1.0,
+          "risk__type": "fixed_quantity",
+          "risk_params": {
+            "quantity": 1.0,
+            "type": "fixed_quantity"
+          },
+          "strategy__long_period": 8,
+          "strategy__short_period": 3,
+          "strategy_params": {
+            "long_period": 8,
+            "short_period": 3
+          }
+        },
+        "index": 5,
+        "is_metrics": {
+          "avg_loss": -13.483119,
+          "avg_win": 0.0,
+          "expectancy": -13.483119,
+          "losing_trades": 2,
+          "max_consecutive_losses": 2,
+          "max_consecutive_wins": 0,
+          "max_drawdown_pct": 0.002697,
+          "max_drawdown_value": 26.966238,
+          "profit_factor": 0.0,
+          "recovery_factor": -1.0,
+          "return_drawdown_ratio": -1.0,
+          "sharpe_ratio": -4.153451,
+          "total_commission": 0.0,
+          "total_pnl": -26.966238,
+          "total_return_pct": -0.002697,
+          "total_trades": 2,
+          "trade_sharpe_ratio": -22.993865,
+          "win_loss_ratio": 0.0,
+          "win_rate": 0.0,
+          "winning_trades": 0
+        },
+        "oos_metrics": {
+          "avg_loss": -14.079788,
+          "avg_win": 0.0,
+          "expectancy": -14.079788,
+          "losing_trades": 1,
+          "max_consecutive_losses": 1,
+          "max_consecutive_wins": 0,
+          "max_drawdown_pct": 0.001408,
+          "max_drawdown_value": 14.079788,
+          "profit_factor": 0.0,
+          "recovery_factor": -1.0,
+          "return_drawdown_ratio": -1.0,
+          "sharpe_ratio": -4.09878,
+          "total_commission": 0.0,
+          "total_pnl": -14.079788,
+          "total_return_pct": -0.001408,
+          "total_trades": 1,
+          "trade_sharpe_ratio": 0.0,
+          "win_loss_ratio": 0.0,
+          "win_rate": 0.0,
+          "winning_trades": 0
+        },
+        "status": "completed",
+        "test_end": "<NORMALIZED_TIMESTAMP>",
+        "test_start": "<NORMALIZED_TIMESTAMP>",
+        "train_end": "<NORMALIZED_TIMESTAMP>",
+        "train_start": "<NORMALIZED_TIMESTAMP>"
+      }
+    ]
+  },
+  "status": {
+    "backtest_config": {
+      "costs": null,
+      "day_trade": false,
+      "day_trade_close_time": "17:00",
+      "day_trade_end_time": "16:00",
+      "day_trade_start_time": "09:00",
+      "display_timeframe": "M1",
+      "end": "<NORMALIZED_TIMESTAMP>",
+      "engine": "candle",
+      "entries": null,
+      "entry_manager": {
+        "kind": "or",
+        "params": {}
+      },
+      "exit_params": {},
+      "initial_capital": 10000.0,
+      "parallel_mode": "SEQUENTIAL",
+      "point_value": 1.0,
+      "start": "<NORMALIZED_TIMESTAMP>",
+      "strategy": "MACrossover",
+      "symbol": "WIN$",
+      "tick_flags": null,
+      "timeframe": "D1"
+    },
+    "current_window": 6,
+    "error": null,
+    "optimization_config": {
+      "backtest": {
+        "costs": null,
+        "day_trade": false,
+        "day_trade_close_time": "17:00",
+        "day_trade_end_time": "16:00",
+        "day_trade_start_time": "09:00",
+        "display_timeframe": "M1",
+        "end": "<NORMALIZED_TIMESTAMP>",
+        "engine": "candle",
+        "entries": null,
+        "entry_manager": {
+          "kind": "or",
+          "params": {}
+        },
+        "exit_params": {},
+        "initial_capital": 10000.0,
+        "parallel_mode": "SEQUENTIAL",
+        "point_value": 1.0,
+        "start": "<NORMALIZED_TIMESTAMP>",
+        "strategy": "MACrossover",
+        "symbol": "WIN$",
+        "tick_flags": null,
+        "timeframe": "D1"
+      },
+      "fixed_params": {},
+      "objective": {
+        "mode": "maximize_net_profit"
+      },
+      "search_space": {
+        "manager_params": {},
+        "risk_params": {
+          "quantity": {
+            "high": 1.0,
+            "low": 1.0,
+            "step": null,
+            "type": "float"
+          },
+          "type": {
+            "choices": [
+              "fixed_quantity"
+            ],
+            "type": "categorical"
+          }
+        },
+        "strategy_params": {
+          "long_period": {
+            "high": 8,
+            "low": 6,
+            "step": 1,
+            "type": "int"
+          },
+          "short_period": {
+            "high": 4,
+            "low": 2,
+            "step": 1,
+            "type": "int"
+          }
+        }
+      },
+      "study": {
+        "continue_on_trial_error": false,
+        "direction": null,
+        "max_workers": null,
+        "n_trials": 2,
+        "name": "WF WIN$ MA",
+        "pruner": "none",
+        "sampler": null,
+        "seed": 42,
+        "storage": {
+          "path": null,
+          "type": "memory",
+          "url": null
+        }
+      }
+    },
+    "phase": null,
+    "run_id": "<NORMALIZED_ID>",
+    "status": "completed",
+    "total_windows": 6,
+    "walkforward_config": {
+      "max_workers": null,
+      "min_windows": 2,
+      "mode": "rolling",
+      "test_days": 15,
+      "train_days": 30
+    },
+    "windows_completed": 6
+  }
+}
