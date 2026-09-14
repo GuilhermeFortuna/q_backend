@@ -332,7 +332,7 @@ Every long-running `.service.in` shares: `EnvironmentFile=%h/.config/q/backend.e
     `q-api` is active, `/api/v1/system/health` answers 200, and
     `/api/v1/stream/jobs.progress/latest` answers 503; start `q-redis` and record
     how long the relay takes to log recovery.
-18. [ ] Run the full validation suite. Commit.
+18. [x] Run the full validation suite. Commit.
 
 ## Validation
 
