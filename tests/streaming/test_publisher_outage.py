@@ -2,6 +2,7 @@ import time
 import pytest
 import redis
 from q_backend.streaming.jobs import (
+    _bounded_client,
     get_publisher_client,
     publish_job_progress,
     set_publisher_client,
@@ -9,8 +10,8 @@ from q_backend.streaming.jobs import (
 from tests.streaming.test_job_events import ALL_JOB_KINDS, _get_terminal_events, _run_kind
 
 
-def test_50ms_bound_enforced_on_client() -> None:
-    # A client configured with slow timeouts or retries must be clamped by publish_job_progress
+def test_publishing_leaves_the_callers_client_unchanged() -> None:
+    """The caller's client is shared with other Redis work, which must keep its own timeouts."""
     slow_client = redis.Redis(
         host="127.0.0.1",
         port=6399,
@@ -18,17 +19,30 @@ def test_50ms_bound_enforced_on_client() -> None:
         socket_connect_timeout=5.0,
         retry_on_timeout=True,
     )
-    publish_job_progress(
-        "backtest",
-        "job-test-bound",
-        {"status": "running", "progress": 0.5},
-        client=slow_client,
-    )
-    kwargs = slow_client.connection_pool.connection_kwargs
-    assert kwargs.get("socket_timeout") <= 0.05
-    assert kwargs.get("socket_connect_timeout") <= 0.05
-    assert kwargs.get("retry_on_timeout") is False
-    assert kwargs.get("retry") is None
+    before = dict(slow_client.connection_pool.connection_kwargs)
+
+    publish_job_progress("backtest", "job-test-bound", {"status": "running", "progress": 0.5}, client=slow_client)
+
+    assert slow_client.connection_pool.connection_kwargs == before
+
+
+def test_publishing_through_a_slow_client_is_still_bounded() -> None:
+    """A progress update must not stall a job for the caller's multi-second Redis timeouts."""
+    unroutable = redis.Redis(host="10.255.255.1", port=6380, socket_timeout=5.0, socket_connect_timeout=5.0)
+
+    started = time.monotonic()
+    publish_job_progress("backtest", "job-test-slow", {"status": "running"}, client=unroutable)
+
+    assert time.monotonic() - started < 1.0
+
+
+def test_bounded_publisher_clients_are_reused() -> None:
+    """A new pool per progress update opens a new connection for every update."""
+    first = redis.Redis(host="127.0.0.1", port=6399)
+    second = redis.Redis(host="127.0.0.1", port=6399)
+
+    assert _bounded_client(first) is _bounded_client(second)
+    assert get_publisher_client() is get_publisher_client()
 
 
 @pytest.mark.parametrize("kind", ALL_JOB_KINDS)
