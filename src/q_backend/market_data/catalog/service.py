@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from q_backend.market_data.catalog.partitions import (
@@ -349,6 +350,62 @@ class LakeCatalog:
             tombstoned = tombstone_current(session, subject, now=now, grace=self.grace)
             session.commit()
             return tombstoned
+
+    def sweep(self, *, dry_run: bool = False) -> SweepReport:
+        """Purge files of tombstoned datasets whose grace period has expired, unless shared by live datasets."""
+        now = self.clock()
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+
+        with self.session_factory() as session:
+            expired_datasets = sweepable(session, now=now)
+            protected_paths = live_paths(session, now=now)
+
+            files_to_delete: set[str] = set()
+            bytes_freed = 0
+
+            for dataset in expired_datasets:
+                for f in dataset.files:
+                    if f.path not in protected_paths:
+                        files_to_delete.add(f.path)
+                        bytes_freed += f.size_bytes
+                if not dry_run:
+                    dataset.state = "deleted"
+
+            files_deleted_count = 0
+            if not dry_run:
+                for rel_path in files_to_delete:
+                    full_p = self.root / rel_path
+                    if full_p.is_file():
+                        full_p.unlink()
+                        files_deleted_count += 1
+                session.commit()
+            else:
+                files_deleted_count = len(files_to_delete)
+
+            datasets_deleted_count = len(expired_datasets)
+
+            all_db_paths = set(session.scalars(sa.select(DatasetFile.path)).all())
+            unreferenced_files: list[str] = []
+
+            for p in self.root.rglob("*.parquet"):
+                rel_posix = p.relative_to(self.root).as_posix()
+                parts = p.name.split(".")
+                if (
+                    len(parts) == 3
+                    and parts[-1] == "parquet"
+                    and len(parts[1]) == 16
+                    and all(c in "0123456789abcdefABCDEF" for c in parts[1])
+                ):
+                    if rel_posix not in all_db_paths:
+                        unreferenced_files.append(rel_posix)
+
+        return SweepReport(
+            datasets_deleted=datasets_deleted_count,
+            files_deleted=files_deleted_count,
+            bytes_freed=bytes_freed,
+            unreferenced_files=sorted(unreferenced_files),
+        )
 
 
 _catalog_instance: LakeCatalog | None = None
