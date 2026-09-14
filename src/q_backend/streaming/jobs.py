@@ -59,6 +59,20 @@ STATUS_TO_STREAM: Mapping[str, StreamStatus] = {
 _publisher_client: redis.Redis | None = None
 
 
+def _bound_redis_client(client: Any) -> None:
+    """Enforce a strict 50 ms timeout bound and disable retries on real Redis connections."""
+    if hasattr(client, "connection_pool") and hasattr(client.connection_pool, "connection_kwargs"):
+        kwargs = client.connection_pool.connection_kwargs
+        if kwargs.get("socket_timeout") is None or kwargs.get("socket_timeout") > 0.05:
+            kwargs["socket_timeout"] = 0.05
+        if kwargs.get("socket_connect_timeout") is None or kwargs.get("socket_connect_timeout") > 0.05:
+            kwargs["socket_connect_timeout"] = 0.05
+        kwargs["retry_on_timeout"] = False
+        kwargs["retry"] = None
+    if hasattr(client, "retry"):
+        client.retry = None
+
+
 def get_publisher_client() -> redis.Redis:
     global _publisher_client
     if _publisher_client is not None:
@@ -70,6 +84,7 @@ def get_publisher_client() -> redis.Redis:
         socket_timeout=0.05,
         socket_connect_timeout=0.05,
         retry_on_timeout=False,
+        retry=None,
     )
 
 
@@ -84,6 +99,7 @@ def _terminal_flag_key(kind: str, job_id: str) -> str:
 
 def is_job_terminal_flagged(client: redis.Redis, kind: str, job_id: str) -> bool:
     try:
+        _bound_redis_client(client)
         return bool(client.exists(_terminal_flag_key(kind, job_id)))
     except Exception as exc:  # noqa: BLE001 - best-effort Redis terminal check
         logger.debug("Failed to check terminal flag in Redis for %s:%s: %s", kind, job_id, exc)
@@ -92,6 +108,7 @@ def is_job_terminal_flagged(client: redis.Redis, kind: str, job_id: str) -> bool
 
 def flag_job_terminal(client: redis.Redis, kind: str, job_id: str, ttl_seconds: int = 86400) -> None:
     try:
+        _bound_redis_client(client)
         client.set(_terminal_flag_key(kind, job_id), "1", ex=ttl_seconds)
     except Exception as exc:  # noqa: BLE001 - best-effort Redis terminal flag
         logger.debug("Failed to set terminal flag in Redis for %s:%s: %s", kind, job_id, exc)
@@ -99,6 +116,7 @@ def flag_job_terminal(client: redis.Redis, kind: str, job_id: str, ttl_seconds: 
 
 def clear_job_terminal_flag(client: redis.Redis, kind: str, job_id: str) -> None:
     try:
+        _bound_redis_client(client)
         client.delete(_terminal_flag_key(kind, job_id))
     except Exception as exc:  # noqa: BLE001 - best-effort Redis terminal clear
         logger.debug("Failed to clear terminal flag in Redis for %s:%s: %s", kind, job_id, exc)
@@ -120,14 +138,7 @@ def publish_job_progress(
         else:
             redis_client = get_publisher_client()
 
-        # Enforce 50 ms timeout bound on real Redis connection kwargs if present
-        if hasattr(redis_client, "connection_pool") and hasattr(redis_client.connection_pool, "connection_kwargs"):
-            kwargs = redis_client.connection_pool.connection_kwargs
-            if kwargs.get("socket_timeout") is None or kwargs.get("socket_timeout") > 0.05:
-                kwargs["socket_timeout"] = 0.05
-            if kwargs.get("socket_connect_timeout") is None or kwargs.get("socket_connect_timeout") > 0.05:
-                kwargs["socket_connect_timeout"] = 0.05
-            kwargs["retry_on_timeout"] = False
+        _bound_redis_client(redis_client)
 
         # If job is already flagged terminal, do not publish
         if is_job_terminal_flagged(redis_client, kind, job_id):
