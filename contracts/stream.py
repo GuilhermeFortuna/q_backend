@@ -8,6 +8,7 @@ from typing import Any, Literal
 @dataclass(frozen=True)
 class CursorExpiredFrame:
     topic: str
+    type: Literal["cursor_expired"]
     cursor: str | None = None
 
 
@@ -15,6 +16,7 @@ class CursorExpiredFrame:
 class EpochChangedFrame:
     new_epoch: str
     topic: str
+    type: Literal["epoch_changed"]
     previous_epoch: str | None = None
 
 
@@ -75,6 +77,7 @@ class JobTerminalPayload:
 class LaggingFrame:
     from_seq: int
     topic: str
+    type: Literal["lagging"]
 
 
 @dataclass(frozen=True)
@@ -85,7 +88,13 @@ class LatestValuesResponse:
 
 @dataclass(frozen=True)
 class RejectedFrame:
-    reason: Literal["unknown_topic", "unsupported_schema_major", "stream_unavailable"]
+    reason: Literal[
+        "unknown_topic",
+        "unsupported_schema_major",
+        "stream_unavailable",
+        "invalid_frame",
+    ]
+    type: Literal["rejected"]
     detail: str | None = None
     topic: str | None = None
 
@@ -130,3 +139,4 @@ class SubscribeFrame:
 @dataclass(frozen=True)
 class SubscribedFrame:
     topics: dict[str, Any]
+    type: Literal["subscribed"]
