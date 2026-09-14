@@ -21,16 +21,36 @@ if [ -z "${CI:-}" ]; then
   fi
 
   if [ "$SERVICES_READY" = false ]; then
-    echo "Services not running. Starting Docker services (postgres, redis)..."
-    docker compose up -d postgres redis
-    echo "Waiting for PostgreSQL to be ready..."
-    for i in {1..30}; do
-      if docker compose exec -T postgres pg_isready -U postgres >/dev/null 2>&1; then
-        echo "PostgreSQL is ready."
-        break
+    UNITS_INSTALLED=false
+    if command -v systemctl >/dev/null 2>&1; then
+      if systemctl --user cat q-postgres.service >/dev/null 2>&1 && systemctl --user cat q-redis.service >/dev/null 2>&1; then
+        UNITS_INSTALLED=true
       fi
-      sleep 1
-    done
+    fi
+
+    if [ "$UNITS_INSTALLED" = true ]; then
+      echo "Services not running. Starting systemd user units (q-postgres, q-redis)..."
+      systemctl --user start q-postgres.service q-redis.service
+      echo "Waiting for PostgreSQL to be ready..."
+      for i in {1..30}; do
+        if (echo > /dev/tcp/localhost/5434) >/dev/null 2>&1; then
+          echo "PostgreSQL is ready."
+          break
+        fi
+        sleep 1
+      done
+    else
+      echo "Services not running. Starting Docker services (postgres, redis)..."
+      docker compose up -d postgres redis
+      echo "Waiting for PostgreSQL to be ready..."
+      for i in {1..30}; do
+        if docker compose exec -T postgres pg_isready -U postgres >/dev/null 2>&1; then
+          echo "PostgreSQL is ready."
+          break
+        fi
+        sleep 1
+      done
+    fi
   else
     echo "Local services are reachable."
   fi

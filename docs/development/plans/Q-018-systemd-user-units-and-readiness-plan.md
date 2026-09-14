@@ -304,7 +304,7 @@ Every long-running `.service.in` shares: `EnvironmentFile=%h/.config/q/backend.e
    listening socket on a free port substituted for 5434 through
    `Q_UNITS_PG_PORT`, the script exits non-zero and prints `docker compose`.
    Confirm they fail, implement, and confirm they pass. Commit.
-10. [ ] Change `scripts/ci.sh` to prefer installed units over compose. Run it with the
+10. [x] Change `scripts/ci.sh` to prefer installed units over compose. Run it with the
     units not installed and confirm that the compose path is unchanged. Commit.
 11. [ ] Write `docs/operations/systemd-user-units.md`: install (podman, linger, env
     files, installer), operate (`start`, `status`, `journalctl`), migrating from
