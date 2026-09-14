@@ -1,5 +1,6 @@
 import secrets
 import redis
+import redis.asyncio
 
 from q_backend.storage.db.base import utc_now
 from q_backend.storage.settings import get_settings
@@ -10,6 +11,12 @@ def get_binary_redis() -> redis.Redis:
     """Return a Redis client with decode_responses=False for streaming byte safety."""
     settings = get_settings()
     return redis.Redis.from_url(settings.redis_url, decode_responses=False)
+
+
+def get_async_binary_redis() -> redis.asyncio.Redis:
+    """Return an async byte-safe Redis client for blocking stream reads."""
+    settings = get_settings()
+    return redis.asyncio.Redis.from_url(settings.redis_url, decode_responses=False)
 
 
 def ensure_stream_epoch(client: redis.Redis) -> tuple[str, bool]:
