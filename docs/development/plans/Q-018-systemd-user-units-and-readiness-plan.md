@@ -248,20 +248,20 @@ Every long-running `.service.in` shares: `EnvironmentFile=%h/.config/q/backend.e
 
 ## Ordered implementation
 
-1. Work on the branch `Q-018-systemd-user-units-and-readiness` in `q_backend`,
+1. [x] Work on the branch `Q-018-systemd-user-units-and-readiness` in `q_backend`,
    created from `development` by `./work start`.
-2. Write failing tests in `tests/observability/test_systemd_notify.py`: with
+2. [x] Write failing tests in `tests/observability/test_systemd_notify.py`: with
    `NOTIFY_SOCKET` pointing at a bound socket in `tmp_path`, `notify_ready()`
    returns `True` and the socket receives exactly `b"READY=1"`; with an abstract
    name `@q-test-<uuid>`, the same holds; with the variable unset, it returns
    `False` and raises nothing. Confirm they fail, implement, and confirm they pass.
    Commit.
-3. Write failing tests in `tests/storage/test_migrations_check.py` (SQLite file
+3. [ ] Write failing tests in `tests/storage/test_migrations_check.py` (SQLite file
    database): after `alembic upgrade head`, `schema_revision().current == head`;
    after `alembic downgrade -1`, `current` equals the previous revision id and
    differs from `head`. Confirm they fail, implement, and confirm they pass.
    Commit.
-4. Write failing `integration` tests in `tests/cli/test_q_api_readiness.py`: run
+4. [ ] Write failing `integration` tests in `tests/cli/test_q_api_readiness.py`: run
    `q-api --port <free>` as a subprocess with a notify socket against a migrated
    Postgres; `READY=1` arrives within 30 s, and a TCP connect to the port succeeds
    at that moment. With `Q_REDIS_URL=redis://127.0.0.1:1/0`, `READY=1` still
@@ -269,24 +269,24 @@ Every long-running `.service.in` shares: `EnvironmentFile=%h/.config/q/backend.e
    within 10 s, stderr contains both revision ids, and no datagram arrives.
    Confirm they fail, implement `q-api` and `NotifyingServer`, add the script to
    `pyproject.toml`, and confirm they pass. Commit.
-5. Write failing tests in `tests/streaming/test_relay_readiness.py` (SQLite and
+5. [ ] Write failing tests in `tests/streaming/test_relay_readiness.py` (SQLite and
    `fakeredis`): `run_forever` with an empty outbox calls `on_first_success`
    exactly once across three passes; with the Redis client raising
    `ConnectionError` for 2 s, the callback is not called, and it is called once
    after the client recovers. Confirm they fail, implement, wire `notify_ready`
    in `q_outbox_relay.py`, and confirm they pass. Commit.
-6. Write failing tests in `tests/cli/test_q_market_publisher_readiness.py`: with
+6. [ ] Write failing tests in `tests/cli/test_q_market_publisher_readiness.py`: with
    no symbols, `main([])` returns 78; with `fakeredis` and the fake gateway
    stopped (from Q-013's `tests/streaming/fake_gateway.py`), `READY=1` reaches the
    notify socket before the first poll. Confirm they fail, implement, and confirm
    they pass. Update the existing no-symbols test only if it asserts exit code 1
    exactly. Commit.
-7. Write a failing `integration` test in `tests/tasks/test_worker_readiness.py`:
+7. [ ] Write a failing `integration` test in `tests/tasks/test_worker_readiness.py`:
    run `.venv/bin/worker` with `Q_WORKER_PROCESSES=1` and a notify socket against
    local Redis; `READY=1` arrives within 60 s; SIGTERM makes it exit 0 within
    60 s. Confirm it fails, add `ReadinessMiddleware`, and confirm it passes.
    Commit.
-8. Write the quadlet files, `.service.in` templates, the target, and both env
+8. [ ] Write the quadlet files, `.service.in` templates, the target, and both env
    examples. Write failing tests in `tests/deploy/test_units.py`: rendering into
    `tmp_path` with `Q_BACKEND_DIR=/opt/q_backend` leaves no `@…@`; every
    `ExecStart` starts with `/opt/q_backend/.venv/bin/` and contains neither
@@ -297,42 +297,42 @@ Every long-running `.service.in` shares: `EnvironmentFile=%h/.config/q/backend.e
    `systemd-analyze --user verify` exits 0 on the rendered services (skipped
    without the binary). Confirm they fail, implement, and confirm they pass.
    Commit.
-9. Write `scripts/install-user-units.sh` with `--dest`, `--quadlet-dest`,
+9. [ ] Write `scripts/install-user-units.sh` with `--dest`, `--quadlet-dest`,
    `--no-sync`, and `--uninstall`. Write failing tests: two runs into temporary
    destinations produce identical trees with unchanged modification times on the
    second run; `--uninstall` removes exactly the installed files; with a
    listening socket on a free port substituted for 5434 through
    `Q_UNITS_PG_PORT`, the script exits non-zero and prints `docker compose`.
    Confirm they fail, implement, and confirm they pass. Commit.
-10. Change `scripts/ci.sh` to prefer installed units over compose. Run it with the
+10. [ ] Change `scripts/ci.sh` to prefer installed units over compose. Run it with the
     units not installed and confirm that the compose path is unchanged. Commit.
-11. Write `docs/operations/systemd-user-units.md`: install (podman, linger, env
+11. [ ] Write `docs/operations/systemd-user-units.md`: install (podman, linger, env
     files, installer), operate (`start`, `status`, `journalctl`), migrating from
     compose (stop compose, start `q-postgres`, `pg_dumpall` pipe, row-count
     query), using the Tauri app data roots, and troubleshooting (port held,
     exit 78, schema behind). Update the README's local-stack section to point to
     it and keep the compose instructions marked as the fallback. Commit.
-12. Regression: `uv run pytest tests/streaming tests/cli tests/api -q` passes, and
+12. [ ] Regression: `uv run pytest tests/streaming tests/cli tests/api -q` passes, and
     `uv run dev` and `uv run q-outbox-relay` still start by hand without
     `NOTIFY_SOCKET`. Commit any fixes.
-13. Human step, matching human-verifiable criterion 1: `sudo apt install
+13. [ ] Human step, matching human-verifiable criterion 1: `sudo apt install
     podman`, create the env files, run the installer, run the generator dry run,
     `systemctl --user start q-backend.target`, and record `systemd-analyze --user
     blame` for the `q-` units.
-14. Human step, matching human-verifiable criterion 2: follow "Migrating from
+14. [ ] Human step, matching human-verifiable criterion 2: follow "Migrating from
     compose". Record row counts for `backtest_runs`, `optimization_studies`, and
     `stream_outbox` before and after.
-15. Human step, matching human-verifiable criterion 3: `loginctl enable-linger`,
+15. [ ] Human step, matching human-verifiable criterion 3: `loginctl enable-linger`,
     `systemctl --user enable q-backend.target`, reboot without logging in, then
     over SSH check `is-active` and the health endpoint.
-16. Human step, matching human-verifiable criterion 4: SIGKILL each of `q-api`,
+16. [ ] Human step, matching human-verifiable criterion 4: SIGKILL each of `q-api`,
     `q-outbox-relay`, `q-market-publisher`, and `q-research-worker` in turn, and
     record the time from kill to active from the journal.
-17. Human step, matching human-verifiable criterion 5: stop `q-redis`; confirm
+17. [ ] Human step, matching human-verifiable criterion 5: stop `q-redis`; confirm
     `q-api` is active, `/api/v1/system/health` answers 200, and
     `/api/v1/stream/jobs.progress/latest` answers 503; start `q-redis` and record
     how long the relay takes to log recovery.
-18. Run the full validation suite. Commit.
+18. [ ] Run the full validation suite. Commit.
 
 ## Validation
 
