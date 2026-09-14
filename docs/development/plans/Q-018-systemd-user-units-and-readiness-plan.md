@@ -312,7 +312,7 @@ Every long-running `.service.in` shares: `EnvironmentFile=%h/.config/q/backend.e
     query), using the Tauri app data roots, and troubleshooting (port held,
     exit 78, schema behind). Update the README's local-stack section to point to
     it and keep the compose instructions marked as the fallback. Commit.
-12. [ ] Regression: `uv run pytest tests/streaming tests/cli tests/api -q` passes, and
+12. [x] Regression: `uv run pytest tests/streaming tests/cli tests/api -q` passes, and
     `uv run dev` and `uv run q-outbox-relay` still start by hand without
     `NOTIFY_SOCKET`. Commit any fixes.
 13. [ ] Human step, matching human-verifiable criterion 1: `sudo apt install
