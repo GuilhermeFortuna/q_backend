@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 import pytest
+import torch
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -227,3 +228,104 @@ def test_torch_autoencoder_oos_contract_via_compute_path(
         unregister_neural_model_features(
             [neural_catalog_key(name, version.model_hash) for name in version.latent_names]
         )
+
+
+# --- Q-032 device policy -----------------------------------------------------
+
+
+def test_resolve_torch_device_unset_is_cpu(monkeypatch) -> None:
+    from q_backend.neural.torch_autoencoder import resolve_torch_device
+
+    monkeypatch.delenv("Q_TORCH_DEVICE", raising=False)
+    monkeypatch.setattr("torch.cuda.is_available", lambda: True)
+    assert resolve_torch_device().type == "cpu"
+
+
+def test_resolve_torch_device_explicit_cpu(monkeypatch) -> None:
+    from q_backend.neural.torch_autoencoder import resolve_torch_device
+
+    monkeypatch.setenv("Q_TORCH_DEVICE", "cpu")
+    monkeypatch.setattr("torch.cuda.is_available", lambda: True)
+    assert resolve_torch_device().type == "cpu"
+    assert resolve_torch_device("cpu").type == "cpu"
+
+
+def test_resolve_torch_device_auto_uses_cuda_when_available(monkeypatch) -> None:
+    from q_backend.neural.torch_autoencoder import resolve_torch_device
+
+    monkeypatch.setenv("Q_TORCH_DEVICE", "auto")
+    monkeypatch.setattr("torch.cuda.is_available", lambda: True)
+    assert resolve_torch_device().type == "cuda"
+
+
+def test_resolve_torch_device_auto_falls_back_to_cpu(monkeypatch) -> None:
+    from q_backend.neural.torch_autoencoder import resolve_torch_device
+
+    monkeypatch.setenv("Q_TORCH_DEVICE", "auto")
+    monkeypatch.setattr("torch.cuda.is_available", lambda: False)
+    assert resolve_torch_device().type == "cpu"
+
+
+def test_resolve_torch_device_cuda_unavailable_raises(monkeypatch) -> None:
+    from q_backend.neural.torch_autoencoder import (
+        TorchDeviceUnavailableError,
+        resolve_torch_device,
+    )
+
+    monkeypatch.setenv("Q_TORCH_DEVICE", "cuda")
+    monkeypatch.setattr("torch.cuda.is_available", lambda: False)
+    with pytest.raises(TorchDeviceUnavailableError, match="Q_TORCH_DEVICE"):
+        resolve_torch_device()
+
+
+def test_resolve_torch_device_cuda_available(monkeypatch) -> None:
+    from q_backend.neural.torch_autoencoder import resolve_torch_device
+
+    monkeypatch.setattr("torch.cuda.is_available", lambda: True)
+    assert resolve_torch_device("cuda").type == "cuda"
+
+
+def test_resolve_torch_device_invalid_raises(monkeypatch) -> None:
+    from q_backend.neural.torch_autoencoder import resolve_torch_device
+
+    monkeypatch.delenv("Q_TORCH_DEVICE", raising=False)
+    with pytest.raises(ValueError, match="Invalid Q_TORCH_DEVICE"):
+        resolve_torch_device("tpu")
+
+
+def test_autoencoder_reuses_one_resolved_device(monkeypatch) -> None:
+    from q_backend.neural import torch_autoencoder as mod
+
+    monkeypatch.setenv("Q_TORCH_DEVICE", "cpu")
+    monkeypatch.setattr(mod.torch.cuda, "is_available", lambda: False)
+
+    window = _synthetic_feature_window()
+    encoder = TorchAutoencoder(config=_encoder_config())
+    assert encoder._device.type == "cpu"
+    encoder.fit(window)
+    devices_seen: list[str] = []
+
+    real_to = encoder._model.to
+
+    def _tracking_to(device, *args, **kwargs):
+        devices_seen.append(str(device))
+        return real_to(device, *args, **kwargs)
+
+    monkeypatch.setattr(encoder._model, "to", _tracking_to)
+    _ = encoder.transform(window.tail(20))
+    assert devices_seen
+    assert all(d == str(encoder._device) for d in devices_seen)
+
+
+def test_artifact_state_tensors_are_cpu_numpy(monkeypatch) -> None:
+    monkeypatch.setenv("Q_TORCH_DEVICE", "cpu")
+    window = _synthetic_feature_window()
+    encoder = TorchAutoencoder(config=_encoder_config())
+    encoder.fit(window)
+    state = encoder.dump_artifact_state()
+    model_state = state["model_state"]
+    assert model_state
+    for key, array in model_state.items():
+        assert isinstance(array, np.ndarray), key
+        # NumPy arrays are always host-side; ensure no torch tensors leaked.
+        assert not isinstance(array, torch.Tensor)
