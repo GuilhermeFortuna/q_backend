@@ -113,3 +113,67 @@ def test_relay_run_once_orders_and_advances_progress(clean_test_topics):
     assert second_appended == 0
     assert len(client.xrange(stream_key("jobs.terminal"))) == 3
     assert len(client.xrange(stream_key("deployments"))) == 2
+
+
+@pytest.mark.integration
+def test_relay_crash_safety_duplicate_without_gap(clean_test_topics):
+    session_factory, client = clean_test_topics
+
+    # Record 3 events on jobs.terminal
+    with session_factory() as session:
+        for i in range(1, 4):
+            record_event(
+                session,
+                "jobs.terminal",
+                {
+                    "job_id": f"crash-job-{i}",
+                    "kind": "backtest",
+                    "status": "completed",
+                    "finished_at": f"2026-09-12T00:0{i}:00Z",
+                },
+                payload_schema="schema/stream/payloads/job-terminal.schema.json",
+                producer_id="worker-crash-test",
+            )
+        session.commit()
+
+    # Step 1: Relay first event with batch_size=1
+    relay_1 = OutboxRelay(session_factory, client, RelayConfig(batch_size=1))
+    appended_1 = relay_1.run_once()
+    assert appended_1 == 1
+
+    with session_factory() as session:
+        state = session.execute(select(OutboxTopicState).where(OutboxTopicState.topic == "jobs.terminal")).scalar_one()
+        assert state.last_relayed_seq == 1
+
+    # Step 2: Patch _record_progress to simulate crash right after pipeline execute
+    def crash_record_progress(session, topic, epoch, last_seq):
+        raise RuntimeError("Simulated crash after Redis append!")
+
+    relay_1._record_progress = crash_record_progress
+
+    with pytest.raises(RuntimeError, match="Simulated crash after Redis append"):
+        relay_1.run_once()
+
+    # Verify event 2 was appended to Redis, but last_relayed_seq in Postgres is still 1
+    entries_mid = client.xrange(stream_key("jobs.terminal"))
+    assert len(entries_mid) == 2
+    assert decode_entry(entries_mid[0][1])[0].seq == 1
+    assert decode_entry(entries_mid[1][1])[0].seq == 2
+
+    with session_factory() as session:
+        state = session.execute(select(OutboxTopicState).where(OutboxTopicState.topic == "jobs.terminal")).scalar_one()
+        assert state.last_relayed_seq == 1
+
+    # Step 3: Restart with a fresh relay
+    fresh_relay = OutboxRelay(session_factory, client, RelayConfig(batch_size=500))
+    appended_restart = fresh_relay.run_once()
+    assert appended_restart == 2
+
+    # Step 4: Verify the stream holds 1, 2, 2, 3 (one duplicate, no gaps)
+    entries_final = client.xrange(stream_key("jobs.terminal"))
+    final_seqs = [decode_entry(fields)[0].seq for _, fields in entries_final]
+    assert final_seqs == [1, 2, 2, 3]
+
+    with session_factory() as session:
+        state = session.execute(select(OutboxTopicState).where(OutboxTopicState.topic == "jobs.terminal")).scalar_one()
+        assert state.last_relayed_seq == 3
