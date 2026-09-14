@@ -17,6 +17,7 @@ from q_backend.api.routers import strategies as strategies_router
 from q_backend.api.routers import strategy_builder as strategy_builder_router
 from q_backend.api.routers import strategy_search as strategy_search_router
 from q_backend.api.routers import system as system_router
+from q_backend.api.routers import stream as stream_router
 from q_backend.api.routers import walkforward as walkforward_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -39,6 +40,7 @@ app.add_middleware(
 )
 
 app.include_router(system_router.router)
+app.include_router(stream_router.router)
 app.include_router(strategies_router.router)
 app.include_router(strategy_builder_router.router)
 app.include_router(market_router.router)
