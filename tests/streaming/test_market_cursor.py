@@ -57,3 +57,25 @@ def test_bar_transitions_emit_only_changed_forming_and_completed_before_roll():
     completed, forming, _ = bar_transitions(state, _bars([10, 20], [2.0, 3.0]))
     assert completed is not None and completed["time"].tolist() == [10]
     assert forming is not None and forming["time"].tolist() == [20]
+
+
+def test_roll_without_the_previous_bar_in_the_window_completes_the_previous_forming_bar():
+    """Taking index - 1 of a one-bar window republishes the new bar as the completed one."""
+    _, _, state = bar_transitions(BarState(), _bars([10], [2.0]))
+
+    completed, forming, _ = bar_transitions(state, _bars([20], [3.0]))
+
+    assert completed is not None and completed["time"].tolist() == [10]
+    assert completed["close"].tolist() == [2.0]
+    assert forming is not None and forming["time"].tolist() == [20]
+
+
+def test_roll_across_skipped_bars_completes_every_bar_since_the_previous_forming_one():
+    """Only the bar before the new one was published, leaving a gap on bars.completed."""
+    _, _, state = bar_transitions(BarState(), _bars([10], [1.0]))
+
+    completed, forming, _ = bar_transitions(state, _bars([10, 20, 30, 40], [1.5, 2.0, 3.0, 4.0]))
+
+    assert completed is not None and completed["time"].tolist() == [10, 20, 30]
+    assert completed["close"].tolist() == [1.5, 2.0, 3.0]
+    assert forming is not None and forming["time"].tolist() == [40]
