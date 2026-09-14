@@ -289,11 +289,11 @@ tests/market_data/lake_query/                    new test package
    four pandas read helpers and the `pq` import. Confirm that every test in
    `tests/market_data/lake_query`, `tests/market_data/catalog`, and
    `tests/market_data` passes. Commit.
-7. Regression: confirm that
+- [x] 7. Regression: confirm that
    `git diff development --stat -- tests/market_data/catalog tests/market_data/test_local_store.py tests/market_data/test_local_tick_store.py tests/market_data/test_local_provider.py tests/fixtures/lake`
    is empty, and that `test_edge_reads.py` passes with
    `tests/fixtures/lake_edge` unchanged since step 3. Fix code, never baselines. Commit any fixes.
-8. Measurement: run
+- [x] 8. Measurement: run
    `uv run python scripts/lake_read_digest.py --fixture tests/fixtures/lake --runs 50`
    on the branch, and record the median per-read time next to the step 3 value.
 9. Human step, matching human-verifiable criterion 1: with `Q_MARKET_DATA_ROOT`
