@@ -303,7 +303,7 @@ tests/market_data/lake_query/                    new test package
 10. Human step, matching human-verifiable criterion 2: run the same candle
     backtest and the same tick backtest from the research UI on `development` and
     on the branch, and compare the headline metrics.
-11. Run the full validation suite, `scripts/ci.sh`. Commit.
+- [x] 11. Run the full validation suite, `scripts/ci.sh`. Commit.
 
 ## Validation
 
