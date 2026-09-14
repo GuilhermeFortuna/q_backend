@@ -11,8 +11,10 @@ from pydantic import BaseModel, Field, model_validator
 
 from q_backend.market_data import local_store
 from q_backend.market_data.clients.metatrader import TIMEFRAME_MAP, _to_naive_local
+from q_backend.storage.db.engine import session_scope
 from q_backend.storage.redis.client import get_redis
 from q_backend.storage.redis.progress import get_job_progress, set_job_progress
+from q_backend.streaming.jobs import record_job_terminal
 
 logger = logging.getLogger(__name__)
 
@@ -279,6 +281,17 @@ def run_ingest_job(job_id: str, request_json: str) -> None:
             timeframes = validate_timeframes(request.timeframes)
             results, detail, status, terminal_error = _run_bars_ingest(job_id, symbol, timeframes, start, end, provider)
 
+        try:
+            with session_scope() as session:
+                record_job_terminal(
+                    session,
+                    kind="storage_ingest",
+                    job_id=job_id,
+                    raw_status=status,
+                    error=terminal_error,
+                )
+        except Exception as term_exc:  # noqa: BLE001
+            logger.warning("Failed to record terminal event for storage ingest job %s: %s", job_id, term_exc)
         _persist_progress(
             job_id,
             {
@@ -292,6 +305,17 @@ def run_ingest_job(job_id: str, request_json: str) -> None:
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Storage ingest job %s failed", job_id)
+        try:
+            with session_scope() as session:
+                record_job_terminal(
+                    session,
+                    kind="storage_ingest",
+                    job_id=job_id,
+                    raw_status="failed",
+                    error=str(exc),
+                )
+        except Exception as term_exc:  # noqa: BLE001
+            logger.warning("Failed to record terminal failure for storage ingest job %s: %s", job_id, term_exc)
         _persist_progress(
             job_id,
             {

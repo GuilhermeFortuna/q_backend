@@ -41,7 +41,7 @@
       ],
       "profile_id": "ccm_h1_swing",
       "provenance": {
-        "backend_version": "<NORMALIZED_ID>3b221f41",
+        "backend_version": "<NORMALIZED_HASH>",
         "catalog_version": 1,
         "profile_id": "ccm_h1_swing"
       },

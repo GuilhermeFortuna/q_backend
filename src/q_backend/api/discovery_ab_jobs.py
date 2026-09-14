@@ -22,6 +22,7 @@ from q_backend.api.schemas.experiments import (
 from q_backend.optimization.models import ObjectiveMode
 from q_backend.optimization.objectives import resolve_objective
 from q_backend.optimization.strategy_search import StrategySearchConfig
+from q_backend.storage.db.engine import session_scope
 from q_backend.storage.lake.artifacts import (
     read_discovery_ab_report,
     write_discovery_ab_report,
@@ -32,6 +33,7 @@ from q_backend.storage.redis.progress import (
     get_job_progress,
     set_job_progress,
 )
+from q_backend.streaming.jobs import record_job_terminal
 
 logger = logging.getLogger(__name__)
 
@@ -352,6 +354,16 @@ def run_discovery_ab_job(job_id: str, request_json: str) -> None:
         detail = "; ".join(notes) if notes else None
         result_payload = result.model_dump(mode="json")
         write_discovery_ab_report(job_id, result_payload)
+        try:
+            with session_scope() as session:
+                record_job_terminal(
+                    session,
+                    kind="discovery_ab",
+                    job_id=job_id,
+                    raw_status="completed",
+                )
+        except Exception as term_exc:  # noqa: BLE001
+            logger.warning("Failed to record terminal event for discovery A/B job %s: %s", job_id, term_exc)
         _persist_progress(
             job_id,
             {
@@ -366,6 +378,17 @@ def run_discovery_ab_job(job_id: str, request_json: str) -> None:
         )
     except Exception as exc:  # noqa: BLE001 — surface any failure to the client
         logger.exception("Discovery A/B job %s failed", job_id)
+        try:
+            with session_scope() as session:
+                record_job_terminal(
+                    session,
+                    kind="discovery_ab",
+                    job_id=job_id,
+                    raw_status="failed",
+                    error=str(exc),
+                )
+        except Exception as term_exc:  # noqa: BLE001
+            logger.warning("Failed to record terminal failure for discovery A/B job %s: %s", job_id, term_exc)
         _persist_progress(
             job_id,
             {

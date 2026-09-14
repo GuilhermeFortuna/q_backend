@@ -205,7 +205,7 @@ def run_jobs_sync(monkeypatch, tmp_path):
                 )
 
     monkeypatch.setattr("q_backend.storage.db.engine.session_scope", _harness_session_scope)
-    for module in (oj, wj, sj, bj, nj, eaj, dab, arj):
+    for module in (oj, wj, sj, bj, nj, eaj, dab, arj, stj):
         if hasattr(module, "session_scope"):
             monkeypatch.setattr(module, "session_scope", _harness_session_scope)
     monkeypatch.setattr("q_backend.optimization.genetic_search.session_scope", _harness_session_scope, raising=False)
@@ -327,4 +327,10 @@ def run_jobs_sync(monkeypatch, tmp_path):
         ),
     )
 
-    return fake
+    from q_backend.streaming.jobs import set_publisher_client
+
+    set_publisher_client(fake)
+    try:
+        yield fake
+    finally:
+        set_publisher_client(None)

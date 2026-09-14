@@ -55,6 +55,7 @@ from q_backend.storage.redis.progress import (
     get_job_progress,
     set_job_progress,
 )
+from q_backend.streaming.jobs import record_job_terminal
 from q_backend.tasks.fanin import is_cancelled, set_cancelled
 
 logger = logging.getLogger(__name__)
@@ -237,6 +238,16 @@ def _finish_inconclusive(
     payload = result.model_dump(mode="json")
     write_alpha_research_result(job_id, payload)
     _save_checkpoint(job_id, checkpoint)
+    try:
+        with session_scope() as session:
+            record_job_terminal(
+                session,
+                kind="alpha_research",
+                job_id=job_id,
+                raw_status="completed",
+            )
+    except Exception as term_exc:  # noqa: BLE001
+        logger.warning("Failed to record terminal event for alpha research job %s: %s", job_id, term_exc)
     _persist_progress(
         job_id,
         {
@@ -294,6 +305,17 @@ def request_cancel(job_id: str) -> bool:
         from q_backend.api import strategy_search_jobs
 
         strategy_search_jobs.request_cancel(child_run_id)
+    try:
+        with session_scope() as session:
+            record_job_terminal(
+                session,
+                kind="alpha_research",
+                job_id=job_id,
+                raw_status="cancelled",
+                error="Cancelled by operator.",
+            )
+    except Exception as term_exc:  # noqa: BLE001
+        logger.warning("Failed to record terminal cancellation for alpha research job %s: %s", job_id, term_exc)
     _persist_progress(
         job_id,
         {
@@ -697,6 +719,16 @@ def run_alpha_research_job(job_id: str, request_json: str, *, resume: bool = Fal
         checkpoint["final_verdict"] = final_acceptance.verdict
         _set_stage("complete", "completed")
         _save_checkpoint(job_id, checkpoint)
+        try:
+            with session_scope() as session:
+                record_job_terminal(
+                    session,
+                    kind="alpha_research",
+                    job_id=job_id,
+                    raw_status="completed",
+                )
+        except Exception as term_exc:  # noqa: BLE001
+            logger.warning("Failed to record terminal event for alpha research job %s: %s", job_id, term_exc)
         _persist_progress(
             job_id,
             {
@@ -716,6 +748,17 @@ def run_alpha_research_job(job_id: str, request_json: str, *, resume: bool = Fal
         checkpoint["last_error"] = str(exc)
         _save_checkpoint(job_id, checkpoint)
         status: JobStatus = "cancelled" if is_cancelled(job_id) else "failed"
+        try:
+            with session_scope() as session:
+                record_job_terminal(
+                    session,
+                    kind="alpha_research",
+                    job_id=job_id,
+                    raw_status=status,
+                    error=str(exc),
+                )
+        except Exception as term_exc:  # noqa: BLE001
+            logger.warning("Failed to record terminal failure for alpha research job %s: %s", job_id, term_exc)
         _persist_progress(
             job_id,
             {

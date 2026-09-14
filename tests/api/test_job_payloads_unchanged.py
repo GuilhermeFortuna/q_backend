@@ -80,7 +80,7 @@ def normalize_payload(obj: Any) -> Any:
                 normalized[k] = "<NORMALIZED_ID>"
             elif k in ("created_at", "updated_at", "started_at", "finished_at", "time", "timestamp"):
                 normalized[k] = "<NORMALIZED_TIMESTAMP>"
-            elif k == "model_hash":
+            elif k in ("model_hash", "backend_version"):
                 normalized[k] = "<NORMALIZED_HASH>"
             elif k == "root":
                 normalized[k] = "<NORMALIZED_PATH>"

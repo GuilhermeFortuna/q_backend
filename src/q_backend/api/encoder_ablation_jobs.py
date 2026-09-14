@@ -23,6 +23,7 @@ from q_backend.storage.db.engine import session_scope
 from q_backend.storage.lake.artifacts import write_encoder_ablation_result
 from q_backend.storage.redis.client import get_redis
 from q_backend.storage.redis.progress import get_job_progress, set_job_progress
+from q_backend.streaming.jobs import record_job_terminal
 
 logger = logging.getLogger(__name__)
 
@@ -259,6 +260,16 @@ def run_encoder_ablation_job(job_id: str, request_json: str) -> None:
             horizon=request.horizon,
         )
         write_encoder_ablation_result(job_id, ablation_result.model_dump(mode="json"))
+        try:
+            with session_scope() as session:
+                record_job_terminal(
+                    session,
+                    kind="encoder_ablation",
+                    job_id=job_id,
+                    raw_status="completed",
+                )
+        except Exception as term_exc:  # noqa: BLE001
+            logger.warning("Failed to record terminal event for encoder ablation job %s: %s", job_id, term_exc)
         _persist_progress(
             job_id,
             {
@@ -268,6 +279,17 @@ def run_encoder_ablation_job(job_id: str, request_json: str) -> None:
         )
     except Exception as exc:  # noqa: BLE001 — surface orchestration failures to the client
         logger.exception("Encoder ablation job %s failed", job_id)
+        try:
+            with session_scope() as session:
+                record_job_terminal(
+                    session,
+                    kind="encoder_ablation",
+                    job_id=job_id,
+                    raw_status="failed",
+                    error=str(exc),
+                )
+        except Exception as term_exc:  # noqa: BLE001
+            logger.warning("Failed to record terminal failure for encoder ablation job %s: %s", job_id, term_exc)
         _persist_progress(
             job_id,
             {

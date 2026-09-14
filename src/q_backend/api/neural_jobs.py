@@ -15,6 +15,7 @@ from q_backend.neural.training_pipeline import (
 from q_backend.storage.db.engine import session_scope
 from q_backend.storage.redis.client import get_redis
 from q_backend.storage.redis.progress import get_job_progress, set_job_progress
+from q_backend.streaming.jobs import record_job_terminal
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +116,17 @@ def run_training_job(job_id: str, request_json: str) -> None:
                 on_progress=on_progress,
             )
 
+        try:
+            with session_scope() as session:
+                record_job_terminal(
+                    session,
+                    kind="neural_training",
+                    job_id=job_id,
+                    raw_status="completed",
+                )
+        except Exception as term_exc:  # noqa: BLE001
+            logger.warning("Failed to record terminal event for neural training job %s: %s", job_id, term_exc)
+
         _persist_progress(
             job_id,
             {
@@ -127,6 +139,17 @@ def run_training_job(job_id: str, request_json: str) -> None:
         )
     except Exception as exc:  # noqa: BLE001 — surface any failure to the client
         logger.exception("Neural training job %s failed", job_id)
+        try:
+            with session_scope() as session:
+                record_job_terminal(
+                    session,
+                    kind="neural_training",
+                    job_id=job_id,
+                    raw_status="failed",
+                    error=str(exc),
+                )
+        except Exception as term_exc:  # noqa: BLE001
+            logger.warning("Failed to record terminal failure for neural training job %s: %s", job_id, term_exc)
         _persist_progress(
             job_id,
             {

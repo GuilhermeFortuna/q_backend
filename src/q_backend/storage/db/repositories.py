@@ -519,17 +519,18 @@ def update_walkforward_run(
 
     if status is not None:
         stream_status = STATUS_TO_STREAM.get(status.lower())
+        job_id = run_id.hex if hasattr(run_id, "hex") else str(run_id).replace("-", "")
         if stream_status in ("completed", "failed", "cancelled"):
             record_job_terminal(
                 session,
                 kind="walkforward",
-                job_id=str(run_id),
+                job_id=job_id,
                 raw_status=status,
                 error=error_message or run.error_message,
                 finished_at=finished_at or run.finished_at,
             )
         elif stream_status == "running":
-            clear_job_terminal_marker(session, "walkforward", str(run_id))
+            clear_job_terminal_marker(session, "walkforward", job_id)
 
     return run
 
@@ -656,17 +657,18 @@ def update_strategy_search_run(
 
     if status is not None:
         stream_status = STATUS_TO_STREAM.get(status.lower())
+        job_id = run_id.hex if hasattr(run_id, "hex") else str(run_id).replace("-", "")
         if stream_status in ("completed", "failed", "cancelled"):
             record_job_terminal(
                 session,
                 kind="strategy_search",
-                job_id=str(run_id),
+                job_id=job_id,
                 raw_status=status,
                 error=error_message or run.error_message,
                 finished_at=finished_at or run.finished_at,
             )
         elif stream_status == "running":
-            clear_job_terminal_marker(session, "strategy_search", str(run_id))
+            clear_job_terminal_marker(session, "strategy_search", job_id)
 
     return run
 
