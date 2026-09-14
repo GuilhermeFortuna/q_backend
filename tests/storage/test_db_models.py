@@ -34,6 +34,7 @@ EXPECTED_TABLES = {
     "execution_audit_events",
     "stream_outbox",
     "stream_outbox_topic_state",
+    "stream_job_terminal_markers",
 }
 
 FORBIDDEN_TABLE_NAMES = {"ohlcv", "ticks", "bars", "features", "tick", "candles"}

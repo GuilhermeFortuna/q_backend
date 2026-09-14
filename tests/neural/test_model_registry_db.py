@@ -112,7 +112,7 @@ def test_neural_model_migration_revision_chain() -> None:
     script = ScriptDirectory.from_config(alembic_cfg)
 
     head = script.get_current_head()
-    assert head == "20260912_0017"
+    assert head == "20260913_0018"
 
     revision = script.get_revision("20260626_0011")
     assert revision is not None
