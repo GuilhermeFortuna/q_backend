@@ -184,6 +184,21 @@ class RemoteMt5Client:
         with np.load(io.BytesIO(content)) as npz:
             return _npz_to_ohlcv(npz)
 
+    def get_ohlcv_columnar(self, symbol: str, timeframe: str, start: datetime, end: datetime) -> dict[str, np.ndarray]:
+        """Return gateway OHLCV arrays without creating per-bar models."""
+        params = {
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "start": to_brasilia_naive(start).isoformat(),
+            "end": to_brasilia_naive(end).isoformat(),
+        }
+        try:
+            content = self._get_npz("/v1/ohlcv", params)
+        except _GatewayNotFound:
+            return _empty_ohlcv_columnar()
+        with np.load(io.BytesIO(content)) as npz:
+            return _npz_to_ohlcv_columnar(npz)
+
     def get_available_ohlcv_range(self, symbol: str, timeframe: str) -> Optional[OhlcvAvailableRange]:
         try:
             payload = self._get_json("/v1/available_range", {"symbol": symbol, "timeframe": timeframe})
@@ -363,4 +378,37 @@ def _npz_to_columnar(npz) -> dict[str, np.ndarray]:
         "last": np.asarray(npz["last"], dtype=np.float64),
         "volume": np.asarray(npz["volume"], dtype=np.float64),
         "flags": np.asarray(npz["flags"], dtype=np.int32),
+    }
+
+
+def _empty_ohlcv_columnar() -> dict[str, np.ndarray]:
+    return {
+        "time": np.array([], dtype=np.int64),
+        "open": np.array([], dtype=np.float64),
+        "high": np.array([], dtype=np.float64),
+        "low": np.array([], dtype=np.float64),
+        "close": np.array([], dtype=np.float64),
+        "tick_volume": np.array([], dtype=np.int64),
+        "spread": np.array([], dtype=np.int64),
+        "real_volume": np.array([], dtype=np.int64),
+    }
+
+
+def _npz_to_ohlcv_columnar(npz) -> dict[str, np.ndarray]:
+    count = len(npz["time"])
+    return {
+        "time": np.asarray(npz["time"], dtype=np.int64),
+        "open": np.asarray(npz["open"], dtype=np.float64),
+        "high": np.asarray(npz["high"], dtype=np.float64),
+        "low": np.asarray(npz["low"], dtype=np.float64),
+        "close": np.asarray(npz["close"], dtype=np.float64),
+        "tick_volume": np.asarray(npz["tick_volume"], dtype=np.int64),
+        "spread": (
+            np.asarray(npz["spread"], dtype=np.int64) if "spread" in npz.files else np.zeros(count, dtype=np.int64)
+        ),
+        "real_volume": (
+            np.asarray(npz["real_volume"], dtype=np.int64)
+            if "real_volume" in npz.files
+            else np.zeros(count, dtype=np.int64)
+        ),
     }

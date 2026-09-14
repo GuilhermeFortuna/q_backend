@@ -1,0 +1,13 @@
+{
+  "name": "bars",
+  "fields": [
+    {"name": "time", "type": "timestamp[us]", "nullable": false, "tz": "naive-wallclock-America/Sao_Paulo"},
+    {"name": "open", "type": "float64", "nullable": false},
+    {"name": "high", "type": "float64", "nullable": false},
+    {"name": "low", "type": "float64", "nullable": false},
+    {"name": "close", "type": "float64", "nullable": false},
+    {"name": "tick_volume", "type": "int64", "nullable": false},
+    {"name": "spread", "type": "int64", "nullable": false},
+    {"name": "real_volume", "type": "int64", "nullable": false}
+  ]
+}

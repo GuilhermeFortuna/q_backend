@@ -38,6 +38,7 @@ q-promote-encoder = "q_backend.cli.q_promote_encoder:main"
 q-execution = "q_backend.cli.q_execution:main"
 q-outbox = "q_backend.cli.q_outbox:main"
 q-outbox-relay = "q_backend.cli.q_outbox_relay:main"
+q-market-publisher = "q_backend.cli.q_market_publisher:main"
 
 
 [dependency-groups]
@@ -89,4 +90,3 @@ select = ["BLE001", "S110"]
 metatrader5 = [
     { path = "docker/metatrader5-stub", marker = "sys_platform != 'win32'" }
 ]
-

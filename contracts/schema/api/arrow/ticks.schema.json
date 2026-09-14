@@ -1,0 +1,11 @@
+{
+  "name": "ticks",
+  "fields": [
+    {"name": "time_msc", "type": "timestamp[ms]", "nullable": false, "tz": "naive-wallclock-America/Sao_Paulo"},
+    {"name": "bid", "type": "float64", "nullable": false},
+    {"name": "ask", "type": "float64", "nullable": false},
+    {"name": "last", "type": "float64", "nullable": false},
+    {"name": "volume", "type": "float64", "nullable": false},
+    {"name": "flags", "type": "int32", "nullable": false}
+  ]
+}

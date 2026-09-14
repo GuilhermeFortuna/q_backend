@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     live_execution_max_quote_age_seconds: float = 30.0
     live_execution_slippage_deviation: int = 20
     live_execution_dry_run: bool = True
+    stream_symbols: str = ""
+    stream_bar_timeframes: str = "M1"
+    stream_tick_poll_interval_s: float = 0.25
+    stream_bar_poll_interval_s: float = 1.0
 
 
 @lru_cache

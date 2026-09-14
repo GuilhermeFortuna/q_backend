@@ -10,6 +10,8 @@ contracts:
 	rm -rf contracts; \
 	mkdir -p contracts; \
 	cp -R "$$contracts_tmp/q_contracts/generated/python/q_contracts/." contracts/
+	mkdir -p contracts/schema/api/arrow; \
+	cp "$$contracts_tmp/q_contracts/schema/api/arrow/"*.schema.json contracts/schema/api/arrow/
 
 contracts-check:
 	contracts_tmp="$$(mktemp -d)"; \
