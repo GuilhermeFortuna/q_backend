@@ -27,7 +27,8 @@ contracts-check:
 	fi; \
 	mkdir -p "$$generated_tmp/python/q_contracts/schema/api/arrow"; \
 	cp "$$contracts_tmp/q_contracts/schema/api/arrow/"*.schema.json "$$generated_tmp/python/q_contracts/schema/api/arrow/"; \
-	diff -ru --exclude='__pycache__' --exclude='*.pyc' contracts "$$generated_tmp/python/q_contracts"
+	diff -ru --exclude='__pycache__' --exclude='*.pyc' --exclude='schema' contracts "$$generated_tmp/python/q_contracts"; \
+	python3 -c 'import json, pathlib, sys; left=pathlib.Path("contracts/schema/api/arrow"); right=pathlib.Path("'"$$generated_tmp"'/python/q_contracts/schema/api/arrow"); sys.exit(any(json.loads(p.read_text()) != json.loads((right / p.name).read_text()) for p in left.glob("*.schema.json")))'
 
 hooks:
 	git config core.hooksPath .githooks

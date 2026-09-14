@@ -1,13 +1,13 @@
 {
   "name": "bars",
   "fields": [
-    {"name": "time", "type": "timestamp[us]", "nullable": false, "tz": "naive-wallclock-America/Sao_Paulo"},
+    {"name": "time", "type": "timestamp[us]", "nullable": false, "tz": "naive-wallclock-America/Sao_Paulo", "doc": "raw MT5 epoch seconds as stored in lake Parquet via copy_rates_range; no timezone math applied"},
     {"name": "open", "type": "float64", "nullable": false},
     {"name": "high", "type": "float64", "nullable": false},
     {"name": "low", "type": "float64", "nullable": false},
     {"name": "close", "type": "float64", "nullable": false},
-    {"name": "tick_volume", "type": "int64", "nullable": false},
-    {"name": "spread", "type": "int64", "nullable": false},
-    {"name": "real_volume", "type": "int64", "nullable": false}
+    {"name": "tick_volume", "type": "int64", "nullable": false, "unit": "ticks"},
+    {"name": "spread", "type": "int64", "nullable": false, "unit": "points", "doc": "spread in points at bar close"},
+    {"name": "real_volume", "type": "int64", "nullable": false, "unit": "contracts", "doc": "real traded volume in contracts"}
   ]
 }
