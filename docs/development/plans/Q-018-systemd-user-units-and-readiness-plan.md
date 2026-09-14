@@ -261,7 +261,7 @@ Every long-running `.service.in` shares: `EnvironmentFile=%h/.config/q/backend.e
    after `alembic downgrade -1`, `current` equals the previous revision id and
    differs from `head`. Confirm they fail, implement, and confirm they pass.
    Commit.
-4. [ ] Write failing `integration` tests in `tests/cli/test_q_api_readiness.py`: run
+4. [x] Write failing `integration` tests in `tests/cli/test_q_api_readiness.py`: run
    `q-api --port <free>` as a subprocess with a notify socket against a migrated
    Postgres; `READY=1` arrives within 30 s, and a TCP connect to the port succeeds
    at that moment. With `Q_REDIS_URL=redis://127.0.0.1:1/0`, `READY=1` still
