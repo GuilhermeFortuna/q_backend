@@ -271,7 +271,7 @@ tests/market_data/lake_query/                    new test package
    - A PID change (monkeypatched `os.getpid`) causes a new instance.
 
    Confirm they fail, implement `lake_query.py`, and confirm they pass. Commit.
-6. Write failing tests in `tests/market_data/lake_query/test_local_store_duckdb.py`:
+- [x] 6. Write failing tests in `tests/market_data/lake_query/test_local_store_duckdb.py`:
    - With `pyarrow.parquet.read_table` patched to raise, `read_ohlcv` and
      `read_ticks_columnar` over the adopted Q-017 fixture still return the
      `expected_reads.json` payloads.

@@ -28,17 +28,26 @@ from q_backend.market_data.tick_cache import COLUMNAR_TICK_KEYS, _TICK_DTYPE_MAP
 
 
 def test_timezone_is_utc_and_second_cursor_also_utc(monkeypatch) -> None:
-    monkeypatch.setenv("TZ", "Asia/Tokyo")
-    time.tzset()
-    _reset_instance()
+    old_tz = os.environ.get("TZ")
+    try:
+        monkeypatch.setenv("TZ", "Asia/Tokyo")
+        time.tzset()
+        _reset_instance()
 
-    cur1 = query_cursor()
-    tz1 = cur1.execute("SELECT current_setting('TimeZone')").fetchone()[0]
-    assert tz1 == "UTC"
+        cur1 = query_cursor()
+        tz1 = cur1.execute("SELECT current_setting('TimeZone')").fetchone()[0]
+        assert tz1 == "UTC"
 
-    cur2 = query_cursor()
-    tz2 = cur2.execute("SELECT current_setting('TimeZone')").fetchone()[0]
-    assert tz2 == "UTC"
+        cur2 = query_cursor()
+        tz2 = cur2.execute("SELECT current_setting('TimeZone')").fetchone()[0]
+        assert tz2 == "UTC"
+    finally:
+        if old_tz is not None:
+            os.environ["TZ"] = old_tz
+        else:
+            os.environ.pop("TZ", None)
+        time.tzset()
+        _reset_instance()
 
 
 def test_extensions_settings_are_false() -> None:

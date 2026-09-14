@@ -14,11 +14,12 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-import pyarrow.parquet as pq
+import pyarrow as pa
 
 from q_backend.market_data.catalog.partitions import Subject
 from q_backend.market_data.catalog.repository import current_dataset, list_current_datasets
 from q_backend.market_data.catalog.service import get_lake_catalog
+from q_backend.market_data.lake_query import read_bars_table, read_ticks_arrays
 from q_backend.market_data.clients.metatrader import (
     OhlcvAvailableRange,
     _empty_ticks_columnar,
@@ -116,54 +117,42 @@ def _bars_to_dataframe(bars: list[OHLCV]) -> pd.DataFrame:
     return df
 
 
-def _dataframe_to_bars(df: pd.DataFrame) -> list[OHLCV]:
-    if df.empty:
+def _table_to_bars(table: pa.Table) -> list[OHLCV]:
+    if table.num_rows == 0:
         return []
-    ordered = df.sort_values("time")
+    time_col = table["time"].to_pylist()
+    open_col = table["open"].to_pylist()
+    high_col = table["high"].to_pylist()
+    low_col = table["low"].to_pylist()
+    close_col = table["close"].to_pylist()
+    tick_volume_col = table["tick_volume"].to_pylist()
+    spread_col = table["spread"].to_pylist()
+    real_volume_col = table["real_volume"].to_pylist()
+
     bars: list[OHLCV] = []
-    for row in ordered.itertuples(index=False):
-        spread = row.spread
-        real_volume = row.real_volume
+    for t, o, h, l, c, tv, sp, rv in zip(
+        time_col,
+        open_col,
+        high_col,
+        low_col,
+        close_col,
+        tick_volume_col,
+        spread_col,
+        real_volume_col,
+    ):
         bars.append(
             OHLCV(
-                time=pd.Timestamp(row.time).to_pydatetime(),
-                open=float(row.open),
-                high=float(row.high),
-                low=float(row.low),
-                close=float(row.close),
-                tick_volume=int(row.tick_volume),
-                spread=int(spread) if pd.notna(spread) else None,
-                real_volume=int(real_volume) if pd.notna(real_volume) else None,
+                time=t,
+                open=float(o),
+                high=float(h),
+                low=float(l),
+                close=float(c),
+                tick_volume=int(tv),
+                spread=int(sp) if sp is not None else None,
+                real_volume=int(rv) if rv is not None else None,
             )
         )
     return bars
-
-
-def _read_year_parquet(path: Path) -> pd.DataFrame:
-    table = pq.read_table(path)
-    df = table.to_pandas()
-    df["time"] = pd.to_datetime(df["time"])
-    return df
-
-
-def _read_month_ticks(path: Path) -> pd.DataFrame:
-    table = pq.read_table(path)
-    if set(table.column_names) != set(COLUMNAR_TICK_KEYS):
-        raise ValueError(f"Unexpected tick columns in {path}")
-    df = table.to_pandas()
-    for col in COLUMNAR_TICK_KEYS:
-        df[col] = df[col].astype(_TICK_DTYPE_MAP[col], copy=False)
-    return df
-
-
-def _dataframe_to_columnar(df: pd.DataFrame) -> dict[str, np.ndarray]:
-    if df.empty:
-        return _empty_ticks_columnar()
-    ordered = df.sort_values("time_msc")
-    result: dict[str, np.ndarray] = {}
-    for col in COLUMNAR_TICK_KEYS:
-        result[col] = ordered[col].to_numpy(dtype=_TICK_DTYPE_MAP[col], copy=False)
-    return result
 
 
 def write_ohlcv(symbol: str, timeframe: str, bars: list[OHLCV]) -> dict[str, Any]:
@@ -241,17 +230,12 @@ def read_ohlcv(symbol: str, timeframe: str, start: datetime, end: datetime) -> l
     if not paths:
         return []
 
-    frames = [_read_year_parquet(path) for path in paths if path.is_file()]
-    if not frames:
+    existing_paths = [path for path in paths if path.is_file()]
+    if not existing_paths:
         return []
 
-    combined = pd.concat(frames, ignore_index=True)
-    combined["time"] = pd.to_datetime(combined["time"])
-    if getattr(combined["time"].dt, "tz", None) is not None:
-        combined["time"] = combined["time"].dt.tz_convert("UTC").dt.tz_localize(None)
-    mask = (combined["time"] >= start_ts) & (combined["time"] <= end_ts)
-    filtered = combined.loc[mask].sort_values("time")
-    return _dataframe_to_bars(filtered)
+    table = read_bars_table(existing_paths, start_ts.to_pydatetime(), end_ts.to_pydatetime())
+    return _table_to_bars(table)
 
 
 def read_ticks_columnar(symbol: str, start: datetime, end: datetime) -> dict[str, np.ndarray]:
@@ -267,14 +251,11 @@ def read_ticks_columnar(symbol: str, start: datetime, end: datetime) -> dict[str
     if not paths:
         return _empty_ticks_columnar()
 
-    frames = [_read_month_ticks(path) for path in paths if path.is_file()]
-    if not frames:
+    existing_paths = [path for path in paths if path.is_file()]
+    if not existing_paths:
         return _empty_ticks_columnar()
 
-    combined = pd.concat(frames, ignore_index=True)
-    mask = (combined["time_msc"] >= start_msc) & (combined["time_msc"] <= end_msc)
-    filtered = combined.loc[mask]
-    return _dataframe_to_columnar(filtered)
+    return read_ticks_arrays(existing_paths, start_msc, end_msc)
 
 
 def delete_ohlcv(symbol: str, timeframe: str) -> None:

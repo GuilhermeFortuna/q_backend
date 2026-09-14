@@ -37,6 +37,7 @@ BAR_COLUMNS: tuple[str, ...] = (
 
 _instance: duckdb.DuckDBPyConnection | None = None
 _instance_pid: int | None = None
+_inherited_instances: list[duckdb.DuckDBPyConnection] = []
 
 
 def _get_instance() -> duckdb.DuckDBPyConnection:
@@ -44,10 +45,15 @@ def _get_instance() -> duckdb.DuckDBPyConnection:
     current_pid = os.getpid()
     if _instance is None or _instance_pid != current_pid:
         if _instance is not None:
-            try:
-                _instance.close()
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("failed to close DuckDB instance: %s", exc)
+            if _instance_pid == current_pid:
+                try:
+                    _instance.close()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("failed to close DuckDB instance: %s", exc)
+            else:
+                # Retain reference across fork so the parent's C++ connection destructor
+                # is not invoked in the child process, which would deadlock on parent mutexes.
+                _inherited_instances.append(_instance)
         _instance = duckdb.connect(
             config={
                 "autoinstall_known_extensions": False,
@@ -62,7 +68,8 @@ def _get_instance() -> duckdb.DuckDBPyConnection:
 def _reset_instance() -> None:
     """Reset the module-level DuckDB instance (used in tests)."""
     global _instance, _instance_pid
-    if _instance is not None:
+    current_pid = os.getpid()
+    if _instance is not None and _instance_pid == current_pid:
         try:
             _instance.close()
         except Exception as exc:  # noqa: BLE001
