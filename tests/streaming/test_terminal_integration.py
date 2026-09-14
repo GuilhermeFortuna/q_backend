@@ -212,7 +212,7 @@ def test_repository_terminal_transitions_and_rerun_clearing():
         marker = session.scalar(
             select(JobTerminalMarker).where(
                 JobTerminalMarker.kind == "walkforward",
-                JobTerminalMarker.job_id == str(wf_id),
+                JobTerminalMarker.job_id == wf_id.hex,
             )
         )
         assert marker is not None
@@ -237,7 +237,7 @@ def test_repository_terminal_transitions_and_rerun_clearing():
         marker = session.scalar(
             select(JobTerminalMarker).where(
                 JobTerminalMarker.kind == "strategy_search",
-                JobTerminalMarker.job_id == str(ss_id),
+                JobTerminalMarker.job_id == ss_id.hex,
             )
         )
         assert marker is not None

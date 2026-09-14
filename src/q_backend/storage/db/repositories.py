@@ -51,13 +51,42 @@ def mark_active_runs_cancelled(
     the DB has no live worker and would otherwise stay "running" forever.
     Returns the number of rows updated.
     """
+    active_run_ids = session.execute(select(model.id).where(model.status.in_(_ACTIVE_RUN_STATUSES))).scalars().all()
+    if not active_run_ids:
+        return 0
+
     values: dict[str, Any] = {"status": RunStatus.CANCELLED.value}
     if error_message is not None and hasattr(model, "error_message"):
         values["error_message"] = error_message
     if hasattr(model, "finished_at"):
         values["finished_at"] = datetime.now(timezone.utc)
-    result = session.execute(update(model).where(model.status.in_(_ACTIVE_RUN_STATUSES)).values(**values))
-    return int(result.rowcount or 0)
+
+    session.execute(update(model).where(model.id.in_(active_run_ids)).values(**values))
+
+    model_kind_map: dict[type, JobKind] = {
+        BacktestRun: "backtest",
+        OptimizationStudy: "optimization",
+        WalkForwardRun: "walkforward",
+        StrategySearchRun: "strategy_search",
+    }
+    kind = model_kind_map.get(model)
+    if kind:
+        for run_id in active_run_ids:
+            if model is BacktestRun:
+                job_id = str(run_id)
+            elif hasattr(run_id, "hex"):
+                job_id = run_id.hex
+            else:
+                job_id = str(run_id).replace("-", "")
+            record_job_terminal(
+                session,
+                kind=kind,
+                job_id=job_id,
+                raw_status="cancelled",
+                error=error_message,
+            )
+    session.flush()
+    return len(active_run_ids)
 
 
 def create_strategy(

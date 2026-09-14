@@ -888,6 +888,17 @@ def reconcile_orphaned_runs() -> int:
             if checkpoint.get("lockbox_consumed"):
                 payload["status"] = "failed"
                 payload["error"] = "Cancelled after backend restart; lock-box was already consumed."
+                try:
+                    with session_scope() as session:
+                        record_job_terminal(
+                            session,
+                            "alpha_research",
+                            job_id,
+                            raw_status="cancelled",
+                            error=payload["error"],
+                        )
+                except Exception:  # noqa: BLE001 - best-effort stream terminal recording; logged
+                    logger.warning("Failed to record terminal event for alpha research job %s", job_id, exc_info=True)
                 client.set(key, json.dumps(payload), ex=DEFAULT_PROGRESS_TTL_SECONDS)
                 failed += 1
                 continue
@@ -896,6 +907,17 @@ def reconcile_orphaned_runs() -> int:
             if not checkpoint.get("request"):
                 payload["status"] = "failed"
                 payload["error"] = "Cancelled after backend restart (job was orphaned)."
+                try:
+                    with session_scope() as session:
+                        record_job_terminal(
+                            session,
+                            "alpha_research",
+                            job_id,
+                            raw_status="cancelled",
+                            error=payload["error"],
+                        )
+                except Exception:  # noqa: BLE001 - best-effort stream terminal recording; logged
+                    logger.warning("Failed to record terminal event for alpha research job %s", job_id, exc_info=True)
                 client.set(key, json.dumps(payload), ex=DEFAULT_PROGRESS_TTL_SECONDS)
                 failed += 1
                 continue

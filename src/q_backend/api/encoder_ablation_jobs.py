@@ -317,13 +317,25 @@ def reconcile_orphaned_runs() -> int:
             payload = get_job_progress(client, job_id, namespace=PROGRESS_NAMESPACE)
             if payload is None or payload.get("status") != "running":
                 continue
+            err_msg = "Cancelled after backend restart (run was orphaned)."
+            try:
+                with session_scope() as session:
+                    record_job_terminal(
+                        session,
+                        "encoder_ablation",
+                        job_id,
+                        raw_status="cancelled",
+                        error=err_msg,
+                    )
+            except Exception:  # noqa: BLE001 - best-effort stream terminal recording; logged
+                logger.warning("Failed to record terminal event for encoder ablation job %s", job_id, exc_info=True)
             _persist_progress(
                 job_id,
                 {
                     **payload,
                     "status": "failed",
                     "progress": "cancelled",
-                    "error": "Cancelled after backend restart (run was orphaned).",
+                    "error": err_msg,
                 },
             )
             count += 1

@@ -436,6 +436,19 @@ def reconcile_orphaned_runs() -> int:
                 continue
             payload["status"] = "failed"
             payload["error"] = "Cancelled after backend restart (job was orphaned)."
+            job_id = key if isinstance(key, str) else key.decode("utf-8")
+            job_id = job_id.rsplit(":", 1)[-1]
+            try:
+                with session_scope() as session:
+                    record_job_terminal(
+                        session,
+                        "discovery_ab",
+                        job_id,
+                        raw_status="cancelled",
+                        error=payload["error"],
+                    )
+            except Exception:  # noqa: BLE001 - best-effort stream terminal recording; logged
+                logger.warning("Failed to record terminal event for discovery A/B job %s", job_id, exc_info=True)
             client.set(key, json.dumps(payload), ex=DEFAULT_PROGRESS_TTL_SECONDS)
             count += 1
     except Exception as exc:  # noqa: BLE001 - best-effort Redis progress/persistence; logged
