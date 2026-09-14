@@ -1,6 +1,7 @@
 from collections.abc import Mapping
 from datetime import datetime
 import logging
+import threading
 from typing import Any, Literal
 import redis
 import sqlalchemy as sa
@@ -10,7 +11,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from q_backend.storage.db.base import utc_now
-from q_backend.storage.db.outbox_models import JobTerminalMarker, OutboxTopicState
+from q_backend.storage.db.outbox_models import JobTerminalMarker
 from q_backend.storage.settings import get_settings
 from q_backend.streaming.outbox import record_event
 from q_backend.streaming.publisher import EphemeralPublisher
@@ -57,35 +58,44 @@ STATUS_TO_STREAM: Mapping[str, StreamStatus] = {
 }
 
 _publisher_client: redis.Redis | None = None
+PUBLISH_TIMEOUT_S = 0.05
+_BOUNDED_KWARGS = {
+    "socket_timeout": PUBLISH_TIMEOUT_S,
+    "socket_connect_timeout": PUBLISH_TIMEOUT_S,
+    "retry_on_timeout": False,
+    "retry": None,
+}
+_bounded_clients: dict[tuple[Any, ...], redis.Redis] = {}
+_bounded_clients_lock = threading.Lock()
 
 
-def _bound_redis_client(client: Any) -> None:
-    """Enforce a strict 50 ms timeout bound and disable retries on real Redis connections."""
-    if hasattr(client, "connection_pool") and hasattr(client.connection_pool, "connection_kwargs"):
-        kwargs = client.connection_pool.connection_kwargs
-        if kwargs.get("socket_timeout") is None or kwargs.get("socket_timeout") > 0.05:
-            kwargs["socket_timeout"] = 0.05
-        if kwargs.get("socket_connect_timeout") is None or kwargs.get("socket_connect_timeout") > 0.05:
-            kwargs["socket_connect_timeout"] = 0.05
-        kwargs["retry_on_timeout"] = False
-        kwargs["retry"] = None
-    if hasattr(client, "retry"):
-        client.retry = None
+def _bounded_client(client: Any) -> Any:
+    """A client for the same server with publish timeouts, leaving `client` untouched.
+
+    The caller's client is shared with its other Redis work, whose timeouts must not
+    change. Bounded clients are cached by connection settings so repeated progress
+    updates reuse one pool. Clients without a network pool (fakeredis) are used as is.
+    """
+    pool = getattr(client, "connection_pool", None)
+    connection_class = getattr(pool, "connection_class", None)
+    if not isinstance(pool, redis.ConnectionPool) or not (
+        isinstance(connection_class, type) and issubclass(connection_class, redis.Connection)
+    ):
+        return client
+    kwargs = {**pool.connection_kwargs, **_BOUNDED_KWARGS}
+    key = (connection_class, tuple(sorted((name, repr(value)) for name, value in kwargs.items())))
+    with _bounded_clients_lock:
+        bounded = _bounded_clients.get(key)
+        if bounded is None:
+            bounded = redis.Redis(connection_pool=redis.ConnectionPool(connection_class=connection_class, **kwargs))
+            _bounded_clients[key] = bounded
+    return bounded
 
 
 def get_publisher_client() -> redis.Redis:
-    global _publisher_client
     if _publisher_client is not None:
-        return _publisher_client
-    settings = get_settings()
-    return redis.Redis.from_url(
-        settings.redis_url,
-        decode_responses=True,
-        socket_timeout=0.05,
-        socket_connect_timeout=0.05,
-        retry_on_timeout=False,
-        retry=None,
-    )
+        return _bounded_client(_publisher_client)
+    return _bounded_client(redis.Redis.from_url(get_settings().redis_url, decode_responses=True))
 
 
 def set_publisher_client(client: redis.Redis | None) -> None:
@@ -99,7 +109,6 @@ def _terminal_flag_key(kind: str, job_id: str) -> str:
 
 def is_job_terminal_flagged(client: redis.Redis, kind: str, job_id: str) -> bool:
     try:
-        _bound_redis_client(client)
         return bool(client.exists(_terminal_flag_key(kind, job_id)))
     except Exception as exc:  # noqa: BLE001 - best-effort Redis terminal check
         logger.debug("Failed to check terminal flag in Redis for %s:%s: %s", kind, job_id, exc)
@@ -108,7 +117,6 @@ def is_job_terminal_flagged(client: redis.Redis, kind: str, job_id: str) -> bool
 
 def flag_job_terminal(client: redis.Redis, kind: str, job_id: str, ttl_seconds: int = 86400) -> None:
     try:
-        _bound_redis_client(client)
         client.set(_terminal_flag_key(kind, job_id), "1", ex=ttl_seconds)
     except Exception as exc:  # noqa: BLE001 - best-effort Redis terminal flag
         logger.debug("Failed to set terminal flag in Redis for %s:%s: %s", kind, job_id, exc)
@@ -116,7 +124,6 @@ def flag_job_terminal(client: redis.Redis, kind: str, job_id: str, ttl_seconds: 
 
 def clear_job_terminal_flag(client: redis.Redis, kind: str, job_id: str) -> None:
     try:
-        _bound_redis_client(client)
         client.delete(_terminal_flag_key(kind, job_id))
     except Exception as exc:  # noqa: BLE001 - best-effort Redis terminal clear
         logger.debug("Failed to clear terminal flag in Redis for %s:%s: %s", kind, job_id, exc)
@@ -131,14 +138,10 @@ def publish_job_progress(
 ) -> None:
     """Map and publish to jobs.progress; bounded, never raises; skipped once terminal."""
     try:
-        if _publisher_client is not None:
-            redis_client = _publisher_client
-        elif client is not None:
-            redis_client = client
+        if _publisher_client is None and client is not None:
+            redis_client = _bounded_client(client)
         else:
             redis_client = get_publisher_client()
-
-        _bound_redis_client(redis_client)
 
         # If job is already flagged terminal, do not publish
         if is_job_terminal_flagged(redis_client, kind, job_id):
@@ -322,17 +325,6 @@ def record_job_terminal(
     }
     if error is not None:
         payload["error"] = str(error)
-
-    topic_state = session.get(OutboxTopicState, "jobs.terminal")
-    if topic_state is None:
-        topic_state = OutboxTopicState(
-            topic="jobs.terminal",
-            epoch=f"{utc_now().strftime('%Y%m%d')}-00000001",
-            last_seq=0,
-            last_relayed_seq=0,
-        )
-        session.add(topic_state)
-        session.flush()
 
     event = record_event(
         session,

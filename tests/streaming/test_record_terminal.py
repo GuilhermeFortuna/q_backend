@@ -140,3 +140,17 @@ def test_terminal_flag_commit_lifecycle(seeded_session: Session):
         assert not is_job_terminal_flagged(fake_redis, "backtest", "bt-flag-lifecycle")
     finally:
         set_publisher_client(None)
+
+
+def test_record_job_terminal_does_not_invent_topic_state(db_session: Session):
+    """The migration seeds the epoch; inventing a fixed one would repeat across a reset."""
+    from q_backend.storage.db.outbox_models import OutboxTopicState
+    from q_backend.streaming.jobs import record_job_terminal
+
+    db_session.delete(db_session.get(OutboxTopicState, "jobs.terminal"))
+    db_session.commit()
+
+    with pytest.raises(RuntimeError, match="no initialized state"):
+        record_job_terminal(db_session, kind="backtest", job_id="bt-unseeded", raw_status="completed")
+
+    assert db_session.get(OutboxTopicState, "jobs.terminal") is None

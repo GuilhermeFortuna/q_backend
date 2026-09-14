@@ -2,10 +2,14 @@ from datetime import datetime
 from typing import Any
 
 import sqlalchemy as sa
-from sqlalchemy import BigInteger, DateTime, String, func
+from sqlalchemy import BigInteger, DateTime, String, event, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from q_backend.storage.db.base import Base, PortableJSON, utc_now
+from q_contracts.topics import TOPICS
+
+# Matches migration 20260912_0017, which seeds the same rows.
+INITIAL_EPOCH = "20260912-00000001"
 
 
 class OutboxEvent(Base):
@@ -35,6 +39,24 @@ class OutboxTopicState(Base):
     epoch: Mapped[str] = mapped_column(String(64), nullable=False)
     last_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default=sa.text("0"))
     last_relayed_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default=sa.text("0"))
+
+
+@event.listens_for(OutboxTopicState.__table__, "after_create")
+def _seed_durable_topic_state(target: sa.Table, connection: sa.Connection, **_kw: Any) -> None:
+    """Seed every durable topic when the table comes from metadata.create_all.
+
+    Migrations seed these rows themselves; this keeps schemas built directly from
+    the models (the SQLite test databases) in the same state, so production code
+    never has to create a topic's counter on first use.
+    """
+    connection.execute(
+        target.insert(),
+        [
+            {"topic": name, "epoch": INITIAL_EPOCH, "last_seq": 0, "last_relayed_seq": 0}
+            for name, policy in sorted(TOPICS.items())
+            if policy.topic_class == "durable"
+        ],
+    )
 
 
 class JobTerminalMarker(Base):

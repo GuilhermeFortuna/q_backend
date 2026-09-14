@@ -6,10 +6,9 @@ from q_backend.storage.db.base import Base
 from q_backend.storage.db import models  # noqa: F401
 from q_backend.storage.db import execution_models  # noqa: F401
 from q_backend.storage.db import outbox_models  # noqa: F401
-from q_backend.storage.db.outbox_models import OutboxTopicState
-from q_contracts.topics import TOPICS
+from q_backend.storage.db.outbox_models import INITIAL_EPOCH
 
-SEEDED_EPOCH = "20260912-00000001"
+SEEDED_EPOCH = INITIAL_EPOCH
 
 
 @pytest.fixture
@@ -45,15 +44,5 @@ def db_session(db_engine) -> Session:
 
 @pytest.fixture
 def seeded_session(db_session: Session) -> Session:
-    for name, policy in TOPICS.items():
-        if policy.topic_class == "durable":
-            db_session.add(
-                OutboxTopicState(
-                    topic=name,
-                    epoch=SEEDED_EPOCH,
-                    last_seq=0,
-                    last_relayed_seq=0,
-                )
-            )
-    db_session.commit()
+    """Durable topic state is seeded when create_all builds the table."""
     return db_session
