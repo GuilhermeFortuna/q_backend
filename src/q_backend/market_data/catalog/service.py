@@ -219,7 +219,7 @@ class LakeCatalog:
             df = frame.copy()
             df["time"] = pd.to_datetime(df["time"])
             if getattr(df["time"].dt, "tz", None) is not None:
-                df["time"] = df["time"].dt.tz_convert(BRASILIA_TZ).dt.tz_localize(None)
+                df["time"] = df["time"].dt.tz_convert("UTC").dt.tz_localize(None)
 
             incoming_by_year: dict[str, pd.DataFrame] = {}
             for year, ydf in df.groupby(df["time"].dt.year):
@@ -315,16 +315,13 @@ class LakeCatalog:
             if dataset is None:
                 return []
 
-            start_utc = (
-                start.replace(tzinfo=BRASILIA_TZ).astimezone(timezone.utc)
-                if start.tzinfo is None
-                else start.astimezone(timezone.utc)
-            )
-            end_utc = (
-                end.replace(tzinfo=BRASILIA_TZ).astimezone(timezone.utc)
-                if end.tzinfo is None
-                else end.astimezone(timezone.utc)
-            )
+            def _bound_to_utc(dt: datetime) -> datetime:
+                if dt.tzinfo is not None:
+                    dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+                return dt.replace(tzinfo=BRASILIA_TZ).astimezone(timezone.utc)
+
+            start_utc = _bound_to_utc(start)
+            end_utc = _bound_to_utc(end)
 
             matched: list[Path] = []
             for f in dataset.files:
@@ -413,16 +410,23 @@ _catalog_instance: LakeCatalog | None = None
 
 def get_lake_catalog() -> LakeCatalog:
     global _catalog_instance
+    from q_backend.market_data.local_store import market_data_root
+
+    root = market_data_root()
     if _catalog_instance is None:
         settings = get_settings()
-        from q_backend.market_data.local_store import market_data_root
-
-        root = market_data_root()
         grace = timedelta(seconds=getattr(settings, "catalog_tombstone_grace_s", 604_800))
         session_factory = create_session_factory()
         _catalog_instance = LakeCatalog(
             session_factory=session_factory,
             root=root,
             grace=grace,
+        )
+    elif _catalog_instance.root != root:
+        _catalog_instance = LakeCatalog(
+            session_factory=_catalog_instance.session_factory,
+            root=root,
+            clock=_catalog_instance.clock,
+            grace=_catalog_instance.grace,
         )
     return _catalog_instance

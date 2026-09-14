@@ -8,6 +8,9 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
 from q_backend.api import storage_jobs
 from q_backend.api.dependencies import market_data_service
 from q_backend.api.routers.storage import (
@@ -19,7 +22,10 @@ from q_backend.api.routers.storage import (
 from q_backend.api.schemas.storage import StorageInventoryResponse
 from q_backend.api.storage_jobs import IngestJobRequest
 from q_backend.market_data import local_store
+from q_backend.market_data.catalog import service as catalog_service
+from q_backend.market_data.catalog.service import LakeCatalog
 from q_backend.market_data.models import OHLCV
+from q_backend.storage.db.base import Base
 
 
 def _ticks() -> dict[str, np.ndarray]:
@@ -58,7 +64,14 @@ def _bars() -> list[OHLCV]:
 @pytest.fixture
 def market_root(tmp_path, monkeypatch):
     root = tmp_path / "market"
+    root.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("Q_MARKET_DATA_ROOT", str(root))
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    sm = sessionmaker(bind=engine)
+    catalog = LakeCatalog(session_factory=sm, root=root)
+    monkeypatch.setattr(catalog_service, "_catalog_instance", catalog)
     return root
 
 

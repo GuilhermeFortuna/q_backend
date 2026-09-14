@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from q_backend.api.lifespan import lifespan
 from q_backend.api.routers import backtest as backtest_router
+from q_backend.api.routers import catalog as catalog_router
 from q_backend.api.routers import execution as execution_router
 from q_backend.api.routers import experiments as experiments_router
 from q_backend.api.routers import features as features_router
@@ -16,9 +17,9 @@ from q_backend.api.routers import storage as storage_router
 from q_backend.api.routers import strategies as strategies_router
 from q_backend.api.routers import strategy_builder as strategy_builder_router
 from q_backend.api.routers import strategy_search as strategy_search_router
-from q_backend.api.routers import system as system_router
 from q_backend.api.routers import stream as stream_router
 from q_backend.api.routers import stream_replay as stream_replay_router
+from q_backend.api.routers import system as system_router
 from q_backend.api.routers import walkforward as walkforward_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -55,6 +56,7 @@ app.include_router(neural_router.router)
 app.include_router(execution_router.router)
 app.include_router(experiments_router.router)
 app.include_router(storage_router.router)
+app.include_router(catalog_router.router)
 app.include_router(news_router.router)
 
 

@@ -117,6 +117,34 @@ def _restore_feature_catalog():
         FEATURE_SPECS.update(snapshot)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_lake_catalog(monkeypatch, tmp_path):
+    """Isolate lake catalog database across tests using an in-memory SQLite database."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from q_backend.market_data.catalog import service as catalog_service
+    from q_backend.market_data.catalog.service import LakeCatalog
+    from q_backend.storage.db.base import Base
+
+    test_engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(test_engine)
+    sm = sessionmaker(bind=test_engine)
+    default_root = tmp_path / "lake_default"
+    default_root.mkdir(parents=True, exist_ok=True)
+    catalog = LakeCatalog(session_factory=sm, root=default_root)
+    monkeypatch.setattr(catalog_service, "_catalog_instance", catalog)
+    try:
+        yield catalog
+    finally:
+        catalog_service._catalog_instance = None
+
+
 @pytest.fixture
 def run_jobs_sync(monkeypatch, tmp_path):
     if fakeredis is None:  # pragma: no cover
