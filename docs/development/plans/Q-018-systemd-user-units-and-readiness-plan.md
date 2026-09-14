@@ -256,7 +256,7 @@ Every long-running `.service.in` shares: `EnvironmentFile=%h/.config/q/backend.e
    name `@q-test-<uuid>`, the same holds; with the variable unset, it returns
    `False` and raises nothing. Confirm they fail, implement, and confirm they pass.
    Commit.
-3. [ ] Write failing tests in `tests/storage/test_migrations_check.py` (SQLite file
+3. [x] Write failing tests in `tests/storage/test_migrations_check.py` (SQLite file
    database): after `alembic upgrade head`, `schema_revision().current == head`;
    after `alembic downgrade -1`, `current` equals the previous revision id and
    differs from `head`. Confirm they fail, implement, and confirm they pass.
