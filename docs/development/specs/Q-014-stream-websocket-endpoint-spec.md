@@ -134,7 +134,7 @@ that a quote is either the latest or superseded.
 1. With the market-data publisher streaming one live symbol, two clients connected
    for ten minutes record append-to-send latency and the API process's CPU,
    reported as p50 and p95 latency and mean CPU.
-   Command: `uv run python scripts/stream_soak.py --clients 2 --topics quotes,bars.forming --minutes 10`
+   Command: `uv run python scripts/stream_soak.py --clients 2 --topics quotes,bars.forming --minutes 10 --pid <API process pid>`
 2. The endpoint is exercised from a browser's devtools WebSocket inspector, and
    binary quote frames are confirmed to show as binary with a readable header.
    Command: `pnpm dev` in `q_frontend`, then `new WebSocket("ws://127.0.0.1:8000/api/v1/stream")` in the console

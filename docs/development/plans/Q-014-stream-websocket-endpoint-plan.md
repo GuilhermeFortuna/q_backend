@@ -272,7 +272,7 @@ scripts/ci.sh
 uv run pytest tests/streaming/ws -v
 uv run dev &
 uv run q-market-publisher --symbols 'WIN$N' --timeframes M1 &
-uv run python scripts/stream_soak.py --clients 2 --topics quotes,bars.forming --minutes 10
+uv run python scripts/stream_soak.py --clients 2 --topics quotes,bars.forming --minutes 10 --pid $(ss -ltnpH "sport = :8000" | grep -o "pid=[0-9]*" | head -1 | cut -d= -f2)
 ```
 
 ## Handoff
