@@ -35,3 +35,18 @@ class OutboxTopicState(Base):
     epoch: Mapped[str] = mapped_column(String(64), nullable=False)
     last_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default=sa.text("0"))
     last_relayed_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default=sa.text("0"))
+
+
+class JobTerminalMarker(Base):
+    __tablename__ = "stream_job_terminal_markers"
+
+    kind: Mapped[str] = mapped_column(String(64), primary_key=True)
+    job_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    outbox_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        server_default=func.now(),
+    )
