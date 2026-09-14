@@ -306,7 +306,7 @@ Every long-running `.service.in` shares: `EnvironmentFile=%h/.config/q/backend.e
    Confirm they fail, implement, and confirm they pass. Commit.
 10. [x] Change `scripts/ci.sh` to prefer installed units over compose. Run it with the
     units not installed and confirm that the compose path is unchanged. Commit.
-11. [ ] Write `docs/operations/systemd-user-units.md`: install (podman, linger, env
+11. [x] Write `docs/operations/systemd-user-units.md`: install (podman, linger, env
     files, installer), operate (`start`, `status`, `journalctl`), migrating from
     compose (stop compose, start `q-postgres`, `pg_dumpall` pipe, row-count
     query), using the Tauri app data roots, and troubleshooting (port held,

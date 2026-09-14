@@ -554,8 +554,20 @@ Both providers (local + Gemini) can be configured in one `.env`; set
 uv sync --group dev
 ```
 
-### 3. Start Storage Services (local dev)
-Start Postgres and Redis:
+### 3. Start Storage & Services (local dev)
+
+The recommended production and local development stack runs as **systemd user units** (Podman quadlets for Postgres and Redis, plus supervised user units for migrations, API, outbox relay, market publisher, and research worker). See [`docs/operations/systemd-user-units.md`](docs/operations/systemd-user-units.md) for installation, operation, and migration instructions:
+
+```bash
+# Install user units and quadlets (idempotent, rootless)
+./scripts/install-user-units.sh
+
+# Start the entire backend stack
+systemctl --user start q-backend.target
+```
+
+#### Fallback: Docker Compose
+If Podman or user units are not used, start Postgres and Redis via Docker Compose:
 ```bash
 docker compose up -d
 ```
@@ -565,7 +577,7 @@ Apply database migrations:
 uv run alembic upgrade head
 ```
 
-`q_backend` Redis is mapped to host port **6380** (container port 6379) so it does not conflict with other local Redis instances on 6379. If port `5432` or `6380` is already in use, adjust `docker-compose.yml` port mappings and update `Q_DATABASE_URL` / `Q_REDIS_URL` accordingly.
+`q_backend` Redis is mapped to host port **6380** (container port 6379) so it does not conflict with other local Redis instances on 6379. If port `5434` or `6380` is already in use, adjust `docker-compose.yml` port mappings and update `Q_DATABASE_URL` / `Q_REDIS_URL` accordingly.
 
 ### 4. Running Unit Tests
 ```bash
