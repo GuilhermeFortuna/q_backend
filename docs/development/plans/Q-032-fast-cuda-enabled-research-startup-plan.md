@@ -244,48 +244,48 @@ the real Compose render is checked separately in backend validation.
 
 ## Ordered implementation
 
-1. Work on the branch `Q-032-fast-cuda-enabled-research-startup` in
+1. [x] Work on the branch `Q-032-fast-cuda-enabled-research-startup` in
    `q_backend`, created from `development` by `./work start`. Confirm Q-020 is
    Done and its Docker/data changes are present. Create the same-named branch in
    the workspace meta-repository only for the launcher and its harness; do not
    mix unrelated `tooling-agent-launcher` edits into either task commit.
-2. In the workspace meta-repository, write the failing fake-command harness for
+2. [x] In the workspace meta-repository, write the failing fake-command harness for
    argument parsing and image lifecycle. Cover a missing image, matching label,
    stale Dockerfile, stale dependency metadata, stale entrypoint, stale MT5 stub,
    unchanged source edit, and `--rebuild`. Assert build invocation counts and
    fingerprint labels exactly. Confirm the warm-path test fails because the
    launcher always passes `--build`. Commit the tests.
-3. Add argument parsing, the exact content fingerprint, image-label inspection,
+3. [x] Add argument parsing, the exact content fingerprint, image-label inspection,
    and `ensure_backend_image` to `research`. Build with
    `Q_RESEARCH_IMAGE_FINGERPRINT` and the configured shared tag, remove
    `--build` from Compose startup, and guard `main` so the harness can source
    functions. Confirm every step 2 test passes. Commit.
-4. In `q_backend`, write a Dockerfile structure test that parses instructions
+4. [x] In `q_backend`, write a Dockerfile structure test that parses instructions
    and asserts dependency metadata precedes application source, the dependency
    sync uses the `uv` BuildKit cache mount and does not install the project, the
    later sync installs the project, and the fingerprint label exists. Confirm
    it fails on the current Dockerfile. Refactor the Dockerfile and confirm the
    test passes. Commit.
-5. Write failing Compose structure tests that render the containerized profile
+5. [x] Write failing Compose structure tests that render the containerized profile
    and assert both backend services use the same `Q_BACKEND_IMAGE`, neither has
    a build section, all Q-020 data/source mounts survive, only the worker has a
    GPU request, and its environment resolves CUDA plus deterministic cuBLAS.
    Update Compose with a shared runtime anchor, named image, read-only live
    source/contract/migration mounts, worker-only GPU request, and device
    environment. Run `docker compose config` and the tests. Commit.
-6. Extend the launcher harness with failing GPU-preflight cases: absent
+6. [x] Extend the launcher harness with failing GPU-preflight cases: absent
    `nvidia-smi`, absent `nvidia-ctk`, host GPU command failure, container CUDA
    probe failure, and success. Assert each failure happens before Compose `up`,
    names the failed layer, and leaves cleanup safe. Implement the two-stage
    preflight and elapsed backend-ready output. Confirm the suite passes. Commit.
-7. In `q_backend/tests/neural/test_torch_autoencoder.py`, add failing unit tests
+7. [x] In `q_backend/tests/neural/test_torch_autoencoder.py`, add failing unit tests
    for the device resolver: unset is CPU; explicit CPU is CPU; auto chooses
    CUDA only when available; explicit CUDA unavailable raises
    `TorchDeviceUnavailableError` with `Q_TORCH_DEVICE` and container visibility
    in its message; explicit CUDA available returns `cuda`; invalid values raise
    `ValueError`. These resolver tests mock availability and do not allocate a
    GPU. Confirm they fail. Implement the resolver and exception. Commit.
-8. Add failing focused tests proving one resolved device is reused by training,
+8. [x] Add failing focused tests proving one resolved device is reused by training,
    validation, and encoding, and that artifact state contains only CPU NumPy
    arrays even when model state tensors originate on another device. Keep the
    existing fast hyperparameters and avoid pretending a mocked CUDA availability
@@ -293,40 +293,40 @@ the real Compose render is checked separately in backend validation.
    once, move batches/models to that device, and move metric/latent results back
    to CPU at the NumPy boundary. Confirm focused tests and existing CPU tests
    pass. Commit.
-9. Add worker startup logging of the configured/resolved PyTorch device without
+9. [x] Add worker startup logging of the configured/resolved PyTorch device without
    initializing CUDA in the API. Add a test that imports/starts the API under a
    CUDA-configured environment with CUDA calls patched to fail, proving API
    startup does not claim or probe a device. Commit.
-10. Update the workspace and `q_backend` README material for `./research`,
+10. [x] Update the workspace and `q_backend` README material for `./research`,
     `--rebuild`, warm image reuse, the image-defining inputs, RTX/CUDA
     prerequisites, fail-closed diagnostics, one-at-a-time GPU training, and safe
     cleanup. Link the vendor NVIDIA Container Toolkit installation procedure;
     do not embed a privileged auto-installer. Commit in the owning repositories.
-11. Run static and focused validation:
+11. [x] Run static and focused validation:
     `bash -n /home/gui/projects/q/research`,
     `/home/gui/projects/q/tools/tests/test-research`,
     `uv run pytest tests/neural/test_torch_autoencoder.py -q`, the new Docker and
     Compose tests, and `docker compose --profile containerized config`. Fix code,
     never weaken expected behavior. Commit any fixes.
-12. Run the full `q_backend` validation suite with the repository's
+12. [x] Run the full `q_backend` validation suite with the repository's
     `scripts/ci.sh` under a resource-conscious worker count. CPU CI must not
     require the host GPU or NVIDIA toolkit. Record exact results. Commit.
-13. Human step, matching human-verifiable criterion 1: install and configure the
+13. [ ] Human step, matching human-verifiable criterion 1: install and configure the
     NVIDIA Container Toolkit through its vendor-supported Ubuntu procedure,
     restart Docker as instructed by that procedure, and run the host plus
     shared-image CUDA probe from the spec. Record driver, PyTorch CUDA runtime,
     and device name.
-14. Human step, matching criteria 2 and 3: run `./research --rebuild`, record
+14. [ ] Human step, matching criteria 2 and 3: run `./research --rebuild`, record
     cold build/export/image-size/backend-ready measurements, stop it normally,
     then run `./research` unchanged. Confirm the second output says the named
     image is reused, contains no build/export/sync activity, and reports backend
     readiness within 60 seconds.
-15. Human step, matching criteria 4 and 5: run one representative temporal
+15. [ ] Human step, matching criteria 4 and 5: run one representative temporal
     autoencoder experiment twice while watching `nvidia-smi`; compare latent
     output, validation metrics, and model tensors exactly between the two CUDA
     runs. Load the resulting artifact under explicit CPU policy and run the
     held-out transform. Attach the evidence to issue 12.
-16. Commit the final focused changes in each repository. From the workspace
+16. [x] Commit the final focused changes in each repository. From the workspace
     root, run `./work board set Q-032 in-review -m "<summary; exact focused and full checks; cold/warm timings; RTX 2060 CUDA evidence; CPU artifact result; open follow-ups>"`.
 
 ## Validation
