@@ -214,15 +214,27 @@ class OutboxRelay:
 
         return total_appended
 
-    def run_forever(self, stop: threading.Event) -> None:
+    def run_forever(
+        self,
+        stop: threading.Event,
+        on_first_success: Callable[[], None] | None = None,
+    ) -> None:
         """Run the relay loop until stop event is set, backing off exponentially on outages."""
         backoff = 0.5
         last_prune = time.monotonic()
+        first_success_notified = False
 
         while not stop.is_set():
             try:
                 appended = self.run_once()
                 backoff = 0.5
+
+                if on_first_success is not None and not first_success_notified:
+                    try:
+                        on_first_success()
+                    except Exception as cb_err:  # noqa: BLE001
+                        logger.warning("on_first_success callback failed: %s", cb_err)
+                    first_success_notified = True
 
                 now = time.monotonic()
                 if now - last_prune >= self.config.prune_interval_s:

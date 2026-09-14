@@ -13,6 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 from q_backend.observability.sentry import init_sentry
+from q_backend.observability.systemd import notify_ready
 from q_backend.storage.db.engine import get_engine
 from q_backend.storage.settings import get_settings
 from q_backend.streaming.redis_binary import get_binary_redis
@@ -111,7 +112,7 @@ def main(argv: list[str] | None = None) -> int:
     relay = OutboxRelay(session_factory, client, config)
 
     try:
-        relay.run_forever(stop_event)
+        relay.run_forever(stop_event, on_first_success=notify_ready)
     finally:
         logger.info("Releasing outbox relay advisory lock...")
         try:

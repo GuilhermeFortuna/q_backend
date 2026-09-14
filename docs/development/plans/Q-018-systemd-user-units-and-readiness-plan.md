@@ -269,7 +269,7 @@ Every long-running `.service.in` shares: `EnvironmentFile=%h/.config/q/backend.e
    within 10 s, stderr contains both revision ids, and no datagram arrives.
    Confirm they fail, implement `q-api` and `NotifyingServer`, add the script to
    `pyproject.toml`, and confirm they pass. Commit.
-5. [ ] Write failing tests in `tests/streaming/test_relay_readiness.py` (SQLite and
+5. [x] Write failing tests in `tests/streaming/test_relay_readiness.py` (SQLite and
    `fakeredis`): `run_forever` with an empty outbox calls `on_first_success`
    exactly once across three passes; with the Redis client raising
    `ConnectionError` for 2 s, the callback is not called, and it is called once
