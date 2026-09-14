@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -18,6 +19,8 @@ from q_backend.neural.encoder import (
     latent_column_names,
 )
 
+TorchDeviceName = Literal["auto", "cpu", "cuda"]
+
 _DEFAULT_HYPERPARAMS: dict[str, Any] = {
     "lookback": 16,
     "hidden_dim": 32,
@@ -29,6 +32,42 @@ _DEFAULT_HYPERPARAMS: dict[str, Any] = {
     "random_state": 0,
     "batch_size": 32,
 }
+
+
+class TorchDeviceUnavailableError(RuntimeError):
+    """An explicitly requested accelerator is not usable by this process."""
+
+
+def resolve_torch_device(requested: str | None = None) -> torch.device:
+    """Resolve ``requested``, then ``Q_TORCH_DEVICE``, then ``cpu``.
+
+    Invalid values raise ``ValueError``. ``cuda`` raises
+    ``TorchDeviceUnavailableError`` when CUDA is unavailable. Only ``auto`` may
+    fall back to CPU when CUDA is absent. An unset policy is CPU so native runs
+    and CI keep today's behavior.
+    """
+    raw = requested if requested is not None else os.environ.get("Q_TORCH_DEVICE")
+    if raw is None or raw.strip() == "":
+        name: str = "cpu"
+    else:
+        name = raw.strip().lower()
+
+    if name not in ("auto", "cpu", "cuda"):
+        raise ValueError(f"Invalid Q_TORCH_DEVICE={raw!r}; expected one of: auto, cpu, cuda")
+
+    cuda_ok = torch.cuda.is_available()
+    if name == "cpu":
+        return torch.device("cpu")
+    if name == "cuda":
+        if not cuda_ok:
+            raise TorchDeviceUnavailableError(
+                "Q_TORCH_DEVICE=cuda but torch.cuda.is_available() is False. "
+                "Verify the host driver, NVIDIA Container Toolkit, and that this "
+                "process can see a container GPU (docker run --gpus all …)."
+            )
+        return torch.device("cuda")
+    # auto
+    return torch.device("cuda" if cuda_ok else "cpu")
 
 
 def _set_deterministic(seed: int) -> torch.Generator:
@@ -119,10 +158,12 @@ class TorchAutoencoder:
     _feature_columns: list[str] = field(default_factory=list, repr=False)
     _val_metrics: dict[str, float] = field(default_factory=dict, repr=False)
     _lookback: int = field(default=0, repr=False)
+    _device: torch.device = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.model_id = compute_model_id(self.config)
         self.latent_names = latent_column_names(self.config.n_latents)
+        self._device = resolve_torch_device()
 
     @property
     def val_metrics(self) -> dict[str, float]:
@@ -192,7 +233,7 @@ class TorchAutoencoder:
 
         seed = int(hyperparams["random_state"])
         generator = _set_deterministic(seed)
-        device = torch.device("cpu")
+        device = self._device
         assert self._model is not None
 
         model = self._model.to(device)
@@ -227,7 +268,7 @@ class TorchAutoencoder:
         if val_sequences.size == 0 or self._model is None:
             return {"reconstruction_r2": 0.0, "reconstruction_mse": 0.0}
 
-        device = torch.device("cpu")
+        device = self._device
         model = self._model.to(device)
         model.eval()
         with torch.no_grad():
@@ -280,7 +321,7 @@ class TorchAutoencoder:
         if sequences.size == 0:
             return np.empty((0, self.config.n_latents), dtype=float)
 
-        device = torch.device("cpu")
+        device = self._device
         model = self._model.to(device)
         model.eval()
         encoded_batches: list[np.ndarray] = []

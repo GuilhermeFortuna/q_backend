@@ -11,6 +11,7 @@ discovery candidates) drains into this fixed pool, so concurrent jobs share the
 budget instead of oversubscribing the machine.
 """
 
+import logging
 import os
 import sys
 
@@ -19,14 +20,24 @@ from sentry_sdk.integrations.dramatiq import DramatiqIntegration
 from q_backend.observability.sentry import init_sentry
 from q_backend.storage.settings import get_settings
 
+logger = logging.getLogger(__name__)
+
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
     settings = get_settings()
     init_sentry(
         settings,
         component="worker",
         extra_integrations=[DramatiqIntegration()],
     )
+    # Log the configured policy without importing torch / initializing CUDA here.
+    # Device resolution happens inside neural jobs when they construct encoders.
+    configured = os.environ.get("Q_TORCH_DEVICE", "cpu")
+    logger.info("worker torch device policy Q_TORCH_DEVICE=%s", configured)
     # execv replaces this process; the marker makes the Dramatiq process repeat
     # initialization before broker construction, while API imports stay inert.
     os.environ["Q_DRAMATIQ_WORKER"] = "1"

@@ -571,10 +571,18 @@ If Podman or user units are not used, start Postgres and Redis via Docker Compos
 ```bash
 docker compose up -d
 ```
-For a fully containerized API + worker stack (no live MT5), use `docker compose --profile containerized up --build`.
-That profile bind-mounts `./data` into the containers (`Q_MARKET_DATA_ROOT=/data/market`, lake, tick cache).
-From the workspace root, `./research` starts this profile, launches the Tauri Research UI, and tears everything down on Ctrl+C.
-Apply database migrations:
+For a fully containerized API + worker stack (no live MT5), prefer the workspace
+`./research` launcher (builds/reuses `q-backend:dev`, CUDA preflight, host Tauri UI).
+Compose itself only starts the named image — do not pass `--build` on warm starts:
+
+```bash
+# after ./research has built the image, or with Q_BACKEND_IMAGE set:
+docker compose --profile containerized up -d
+```
+
+That profile bind-mounts `./data` plus read-only `src`/`contracts`/`alembic` into the
+containers. The research worker receives `gpus: all` and `Q_TORCH_DEVICE=cuda`; the API
+does not. Apply database migrations:
 ```bash
 uv run alembic upgrade head
 ```

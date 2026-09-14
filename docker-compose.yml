@@ -4,10 +4,31 @@
 #   docker compose up -d
 #
 # Full stack in containers (no live MT5) — also used by workspace `./research`:
-#   docker compose --profile containerized up --build
+#   docker compose --profile containerized up -d
+#   (image is built by ./research; Compose starts the named image only)
 #
 # Recommended Windows workflow from monorepo root:
 #   ..\dev.ps1
+
+x-backend-runtime: &backend-runtime
+  image: ${Q_BACKEND_IMAGE:-q-backend:dev}
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    Q_DATABASE_URL: postgresql+psycopg://q:q@postgres:5432/q
+    Q_REDIS_URL: redis://redis:6379/0
+    Q_DATA_LAKE_ROOT: /data/lake
+    Q_MARKET_DATA_ROOT: /data/market
+    Q_TICK_CACHE_DIR: /data/tick_cache
+    Q_RUNTIME_CONFIG_PATH: /data/runtime_config.json
+    Q_WORKER_PROCESSES: ${Q_WORKER_PROCESSES:-14}
+  volumes:
+    - ./data:/data
+    - ./src:/app/src:ro
+    - ./contracts:/app/contracts:ro
+    - ./alembic:/app/alembic:ro
+    - ./alembic.ini:/app/alembic.ini:ro
 
 services:
   postgres:
@@ -37,25 +58,10 @@ services:
       retries: 10
 
   backend:
+    <<: *backend-runtime
     profiles: ["containerized"]
-    build:
-      context: .
-      dockerfile: Dockerfile
     ports:
       - "8000:8000"
-    env_file:
-      - path: .env
-        required: false
-    environment:
-      Q_DATABASE_URL: postgresql+psycopg://q:q@postgres:5432/q
-      Q_REDIS_URL: redis://redis:6379/0
-      Q_DATA_LAKE_ROOT: /data/lake
-      Q_MARKET_DATA_ROOT: /data/market
-      Q_TICK_CACHE_DIR: /data/tick_cache
-      Q_RUNTIME_CONFIG_PATH: /data/runtime_config.json
-      Q_WORKER_PROCESSES: ${Q_WORKER_PROCESSES:-14}
-    volumes:
-      - ./data:/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -74,14 +80,9 @@ services:
     restart: unless-stopped
 
   worker:
+    <<: *backend-runtime
     profiles: ["containerized"]
-    build:
-      context: .
-      dockerfile: Dockerfile
     command: ["worker"]
-    env_file:
-      - path: .env
-        required: false
     environment:
       Q_DATABASE_URL: postgresql+psycopg://q:q@postgres:5432/q
       Q_REDIS_URL: redis://redis:6379/0
@@ -90,8 +91,9 @@ services:
       Q_TICK_CACHE_DIR: /data/tick_cache
       Q_RUNTIME_CONFIG_PATH: /data/runtime_config.json
       Q_WORKER_PROCESSES: ${Q_WORKER_PROCESSES:-14}
-    volumes:
-      - ./data:/data
+      Q_TORCH_DEVICE: ${Q_TORCH_DEVICE:-cuda}
+      CUBLAS_WORKSPACE_CONFIG: ${CUBLAS_WORKSPACE_CONFIG:-:4096:8}
+    gpus: all
     depends_on:
       postgres:
         condition: service_healthy
