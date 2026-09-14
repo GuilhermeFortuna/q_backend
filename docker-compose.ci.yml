@@ -1,0 +1,9 @@
+# CI-only override: place Postgres/Redis under the host ci-docker.slice.
+# Used solely by scripts/ci.sh when starting Docker as a services fallback.
+# Do not use for ordinary development (`docker compose up`) or Research.
+
+services:
+  postgres:
+    cgroup_parent: ci-docker.slice
+  redis:
+    cgroup_parent: ci-docker.slice

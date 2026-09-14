@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Enter the host user ci.slice when available so local CI yields to interactive work.
+# No-ops on hosts/runners without systemd-run or the slice (e.g. GitHub Actions).
+if [[ "${CI_RESOURCE_CONTROLLED:-0}" != "1" ]]; then
+  if command -v systemd-run >/dev/null 2>&1 &&
+     systemctl --user status ci.slice >/dev/null 2>&1; then
+    exec systemd-run \
+      --user --scope --quiet --collect \
+      --slice=ci.slice \
+      --setenv=CI_RESOURCE_CONTROLLED=1 \
+      "$0" "$@"
+  fi
+fi
+
 # Determine repository root
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
@@ -41,7 +54,13 @@ if [ -z "${CI:-}" ]; then
       done
     else
       echo "Services not running. Starting Docker services (postgres, redis)..."
-      docker compose up -d postgres redis
+      # Prefer ci-docker.slice for CI containers when the host slice exists;
+      # fall back to plain compose so machines without the slice still work.
+      if systemctl status ci-docker.slice >/dev/null 2>&1; then
+        docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d postgres redis
+      else
+        docker compose up -d postgres redis
+      fi
       echo "Waiting for PostgreSQL to be ready..."
       for i in {1..30}; do
         if docker compose exec -T postgres pg_isready -U postgres >/dev/null 2>&1; then

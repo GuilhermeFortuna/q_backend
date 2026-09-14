@@ -1009,8 +1009,10 @@ See [`docs/design/feature-intelligence.md`](https://github.com/GuilhermeFortuna/
 ## ✅ Validation and Git Hooks
 
 `./scripts/ci.sh` runs the full pipeline — vendored contract drift, migrations,
-lint, format, tests — and is exactly what CI runs. The contract stage reaches
-the `q_contracts` repository; when working offline, point it at a local clone:
+lint, format, tests — and is exactly what CI runs. Locally it enters the host
+user `ci.slice` when available (and CI Docker services use `ci-docker.slice`);
+do not wrap it in `systemd-run`. The contract stage reaches the `q_contracts`
+repository; when working offline, point it at a local clone:
 
 ```bash
 CONTRACTS_REPO=/path/to/q_contracts ./scripts/ci.sh
