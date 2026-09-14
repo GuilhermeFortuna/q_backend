@@ -35,6 +35,8 @@ EXPECTED_TABLES = {
     "stream_outbox",
     "stream_outbox_topic_state",
     "stream_job_terminal_markers",
+    "lake_datasets",
+    "lake_dataset_files",
 }
 
 FORBIDDEN_TABLE_NAMES = {"ohlcv", "ticks", "bars", "features", "tick", "candles"}
