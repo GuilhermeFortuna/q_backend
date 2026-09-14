@@ -76,8 +76,31 @@ echo "==> Checking code formatting (black --check .)..."
 uv run black --check .
 
 # 6. Automated Tests
-echo "==> Running test suite (pytest)..."
-uv run pytest
+# Unit tests run in parallel under pytest-xdist; integration tests share the live
+# Postgres/Redis (they flushdb/flushall), so they run serially afterwards.
+# Default to half the logical CPUs (capped at 12) so the desktop stays responsive;
+# override with PYTEST_WORKERS=N. Numeric libraries get one thread per worker —
+# parallelism comes from the xdist processes, not BLAS/OpenMP/numba threads.
+CPUS="$(nproc 2>/dev/null || echo 2)"
+DEFAULT_WORKERS=$(( CPUS / 2 ))
+(( DEFAULT_WORKERS > 12 )) && DEFAULT_WORKERS=12
+(( DEFAULT_WORKERS < 1 )) && DEFAULT_WORKERS=1
+PYTEST_WORKERS="${PYTEST_WORKERS:-$DEFAULT_WORKERS}"
+for var in OMP_NUM_THREADS OPENBLAS_NUM_THREADS MKL_NUM_THREADS NUMEXPR_NUM_THREADS NUMBA_NUM_THREADS; do
+  export "$var=${!var:-1}"
+done
+# Lower CPU/IO priority locally so tests yield to interactive work.
+NICE=()
+if [ -z "${CI:-}" ] && command -v nice >/dev/null 2>&1; then
+  NICE=(nice -n 10)
+  command -v ionice >/dev/null 2>&1 && NICE=(ionice -c 3 "${NICE[@]}")
+fi
+
+echo "==> Running unit tests (pytest, ${PYTEST_WORKERS} workers)..."
+"${NICE[@]}" uv run pytest -n "$PYTEST_WORKERS" --dist loadfile -m "not integration"
+
+echo "==> Running integration tests (pytest, serial)..."
+"${NICE[@]}" uv run pytest -m integration
 
 echo "=========================================="
 echo " All q_backend CI checks passed successfully! "
