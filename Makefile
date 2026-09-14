@@ -25,6 +25,8 @@ contracts-check:
 		uv run --project "$$contracts_tmp/q_contracts" python "$$contracts_tmp/q_contracts/tools/generate.py" \
 			--language python --out "$$generated_tmp"; \
 	fi; \
+	mkdir -p "$$generated_tmp/python/q_contracts/schema/api/arrow"; \
+	cp "$$contracts_tmp/q_contracts/schema/api/arrow/"*.schema.json "$$generated_tmp/python/q_contracts/schema/api/arrow/"; \
 	diff -ru --exclude='__pycache__' --exclude='*.pyc' contracts "$$generated_tmp/python/q_contracts"
 
 hooks:
