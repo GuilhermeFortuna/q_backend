@@ -12,6 +12,11 @@ from q_backend.storage.db.base import (
     TimestampMixin,
     UUIDPrimaryKeyMixin,
 )
+from q_backend.storage.db.outbox_models import (  # noqa: F401
+    JobTerminalMarker,
+    OutboxEvent,
+    OutboxTopicState,
+)
 
 
 class RunStatus(str, Enum):

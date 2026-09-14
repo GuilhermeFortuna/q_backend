@@ -256,6 +256,11 @@ def run_jobs_sync(monkeypatch, tmp_path):
                 for idx, row in df.iterrows()
             ]
 
+        def get_ticks_columnar(self, symbol, start, end, flags=None, use_cache=True):
+            from q_backend.market_data.service import MarketDataService
+
+            return MarketDataService().get_ticks_columnar(symbol, start, end, flags=flags, use_cache=use_cache)
+
     monkeypatch.setattr(
         "q_backend.tasks.worker_context.get_worker_market_data_service",
         lambda: _HarnessMarketDataService(),
