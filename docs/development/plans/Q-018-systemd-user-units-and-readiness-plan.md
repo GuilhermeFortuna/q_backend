@@ -286,7 +286,7 @@ Every long-running `.service.in` shares: `EnvironmentFile=%h/.config/q/backend.e
    local Redis; `READY=1` arrives within 60 s; SIGTERM makes it exit 0 within
    60 s. Confirm it fails, add `ReadinessMiddleware`, and confirm it passes.
    Commit.
-8. [ ] Write the quadlet files, `.service.in` templates, the target, and both env
+8. [x] Write the quadlet files, `.service.in` templates, the target, and both env
    examples. Write failing tests in `tests/deploy/test_units.py`: rendering into
    `tmp_path` with `Q_BACKEND_DIR=/opt/q_backend` leaves no `@…@`; every
    `ExecStart` starts with `/opt/q_backend/.venv/bin/` and contains neither

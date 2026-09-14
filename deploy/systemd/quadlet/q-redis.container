@@ -1,0 +1,13 @@
+[Unit]
+Description=Q Redis Service
+PartOf=q-backend.target
+
+[Container]
+ContainerName=q-redis
+Image=redis:7-alpine
+PublishPort=127.0.0.1:6380:6379
+HealthCmd=redis-cli ping
+Notify=healthy
+
+[Install]
+WantedBy=q-backend.target default.target

@@ -1,0 +1,6 @@
+[Unit]
+Description=Q Backend Stack
+Wants=q-postgres.service q-redis.service q-migrate.service q-api.service q-outbox-relay.service q-market-publisher.service q-research-worker.service
+
+[Install]
+WantedBy=default.target

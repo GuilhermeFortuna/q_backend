@@ -1,0 +1,16 @@
+[Unit]
+Description=Q Database Migrations
+PartOf=q-backend.target
+Requires=q-postgres.service
+After=q-postgres.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=%h/.config/q/backend.env
+WorkingDirectory=@Q_BACKEND_DIR@
+ExecStart=@Q_BACKEND_DIR@/.venv/bin/alembic upgrade head
+TimeoutStartSec=90
+
+[Install]
+WantedBy=q-backend.target

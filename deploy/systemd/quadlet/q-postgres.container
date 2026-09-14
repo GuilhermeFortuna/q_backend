@@ -1,0 +1,15 @@
+[Unit]
+Description=Q PostgreSQL Database
+PartOf=q-backend.target
+
+[Container]
+ContainerName=q-postgres
+Image=postgres:16-alpine
+PublishPort=127.0.0.1:5434:5432
+Volume=q-postgres-data.volume:/var/lib/postgresql/data
+EnvironmentFile=%h/.config/q/postgres.env
+HealthCmd=pg_isready -U q -d q
+Notify=healthy
+
+[Install]
+WantedBy=q-backend.target default.target
