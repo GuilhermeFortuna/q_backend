@@ -37,6 +37,14 @@ def _id(value: str | bytes) -> str:
     return value.decode() if isinstance(value, bytes) else value
 
 
+def _stream_id_before(left: str, right: str) -> bool:
+    """Compare Redis stream IDs numerically, not lexicographically."""
+    try:
+        return tuple(map(int, left.split("-", 1))) < tuple(map(int, right.split("-", 1)))
+    except ValueError:
+        return False
+
+
 class StreamSession:
     def __init__(self, websocket: WebSocket, redis: redis.asyncio.Redis, clock: Any = None) -> None:
         self.websocket = websocket
@@ -59,6 +67,8 @@ class StreamSession:
         try:
             done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             for task in done:
+                if task.cancelled():
+                    continue
                 exc = task.exception()
                 if exc is not None:
                     logger.exception("stream session task failed", exc_info=exc)
@@ -118,7 +128,7 @@ class StreamSession:
         last_seq = int(header.get("seq", 0))
         if requested is not None:
             cursor = str(requested)
-            return cursor, epoch, last_seq, cursor < first
+            return cursor, epoch, last_seq, _stream_id_before(cursor, first)
         return last, epoch, last_seq, False
 
     async def _read_loop(self) -> None:
