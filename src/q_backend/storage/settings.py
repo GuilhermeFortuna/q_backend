@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     stream_bar_timeframes: str = "M1"
     stream_tick_poll_interval_s: float = 0.25
     stream_bar_poll_interval_s: float = 1.0
+    catalog_tombstone_grace_s: int = 604_800
 
 
 @lru_cache
