@@ -15,8 +15,17 @@ from q_backend.streaming.redis_binary import get_binary_redis
 from q_backend.streaming.relay import OutboxRelay, RelayConfig
 
 
+class _LogCaptureHandler(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__()
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+
 @pytest.mark.integration
-def test_relay_redis_outage_backoff_and_recovery(caplog):
+def test_relay_redis_outage_backoff_and_recovery():
     session_factory = sessionmaker(bind=get_engine(), expire_on_commit=False)
     topic = "jobs.terminal"
 
@@ -52,21 +61,28 @@ def test_relay_redis_outage_backoff_and_recovery(caplog):
     stop_event = threading.Event()
     thread = threading.Thread(target=relay.run_forever, args=(stop_event,))
 
-    with caplog.at_level(logging.WARNING):
+    handler = _LogCaptureHandler()
+    relay_logger = logging.getLogger("q_backend.streaming.relay")
+    relay_logger.disabled = False
+    relay_logger.addHandler(handler)
+
+    try:
         thread.start()
         time.sleep(3.0)
         stop_event.set()
         thread.join(timeout=5.0)
 
-    assert not thread.is_alive()
+        assert not thread.is_alive()
 
-    # Records no progress
-    with session_factory() as session:
-        state = session.execute(select(OutboxTopicState).where(OutboxTopicState.topic == topic)).scalar_one()
-        assert state.last_relayed_seq == 0
+        # Records no progress
+        with session_factory() as session:
+            state = session.execute(select(OutboxTopicState).where(OutboxTopicState.topic == topic)).scalar_one()
+            assert state.last_relayed_seq == 0
 
-    # Logs backoff
-    assert any("Backing off" in record.message for record in caplog.records)
+        # Logs backoff
+        assert any("Backing off" in msg for msg in handler.messages)
+    finally:
+        relay_logger.removeHandler(handler)
 
     # Pointed back, appends everything committed meanwhile
     good_client = get_binary_redis()
@@ -85,7 +101,7 @@ def test_relay_redis_outage_backoff_and_recovery(caplog):
 
 
 @pytest.mark.integration
-def test_relay_postgres_outage_backoff_and_recovery(caplog):
+def test_relay_postgres_outage_backoff_and_recovery():
     bad_engine = create_engine(
         "postgresql+psycopg://postgres:postgres@127.0.0.1:5439/q_fake_db",
         pool_pre_ping=False,
@@ -98,14 +114,21 @@ def test_relay_postgres_outage_backoff_and_recovery(caplog):
     stop_event = threading.Event()
     thread = threading.Thread(target=relay.run_forever, args=(stop_event,))
 
-    with caplog.at_level(logging.WARNING):
+    handler = _LogCaptureHandler()
+    relay_logger = logging.getLogger("q_backend.streaming.relay")
+    relay_logger.disabled = False
+    relay_logger.addHandler(handler)
+
+    try:
         thread.start()
         time.sleep(2.0)
         stop_event.set()
         thread.join(timeout=5.0)
 
-    assert not thread.is_alive()
+        assert not thread.is_alive()
 
-    # Does not raise and logs backoff
-    assert any("Backing off" in record.message for record in caplog.records)
-    bad_engine.dispose()
+        # Does not raise and logs backoff
+        assert any("Backing off" in msg for msg in handler.messages)
+    finally:
+        relay_logger.removeHandler(handler)
+        bad_engine.dispose()
