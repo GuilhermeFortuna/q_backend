@@ -117,7 +117,10 @@ class StreamSession:
         try:
             info = await self.redis.xinfo_stream(stream_key(topic))
         except ResponseError:
-            return ("0-0" if requested is not None else "$", "", 0, requested is not None)
+            # The stream was empty at acknowledgement time.  `$` is evaluated
+            # when XREAD begins, so it would skip an entry appended in the gap
+            # between the acknowledgement and the reader's first call.
+            return "0-0", "", 0, requested is not None
         first = _id(info.get(b"first-entry", info.get("first-entry"))[0])
         last_entry = info.get(b"last-entry", info.get("last-entry"))
         last = _id(last_entry[0]) if last_entry else "0-0"
