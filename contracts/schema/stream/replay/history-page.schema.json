@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stream/replay/history-page",
+  "title": "HistoryPageResponse",
+  "description": "Paginated history page for a durable topic, ordered by sequence.",
+  "type": "object",
+  "required": [
+    "topic",
+    "epoch",
+    "entries",
+    "next_seq"
+  ],
+  "properties": {
+    "topic": {
+      "type": "string",
+      "description": "Topic name of the history stream."
+    },
+    "epoch": {
+      "type": "string",
+      "description": "Outbox epoch the entries belong to."
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "$ref": "../envelope.schema.json"
+      },
+      "description": "Sequence-ordered stream envelopes."
+    },
+    "next_seq": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Next sequence number to resume from, or null if caught up to stream head."
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stream/replay/watermark",
+  "title": "SnapshotWatermark",
+  "description": "Snapshot watermark mapping each topic to its epoch and sequence watermark.",
+  "type": "object",
+  "additionalProperties": {
+    "type": "object",
+    "required": [
+      "epoch",
+      "seq"
+    ],
+    "properties": {
+      "epoch": {
+        "type": "string",
+        "description": "Outbox epoch for durable topics, publisher epoch for ephemeral topics."
+      },
+      "seq": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Last sequence number reflected by the accompanying state."
+      }
+    },
+    "additionalProperties": false
+  }
+}

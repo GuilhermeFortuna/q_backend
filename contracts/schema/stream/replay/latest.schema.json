@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stream/replay/latest",
+  "title": "LatestValuesResponse",
+  "description": "Latest-value response for an ephemeral topic keyed by routing key string.",
+  "type": "object",
+  "required": [
+    "topic",
+    "entries"
+  ],
+  "properties": {
+    "topic": {
+      "type": "string",
+      "description": "Topic name of the ephemeral stream."
+    },
+    "entries": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "../envelope.schema.json"
+      },
+      "description": "Mapping from routing key string to the latest envelope for that key."
+    }
+  },
+  "additionalProperties": false
+}

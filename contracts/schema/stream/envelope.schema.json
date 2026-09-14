@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stream/envelope",
+  "title": "StreamEnvelope",
+  "description": "The canonical logical stream entry format across all event streams. The Redis stream identifier is deliberately omitted because it is a transport-managed replay cursor that differs between live forwarding and historical replay. Consumers must use (topic, epoch, seq) as the authoritative ordering and deduplication watermark, NOT the Redis stream identifier.",
+  "type": "object",
+  "required": [
+    "topic",
+    "schema_major",
+    "seq",
+    "epoch",
+    "producer_id",
+    "origin_ts",
+    "payload_kind",
+    "payload_schema",
+    "payload"
+  ],
+  "properties": {
+    "topic": {
+      "type": "string",
+      "enum": [
+        "bars.completed",
+        "bars.forming",
+        "decisions",
+        "deployments",
+        "fills",
+        "jobs.progress",
+        "jobs.terminal",
+        "ledger",
+        "orders",
+        "quotes",
+        "risk"
+      ],
+      "description": "Stream topic name. Must be a declared topic in schema/stream/topics.yaml."
+    },
+    "schema_major": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Schema major version of the envelope (integer >= 1). A consumer that reads an entry whose schema_major it does not implement is required to reject the entry rather than attempt a best-effort decode."
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Monotonic sequence number per (topic, epoch), serving as the ordering and deduplication watermark for that topic. Sequence numbers are strictly local to a (topic, epoch) pair and are NOT globally ordered across different topics; a consumer must not use seq to establish a single merged timeline across topics (e.g. fills vs orders). The Redis stream identifier is a transport replay cursor and is NOT the ordering watermark; seq is the ordering watermark."
+    },
+    "epoch": {
+      "type": "string",
+      "description": "Outbox epoch for durable topics, publisher epoch for ephemeral topics. Carried on every single entry rather than only on epoch transitions, allowing a consumer that joins mid-stream to detect staleness immediately on the first entry it reads. An epoch change invalidates all previous sequence numbers for that topic. The Redis stream identifier is transport state and must not be conflated with the epoch/seq ordering watermark."
+    },
+    "producer_id": {
+      "type": "string",
+      "description": "Identifier of the process instance that wrote the entry, used for diagnostics and origin tracing."
+    },
+    "origin_ts": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 UTC instant from the producer's clock (e.g. 2026-09-12T10:00:00.000000Z). Explicitly unsuitable for ordering: two producers' clocks are not comparable due to skew and network drift, and a single producer clock can step backwards. Ordering is the sequence number's responsibility, NOT origin_ts."
+    },
+    "payload_kind": {
+      "type": "string",
+      "enum": [
+        "arrow_ipc",
+        "control"
+      ],
+      "description": "Declares the payload encoding: 'arrow_ipc' for binary columnar Arrow IPC stream batches, or 'control' for structured JSON control frames."
+    },
+    "payload_schema": {
+      "type": "string",
+      "description": "The schema identifier the payload conforms to (e.g. resolving to a schema file in this repository)."
+    },
+    "payload": {
+      "description": "Payload content: base64-encoded Arrow IPC stream batch when payload_kind is 'arrow_ipc', or structured JSON object when payload_kind is 'control'.",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object"
+        }
+      ]
+    },
+    "key": {
+      "type": "object",
+      "description": "Optional routing values corresponding to the topic's coalesce_key, enabling servers to coalesce entries without decoding payloads. All values are strings.",
+      "properties": {
+        "symbol": {
+          "type": "string",
+          "description": "Symbol for market data routing (e.g. WINZ25, PETR4)."
+        },
+        "timeframe": {
+          "type": "string",
+          "description": "Timeframe for bar routing (e.g. M1, H1)."
+        },
+        "kind": {
+          "type": "string",
+          "description": "Job kind for job event routing."
+        },
+        "job_id": {
+          "type": "string",
+          "description": "Job identifier for job event routing."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

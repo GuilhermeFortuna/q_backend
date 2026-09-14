@@ -1,4 +1,4 @@
-"""Load Q-009 replay JSON Schemas from the sibling q_contracts repository."""
+"""Load Q-009 replay JSON Schemas from the vendored q_contracts package."""
 
 from __future__ import annotations
 
@@ -8,8 +8,9 @@ from pathlib import Path
 import jsonschema
 import referencing
 
-CONTRACTS_ROOT = Path(__file__).resolve().parents[3] / "q_contracts"
-STREAM_DIR = CONTRACTS_ROOT / "schema" / "stream"
+import q_contracts
+
+STREAM_DIR = Path(q_contracts.__file__).resolve().parent / "schema" / "stream"
 REPLAY_DIR = STREAM_DIR / "replay"
 
 

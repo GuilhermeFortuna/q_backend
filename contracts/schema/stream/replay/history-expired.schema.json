@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stream/replay/history-expired",
+  "title": "HistoryExpiredResponse",
+  "description": "Distinct response returned when requested history sequence is older than retention window.",
+  "type": "object",
+  "required": [
+    "topic",
+    "requested_from_seq"
+  ],
+  "properties": {
+    "topic": {
+      "type": "string",
+      "description": "Topic name of the history stream."
+    },
+    "requested_from_seq": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "The sequence watermark the client requested from."
+    },
+    "oldest_available_seq": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Oldest sequence currently retained, or null if topic is empty."
+    }
+  },
+  "additionalProperties": false
+}
