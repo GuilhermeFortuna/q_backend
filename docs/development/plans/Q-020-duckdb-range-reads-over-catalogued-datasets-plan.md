@@ -226,9 +226,9 @@ tests/market_data/lake_query/                    new test package
 
 ## Ordered implementation
 
-1. Work on the branch `Q-020-duckdb-range-reads-over-catalogued-datasets` in
+- [x] 1. Work on the branch `Q-020-duckdb-range-reads-over-catalogued-datasets` in
    `q_backend`, created from `development` by `./work start`.
-2. Write failing tests in `tests/market_data/lake_query/test_lake_read_digest.py`
+- [x] 2. Write failing tests in `tests/market_data/lake_query/test_lake_read_digest.py`
    that load `scripts/lake_read_digest.py` by path. `planned_reads` over the
    Q-017 fixture inventory yields 6 reads (3 datasets × full range and last
    month). `run(runs=1, fixture=tests/fixtures/lake)` reports `rows` 10, 12, and
