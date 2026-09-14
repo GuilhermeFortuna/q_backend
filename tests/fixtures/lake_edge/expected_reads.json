@@ -1,0 +1,292 @@
+{
+  "bars_inclusive_bounds": {
+    "kind": "bars",
+    "symbol": "EDGE3",
+    "timeframe": "D1",
+    "start": "2023-12-29T10:00:00",
+    "end": "2024-01-02T10:00:00",
+    "bars": [
+      {
+        "time": "2023-12-29T10:00:00",
+        "open": 10.5,
+        "high": 11.5,
+        "low": 10.0,
+        "close": 11.0,
+        "tick_volume": 1100,
+        "spread": 2,
+        "real_volume": 55000
+      },
+      {
+        "time": "2024-01-02T10:00:00",
+        "open": 11.0,
+        "high": 12.0,
+        "low": 10.5,
+        "close": 11.5,
+        "tick_volume": 1200,
+        "spread": 1,
+        "real_volume": 60000
+      }
+    ]
+  },
+  "bars_empty_range_in_partition": {
+    "kind": "bars",
+    "symbol": "EDGE3",
+    "timeframe": "D1",
+    "start": "2024-06-01T10:00:00",
+    "end": "2024-06-15T10:00:00",
+    "bars": []
+  },
+  "bars_reversed_window": {
+    "kind": "bars",
+    "symbol": "EDGE3",
+    "timeframe": "D1",
+    "start": "2024-01-05T10:00:00",
+    "end": "2024-01-02T10:00:00",
+    "bars": []
+  },
+  "bars_unknown_subject": {
+    "kind": "bars",
+    "symbol": "UNKNOWN",
+    "timeframe": "D1",
+    "start": "2024-01-01T00:00:00",
+    "end": "2024-01-10T00:00:00",
+    "bars": []
+  },
+  "bars_utc_aware_bounds": {
+    "kind": "bars",
+    "symbol": "EDGE3",
+    "timeframe": "D1",
+    "start": "2023-12-29T13:00:00+00:00",
+    "end": "2024-01-03T13:00:00+00:00",
+    "bars": [
+      {
+        "time": "2024-01-02T10:00:00",
+        "open": 11.0,
+        "high": 12.0,
+        "low": 10.5,
+        "close": 11.5,
+        "tick_volume": 1200,
+        "spread": 1,
+        "real_volume": 60000
+      },
+      {
+        "time": "2024-01-03T10:00:00",
+        "open": 11.5,
+        "high": 12.5,
+        "low": 11.0,
+        "close": 12.0,
+        "tick_volume": 1250,
+        "spread": 2,
+        "real_volume": 65000
+      }
+    ]
+  },
+  "bars_edgetz_full_range": {
+    "kind": "bars",
+    "symbol": "EDGETZ",
+    "timeframe": "H1",
+    "start": "2024-01-02T00:00:00",
+    "end": "2024-01-02T23:59:59",
+    "bars": [
+      {
+        "time": "2024-01-02T13:00:00",
+        "open": 20.0,
+        "high": 21.0,
+        "low": 19.5,
+        "close": 20.5,
+        "tick_volume": 500,
+        "spread": 1,
+        "real_volume": 25000
+      },
+      {
+        "time": "2024-01-02T14:00:00",
+        "open": 20.5,
+        "high": 21.5,
+        "low": 20.0,
+        "close": 21.0,
+        "tick_volume": 600,
+        "spread": 1,
+        "real_volume": 30000
+      },
+      {
+        "time": "2024-01-02T15:00:00",
+        "open": 21.0,
+        "high": 22.0,
+        "low": 20.5,
+        "close": 21.5,
+        "tick_volume": 700,
+        "spread": 1,
+        "real_volume": 35000
+      }
+    ]
+  },
+  "ticks_exact_bounds": {
+    "kind": "ticks",
+    "symbol": "EDGE3",
+    "start": "2024-12-31T23:59:59.900000",
+    "end": "2025-01-01T00:00:00.100000",
+    "ticks": {
+      "time_msc": [
+        1735689599900,
+        1735689599950,
+        1735689599999,
+        1735689600001,
+        1735689600050,
+        1735689600100
+      ],
+      "bid": [
+        100.0,
+        100.1,
+        100.2,
+        100.3,
+        100.4,
+        100.5
+      ],
+      "ask": [
+        100.2,
+        100.3,
+        100.4,
+        100.5,
+        100.6,
+        100.7
+      ],
+      "last": [
+        100.1,
+        100.2,
+        100.3,
+        100.4,
+        100.5,
+        100.6
+      ],
+      "volume": [
+        10.0,
+        20.0,
+        30.0,
+        40.0,
+        50.0,
+        60.0
+      ],
+      "flags": [
+        6,
+        6,
+        6,
+        6,
+        6,
+        6
+      ]
+    }
+  },
+  "ticks_submillisecond_bounds": {
+    "kind": "ticks",
+    "symbol": "EDGE3",
+    "start": "2024-12-31T23:59:59.900500",
+    "end": "2025-01-01T00:00:00.099500",
+    "ticks": {
+      "time_msc": [
+        1735689599900,
+        1735689599950,
+        1735689599999,
+        1735689600001,
+        1735689600050
+      ],
+      "bid": [
+        100.0,
+        100.1,
+        100.2,
+        100.3,
+        100.4
+      ],
+      "ask": [
+        100.2,
+        100.3,
+        100.4,
+        100.5,
+        100.6
+      ],
+      "last": [
+        100.1,
+        100.2,
+        100.3,
+        100.4,
+        100.5
+      ],
+      "volume": [
+        10.0,
+        20.0,
+        30.0,
+        40.0,
+        50.0
+      ],
+      "flags": [
+        6,
+        6,
+        6,
+        6,
+        6
+      ]
+    }
+  },
+  "ticks_utc_aware_bounds": {
+    "kind": "ticks",
+    "symbol": "EDGE3",
+    "start": "2025-01-01T02:59:59.900000+00:00",
+    "end": "2025-01-01T03:00:00.100000+00:00",
+    "ticks": {
+      "time_msc": [],
+      "bid": [],
+      "ask": [],
+      "last": [],
+      "volume": [],
+      "flags": []
+    }
+  },
+  "bars_file_missing_after_adoption": {
+    "kind": "bars",
+    "symbol": "EDGE3",
+    "timeframe": "D1",
+    "start": "2023-12-28T10:00:00",
+    "end": "2024-01-05T10:00:00",
+    "bars": [
+      {
+        "time": "2024-01-02T10:00:00",
+        "open": 11.0,
+        "high": 12.0,
+        "low": 10.5,
+        "close": 11.5,
+        "tick_volume": 1200,
+        "spread": 1,
+        "real_volume": 60000
+      },
+      {
+        "time": "2024-01-03T10:00:00",
+        "open": 11.5,
+        "high": 12.5,
+        "low": 11.0,
+        "close": 12.0,
+        "tick_volume": 1250,
+        "spread": 2,
+        "real_volume": 65000
+      },
+      {
+        "time": "2024-01-04T10:00:00",
+        "open": 12.0,
+        "high": 13.0,
+        "low": 11.5,
+        "close": 12.5,
+        "tick_volume": 1300,
+        "spread": null,
+        "real_volume": null
+      },
+      {
+        "time": "2024-01-05T10:00:00",
+        "open": 12.5,
+        "high": 13.5,
+        "low": 12.0,
+        "close": 13.0,
+        "tick_volume": 1400,
+        "spread": null,
+        "real_volume": null
+      }
+    ]
+  }
+}

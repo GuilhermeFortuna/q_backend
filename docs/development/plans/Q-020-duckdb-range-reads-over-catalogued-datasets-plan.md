@@ -236,7 +236,7 @@ tests/market_data/lake_query/                    new test package
    changes. `compare` returns 0 for a file compared with itself and 1 when one
    digest differs. Confirm they fail, implement the script, and confirm they
    pass. Commit.
-3. Write `scripts/generate_lake_edge_fixture.py`, run it, and commit
+- [x] 3. Write `scripts/generate_lake_edge_fixture.py`, run it, and commit
    `tests/fixtures/lake_edge/` with its `expected_reads.json`. Add
    `tests/market_data/lake_query/test_edge_reads.py`, which copies the edge lake,
    adopts it into a SQLite `LakeCatalog`, sets `catalog_service._catalog_instance`
