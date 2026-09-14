@@ -163,8 +163,6 @@ def run_jobs_sync(monkeypatch, tmp_path):
     import q_backend.storage.db.models  # noqa: F401
     import q_backend.storage.db.execution_models  # noqa: F401
     import q_backend.storage.db.outbox_models  # noqa: F401
-    from q_backend.storage.db.outbox_models import OutboxTopicState
-    from q_contracts.topics import TOPICS
 
     harness_engine = create_engine(
         "sqlite://",
@@ -190,19 +188,6 @@ def run_jobs_sync(monkeypatch, tmp_path):
             raise
         finally:
             session.close()
-
-    # Seed durable topics in topic state table
-    with _harness_session_scope() as sess:
-        for name, policy in TOPICS.items():
-            if policy.topic_class == "durable":
-                sess.add(
-                    OutboxTopicState(
-                        topic=name,
-                        epoch="20260912-00000001",
-                        last_seq=0,
-                        last_relayed_seq=0,
-                    )
-                )
 
     monkeypatch.setattr("q_backend.storage.db.engine.session_scope", _harness_session_scope)
     for module in (oj, wj, sj, bj, nj, eaj, dab, arj, stj):

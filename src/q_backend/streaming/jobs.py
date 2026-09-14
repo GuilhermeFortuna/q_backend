@@ -11,7 +11,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from q_backend.storage.db.base import utc_now
-from q_backend.storage.db.outbox_models import JobTerminalMarker, OutboxTopicState
+from q_backend.storage.db.outbox_models import JobTerminalMarker
 from q_backend.storage.settings import get_settings
 from q_backend.streaming.outbox import record_event
 from q_backend.streaming.publisher import EphemeralPublisher
@@ -325,17 +325,6 @@ def record_job_terminal(
     }
     if error is not None:
         payload["error"] = str(error)
-
-    topic_state = session.get(OutboxTopicState, "jobs.terminal")
-    if topic_state is None:
-        topic_state = OutboxTopicState(
-            topic="jobs.terminal",
-            epoch=f"{utc_now().strftime('%Y%m%d')}-00000001",
-            last_seq=0,
-            last_relayed_seq=0,
-        )
-        session.add(topic_state)
-        session.flush()
 
     event = record_event(
         session,
