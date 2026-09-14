@@ -23,6 +23,7 @@ from dramatiq.middleware import Middleware
 from sentry_sdk.integrations.dramatiq import DramatiqIntegration, SentryMiddleware
 
 from q_backend.observability.sentry import init_sentry
+from q_backend.observability.systemd import notify_ready
 from q_backend.observability.worker import SentryTradingContextMiddleware
 from q_backend.storage.settings import get_settings
 from q_backend.tasks.worker_context import shutdown_worker_market_data
@@ -54,6 +55,18 @@ class MarketDataMiddleware(Middleware):
         sentry_sdk.flush(timeout=2)
 
 
+class ReadinessMiddleware(Middleware):
+    """Ping the broker's Redis client, then notify_ready. Runs in each forked worker process."""
+
+    def after_worker_boot(self, broker: dramatiq.Broker, worker: dramatiq.Worker) -> None:
+        try:
+            if hasattr(broker, "client") and hasattr(broker.client, "ping"):
+                broker.client.ping()
+            notify_ready()
+        except Exception:  # noqa: BLE001
+            logger.warning("Worker readiness check failed", exc_info=True)
+
+
 def _build_broker() -> RedisBroker:
     settings = get_settings()
     worker_sentry_enabled = False
@@ -78,6 +91,7 @@ def _build_broker() -> RedisBroker:
     else:
         redis_broker.add_middleware(trading_context_middleware)
     redis_broker.add_middleware(MarketDataMiddleware())
+    redis_broker.add_middleware(ReadinessMiddleware())
     return redis_broker
 
 

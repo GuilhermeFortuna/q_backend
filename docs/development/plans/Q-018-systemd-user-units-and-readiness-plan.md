@@ -281,7 +281,7 @@ Every long-running `.service.in` shares: `EnvironmentFile=%h/.config/q/backend.e
    notify socket before the first poll. Confirm they fail, implement, and confirm
    they pass. Update the existing no-symbols test only if it asserts exit code 1
    exactly. Commit.
-7. [ ] Write a failing `integration` test in `tests/tasks/test_worker_readiness.py`:
+7. [x] Write a failing `integration` test in `tests/tasks/test_worker_readiness.py`:
    run `.venv/bin/worker` with `Q_WORKER_PROCESSES=1` and a notify socket against
    local Redis; `READY=1` arrives within 60 s; SIGTERM makes it exit 0 within
    60 s. Confirm it fails, add `ReadinessMiddleware`, and confirm it passes.
