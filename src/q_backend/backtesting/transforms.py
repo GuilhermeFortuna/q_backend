@@ -45,7 +45,7 @@ def compute_clip(series: pd.Series, clip_low: float, clip_high: float) -> pd.Ser
     high = float(clip_high)
     if low > high:
         raise ValueError(f"clip_low must be <= clip_high (got {low} > {high}).")
-    res = kernels.clip(as_float64(series), low, high)
+    res = getattr(kernels, "clip")(as_float64(series), low, high)
     if str(series.dtype) == "Float64":
         return pd.Series(res, index=series.index, dtype=series.dtype, name=series.name)
     if pd.api.types.is_integer_dtype(series.dtype) and low.is_integer() and high.is_integer():

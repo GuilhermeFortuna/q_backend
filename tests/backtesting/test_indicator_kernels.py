@@ -142,3 +142,42 @@ def test_parameter_domain_errors():
     # MA with period 0 raises existing ValueError
     with pytest.raises(ValueError, match="MA period must be at least 1."):
         compute_ma(c, period=0, ma_type="sma")
+
+
+def test_indicator_modules_hygiene():
+    from pathlib import Path
+
+    backend_src = Path(__file__).resolve().parents[2] / "src" / "q_backend"
+    assert backend_src.is_dir()
+
+    # 1. Only backtesting/indicator_kernels.py imports q_core
+    q_core_importers = []
+    for py_file in backend_src.rglob("*.py"):
+        content = py_file.read_text(encoding="utf-8")
+        for line in content.splitlines():
+            line_str = line.strip()
+            if line_str.startswith("import q_core") or line_str.startswith("from q_core"):
+                q_core_importers.append(py_file.relative_to(backend_src).as_posix())
+                break
+
+    assert q_core_importers == ["backtesting/indicator_kernels.py"]
+
+    # 2. The three indicator modules contain no legacy pandas/numpy arithmetic constructs
+    forbidden_tokens = (
+        ".rolling(",
+        ".ewm(",
+        ".shift(",
+        ".clip(",
+        ".diff(",
+        "np.log",
+        "np.sqrt",
+    )
+    indicator_modules = [
+        backend_src / "backtesting" / "technical_indicators.py",
+        backend_src / "backtesting" / "moving_averages.py",
+        backend_src / "backtesting" / "transforms.py",
+    ]
+    for mod_path in indicator_modules:
+        content = mod_path.read_text(encoding="utf-8")
+        for token in forbidden_tokens:
+            assert token not in content, f"{mod_path.name} contains forbidden token {token!r}"
