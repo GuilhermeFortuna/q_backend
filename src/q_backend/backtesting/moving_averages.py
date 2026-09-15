@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 from typing import Literal
 
-import numpy as np
 import pandas as pd
+
+from q_backend.backtesting.indicator_kernels import as_float64, kernels, to_series
 
 MaType = Literal["sma", "ema", "wma", "smma", "hma"]
 
@@ -29,37 +32,19 @@ def compute_ma(series: pd.Series, period: int, ma_type: str) -> pd.Series:
         raise ValueError("MA period must be at least 1.")
 
     normalized = normalize_ma_type(ma_type)
+    arr = as_float64(series)
 
     if normalized == "sma":
-        return series.rolling(window=period).mean()
-    if normalized == "ema":
-        return series.ewm(span=period, adjust=False).mean()
-    if normalized == "wma":
-        return _wma(series, period)
-    if normalized == "smma":
-        return series.ewm(alpha=1 / period, adjust=False).mean()
-    if normalized == "hma":
-        return _hma(series, period)
+        res = kernels.sma(arr, period)
+    elif normalized == "ema":
+        res = kernels.ema(arr, period)
+    elif normalized == "wma":
+        res = kernels.wma(arr, period)
+    elif normalized == "smma":
+        res = kernels.smma(arr, period)
+    elif normalized == "hma":
+        res = kernels.hma(arr, period)
+    else:
+        raise ValueError(f"Unsupported MA type: {ma_type}")
 
-    raise ValueError(f"Unsupported MA type: {ma_type}")
-
-
-def _wma(series: pd.Series, period: int) -> pd.Series:
-    weights = np.arange(1, period + 1, dtype=float)
-    weight_sum = weights.sum()
-
-    def weighted_mean(window: np.ndarray) -> float:
-        if len(window) < period:
-            return np.nan
-        return float(np.dot(window, weights) / weight_sum)
-
-    return series.rolling(window=period).apply(weighted_mean, raw=True)
-
-
-def _hma(series: pd.Series, period: int) -> pd.Series:
-    half_period = max(period // 2, 1)
-    sqrt_period = max(int(np.sqrt(period)), 1)
-    wma_half = _wma(series, half_period)
-    wma_full = _wma(series, period)
-    raw = 2 * wma_half - wma_full
-    return _wma(raw, sqrt_period)
+    return to_series(res, series.index, series.name)
