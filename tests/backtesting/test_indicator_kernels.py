@@ -135,6 +135,10 @@ def test_parameter_domain_errors():
     with pytest.raises(ValueError, match="share an identical index"):
         compute_atr(h_mismatched, l, c, period=14)
 
+    # Rolling rank with window < 1 raises ValueError
+    with pytest.raises(ValueError, match=r"window must be >= 1 \(got 0\)\."):
+        compute_rolling_rank(c, window=0)
+
     # MA with period 0 raises existing ValueError
     with pytest.raises(ValueError, match="MA period must be at least 1."):
         compute_ma(c, period=0, ma_type="sma")

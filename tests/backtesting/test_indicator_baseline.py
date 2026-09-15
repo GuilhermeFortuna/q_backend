@@ -171,9 +171,7 @@ def test_indicator_baseline_all_cases() -> None:
 
         for act_s, exp_s in zip(actual_series_list, exp_outputs):
             diff = _compare_series(act_s, exp_s, ref_idx, abs_tol=abs_tol, rel_tol=rel_tol)
-            current_max = max_diffs.get(func_key, 0.0)
-            if diff > current_max:
-                max_diffs[func_key] = diff
+            max_diffs[func_key] = max(max_diffs.get(func_key, 0.0), diff)
 
     print("\n--- Maximum Absolute Differences Per Function ---")
     for fn, md in sorted(max_diffs.items()):
