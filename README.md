@@ -487,6 +487,10 @@ q_backend/
    ```powershell
    powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
    ```
+5. **Rust Toolchain (1.98.0):** Required to compile `q_core` dependency from source during `uv sync`:
+   ```bash
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.98.0
+   ```
 
 ### 1. Configure the Environment
 Copy the example environment file and fill in your values:
