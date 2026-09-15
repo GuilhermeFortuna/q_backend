@@ -64,3 +64,23 @@ accepted deviation, or no action. Record the decision beside the item.
 17. **`transforms.compute_rolling_zscore` says it uses population standard
     deviation**, but pandas' `rolling.std()` uses ddof=1. Found while planning
     Q-021.
+
+## Batch 05 planning
+
+Recorded while writing the Batch 05 specs and plans (Q-026 to Q-031). Numbering
+continues from Batch 04.
+
+18. **The forward evaluator never learns about a position opened while the worker
+    runs.** `recovery.build_runtime` is the only caller that sets the evaluator's
+    open trade, and `worker.poll_once` never calls `set_open_trade` after a fill,
+    so exit rules and strategy exits cannot close such a position until the worker
+    restarts. Found while planning Q-031 (`execution/worker.py`,
+    `execution/recovery.py`, `execution/evaluator.py`). Needs triage before any
+    live activation; Q-031 preserves the behaviour.
+19. **The tick engine fails with `AttributeError` for inverse-volatility sizing.**
+    `tick/orders.kernel_sizing_params` reads `safety_margin_per_contract` from any
+    config that is not fixed quantity, and tick backtest requests accept the
+    inverse-volatility config. Found while planning Q-029.
+20. **Tick backtests ignore transaction costs.** The tick kernel charges no costs,
+    while candle backtests apply `TransactionCostConfig`. Found while planning
+    Q-029. Q-029 and Q-030 preserve the behaviour.
