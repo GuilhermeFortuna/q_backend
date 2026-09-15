@@ -64,6 +64,11 @@ jobs:
       - name: Set up Python
         run: uv python install
 
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.0
+
       - name: Sync dependencies
         run: uv sync --frozen
 

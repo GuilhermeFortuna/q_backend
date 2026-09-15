@@ -15,6 +15,7 @@ from q_backend.backtesting.models import (
 from q_backend.backtesting.registry import TradeRegistry
 from q_backend.backtesting.strategy import TradingStrategy
 from q_backend.backtesting.position_sizing import PositionSizer
+from q_backend.backtesting.indicator_frame import augment_indicator_frame
 
 
 class ParallelMode(str, Enum):
@@ -120,39 +121,7 @@ class BacktestEngine:
         current_capital = self.initial_capital
 
         # 1. Compute indicators (vectorized, no lookahead bias)
-        chunk = self.strategy.compute_indicators(chunk)
-
-        if hasattr(self.strategy, "exit_strategy"):
-            from q_backend.backtesting.technical_indicators import (
-                compute_atr,
-                compute_donchian_channels,
-            )
-
-            donchian_periods: set[int] = set()
-            for col in self.strategy.exit_strategy.required_columns():
-                if col in chunk.columns:
-                    continue
-                if (
-                    col.startswith("atr_")
-                    and "high" in chunk.columns
-                    and "low" in chunk.columns
-                    and "close" in chunk.columns
-                ):
-                    period = int(col.split("_", 1)[1])
-                    chunk[col] = compute_atr(chunk["high"], chunk["low"], chunk["close"], period)
-                elif col.startswith("donchian_high_") or col.startswith("donchian_low_"):
-                    prefix = "donchian_high_" if col.startswith("donchian_high_") else "donchian_low_"
-                    donchian_periods.add(int(col.removeprefix(prefix)))
-
-            if donchian_periods and "high" in chunk.columns and "low" in chunk.columns:
-                for period in donchian_periods:
-                    high_col = f"donchian_high_{period}"
-                    low_col = f"donchian_low_{period}"
-                    if high_col in chunk.columns and low_col in chunk.columns:
-                        continue
-                    upper, lower = compute_donchian_channels(chunk["high"], chunk["low"], period)
-                    chunk[high_col] = upper
-                    chunk[low_col] = lower
+        chunk = augment_indicator_frame(self.strategy, chunk)
 
         # Parse time boundaries if day trading is active
         if self.day_trade:
