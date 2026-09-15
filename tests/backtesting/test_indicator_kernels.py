@@ -99,3 +99,42 @@ def test_require_window():
         require_window("window", 0, 1)
 
     assert require_window("window", 5, 1) == 5
+
+
+def test_parameter_domain_errors():
+    import pandas as pd
+    import pytest
+    from q_backend.backtesting.technical_indicators import (
+        compute_yang_zhang,
+        compute_rsi,
+        compute_atr,
+    )
+    from q_backend.backtesting.moving_averages import compute_ma
+    from q_backend.backtesting.transforms import compute_rolling_rank
+
+    c = pd.Series([10.0, 11.0, 12.0, 11.5, 12.5], name="close")
+    o = c.copy()
+    h = c + 1.0
+    l = c - 1.0
+
+    # Yang-Zhang with window < 2 raises ValueError
+    with pytest.raises(ValueError, match=r"window must be >= 2 \(got 1\)\."):
+        compute_yang_zhang(o, h, l, c, window=1)
+
+    # RSI with period < 1 raises ValueError
+    with pytest.raises(ValueError, match=r"period must be >= 1 \(got 0\)\."):
+        compute_rsi(c, period=0)
+
+    # ATR with period < 1 raises ValueError
+    with pytest.raises(ValueError, match=r"period must be >= 1 \(got 0\)\."):
+        compute_atr(h, l, c, period=0)
+
+    # Mismatched index on compute_atr raises ValueError
+    h_mismatched = h.copy()
+    h_mismatched.index = pd.RangeIndex(1, len(h) + 1)
+    with pytest.raises(ValueError, match="share an identical index"):
+        compute_atr(h_mismatched, l, c, period=14)
+
+    # MA with period 0 raises existing ValueError
+    with pytest.raises(ValueError, match="MA period must be at least 1."):
+        compute_ma(c, period=0, ma_type="sma")

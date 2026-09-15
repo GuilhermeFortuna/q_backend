@@ -58,16 +58,19 @@ def _invoke_case(case: dict[str, Any]) -> tuple[list[pd.Series], pd.Index]:
     ds = get_dataset(dataset_name)
 
     if func_name == "compute_yang_zhang":
-        ref_idx = ds["close"].index
-        res = compute_yang_zhang(ds["open"], ds["high"], ds["low"], ds["close"], **params)
+        c = ds["close"]
+        ref_idx = c.index
+        res = compute_yang_zhang(ds["open"], ds["high"], ds["low"], c, **params)
         return [res], ref_idx
     elif func_name == "compute_atr":
-        ref_idx = ds["close"].index
-        res = compute_atr(ds["high"], ds["low"], ds["close"], **params)
+        c = ds["close"]
+        ref_idx = c.index
+        res = compute_atr(ds["high"], ds["low"], c, **params)
         return [res], ref_idx
     elif func_name == "compute_donchian_channels":
-        ref_idx = ds["high"].index
-        upper, lower = compute_donchian_channels(ds["high"], ds["low"], **params)
+        h = ds["high"]
+        ref_idx = h.index
+        upper, lower = compute_donchian_channels(h, ds["low"], **params)
         return [upper, lower], ref_idx
     elif func_name in ("compute_bollinger_bands", "compute_macd"):
         close_series = ds["close"] if isinstance(ds, pd.DataFrame) else ds
