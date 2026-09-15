@@ -1,0 +1,9175 @@
+{
+  "case": "genome_trb",
+  "scenarios": {
+    "long": [
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 50
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 51
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 52
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 53
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 54
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 55
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 56
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 57
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 58
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 59
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 60
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 61
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 62
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 63
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 64
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 65
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 66
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 67
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 68
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 69
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 70
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 71
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 72
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 73
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 74
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 75
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 76
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 77
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 78
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 79
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 80
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 81
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 82
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 83
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 84
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 85
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 86
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 87
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 88
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 89
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 90
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 91
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 92
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 93
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 94
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 95
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 96
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 97
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 98
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 99
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 100
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 101
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 102
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 103
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 104
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 105
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 106
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 107
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 108
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 109
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 110
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 111
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 112
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 113
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 114
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 115
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 116
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 117
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 118
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 119
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 120
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 121
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 122
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 123
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 124
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 125
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 126
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 127
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 128
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 129
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 130
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 131
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 132
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 133
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 134
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 135
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 136
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 137
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 138
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 139
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 140
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 141
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 142
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 143
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 144
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 145
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 146
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 147
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 148
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 149
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 150
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 151
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 152
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 153
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 154
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 155
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 156
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 157
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 158
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 159
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 160
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 161
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 162
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 163
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 164
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 165
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 166
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 167
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 168
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 169
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 170
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 171
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 172
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 173
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 174
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 175
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 176
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 177
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 178
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 179
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 180
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 181
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 182
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 183
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 184
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 185
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 186
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 187
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 188
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 189
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 190
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 191
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 192
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 193
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 194
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 195
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 196
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 197
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 198
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 199
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 200
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 201
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 202
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 203
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 204
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 205
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 206
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 207
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 208
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 209
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 210
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 211
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 212
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 213
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 214
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 215
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 216
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 217
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 218
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 219
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 220
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 221
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 222
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 223
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 224
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 225
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 226
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 227
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 228
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 229
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 230
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 231
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 232
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 233
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 234
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 235
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 236
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 237
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 238
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 239
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 240
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 241
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 242
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 243
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 244
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 245
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 246
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 247
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 248
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 249
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 250
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 251
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 252
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 253
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 254
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 255
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 256
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 257
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 258
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 259
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 260
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 261
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 262
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 263
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 264
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 265
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 266
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 267
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 268
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 269
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 270
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 271
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 272
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 273
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 274
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 275
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 276
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 277
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 278
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 279
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 280
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 281
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 282
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 283
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 284
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 285
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 286
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 287
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 288
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 289
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 290
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 291
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 292
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 293
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 294
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 295
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 296
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 297
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 298
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 299
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 300
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 301
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 302
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 303
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 304
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 305
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 306
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 307
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 308
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 309
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 310
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 311
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 312
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 313
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 314
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 315
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 316
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 317
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 318
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 319
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 320
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 321
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 322
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 323
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 324
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 325
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 326
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 327
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 328
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 329
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 330
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 331
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 332
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 333
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 334
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 335
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 336
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 337
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 338
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 339
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 340
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 341
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 342
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 343
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 344
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 345
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 346
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 347
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 348
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 349
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 350
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 351
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 352
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 353
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 354
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 355
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 356
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 357
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 358
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 359
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 360
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 361
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 362
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 363
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 364
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 365
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 366
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 367
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 368
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 369
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 370
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 371
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 372
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 373
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 374
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 375
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 376
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 377
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 378
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 379
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 380
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 381
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 382
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 383
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 384
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 385
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 386
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 387
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 388
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 389
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 390
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 391
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 392
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 393
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 394
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 395
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 396
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 397
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 398
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 399
+      }
+    ],
+    "long_offgrid": [
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 63
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 65
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 113
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 114
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 116
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 118
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 119
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 151
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 153
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 180
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 181
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 183
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 184
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 185
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 186
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 193
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 194
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 195
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 196
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 197
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 198
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 199
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 200
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 201
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 202
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 203
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 204
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 205
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 257
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 261
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 262
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 265
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 307
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 311
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 315
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 316
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 332
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 333
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 356
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 357
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 376
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 395
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 396
+      }
+    ],
+    "none": [
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 63
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 65
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 113
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 114
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 116
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 118
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 119
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 151
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 153
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 180
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 181
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 183
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 184
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 185
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 186
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 193
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 194
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 195
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 196
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 197
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 198
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 199
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 200
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 201
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 202
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 203
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 204
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 205
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 257
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 261
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 262
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 265
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 307
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 311
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 315
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 316
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 332
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 333
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 356
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 357
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 376
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 395
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 396
+      }
+    ],
+    "short": [
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 50
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 51
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 52
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 53
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 54
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 55
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 56
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 57
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 58
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 59
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 60
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 61
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 62
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 63
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 64
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 65
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 66
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 67
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 68
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 69
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 70
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 71
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 72
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 73
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 74
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 75
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 76
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 77
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 78
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 79
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 80
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 81
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 82
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 83
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 84
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 85
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 86
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 87
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 88
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 89
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 90
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 91
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 92
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 93
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 94
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 95
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 96
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 97
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 98
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 99
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 100
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 101
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 102
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 103
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 104
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 105
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 106
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 107
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 108
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 109
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 110
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 111
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 112
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 113
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 114
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 115
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 116
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 117
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 118
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 119
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 120
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 121
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 122
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 123
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 124
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 125
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 126
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 127
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 128
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 129
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 130
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 131
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 132
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 133
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 134
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 135
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 136
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 137
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 138
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 139
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 140
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 141
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 142
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 143
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 144
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 145
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 146
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 147
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 148
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 149
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 150
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 151
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 152
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 153
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 154
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 155
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 156
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 157
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 158
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 159
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 160
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 161
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 162
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 163
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 164
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 165
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 166
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 167
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 168
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 169
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 170
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 171
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 172
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 173
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 174
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 175
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 176
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 177
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 178
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 179
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 180
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 181
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 182
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 183
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 184
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 185
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 186
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 187
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 188
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 189
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 190
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 191
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 192
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 193
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 194
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 195
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 196
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 197
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 198
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 199
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 200
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 201
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 202
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 203
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 204
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 205
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 206
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 207
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 208
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 209
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 210
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 211
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 212
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 213
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 214
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 215
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 216
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 217
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 218
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 219
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 220
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 221
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 222
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 223
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 224
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 225
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 226
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 227
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 228
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 229
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 230
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 231
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 232
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 233
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 234
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 235
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 236
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 237
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 238
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 239
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 240
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 241
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 242
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 243
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 244
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 245
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 246
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 247
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 248
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 249
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 250
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 251
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 252
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 253
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 254
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 255
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 256
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 257
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 258
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 259
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 260
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 261
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 262
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 263
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 264
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 265
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 266
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 267
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 268
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 269
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 270
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 271
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 272
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 273
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 274
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 275
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 276
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 277
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 278
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 279
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 280
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 281
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 282
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 283
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 284
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 285
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 286
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 287
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 288
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 289
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 290
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 291
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 292
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 293
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 294
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 295
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 296
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 297
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 298
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 299
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 300
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 301
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 302
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 303
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 304
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 305
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 306
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 307
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 308
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 309
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 310
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 311
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 312
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 313
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 314
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 315
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 316
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 317
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 318
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 319
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 320
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 321
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 322
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 323
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 324
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 325
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 326
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 327
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 328
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 329
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 330
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 331
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 332
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 333
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 334
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 335
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 336
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 337
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 338
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 339
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 340
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 341
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 342
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 343
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 344
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 345
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 346
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 347
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 348
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 349
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 350
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 351
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 352
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 353
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 354
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 355
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 356
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 357
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 358
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 359
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 360
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 361
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 362
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 363
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 364
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 365
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 366
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 367
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 368
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 369
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 370
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 371
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 372
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 373
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 374
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 375
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 376
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 377
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 378
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 379
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 380
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 381
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 382
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 383
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 384
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 385
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 386
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 387
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 388
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 389
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 390
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 391
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 392
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 393
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 394
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 395
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 396
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 397
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 398
+      },
+      {
+        "entries": [],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 399
+      }
+    ]
+  }
+}

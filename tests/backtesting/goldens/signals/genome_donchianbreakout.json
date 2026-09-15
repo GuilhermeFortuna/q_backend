@@ -1,0 +1,1142 @@
+{
+  "case": "genome_donchianbreakout",
+  "scenarios": {
+    "long": [
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 30
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 44
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 65
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 114
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 116
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 129
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 150
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 181
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 183
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 186
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 193
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 199
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 203
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 220
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 232
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 245
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 257
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 275
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 279
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 304
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 307
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 311
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 349
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 351
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 357
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 376
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 383
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 392
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 394
+      }
+    ],
+    "none": [
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 30
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 44
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 65
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 114
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 116
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 129
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 150
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 181
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 183
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 186
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 193
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 199
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 203
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 220
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 232
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 245
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 257
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 275
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 279
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 304
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 307
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 311
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 349
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 351
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 357
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 376
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 383
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 392
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 394
+      }
+    ],
+    "short": [
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 30
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 44
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 65
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 114
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 116
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 129
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 150
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 181
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 183
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 186
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 193
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 199
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 203
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 220
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 232
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 245
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 257
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 275
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 279
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 304
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 307
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 311
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 349
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 351
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 357
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 376
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 383
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 392
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 394
+      }
+    ]
+  }
+}

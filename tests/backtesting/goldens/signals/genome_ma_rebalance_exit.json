@@ -1,0 +1,44 @@
+{
+  "case": "genome_ma_rebalance_exit",
+  "scenarios": {
+    "long": [
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 330
+      }
+    ],
+    "none": [
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 330
+      }
+    ],
+    "short": [
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 330
+      }
+    ]
+  }
+}

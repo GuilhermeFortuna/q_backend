@@ -1,0 +1,206 @@
+{
+  "case": "genome_rsimeanreversion",
+  "scenarios": {
+    "long": [
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 18
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 46
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 183
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 193
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 398
+      }
+    ],
+    "none": [
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 18
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 46
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 183
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 193
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 398
+      }
+    ],
+    "short": [
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 18
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 46
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 183
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [],
+        "i": 193
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            1.0
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 398
+      }
+    ]
+  }
+}
