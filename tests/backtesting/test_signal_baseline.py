@@ -30,7 +30,7 @@ from q_backend.backtesting.indicator_frame import augment_indicator_frame
 from q_backend.backtesting.models import OrderAction, Signal, Trade
 from q_backend.backtesting.strategy import TradingStrategy
 from q_backend.backtesting.strategy_registry import default_params_for
-from q_backend.execution.signal_eval import evaluate_queued_signals
+from q_backend.execution.signal_eval import evaluate_queued_signals, signal_arrays
 
 from backtesting.test_goldens import (
     BASE_MA_PARAMS,
@@ -389,9 +389,10 @@ def _serialize_entry(signal: Signal) -> list[Any]:
 
 def _run_scenario(strategy: TradingStrategy, frame: pd.DataFrame, open_trades: list[Trade]) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
+    signals = signal_arrays(strategy, frame)
     for i in range(len(frame)):
         row = frame.iloc[i]
-        exits, entries = evaluate_queued_signals(strategy, row, open_trades)
+        exits, entries = evaluate_queued_signals(strategy, signals, i, row, open_trades)
         if not exits and not entries:
             continue
         records.append(

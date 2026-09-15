@@ -12,7 +12,7 @@ from q_backend.backtesting.strategy import TradingStrategy
 from q_backend.execution.bars import bar_close_time
 from q_backend.execution.evaluator import StrategyEvaluator
 from q_backend.execution.domain import StrategyIdentity
-from q_backend.execution.signal_eval import evaluate_queued_signals
+from q_backend.execution.signal_eval import evaluate_queued_signals, signal_arrays
 
 
 def augment_with_exit_columns(
@@ -49,14 +49,14 @@ def reference_queued_signals_by_close(
 ) -> list[tuple[datetime, list[Signal], list[Signal]]]:
     """Engine section-D queued signals keyed by bar close time (no fills)."""
     augmented = augment_with_exit_columns(strategy, data)
+    signals = signal_arrays(strategy, augmented)
     open_trades = [open_trade] if open_trade else []
     rows: list[tuple[datetime, list[Signal], list[Signal]]] = []
-    for open_time in augmented.index:
-        row = augmented.loc[open_time]
-        if isinstance(row, pd.DataFrame):
-            row = row.iloc[-1]
+    for position in range(len(augmented)):
+        row = augmented.iloc[position]
+        open_time = signals.index[position]
         close_time = bar_close_time(open_time.to_pydatetime(), timeframe)
-        exits, entries = evaluate_queued_signals(strategy, row, open_trades)
+        exits, entries = evaluate_queued_signals(strategy, signals, position, row, open_trades)
         rows.append((close_time, exits, entries))
     return rows
 

@@ -34,19 +34,21 @@ import time
 from datetime import datetime
 from typing import Any, Optional
 
+import numpy as np
 import pandas as pd
 
 from q_backend.backtesting.models import Signal, SignalAction as BacktestSignalAction, Trade
 from pydantic import TypeAdapter
 
 from q_backend.backtesting.position_sizing import PositionSizingConfig, build_position_sizer
+from q_backend.backtesting.signal_columns import SignalArrays
 from q_backend.backtesting.strategy import TradingStrategy
 from q_backend.execution.bars import bar_close_time, frame_close_times, trim_rolling_window
 from q_backend.execution.domain import SignalAction, StrategyIdentity
 from q_backend.execution.indicator_frame import augment_indicator_frame
 from q_backend.execution.position_adapter import execution_position_to_trade
 from q_backend.execution.results import EvaluationPhaseTiming, ForwardDecisionResult
-from q_backend.execution.signal_eval import evaluate_queued_signals
+from q_backend.execution.signal_eval import evaluate_queued_signals, signal_arrays
 from q_backend.execution.strategy_build import build_strategy_from_compiled
 from q_backend.execution.warmup import compute_window_bound_bars
 
@@ -208,12 +210,21 @@ class StrategyEvaluator:
             indicators_started = time.perf_counter()
             augmented = self._augmented_frame()
             indicators_ms = (time.perf_counter() - indicators_started) * 1000.0
-            if open_time not in augmented.index:
+            signals = signal_arrays(self.strategy, augmented)
+            matches = np.flatnonzero(augmented.index == open_time)
+            if len(matches) == 0:
                 continue
-            row = augmented.loc[open_time]
-            if isinstance(row, pd.DataFrame):
-                row = row.iloc[-1]
-            results.append(self._evaluate_row(row, close_time, indicators_ms=indicators_ms))
+            position = int(matches[-1])
+            row = augmented.iloc[position]
+            results.append(
+                self._evaluate_row(
+                    row,
+                    close_time,
+                    signals=signals,
+                    position=position,
+                    indicators_ms=indicators_ms,
+                )
+            )
         return results
 
     def _augmented_frame(self) -> pd.DataFrame:
@@ -224,6 +235,8 @@ class StrategyEvaluator:
         current_data: pd.Series,
         bar_close_time_value: datetime,
         *,
+        signals: SignalArrays,
+        position: int,
         indicators_ms: float = 0.0,
     ) -> ForwardDecisionResult:
         started = time.perf_counter()
@@ -237,6 +250,8 @@ class StrategyEvaluator:
         open_trades = [self._open_trade] if self._open_trade is not None else []
         pending_exits, pending_entries = evaluate_queued_signals(
             self.strategy,
+            signals,
+            position,
             current_data,
             open_trades,
         )

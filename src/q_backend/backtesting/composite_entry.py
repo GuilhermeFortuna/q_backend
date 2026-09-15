@@ -7,7 +7,7 @@ import pandas as pd
 
 from q_backend.backtesting.exit_strategy import ExitStrategy
 from q_backend.backtesting.models import Signal, SignalAction, Trade
-from q_backend.backtesting.signal_columns import write_signal_columns
+from q_backend.backtesting.signal_columns import SIGNAL_ENTRY, write_signal_columns
 from q_backend.backtesting.signal_managers.base import SignalManager, Stance
 from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy, resolve_symbol
 from q_backend.backtesting.strategy_registry import (
@@ -54,15 +54,9 @@ class CompositeEntryStrategy(TradingStrategy):
             sell = sub_df["sell_signal"].fillna(False).astype(bool)
             return sub_df, buy, sell
 
-        buy = pd.Series(False, index=data.index)
-        sell = pd.Series(False, index=data.index)
-        for row_index in range(len(sub_df)):
-            row = sub_df.iloc[row_index]
-            for signal in sub.check_entry_conditions(row):
-                if signal.action == SignalAction.BUY:
-                    buy.iloc[row_index] = True
-                elif signal.action == SignalAction.SELL:
-                    sell.iloc[row_index] = True
+        entry = sub_df[SIGNAL_ENTRY]
+        buy = entry == 1
+        sell = entry == -1
         return sub_df, buy, sell
 
     def compute_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
