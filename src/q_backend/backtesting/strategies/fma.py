@@ -7,16 +7,13 @@ from q_backend.backtesting.moving_averages import (
     compute_ma,
     normalize_ma_type,
 )
-from q_backend.backtesting.models import Signal, SignalAction, Trade
 from q_backend.backtesting.signal_columns import write_signal_columns
 from q_backend.backtesting.strategies.lai_lau_common import (
     MA_TYPE_CHOICES,
     add_bar_index,
-    build_timestamp_to_bar,
     compute_ma_band_signals,
-    fixed_holding_period_exits,
 )
-from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy, resolve_symbol
+from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy
 from q_backend.backtesting.strategy_registry import StrategyParamSpec, register_strategy
 
 
@@ -46,7 +43,6 @@ class FMAStrategy(TradingStrategy):
         self.ma_type = normalize_ma_type(ma_type)
         self.holding_period = holding_period
         self.symbol = symbol
-        self._timestamp_to_bar: pd.Series | None = None
         super().__init__(
             period=period,
             band_pct=band_pct,
@@ -65,7 +61,6 @@ class FMAStrategy(TradingStrategy):
         ma = compute_ma(df["close"], self.period, self.ma_type)
         df["ma"] = ma
         df = compute_ma_band_signals(df, ma, self.band_pct)
-        self._timestamp_to_bar = build_timestamp_to_bar(df)
         return write_signal_columns(
             df,
             entry_long=df["buy_signal"],
@@ -104,27 +99,6 @@ class FMAStrategy(TradingStrategy):
                 color="#6eb5ff",
             ),
         ]
-
-    def check_entry_conditions(self, current_data: pd.Series) -> List[Signal]:
-        symbol = resolve_symbol(current_data, self.symbol)
-        signals: List[Signal] = []
-        if current_data.get("buy_signal", False):
-            signals.append(Signal(symbol=symbol, action=SignalAction.BUY))
-        elif current_data.get("sell_signal", False):
-            signals.append(Signal(symbol=symbol, action=SignalAction.SELL))
-        return signals
-
-    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
-        symbol = resolve_symbol(current_data, self.symbol)
-        if self._timestamp_to_bar is None:
-            return []
-        return fixed_holding_period_exits(
-            current_data,
-            open_trades,
-            symbol,
-            self.holding_period,
-            self._timestamp_to_bar,
-        )
 
 
 def _build_fma(params: dict[str, Any], symbol: str) -> FMAStrategy:

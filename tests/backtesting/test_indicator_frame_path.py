@@ -10,7 +10,8 @@ import pytest
 from q_backend.backtesting.engine import BacktestEngine, ParallelMode
 from q_backend.backtesting.indicator_frame import augment_indicator_frame
 from q_backend.backtesting.position_sizing import FixedQuantitySizer
-from q_backend.backtesting.strategy import Signal, TradingStrategy
+from q_backend.backtesting.signal_columns import write_signal_columns
+from q_backend.backtesting.strategy import TradingStrategy
 from tests.fixtures.indicators.export_pandas_baseline import synthetic_ohlcv
 
 
@@ -18,20 +19,19 @@ class DummyStrategy(TradingStrategy):
     def __init__(self):
         # Do not initialize exit_strategy; absent by default
         self.parameters = {}
+        self.symbol = "DUMMY"
 
     def compute_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
         df = data.copy()
         df["dummy_ind"] = 1.0
-        return df
-
-    def check_entry_conditions(self, current_bar, prev_bar=None):
-        return []
-
-    def check_exit_conditions(self, current_bar, prev_bar=None, open_trade=None):
-        return []
-
-    def generate_signals(self, data: pd.DataFrame) -> list[Signal]:
-        return []
+        return write_signal_columns(
+            df,
+            entry_long=pd.Series(False, index=df.index, dtype=bool),
+            entry_short=pd.Series(False, index=df.index, dtype=bool),
+            exit_long=False,
+            exit_short=False,
+            strategy_name=type(self).__name__,
+        )
 
     def get_chart_indicators(self):
         return []

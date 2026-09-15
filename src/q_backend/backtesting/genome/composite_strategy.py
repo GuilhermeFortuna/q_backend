@@ -15,16 +15,13 @@ from q_backend.backtesting.genome.exit_rule_policy import (
     resolve_exit_params_from_policy,
 )
 from q_backend.backtesting.genome.schema import Genome
-from q_backend.backtesting.models import Signal, SignalAction, Trade
 from q_backend.backtesting.moving_averages import compute_ma, normalize_ma_type
 from q_backend.backtesting.signal_columns import write_signal_columns
 from q_backend.backtesting.strategies.lai_lau_common import (
     add_bar_index,
-    build_timestamp_to_bar,
     compute_trb_channel_signals,
-    fixed_holding_period_exits,
 )
-from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy, resolve_symbol
+from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy
 from q_backend.backtesting.strategy_registry import register_strategy
 from q_backend.backtesting.session_context import prepare_evaluation_frame
 from q_backend.market_data.exogenous_columns import resolve_exog_column
@@ -112,7 +109,6 @@ class CompositeStrategy(TradingStrategy):
         self._latent_model_hash = latent_model_hash
         self._exit_rule_policy = get_exit_rule_policy(genome)
         self._plan: ExecutionPlan | None = None
-        self._timestamp_to_bar: pd.Series | None = None
         self._series_cache: dict[str, dict[str, pd.Series]] = {}
         self._latent_frame_cache: pd.DataFrame | None = None
         self._latent_warmup: int | None = None
@@ -194,9 +190,6 @@ class CompositeStrategy(TradingStrategy):
                 df["exit_long_signal"] = df[plan.exit_long_column].fillna(False).astype(bool)
             if plan.exit_short_column:
                 df["exit_short_signal"] = df[plan.exit_short_column].fillna(False).astype(bool)
-
-        if plan.fixed_holding_period is not None:
-            self._timestamp_to_bar = build_timestamp_to_bar(df)
 
         if plan.fixed_holding_period is not None:
             exit_long: pd.Series | bool = False
@@ -545,44 +538,6 @@ class CompositeStrategy(TradingStrategy):
             lower = self._binding_series(df, compiled, 1)
             channel_low = self._binding_series(df, compiled, 2)
             df[out_col] = (close.shift(1) >= channel_low) & (close < lower)
-
-    def check_entry_conditions(self, current_data: pd.Series) -> List[Signal]:
-        symbol = resolve_symbol(current_data, self.symbol)
-        signals: List[Signal] = []
-        if current_data.get("entry_long_signal", current_data.get("buy_signal", False)):
-            signals.append(Signal(symbol=symbol, action=SignalAction.BUY))
-        elif current_data.get("entry_short_signal", current_data.get("sell_signal", False)):
-            signals.append(Signal(symbol=symbol, action=SignalAction.SELL))
-        return signals
-
-    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
-        symbol = resolve_symbol(current_data, self.symbol)
-        if not open_trades:
-            return []
-
-        plan = self.plan
-        signals: List[Signal] = []
-
-        if plan.fixed_holding_period is not None and self._timestamp_to_bar is not None:
-            return fixed_holding_period_exits(
-                current_data,
-                open_trades,
-                symbol,
-                plan.fixed_holding_period,
-                self._timestamp_to_bar,
-            )
-
-        exit_long = current_data.get("exit_long_signal", False)
-        exit_short = current_data.get("exit_short_signal", False)
-
-        for trade in open_trades:
-            if trade.symbol != symbol:
-                continue
-            if trade.action == SignalAction.BUY and exit_long:
-                signals.append(Signal(symbol=symbol, action=SignalAction.CLOSE))
-            elif trade.action == SignalAction.SELL and exit_short:
-                signals.append(Signal(symbol=symbol, action=SignalAction.CLOSE))
-        return signals
 
     def get_chart_indicators(self) -> List[ChartIndicatorSpec]:
         specs: List[ChartIndicatorSpec] = []

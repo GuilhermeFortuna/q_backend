@@ -6,10 +6,9 @@ import numpy as np
 import pandas as pd
 
 from q_backend.backtesting.exit_strategy import ExitStrategy
-from q_backend.backtesting.models import Signal, SignalAction, Trade
 from q_backend.backtesting.signal_columns import SIGNAL_ENTRY, write_signal_columns
 from q_backend.backtesting.signal_managers.base import SignalManager, Stance
-from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy, resolve_symbol
+from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy
 from q_backend.backtesting.strategy_registry import (
     get_registered_strategy,
     merge_strategy_params,
@@ -96,31 +95,6 @@ class CompositeEntryStrategy(TradingStrategy):
             exit_short=(net_series == Stance.LONG).astype(bool),
             strategy_name=type(self).__name__,
         )
-
-    def check_entry_conditions(self, current_data: pd.Series) -> List[Signal]:
-        symbol = resolve_symbol(current_data, self.symbol)
-        signals: List[Signal] = []
-        if current_data.get("net_long_signal", False):
-            signals.append(Signal(symbol=symbol, action=SignalAction.BUY))
-        elif current_data.get("net_short_signal", False):
-            signals.append(Signal(symbol=symbol, action=SignalAction.SELL))
-        return signals
-
-    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
-        symbol = resolve_symbol(current_data, self.symbol)
-        if not open_trades:
-            return []
-
-        net_stance = int(current_data.get("net_stance", Stance.FLAT))
-        signals: List[Signal] = []
-        for trade in open_trades:
-            if trade.symbol != symbol:
-                continue
-            if trade.action == SignalAction.BUY and net_stance == Stance.SHORT:
-                signals.append(Signal(symbol=symbol, action=SignalAction.CLOSE))
-            elif trade.action == SignalAction.SELL and net_stance == Stance.LONG:
-                signals.append(Signal(symbol=symbol, action=SignalAction.CLOSE))
-        return signals
 
     def get_chart_indicators(self) -> List[ChartIndicatorSpec]:
         specs: List[ChartIndicatorSpec] = []

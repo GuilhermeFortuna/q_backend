@@ -5,8 +5,6 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from q_backend.backtesting.models import Signal, SignalAction, Trade
-
 MA_TYPE_CHOICES = sorted(["sma", "ema", "wma", "smma", "hma"])
 
 
@@ -51,34 +49,3 @@ def compute_trb_channel_signals(
     df["buy_signal"] = (prev_close <= channel_high) & (df["close"] > upper)
     df["sell_signal"] = (prev_close >= channel_low) & (df["close"] < lower)
     return df
-
-
-def build_timestamp_to_bar(df: pd.DataFrame) -> pd.Series:
-    return pd.Series(df["bar_index"].values, index=df.index)
-
-
-def fixed_holding_period_exits(
-    current_data: pd.Series,
-    open_trades: list[Trade],
-    symbol: str,
-    holding_period: int,
-    timestamp_to_bar: pd.Series,
-) -> list[Signal]:
-    if not open_trades:
-        return []
-
-    current_bar = current_data.get("bar_index")
-    if current_bar is None or pd.isna(current_bar):
-        return []
-
-    current_bar = int(current_bar)
-    signals: list[Signal] = []
-    for trade in open_trades:
-        if trade.symbol != symbol:
-            continue
-        entry_bar = timestamp_to_bar.get(trade.entry_time)
-        if entry_bar is None or pd.isna(entry_bar):
-            continue
-        if current_bar - int(entry_bar) >= holding_period:
-            signals.append(Signal(symbol=symbol, action=SignalAction.CLOSE))
-    return signals

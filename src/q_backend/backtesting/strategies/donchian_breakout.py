@@ -2,9 +2,8 @@ from typing import Any, List
 
 import pandas as pd
 
-from q_backend.backtesting.models import Signal, SignalAction, Trade
 from q_backend.backtesting.signal_columns import write_signal_columns
-from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy, resolve_symbol
+from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy
 from q_backend.backtesting.strategy_registry import StrategyParamSpec, register_strategy
 from q_backend.backtesting.technical_indicators import compute_donchian_channels
 
@@ -59,32 +58,6 @@ class DonchianBreakoutStrategy(TradingStrategy):
                 color="#6eb5ff",
             ),
         ]
-
-    def check_entry_conditions(self, current_data: pd.Series) -> List[Signal]:
-        symbol = resolve_symbol(current_data, self.symbol)
-        signals: List[Signal] = []
-        if current_data.get("buy_signal", False):
-            signals.append(Signal(symbol=symbol, action=SignalAction.BUY))
-        elif current_data.get("sell_signal", False):
-            signals.append(Signal(symbol=symbol, action=SignalAction.SELL))
-        return signals
-
-    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
-        symbol = resolve_symbol(current_data, self.symbol)
-        if not open_trades:
-            return []
-
-        is_sell_trigger = current_data.get("sell_signal", False)
-        is_buy_trigger = current_data.get("buy_signal", False)
-        signals: List[Signal] = []
-        for trade in open_trades:
-            if trade.symbol != symbol:
-                continue
-            if trade.action == SignalAction.BUY and is_sell_trigger:
-                signals.append(Signal(symbol=symbol, action=SignalAction.CLOSE))
-            elif trade.action == SignalAction.SELL and is_buy_trigger:
-                signals.append(Signal(symbol=symbol, action=SignalAction.CLOSE))
-        return signals
 
 
 def _build_donchian_breakout(params: dict[str, Any], symbol: str) -> DonchianBreakoutStrategy:
