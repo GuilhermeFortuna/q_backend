@@ -15,11 +15,10 @@ from q_backend.backtesting.exit_rules.registry import (
 )
 from q_backend.backtesting.exit_rules.presets import EXIT_PRESETS
 from q_backend.backtesting.engine import BacktestEngine, ParallelMode
+from q_backend.backtesting.signal_columns import write_signal_columns
 from q_backend.backtesting.strategy import TradingStrategy
 from q_backend.backtesting.position_sizing import FixedQuantitySizer
 from q_backend.backtesting.technical_indicators import compute_atr, compute_donchian_channels
-from q_backend.backtesting.models import Signal
-from typing import List
 
 
 def _long_trade(entry_price: float = 100.0) -> Trade:
@@ -68,19 +67,21 @@ GOLDEN_OHLC = pd.DataFrame(
 class SingleEntryStrategy(TradingStrategy):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._entered = False
+        self.symbol = "TEST"
 
     def compute_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
-        return data
-
-    def check_entry_conditions(self, current_data: pd.Series) -> List[Signal]:
-        if not self._entered:
-            self._entered = True
-            return [Signal(symbol="TEST", action=SignalAction.BUY)]
-        return []
-
-    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
-        return []
+        df = data.copy()
+        entry_long = pd.Series(False, index=df.index, dtype=bool)
+        if len(df) > 0:
+            entry_long.iloc[0] = True
+        return write_signal_columns(
+            df,
+            entry_long=entry_long,
+            entry_short=pd.Series(False, index=df.index, dtype=bool),
+            exit_long=False,
+            exit_short=False,
+            strategy_name=type(self).__name__,
+        )
 
     def get_chart_indicators(self):
         return []

@@ -1,8 +1,10 @@
 import pytest
 import pandas as pd
-from typing import List
-from datetime import datetime
-from q_backend.backtesting.models import Signal, SignalAction, Trade
+from q_backend.backtesting.signal_columns import (
+    SIGNAL_ENTRY,
+    SIGNAL_EXIT_LONG,
+    SIGNAL_EXIT_SHORT,
+)
 from q_backend.backtesting.strategy import TradingStrategy
 
 
@@ -20,9 +22,23 @@ def test_strategy_abstract_methods_enforced():
     assert "Can't instantiate abstract class IncompleteStrategy" in str(excinfo.value)
 
 
+def test_columnar_strategy_only_needs_indicators_and_chart_specs():
+    """A subclass implementing only compute_indicators and get_chart_indicators is concrete."""
+
+    class ColumnarOnlyStrategy(TradingStrategy):
+        def compute_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
+            return data
+
+        def get_chart_indicators(self):
+            return []
+
+    strategy = ColumnarOnlyStrategy(foo=1)
+    assert strategy.parameters["foo"] == 1
+
+
 def test_valid_strategy_implementation():
     """
-    Test that a correctly implemented strategy can be instantiated and returns expected Signals.
+    Test that a correctly implemented strategy can be instantiated and computes indicators.
     """
 
     class MovingAverageCrossover(TradingStrategy):
@@ -31,49 +47,22 @@ def test_valid_strategy_implementation():
             data["ma_long"] = data["close"].rolling(50).mean()
             return data
 
-        def check_entry_conditions(self, current_data: pd.Series) -> List[Signal]:
-            if current_data.get("ma_short", 0) > current_data.get("ma_long", 0):
-                return [Signal(symbol=current_data.name or "UNKNOWN", action=SignalAction.BUY)]
-            return []
-
-        def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
-            # Simple exit logic: if short MA crosses below long MA, close all positions
-            if current_data.get("ma_short", 0) < current_data.get("ma_long", 0):
-                return [Signal(symbol=current_data.name or "UNKNOWN", action=SignalAction.CLOSE)]
-            return []
-
         def get_chart_indicators(self):
             return []
 
-    # Instantiate
     strategy = MovingAverageCrossover(short_window=10, long_window=50)
     assert strategy.parameters["short_window"] == 10
 
-    # Test indicators
     df = pd.DataFrame({"close": [100.0] * 50})
     df = strategy.compute_indicators(df)
     assert "ma_short" in df.columns
     assert "ma_long" in df.columns
 
-    # Test entry
-    series_buy = pd.Series({"ma_short": 105, "ma_long": 100}, name="AAPL")
-    signals = strategy.check_entry_conditions(series_buy)
-    assert len(signals) == 1
-    assert signals[0].action == SignalAction.BUY
-    assert signals[0].symbol == "AAPL"
-
-    # Test exit
-    series_exit = pd.Series({"ma_short": 95, "ma_long": 100}, name="AAPL")
-    exit_signals = strategy.check_exit_conditions(series_exit, [])
-    assert len(exit_signals) == 1
-    assert exit_signals[0].action == SignalAction.CLOSE
-    assert exit_signals[0].symbol == "AAPL"
-
 
 def test_macrossover_strategy():
     """
     Test that the MACrossoverStrategy computes moving averages, delta,
-    and generates entry and exit signals correctly based on a threshold.
+    and writes entry/exit signal columns correctly based on a threshold.
     """
     from q_backend.backtesting import MACrossoverStrategy
 
@@ -106,6 +95,9 @@ def test_macrossover_strategy():
         "prev_delta",
         "buy_signal",
         "sell_signal",
+        SIGNAL_ENTRY,
+        SIGNAL_EXIT_LONG,
+        SIGNAL_EXIT_SHORT,
     ]:
         assert col in df_with_indicators.columns
 
@@ -117,6 +109,9 @@ def test_macrossover_strategy():
     assert row_5["prev_delta"] == 0.75
     assert row_5["buy_signal"] == True
     assert row_5["sell_signal"] == False
+    assert row_5[SIGNAL_ENTRY] == 1
+    assert row_5[SIGNAL_EXIT_LONG] == False
+    assert row_5[SIGNAL_EXIT_SHORT] == True
 
     # Check values on candle index 7 (8th price: 4.0)
     # delta should be 7.0 - 10.75 = -3.75. prev_delta (from index 6) should be 0.75.
@@ -126,38 +121,9 @@ def test_macrossover_strategy():
     assert row_7["prev_delta"] == 0.75
     assert row_7["buy_signal"] == False
     assert row_7["sell_signal"] == True
-
-    # Check entry conditions on row 5 (Buy trigger)
-    signals_buy = strategy.check_entry_conditions(row_5)
-    assert len(signals_buy) == 1
-    assert signals_buy[0].action == SignalAction.BUY
-    assert signals_buy[0].symbol == "BTCUSDT"
-
-    # Check entry conditions on row 7 (Sell trigger)
-    signals_sell = strategy.check_entry_conditions(row_7)
-    assert len(signals_sell) == 1
-    assert signals_sell[0].action == SignalAction.SELL
-    assert signals_sell[0].symbol == "BTCUSDT"
-
-    # Check exit conditions for a BUY trade when sell trigger occurs
-    open_buy_trade = Trade(
-        id="trade-1",
-        order_id="order-1",
-        symbol="BTCUSDT",
-        action=SignalAction.BUY,
-        quantity=1.0,
-        entry_time=datetime.now(),
-        entry_price=16.0,
-    )
-
-    # On row_7 (sell trigger), the BUY trade should be closed
-    exit_signals = strategy.check_exit_conditions(row_7, [open_buy_trade])
-    assert len(exit_signals) == 1
-    assert exit_signals[0].action == SignalAction.CLOSE
-    assert exit_signals[0].symbol == "BTCUSDT"
-
-    # On row_5 (buy trigger), the BUY trade should NOT be closed
-    assert len(strategy.check_exit_conditions(row_5, [open_buy_trade])) == 0
+    assert row_7[SIGNAL_ENTRY] == -1
+    assert row_7[SIGNAL_EXIT_LONG] == True
+    assert row_7[SIGNAL_EXIT_SHORT] == False
 
 
 def test_macrossover_strategy_with_ema_types():

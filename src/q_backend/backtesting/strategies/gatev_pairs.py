@@ -3,8 +3,8 @@ import numpy as np
 import pandas as pd
 from numba import njit
 
-from q_backend.backtesting.models import Signal, SignalAction, Trade
-from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy, resolve_symbol
+from q_backend.backtesting.signal_columns import write_signal_columns
+from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy
 from q_backend.backtesting.strategy_registry import StrategyParamSpec, register_strategy
 from q_backend.backtesting.technical_indicators import (
     compute_realized_vol,
@@ -190,7 +190,14 @@ class GatevPairsStrategy(TradingStrategy):
         df["bar_index"] = bar_index
         df["rebalance"] = False
 
-        return df
+        return write_signal_columns(
+            df,
+            entry_long=df["buy_signal"].astype(bool),
+            entry_short=df["sell_signal"].astype(bool),
+            exit_long=df["exit_signal"].astype(bool),
+            exit_short=df["exit_signal"].astype(bool),
+            strategy_name=type(self).__name__,
+        )
 
     def get_chart_indicators(self) -> List[ChartIndicatorSpec]:
         return [
@@ -207,30 +214,6 @@ class GatevPairsStrategy(TradingStrategy):
                 color="#6eb5ff",
             ),
         ]
-
-    def check_entry_conditions(self, current_data: pd.Series) -> List[Signal]:
-        symbol = resolve_symbol(current_data, self.symbol)
-        signals: List[Signal] = []
-        if current_data.get("buy_signal", False):
-            signals.append(Signal(symbol=symbol, action=SignalAction.BUY))
-        elif current_data.get("sell_signal", False):
-            signals.append(Signal(symbol=symbol, action=SignalAction.SELL))
-        return signals
-
-    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
-        symbol = resolve_symbol(current_data, self.symbol)
-        if not open_trades:
-            return []
-
-        signals: List[Signal] = []
-        is_exit_trigger = current_data.get("exit_signal", False)
-
-        for trade in open_trades:
-            if trade.symbol != symbol:
-                continue
-            if is_exit_trigger:
-                signals.append(Signal(symbol=symbol, action=SignalAction.CLOSE))
-        return signals
 
 
 def _build_pairs(params: dict[str, Any], symbol: str) -> GatevPairsStrategy:

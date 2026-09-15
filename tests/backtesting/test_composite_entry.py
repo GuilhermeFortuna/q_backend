@@ -212,15 +212,17 @@ def test_reversal_closes_long_on_opposite_stance_not_flat():
         [([False, True, False, False], [False, False, False, True])],
         "or",
     )
-    trade = _long_trade(symbol="TEST")
+    index = pd.date_range("2024-01-01", periods=4, freq="h", tz=timezone.utc)
+    data = pd.DataFrame({"open": [1.0] * 4, "close": [1.0] * 4}, index=index)
+    result = comp.compute_indicators(data)
 
-    flat_row = pd.Series({"net_stance": Stance.FLAT, "name": "TEST"})
-    assert comp.check_exit_conditions(flat_row, [trade]) == []
-
-    short_row = pd.Series({"net_stance": Stance.SHORT, "name": "TEST"})
-    exits = comp.check_exit_conditions(short_row, [trade])
-    assert len(exits) == 1
-    assert exits[0].action == SignalAction.CLOSE
+    # Flat stance must not exit a long; short stance must (same bars/counts as before).
+    flat_mask = result["net_stance"] == Stance.FLAT
+    short_mask = result["net_stance"] == Stance.SHORT
+    assert flat_mask.any()
+    assert short_mask.any()
+    assert not result.loc[flat_mask, "q_signal_exit_long"].any()
+    assert result.loc[short_mask, "q_signal_exit_long"].all()
 
 
 def test_reversal_via_engine_fills_on_next_open():

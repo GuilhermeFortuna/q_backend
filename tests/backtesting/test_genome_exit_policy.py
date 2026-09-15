@@ -142,8 +142,8 @@ def test_exit_rule_precedence_before_genome_signal():
     )
     rule_exits = strategy.exit_strategy.check_exits([open_trade], enriched.iloc[-1])
     assert rule_exits
-    genome_exits = strategy.check_exit_conditions(enriched.iloc[-1], [open_trade])
-    assert not genome_exits
+    # Genome exit column stays False on the last bar (rules fire; genome does not).
+    assert not bool(enriched.iloc[-1]["q_signal_exit_long"])
 
 
 @pytest.mark.parametrize("op", EXIT_MUTATION_OPERATORS)

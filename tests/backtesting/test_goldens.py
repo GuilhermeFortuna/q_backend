@@ -204,9 +204,18 @@ class CandleCase:
     )
     n_bars: int = 400
     seed: int = 20240609
+    parallel_mode: ParallelMode = ParallelMode.SEQUENTIAL
+    day_trade: bool = False
+    day_trade_start_time: str = "09:00"
+    day_trade_end_time: str = "16:00"
+    day_trade_close_time: str = "17:00"
+    data_override: Callable[[pd.DataFrame], pd.DataFrame] | None = None
 
     def data(self) -> pd.DataFrame:
-        return synthetic_ohlcv(self.n_bars, seed=self.seed)
+        frame = synthetic_ohlcv(self.n_bars, seed=self.seed)
+        if self.data_override is not None:
+            return self.data_override(frame)
+        return frame
 
 
 def _ma(params: dict[str, Any]) -> Callable[[], TradingStrategy]:
@@ -341,6 +350,111 @@ CANDLE_CASES: dict[str, CandleCase] = {
                 point_value=POINT_VALUE,
             ),
         ),
+        CandleCase(
+            name="trb_fixed_holding",
+            surface="TRB with a fixed holding-period exit (bars since entry), not "
+            "exit-rule or flip-triggered closes.",
+            make_strategy=lambda: build_strategy(
+                "TRB",
+                {"period": 20, "band_pct": 0.0, "holding_period": 10},
+                SYMBOL,
+            ),
+        ),
+        CandleCase(
+            name="bollinger_band_exits",
+            surface="Bollinger mean-reversion entries with band-cross exits "
+            "(exit_long_signal / exit_short_signal columns).",
+            make_strategy=lambda: build_strategy(
+                "BollingerReversion",
+                default_params_for("BollingerReversion"),
+                SYMBOL,
+            ),
+        ),
+        CandleCase(
+            name="tsmom_trend_rebalance_every_bar_strength",
+            surface="TSMOM trend rule with rebalance_on_every_bar and "
+            "strength-scaled fixed quantity (signal_strength into size).",
+            make_strategy=lambda: build_strategy(
+                "TSMOM",
+                {
+                    "lookback_bars": 48,
+                    "rebalance_bars": 12,
+                    "vol_window": 20,
+                    "vol_estimator": "close_to_close",
+                    "trading_rule": "trend",
+                    "trend_signal_cap": 2.0,
+                    "nw_lags": 4,
+                    "rebalance_on_every_bar": "true",
+                },
+                SYMBOL,
+            ),
+            make_sizer=lambda: build_position_sizer(
+                FixedQuantityPositionSizing(quantity=10.0, scale_by_signal_strength=True),
+                point_value=POINT_VALUE,
+            ),
+        ),
+        CandleCase(
+            name="hurst_rebalance_every_bar_strength",
+            surface="HurstTrendBlend with rebalance_on_every_bar and " "strength-scaled fixed quantity.",
+            make_strategy=lambda: build_strategy(
+                "HurstTrendBlend",
+                {
+                    "lookback_1": 10,
+                    "lookback_2": 21,
+                    "lookback_3": 48,
+                    "rebalance_bars": 12,
+                    "vol_window": 20,
+                    "vol_estimator": "close_to_close",
+                    "risk_free_rate_annual": 0.0,
+                    "signal_lag_bars": 0,
+                    "rebalance_on_every_bar": "true",
+                },
+                SYMBOL,
+            ),
+            make_sizer=lambda: build_position_sizer(
+                FixedQuantityPositionSizing(quantity=10.0, scale_by_signal_strength=True),
+                point_value=POINT_VALUE,
+            ),
+        ),
+        CandleCase(
+            name="gatev_pairs",
+            surface="GatevPairs distance strategy over synthetic pair columns "
+            "(close_a/b, open_a/b) on the golden OHLCV frame.",
+            make_strategy=lambda: build_strategy(
+                "GatevPairs",
+                {
+                    "col_a": "close_a",
+                    "col_b": "close_b",
+                    "open_col_a": "open_a",
+                    "open_col_b": "open_b",
+                    "formation_bars": 40,
+                    "trading_bars": 20,
+                    "open_threshold_sd": 1.0,
+                    "vol_window": 20,
+                    "vol_estimator": "close_to_close",
+                },
+                SYMBOL,
+            ),
+            data_override=lambda data: data.assign(
+                close_a=data["close"],
+                # Independent walk so the spread crosses the formation SD threshold.
+                close_b=data["close"].to_numpy()
+                + np.cumsum(np.random.default_rng(99).normal(0.0, 0.5, size=len(data))),
+                open_a=data["open"],
+                open_b=data["open"].to_numpy() + np.cumsum(np.random.default_rng(100).normal(0.0, 0.5, size=len(data))),
+            ),
+        ),
+        CandleCase(
+            name="ma_crossover_day_trade",
+            surface="MA-crossover through the day-trade path (ParallelMode.DAY_TRADE " "with end-of-day force closes).",
+            make_strategy=_ma(dict(BASE_MA_PARAMS)),
+            parallel_mode=ParallelMode.DAY_TRADE,
+            day_trade=True,
+            # Hourly synthetic bars span 00–23 UTC; widen the session so entries fire.
+            day_trade_start_time="00:00",
+            day_trade_end_time="23:00",
+            day_trade_close_time="23:30",
+        ),
     ]
 }
 
@@ -359,8 +473,12 @@ def run_candle_case(case: CandleCase) -> dict[str, Any]:
         sizer,
         initial_capital=INITIAL_CAPITAL,
         point_values={SYMBOL: POINT_VALUE},
+        day_trade=case.day_trade,
+        day_trade_start_time=case.day_trade_start_time,
+        day_trade_end_time=case.day_trade_end_time,
+        day_trade_close_time=case.day_trade_close_time,
     )
-    registry = engine.run(case.data(), parallel_mode=ParallelMode.SEQUENTIAL)
+    registry = engine.run(case.data(), parallel_mode=case.parallel_mode)
     trades = _serialize_registry(registry)
     return {
         "case": case.name,

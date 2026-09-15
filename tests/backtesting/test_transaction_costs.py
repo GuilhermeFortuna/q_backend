@@ -1,31 +1,32 @@
 import pytest
 import pandas as pd
 from datetime import datetime, timedelta, timezone
-from typing import List
 from unittest.mock import patch
 
 from q_backend.backtesting.costs import TransactionCostConfig, side_cost
 from q_backend.backtesting.engine import BacktestEngine, ParallelMode
-from q_backend.backtesting.models import Signal, SignalAction, Trade
 from q_backend.backtesting.position_sizing import FixedQuantitySizer
 from q_backend.backtesting.registry import TradeRegistry
+from q_backend.backtesting.signal_columns import write_signal_columns
 from q_backend.backtesting.strategy import TradingStrategy
 from q_backend.optimization.backtest_runner import BacktestRunConfig, DefaultBacktestRunner
 
 
 class DummyStrategy(TradingStrategy):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.symbol = "DUMMY"
+
     def compute_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
-        return data
-
-    def check_entry_conditions(self, current_data: pd.Series) -> List[Signal]:
-        if current_data.get("close", 0) == 100.0:
-            return [Signal(symbol="DUMMY", action=SignalAction.BUY)]
-        return []
-
-    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
-        if current_data.get("close", 0) == 110.0:
-            return [Signal(symbol="DUMMY", action=SignalAction.CLOSE)]
-        return []
+        df = data.copy()
+        return write_signal_columns(
+            df,
+            entry_long=(df["close"] == 100.0),
+            entry_short=pd.Series(False, index=df.index, dtype=bool),
+            exit_long=(df["close"] == 110.0),
+            exit_short=False,
+            strategy_name=type(self).__name__,
+        )
 
     def get_chart_indicators(self):
         return []

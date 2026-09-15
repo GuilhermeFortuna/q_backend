@@ -2,14 +2,12 @@ from typing import Any, List
 
 import pandas as pd
 
-from q_backend.backtesting.models import Signal, SignalAction, Trade
+from q_backend.backtesting.signal_columns import write_signal_columns
 from q_backend.backtesting.strategies.lai_lau_common import (
     add_bar_index,
-    build_timestamp_to_bar,
     compute_trb_channel_signals,
-    fixed_holding_period_exits,
 )
-from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy, resolve_symbol
+from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy
 from q_backend.backtesting.strategy_registry import StrategyParamSpec, register_strategy
 
 
@@ -38,7 +36,6 @@ class TRBStrategy(TradingStrategy):
         self.band_pct = band_pct
         self.holding_period = holding_period
         self.symbol = symbol
-        self._timestamp_to_bar: pd.Series | None = None
         super().__init__(
             period=period,
             band_pct=band_pct,
@@ -54,8 +51,18 @@ class TRBStrategy(TradingStrategy):
 
         df = add_bar_index(df)
         df = compute_trb_channel_signals(df, self.period, self.band_pct)
-        self._timestamp_to_bar = build_timestamp_to_bar(df)
-        return df
+        return write_signal_columns(
+            df,
+            entry_long=df["buy_signal"],
+            entry_short=df["sell_signal"],
+            exit_long=False,
+            exit_short=False,
+            strategy_name=type(self).__name__,
+        )
+
+    @property
+    def holding_period_bars(self) -> int | None:
+        return self.holding_period
 
     def get_chart_indicators(self) -> List[ChartIndicatorSpec]:
         return [
@@ -84,27 +91,6 @@ class TRBStrategy(TradingStrategy):
                 color="#6eb5ff",
             ),
         ]
-
-    def check_entry_conditions(self, current_data: pd.Series) -> List[Signal]:
-        symbol = resolve_symbol(current_data, self.symbol)
-        signals: List[Signal] = []
-        if current_data.get("buy_signal", False):
-            signals.append(Signal(symbol=symbol, action=SignalAction.BUY))
-        elif current_data.get("sell_signal", False):
-            signals.append(Signal(symbol=symbol, action=SignalAction.SELL))
-        return signals
-
-    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
-        symbol = resolve_symbol(current_data, self.symbol)
-        if self._timestamp_to_bar is None:
-            return []
-        return fixed_holding_period_exits(
-            current_data,
-            open_trades,
-            symbol,
-            self.holding_period,
-            self._timestamp_to_bar,
-        )
 
 
 def _build_trb(params: dict[str, Any], symbol: str) -> TRBStrategy:

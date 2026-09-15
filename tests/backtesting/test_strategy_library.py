@@ -3,8 +3,7 @@ import pandas as pd
 import pytest
 
 from q_backend.backtesting.factory import build_strategy
-from q_backend.backtesting.models import SignalAction, Trade
-from datetime import datetime
+from q_backend.backtesting.signal_columns import SIGNAL_ENTRY, SIGNAL_EXIT_LONG
 
 
 def _assert_no_lookahead(strategy, df: pd.DataFrame, signal_col: str) -> None:
@@ -42,10 +41,7 @@ def test_rsi_mean_reversion_indicators_and_signals():
 
     buy_rows = result.index[result["buy_signal"]]
     if len(buy_rows) > 0:
-        row = result.loc[buy_rows[0]]
-        signals = strategy.check_entry_conditions(row)
-        assert len(signals) == 1
-        assert signals[0].action == SignalAction.BUY
+        assert result.loc[buy_rows[0], SIGNAL_ENTRY] == 1
 
     _assert_no_lookahead(strategy, df, "buy_signal")
 
@@ -80,7 +76,7 @@ def test_macd_indicators_and_signals():
 
     if result["buy_signal"].any():
         row = result.loc[result.index[result["buy_signal"]][0]]
-        assert strategy.check_entry_conditions(row)[0].action == SignalAction.BUY
+        assert row[SIGNAL_ENTRY] == 1
 
     _assert_no_lookahead(strategy, df, "buy_signal")
 
@@ -96,7 +92,7 @@ def test_donchian_breakout_indicators_and_signals():
 
     if result["buy_signal"].any():
         row = result.loc[result.index[result["buy_signal"]][0]]
-        assert strategy.check_entry_conditions(row)[0].action == SignalAction.BUY
+        assert row[SIGNAL_ENTRY] == 1
 
     _assert_no_lookahead(strategy, df, "buy_signal")
 
@@ -116,15 +112,5 @@ def test_macd_exit_closes_open_trade():
         pytest.skip("No sell signal in crafted series")
 
     row = result.loc[sell_rows[0]]
-    trade = Trade(
-        id="t1",
-        order_id="o1",
-        symbol="TEST",
-        action=SignalAction.BUY,
-        quantity=1.0,
-        entry_time=datetime.now(),
-        entry_price=100.0,
-    )
-    exits = strategy.check_exit_conditions(row, [trade])
-    assert len(exits) == 1
-    assert exits[0].action == SignalAction.CLOSE
+    assert row[SIGNAL_EXIT_LONG] is True or row[SIGNAL_EXIT_LONG] == True
+    assert row[SIGNAL_ENTRY] == -1

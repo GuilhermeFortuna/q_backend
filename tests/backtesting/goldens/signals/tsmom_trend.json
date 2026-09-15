@@ -1,0 +1,440 @@
+{
+  "case": "tsmom_trend",
+  "scenarios": {
+    "long": [
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            0.7597554623
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 48
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            0.1131379903
+          ]
+        ],
+        "exits": [],
+        "i": 96
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            0.2083088594
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 108
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            0.4937439356
+          ]
+        ],
+        "exits": [],
+        "i": 120
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            0.169842953
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 132
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            0.0367169557
+          ]
+        ],
+        "exits": [],
+        "i": 144
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            0.0462484246
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 168
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            0.4514627548
+          ]
+        ],
+        "exits": [],
+        "i": 180
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            0.4428100968
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 252
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            0.5784782986
+          ]
+        ],
+        "exits": [],
+        "i": 360
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            0.3840964566
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 396
+      }
+    ],
+    "none": [
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            0.7597554623
+          ]
+        ],
+        "exits": [],
+        "i": 48
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            0.1131379903
+          ]
+        ],
+        "exits": [],
+        "i": 96
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            0.2083088594
+          ]
+        ],
+        "exits": [],
+        "i": 108
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            0.4937439356
+          ]
+        ],
+        "exits": [],
+        "i": 120
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            0.169842953
+          ]
+        ],
+        "exits": [],
+        "i": 132
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            0.0367169557
+          ]
+        ],
+        "exits": [],
+        "i": 144
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            0.0462484246
+          ]
+        ],
+        "exits": [],
+        "i": 168
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            0.4514627548
+          ]
+        ],
+        "exits": [],
+        "i": 180
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            0.4428100968
+          ]
+        ],
+        "exits": [],
+        "i": 252
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            0.5784782986
+          ]
+        ],
+        "exits": [],
+        "i": 360
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            0.3840964566
+          ]
+        ],
+        "exits": [],
+        "i": 396
+      }
+    ],
+    "short": [
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            0.7597554623
+          ]
+        ],
+        "exits": [],
+        "i": 48
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            0.1131379903
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 96
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            0.2083088594
+          ]
+        ],
+        "exits": [],
+        "i": 108
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            0.4937439356
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 120
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            0.169842953
+          ]
+        ],
+        "exits": [],
+        "i": 132
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            0.0367169557
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 144
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            0.0462484246
+          ]
+        ],
+        "exits": [],
+        "i": 168
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            0.4514627548
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 180
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            0.4428100968
+          ]
+        ],
+        "exits": [],
+        "i": 252
+      },
+      {
+        "entries": [
+          [
+            "BUY",
+            "SYNTH",
+            0.5784782986
+          ]
+        ],
+        "exits": [
+          [
+            "CLOSE",
+            "SYNTH",
+            null
+          ]
+        ],
+        "i": 360
+      },
+      {
+        "entries": [
+          [
+            "SELL",
+            "SYNTH",
+            0.3840964566
+          ]
+        ],
+        "exits": [],
+        "i": 396
+      }
+    ]
+  }
+}

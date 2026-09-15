@@ -1,25 +1,13 @@
 from abc import ABC, abstractmethod
 from typing import List, Literal, Optional
-from datetime import datetime
 import pandas as pd
 from pydantic import BaseModel
-from q_backend.backtesting.models import Signal, Trade, SignalAction
 from q_backend.backtesting.moving_averages import (
     MA_TYPE_LABELS,
     compute_ma,
     normalize_ma_type,
 )
-
-
-def resolve_symbol(current_data: pd.Series, default_symbol: str) -> str:
-    symbol = getattr(current_data, "name", None)
-    if (
-        not isinstance(symbol, str)
-        or isinstance(symbol, (pd.Timestamp, datetime))
-        or (len(symbol) > 8 and any(char in symbol for char in ["-", ":", " "]))
-    ):
-        return default_symbol
-    return symbol
+from q_backend.backtesting.signal_columns import write_signal_columns
 
 
 class ChartIndicatorSpec(BaseModel):
@@ -31,14 +19,17 @@ class ChartIndicatorSpec(BaseModel):
 
 class TradingStrategy(ABC):
     """
-    Abstract base class for all trading strategies in the backtesting engine.
-    Strategies are responsible for analyzing data and emitting Signals.
+    Abstract base class for all candle trading strategies in the backtesting engine.
+
+    Strategies decide only via columnar ``q_signal_*`` columns written in
+    ``compute_indicators`` (entry, exit-long, exit-short, strength). The engine
+    and live evaluator read those columns through ``signal_arrays`` /
+    ``evaluate_queued_signals``; there is no per-row entry/exit API.
 
     Execution contract (read before writing a new strategy):
 
-    * A strategy only ever sees *closed* bars. ``check_entry_conditions`` and
-      ``check_exit_conditions`` receive a fully-formed bar; a signal returned
-      for bar ``i`` means "as of bar ``i``'s close, my criteria are met".
+    * A strategy only ever sees *closed* bars. A ``q_signal_entry`` (or exit)
+      value on bar ``i`` means "as of bar ``i``'s close, my criteria are met".
     * Strategies must NOT decide their own fill price. The engine executes
       every emitted signal at the *next* bar's open, which is the earliest
       price actually tradable once bar ``i`` has closed. Do not assume you can
@@ -59,6 +50,11 @@ class TradingStrategy(ABC):
 
         self.exit_strategy = ExitStrategy(kwargs)
 
+    @property
+    def holding_period_bars(self) -> int | None:
+        """Fixed holding period in bars, or None when exits come from columns."""
+        return None
+
     @abstractmethod
     def compute_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
         """
@@ -70,35 +66,6 @@ class TradingStrategy(ABC):
 
         Returns:
             pd.DataFrame: Data augmented with technical indicators.
-        """
-        pass
-
-    @abstractmethod
-    def check_entry_conditions(self, current_data: pd.Series) -> List[Signal]:
-        """
-        Evaluates entry conditions for a given point in time and returns a list of Signals
-        if conditions are met.
-
-        Args:
-            current_data (pd.Series): A single row (e.g. current candle) of data.
-
-        Returns:
-            List[Signal]: A list of entry Signals (BUY, SELL).
-        """
-        pass
-
-    @abstractmethod
-    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
-        """
-        Evaluates exit conditions for currently open trades.
-        Returns CLOSE Signals if exit conditions (e.g., stop loss, take profit, indicator cross) are met.
-
-        Args:
-            current_data (pd.Series): A single row (e.g. current candle) of data.
-            open_trades (List[Trade]): Trades currently open in the registry.
-
-        Returns:
-            List[Signal]: A list of CLOSE Signals.
         """
         pass
 
@@ -190,7 +157,14 @@ class MACrossoverStrategy(TradingStrategy):
         # SELL when delta crosses below -threshold
         df["sell_signal"] = (df["delta"] < -self.threshold) & (df["prev_delta"] >= -self.threshold)
 
-        return df
+        return write_signal_columns(
+            df,
+            entry_long=df["buy_signal"],
+            entry_short=df["sell_signal"],
+            exit_long=df["sell_signal"],
+            exit_short=df["buy_signal"],
+            strategy_name=type(self).__name__,
+        )
 
     def _ma_label(self, side: str, period: int, ma_type: str) -> str:
         label = MA_TYPE_LABELS.get(ma_type, ma_type.upper())
@@ -217,54 +191,3 @@ class MACrossoverStrategy(TradingStrategy):
                 color="#c9a227",
             ),
         ]
-
-    def check_entry_conditions(self, current_data: pd.Series) -> List[Signal]:
-        """
-        Generates entry signals based on precomputed crossovers.
-
-        Args:
-            current_data (pd.Series): Current candle data including indicators.
-
-        Returns:
-            List[Signal]: List containing the generated Signal(s).
-        """
-        symbol = resolve_symbol(current_data, self.symbol)
-
-        signals = []
-        if current_data.get("buy_signal", False):
-            signals.append(Signal(symbol=symbol, action=SignalAction.BUY))
-        elif current_data.get("sell_signal", False):
-            signals.append(Signal(symbol=symbol, action=SignalAction.SELL))
-
-        return signals
-
-    def check_exit_conditions(self, current_data: pd.Series, open_trades: List[Trade]) -> List[Signal]:
-        """
-        Generates exit signals for open trades.
-        - Closes BUY (long) positions if delta crosses below -threshold.
-        - Closes SELL (short) positions if delta crosses above threshold.
-
-        Args:
-            current_data (pd.Series): Current candle data including indicators.
-            open_trades (List[Trade]): Currently open trades.
-
-        Returns:
-            List[Signal]: List of CLOSE Signals.
-        """
-        symbol = resolve_symbol(current_data, self.symbol)
-
-        signals = []
-        if not open_trades:
-            return signals
-
-        is_sell_trigger = current_data.get("sell_signal", False)
-        is_buy_trigger = current_data.get("buy_signal", False)
-
-        for trade in open_trades:
-            if trade.symbol == symbol:
-                if trade.action == SignalAction.BUY and is_sell_trigger:
-                    signals.append(Signal(symbol=symbol, action=SignalAction.CLOSE))
-                elif trade.action == SignalAction.SELL and is_buy_trigger:
-                    signals.append(Signal(symbol=symbol, action=SignalAction.CLOSE))
-
-        return signals
