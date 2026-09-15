@@ -377,16 +377,16 @@ tests/backtesting/test_signal_contract.py        new: per-strategy column mappin
 
 ## Ordered implementation
 
-1. Work on the branch `Q-024-columnar-strategy-signals` in `q_backend`, created
+1. [x] Work on the branch `Q-024-columnar-strategy-signals` in `q_backend`, created
    from `development` by `./work start`. Confirm that Q-023 is merged: engine
    step 1 is a single call to the backtesting-layer `augment_indicator_frame`,
    `execution/indicator_frame.py` only re-exports it, and no ATR or Donchian
    completion block remains in `engine.py`. Every engine reference below is to
    that post-Q-023 file.
-2. Measurement before. Run the evaluator benchmark three times and the engine
+2. [x] Measurement before. Run the evaluator benchmark three times and the engine
    timing command five times per case, as in the command block below. Record
    every reading. Nothing to commit.
-3. In `test_goldens.py`, add `parallel_mode: ParallelMode = SEQUENTIAL`,
+3. [x] In `test_goldens.py`, add `parallel_mode: ParallelMode = SEQUENTIAL`,
    `day_trade: bool = False`, and an optional data override to `CandleCase`, and
    pass them through `run_candle_case`. Add the six cases named in the decisions.
    Run `uv run pytest tests/backtesting/test_goldens.py --regen-goldens`, then
@@ -394,7 +394,7 @@ tests/backtesting/test_signal_contract.py        new: per-strategy column mappin
    existing files are byte-identical. Run the suite without the flag. Confirm
    that `test_candle_cases_actually_trade` and `test_backtest_live_parity` pass
    for the new cases, and drop any case that fails on today's code. Commit.
-4. Write `test_signal_baseline.py`.
+4. [x] Write `test_signal_baseline.py`.
    - Build each baseline case's strategy and frame through the
      backtesting-layer `augment_indicator_frame`, the same call the engine and
      the evaluator make after Q-023.
@@ -421,7 +421,7 @@ tests/backtesting/test_signal_contract.py        new: per-strategy column mappin
 
    Record, confirm that a second run is green, and confirm that tampering one
    strength value fails with a diff. Commit.
-5. Write failing tests in `test_signal_columns.py`:
+5. [x] Write failing tests in `test_signal_columns.py`:
    - `write_signal_columns` with both triggers True on a bar gives
      `q_signal_entry == 1` there. Strength 0.4 on a bar without an entry is
      stored as 0.0. A float trigger Series raises `SignalContractError`.
@@ -443,7 +443,7 @@ tests/backtesting/test_signal_contract.py        new: per-strategy column mappin
 
    Confirm they fail. Implement `signal_columns.py`, leaving existing callers
    untouched. Confirm they pass. Commit.
-6. Write failing tests in `test_signal_contract.py`, parametrised over the
+6. [x] Write failing tests in `test_signal_contract.py`, parametrised over the
    baseline cases:
    - The four columns exist with dtypes `int8`, `bool`, `bool`, `float64`.
    - Each column equals the mapping table's expression over the legacy columns.
@@ -459,7 +459,7 @@ tests/backtesting/test_signal_contract.py        new: per-strategy column mappin
    of the thirteen `compute_indicators`. Keep the row methods for now. Confirm
    that the contract tests, the baseline, the goldens, and
    `test_strategy_causality.py` pass. Commit.
-7. Switch the consumers. Move `evaluate_queued_signals` to the new signature in
+7. [x] Switch the consumers. Move `evaluate_queued_signals` to the new signature in
    `signal_columns.py` and re-export it from `execution/signal_eval.py`.
    - In the engine, build `signal_arrays` once per chunk immediately after the
      single `augment_indicator_frame` call, and in section D call the consumer
@@ -475,7 +475,7 @@ tests/backtesting/test_signal_contract.py        new: per-strategy column mappin
    the goldens, the baseline, `test_backtest_live_parity`, `tests/execution`,
    `test_lai_lau_strategies.py`, `test_tsmom_strategy.py`, and
    `test_hurst_trend_blend.py` pass unchanged. Commit.
-8. Write a failing test in `test_strategy.py`: a subclass that implements only
+8. [x] Write a failing test in `test_strategy.py`: a subclass that implements only
    `compute_indicators` and `get_chart_indicators` instantiates, and
    `IncompleteStrategy` still raises `TypeError`. Confirm it fails.
    - Delete `check_entry_conditions`, `check_exit_conditions`, `resolve_symbol`,
@@ -491,23 +491,23 @@ tests/backtesting/test_signal_contract.py        new: per-strategy column mappin
 
    Confirm that `grep -rn "check_entry_conditions\|check_exit_conditions\|resolve_symbol" src tests`
    is empty and that the suite passes. Commit.
-9. Regression. Confirm that `git diff <step-3 commit> -- tests/backtesting/goldens`
+9. [x] Regression. Confirm that `git diff <step-3 commit> -- tests/backtesting/goldens`
    is empty. Confirm that `git diff development --` over
    `test_strategy_causality.py`, `genome/test_node_causality.py`,
    `test_composite_genome_causality.py`, `test_genome_parity.py`, and
    `tests/execution/test_evaluator.py` is empty. Confirm that the
    `test_goldens.py` diff against `development` is only the step 3 additions.
    Commit any fixes.
-10. Measurement after. Repeat step 2 on the same machine with the same commands.
+10. [x] Measurement after. Repeat step 2 on the same machine with the same commands.
     Confirm that the benchmark medians stay under 250 ms (indicators) and 50 ms
     (evaluate). Nothing to commit.
-11. Human step, matching human-verifiable criterion 1. With the backend on
+11. [ ] Human step, matching human-verifiable criterion 1. With the backend on
     `development`, run MACrossover on WIN$N M15, TSMOM on PETR4 D1 (trend rule,
     `rebalance_on_every_bar=true`, inverse-volatility sizing), and TRB on PETR4
     D1 from the Backtests workspace. Record trade counts and headline metrics.
     Switch the backend to the task branch, rerun the same configurations, and
     compare.
-12. Run the full validation suite. Commit.
+12. [x] Run the full validation suite. Commit.
 
 ## Validation
 
