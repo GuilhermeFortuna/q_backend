@@ -3,6 +3,7 @@ from typing import Any, List
 import pandas as pd
 
 from q_backend.backtesting.models import Signal, SignalAction, Trade
+from q_backend.backtesting.signal_columns import write_signal_columns
 from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy, resolve_symbol
 from q_backend.backtesting.strategy_registry import StrategyParamSpec, register_strategy
 from q_backend.backtesting.technical_indicators import compute_rsi
@@ -39,7 +40,14 @@ class RSIMeanReversionStrategy(TradingStrategy):
 
         df["buy_signal"] = (df["prev_rsi"] <= self.oversold) & (df["rsi"] > self.oversold)
         df["sell_signal"] = (df["prev_rsi"] <= self.overbought) & (df["rsi"] > self.overbought)
-        return df
+        return write_signal_columns(
+            df,
+            entry_long=df["buy_signal"],
+            entry_short=df["sell_signal"],
+            exit_long=df["sell_signal"],
+            exit_short=df["buy_signal"],
+            strategy_name=type(self).__name__,
+        )
 
     def get_chart_indicators(self) -> List[ChartIndicatorSpec]:
         return [

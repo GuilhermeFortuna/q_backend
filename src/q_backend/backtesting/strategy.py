@@ -9,6 +9,7 @@ from q_backend.backtesting.moving_averages import (
     compute_ma,
     normalize_ma_type,
 )
+from q_backend.backtesting.signal_columns import write_signal_columns
 
 
 def resolve_symbol(current_data: pd.Series, default_symbol: str) -> str:
@@ -58,6 +59,11 @@ class TradingStrategy(ABC):
         from q_backend.backtesting.exit_strategy import ExitStrategy
 
         self.exit_strategy = ExitStrategy(kwargs)
+
+    @property
+    def holding_period_bars(self) -> int | None:
+        """Fixed holding period in bars, or None when exits come from columns."""
+        return None
 
     @abstractmethod
     def compute_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -190,7 +196,14 @@ class MACrossoverStrategy(TradingStrategy):
         # SELL when delta crosses below -threshold
         df["sell_signal"] = (df["delta"] < -self.threshold) & (df["prev_delta"] >= -self.threshold)
 
-        return df
+        return write_signal_columns(
+            df,
+            entry_long=df["buy_signal"],
+            entry_short=df["sell_signal"],
+            exit_long=df["sell_signal"],
+            exit_short=df["buy_signal"],
+            strategy_name=type(self).__name__,
+        )
 
     def _ma_label(self, side: str, period: int, ma_type: str) -> str:
         label = MA_TYPE_LABELS.get(ma_type, ma_type.upper())

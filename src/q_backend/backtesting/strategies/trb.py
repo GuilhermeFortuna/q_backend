@@ -3,6 +3,7 @@ from typing import Any, List
 import pandas as pd
 
 from q_backend.backtesting.models import Signal, SignalAction, Trade
+from q_backend.backtesting.signal_columns import write_signal_columns
 from q_backend.backtesting.strategies.lai_lau_common import (
     add_bar_index,
     build_timestamp_to_bar,
@@ -55,7 +56,18 @@ class TRBStrategy(TradingStrategy):
         df = add_bar_index(df)
         df = compute_trb_channel_signals(df, self.period, self.band_pct)
         self._timestamp_to_bar = build_timestamp_to_bar(df)
-        return df
+        return write_signal_columns(
+            df,
+            entry_long=df["buy_signal"],
+            entry_short=df["sell_signal"],
+            exit_long=False,
+            exit_short=False,
+            strategy_name=type(self).__name__,
+        )
+
+    @property
+    def holding_period_bars(self) -> int | None:
+        return self.holding_period
 
     def get_chart_indicators(self) -> List[ChartIndicatorSpec]:
         return [

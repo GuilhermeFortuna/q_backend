@@ -3,6 +3,7 @@ from typing import Any, List
 import pandas as pd
 
 from q_backend.backtesting.models import Signal, SignalAction, Trade
+from q_backend.backtesting.signal_columns import write_signal_columns
 from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy, resolve_symbol
 from q_backend.backtesting.strategy_registry import StrategyParamSpec, register_strategy
 from q_backend.backtesting.technical_indicators import compute_donchian_channels
@@ -34,7 +35,14 @@ class DonchianBreakoutStrategy(TradingStrategy):
 
         df["buy_signal"] = (df["prev_close"] <= df["prev_donchian_upper"]) & (df["close"] > df["donchian_upper"])
         df["sell_signal"] = (df["prev_close"] >= df["prev_donchian_lower"]) & (df["close"] < df["donchian_lower"])
-        return df
+        return write_signal_columns(
+            df,
+            entry_long=df["buy_signal"],
+            entry_short=df["sell_signal"],
+            exit_long=df["sell_signal"],
+            exit_short=df["buy_signal"],
+            strategy_name=type(self).__name__,
+        )
 
     def get_chart_indicators(self) -> List[ChartIndicatorSpec]:
         return [

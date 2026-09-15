@@ -4,6 +4,7 @@ import pandas as pd
 from numba import njit
 
 from q_backend.backtesting.models import Signal, SignalAction, Trade
+from q_backend.backtesting.signal_columns import write_signal_columns
 from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy, resolve_symbol
 from q_backend.backtesting.strategy_registry import StrategyParamSpec, register_strategy
 from q_backend.backtesting.technical_indicators import (
@@ -190,7 +191,14 @@ class GatevPairsStrategy(TradingStrategy):
         df["bar_index"] = bar_index
         df["rebalance"] = False
 
-        return df
+        return write_signal_columns(
+            df,
+            entry_long=df["buy_signal"].astype(bool),
+            entry_short=df["sell_signal"].astype(bool),
+            exit_long=df["exit_signal"].astype(bool),
+            exit_short=df["exit_signal"].astype(bool),
+            strategy_name=type(self).__name__,
+        )
 
     def get_chart_indicators(self) -> List[ChartIndicatorSpec]:
         return [

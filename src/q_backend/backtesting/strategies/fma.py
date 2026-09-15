@@ -8,6 +8,7 @@ from q_backend.backtesting.moving_averages import (
     normalize_ma_type,
 )
 from q_backend.backtesting.models import Signal, SignalAction, Trade
+from q_backend.backtesting.signal_columns import write_signal_columns
 from q_backend.backtesting.strategies.lai_lau_common import (
     MA_TYPE_CHOICES,
     add_bar_index,
@@ -65,7 +66,18 @@ class FMAStrategy(TradingStrategy):
         df["ma"] = ma
         df = compute_ma_band_signals(df, ma, self.band_pct)
         self._timestamp_to_bar = build_timestamp_to_bar(df)
-        return df
+        return write_signal_columns(
+            df,
+            entry_long=df["buy_signal"],
+            entry_short=df["sell_signal"],
+            exit_long=False,
+            exit_short=False,
+            strategy_name=type(self).__name__,
+        )
+
+    @property
+    def holding_period_bars(self) -> int | None:
+        return self.holding_period
 
     def _ma_label(self) -> str:
         label = MA_TYPE_LABELS.get(self.ma_type, self.ma_type.upper())

@@ -17,6 +17,7 @@ from q_backend.backtesting.genome.exit_rule_policy import (
 from q_backend.backtesting.genome.schema import Genome
 from q_backend.backtesting.models import Signal, SignalAction, Trade
 from q_backend.backtesting.moving_averages import compute_ma, normalize_ma_type
+from q_backend.backtesting.signal_columns import write_signal_columns
 from q_backend.backtesting.strategies.lai_lau_common import (
     add_bar_index,
     build_timestamp_to_bar,
@@ -137,6 +138,10 @@ class CompositeStrategy(TradingStrategy):
             self._plan = compile_genome(self.genome, self.trial_params)
         return self._plan
 
+    @property
+    def holding_period_bars(self) -> int | None:
+        return self.plan.fixed_holding_period
+
     def compute_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
         df = data.copy()
         if any(node.kind.startswith("feature.") for node in self.genome.nodes):
@@ -193,7 +198,27 @@ class CompositeStrategy(TradingStrategy):
         if plan.fixed_holding_period is not None:
             self._timestamp_to_bar = build_timestamp_to_bar(df)
 
-        return df
+        if plan.fixed_holding_period is not None:
+            exit_long: pd.Series | bool = False
+            exit_short: pd.Series | bool = False
+        else:
+            if "exit_long_signal" in df.columns:
+                exit_long = df["exit_long_signal"]
+            else:
+                exit_long = False
+            if "exit_short_signal" in df.columns:
+                exit_short = df["exit_short_signal"]
+            else:
+                exit_short = False
+
+        return write_signal_columns(
+            df,
+            entry_long=df["entry_long_signal"],
+            entry_short=df["entry_short_signal"],
+            exit_long=exit_long,
+            exit_short=exit_short,
+            strategy_name=type(self).__name__,
+        )
 
     def _binding_series(self, df: pd.DataFrame, compiled: Any, index: int) -> pd.Series:
         binding = compiled.input_bindings[index]

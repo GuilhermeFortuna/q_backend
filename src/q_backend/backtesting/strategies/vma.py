@@ -8,6 +8,7 @@ from q_backend.backtesting.moving_averages import (
     normalize_ma_type,
 )
 from q_backend.backtesting.models import Signal, SignalAction, Trade
+from q_backend.backtesting.signal_columns import write_signal_columns
 from q_backend.backtesting.strategies.lai_lau_common import (
     MA_TYPE_CHOICES,
     compute_ma_band_signals,
@@ -56,7 +57,15 @@ class VMAStrategy(TradingStrategy):
 
         ma = compute_ma(df["close"], self.period, self.ma_type)
         df["ma"] = ma
-        return compute_ma_band_signals(df, ma, self.band_pct)
+        df = compute_ma_band_signals(df, ma, self.band_pct)
+        return write_signal_columns(
+            df,
+            entry_long=df["buy_signal"],
+            entry_short=df["sell_signal"],
+            exit_long=df["sell_signal"],
+            exit_short=df["buy_signal"],
+            strategy_name=type(self).__name__,
+        )
 
     def _ma_label(self) -> str:
         label = MA_TYPE_LABELS.get(self.ma_type, self.ma_type.upper())

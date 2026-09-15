@@ -7,6 +7,7 @@ import pandas as pd
 
 from q_backend.backtesting.exit_strategy import ExitStrategy
 from q_backend.backtesting.models import Signal, SignalAction, Trade
+from q_backend.backtesting.signal_columns import write_signal_columns
 from q_backend.backtesting.signal_managers.base import SignalManager, Stance
 from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy, resolve_symbol
 from q_backend.backtesting.strategy_registry import (
@@ -93,7 +94,14 @@ class CompositeEntryStrategy(TradingStrategy):
         df["net_short_signal"] = (net_series == Stance.SHORT) & (prev_net != Stance.SHORT)
         df["buy_signal"] = df["net_long_signal"]
         df["sell_signal"] = df["net_short_signal"]
-        return df
+        return write_signal_columns(
+            df,
+            entry_long=df["net_long_signal"],
+            entry_short=df["net_short_signal"],
+            exit_long=(net_series == Stance.SHORT).astype(bool),
+            exit_short=(net_series == Stance.LONG).astype(bool),
+            strategy_name=type(self).__name__,
+        )
 
     def check_entry_conditions(self, current_data: pd.Series) -> List[Signal]:
         symbol = resolve_symbol(current_data, self.symbol)
