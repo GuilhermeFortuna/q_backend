@@ -162,6 +162,7 @@ def test_indicator_modules_hygiene():
 
     assert sorted(q_core_importers) == [
         "backtesting/candle_kernel.py",
+        "backtesting/exit_strategy.py",
         "backtesting/indicator_kernels.py",
         "backtesting/tick/kernel.py",
     ]
@@ -185,3 +186,19 @@ def test_indicator_modules_hygiene():
         content = mod_path.read_text(encoding="utf-8")
         for token in forbidden_tokens:
             assert token not in content, f"{mod_path.name} contains forbidden token {token!r}"
+
+
+def test_no_python_per_bar_exit_or_consumer_semantics():
+    from pathlib import Path
+
+    backend_src = Path(__file__).resolve().parents[2] / "src" / "q_backend"
+    forbidden_patterns = ("def on_bar", "def should_exit", "def evaluate_queued_signals")
+    offenders: list[str] = []
+    for py_file in backend_src.rglob("*.py"):
+        if py_file.name == "candle_kernel.py":
+            continue
+        content = py_file.read_text(encoding="utf-8")
+        for pattern in forbidden_patterns:
+            if pattern in content:
+                offenders.append(f"{py_file.relative_to(backend_src)}: {pattern}")
+    assert offenders == []
