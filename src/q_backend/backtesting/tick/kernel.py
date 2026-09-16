@@ -1,49 +1,67 @@
-import numpy as np
-from numba import njit
+"""Bridge module connecting q_backend tick simulation and chart helpers to q_core.engine.
 
+This module is a bridge to q_core and contains no compiled functions.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Final
+
+import numpy as np
+import q_core
+from q_backend.backtesting.position_sizing import PositionSizingConfig
 from q_backend.backtesting.tick.orders import (
-    ExitReason,
     SIZING_FIXED_QUANTITY,
     SIZING_FIXED_SAFETY_MARGIN,
 )
+from q_backend.backtesting.tick.strategy import TickArrays
 
-_EXIT_STOP_LOSS = int(ExitReason.STOP_LOSS)
-_EXIT_TAKE_PROFIT = int(ExitReason.TAKE_PROFIT)
-_EXIT_SIGNAL = int(ExitReason.SIGNAL)
-_EXIT_END_OF_DAY = int(ExitReason.END_OF_DAY)
-
-
-@njit(cache=True)
-def _compute_quantity(
-    capital: float,
-    sizing_mode: int,
-    sizing_a: float,
-    sizing_b: float,
-    sizing_c: float,
-) -> float:
-    if sizing_mode == SIZING_FIXED_QUANTITY:
-        return sizing_a
-
-    qty = int(capital / sizing_a)
-    if sizing_c > 0.0:
-        max_c = int(sizing_c)
-        if qty > max_c:
-            qty = max_c
-
-    min_c = int(sizing_b)
-    if qty < min_c:
-        if min_c > 0 and qty == 0:
-            qty = min_c
-        else:
-            return 0.0
-
-    if qty <= 0:
-        return 0.0
-    return float(qty)
+REQUIRED_TICK_FUNCTIONS: Final[tuple[str, ...]] = (
+    "tick_simulate",
+    "tick_day_bounds",
+    "tick_bars",
+    "resolve_bar_ms",
+    "sample_at_bar_ends",
+)
 
 
-@njit(cache=True)
-def _simulate_njit(
+def check_tick_engine(module: Any) -> None:
+    """Raise ImportError naming every missing REQUIRED_TICK_FUNCTIONS entry and module.version()."""
+    target = getattr(module, "engine", module)
+    ver_fn = getattr(module, "version", None)
+    if callable(ver_fn):
+        version = ver_fn()
+    else:
+        version = getattr(module, "__version__", "unknown")
+
+    missing = [name for name in REQUIRED_TICK_FUNCTIONS if not hasattr(target, name)]
+    if missing:
+        raise ImportError(f"q_core {version} is missing required tick functions: {', '.join(missing)}")
+
+
+# Validate installed q_core at import time
+check_tick_engine(q_core)
+
+engine: Any = getattr(q_core, "engine", q_core)
+
+
+def _sizing_config_to_dict(sizing: PositionSizingConfig | dict[str, Any]) -> dict[str, Any]:
+    if isinstance(sizing, dict):
+        return sizing
+    if sizing.type == "fixed_quantity":
+        return {"type": "fixed_quantity", "quantity": float(sizing.quantity)}
+    if sizing.type == "fixed_safety_margin":
+        max_c = int(sizing.max_contracts) if sizing.max_contracts is not None else 0
+        return {
+            "type": "fixed_safety_margin",
+            "safety_margin_per_contract": float(sizing.safety_margin_per_contract),
+            "min_contracts": int(sizing.min_contracts),
+            "max_contracts": max_c,
+        }
+    raise ValueError(f"tick engine does not support position sizing type '{sizing.type}'")
+
+
+def simulate_config(
     bid: np.ndarray,
     ask: np.ndarray,
     direction: np.ndarray,
@@ -51,143 +69,25 @@ def _simulate_njit(
     tp_points: np.ndarray,
     initial_capital: float,
     point_value: float,
-    sizing_mode: int,
-    sizing_a: float,
-    sizing_b: float,
-    sizing_c: float,
-) -> tuple:
-    n = len(bid)
-    entry_idx = np.empty(n, dtype=np.int64)
-    exit_idx = np.empty(n, dtype=np.int64)
-    entry_price = np.empty(n, dtype=np.float64)
-    exit_price = np.empty(n, dtype=np.float64)
-    trade_direction = np.empty(n, dtype=np.int8)
-    quantity = np.empty(n, dtype=np.float64)
-    exit_reason = np.empty(n, dtype=np.int32)
+    sizing: PositionSizingConfig | dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Run tick simulation on q_core using a position sizing config.
 
-    capital = initial_capital
-    position_dir = 0
-    pos_entry_idx = 0
-    pos_entry_price = 0.0
-    pos_quantity = 0.0
-    sl_price = 0.0
-    tp_price = 0.0
-    has_sl = False
-    has_tp = False
-    trade_count = 0
-    block_reentry = False
-
-    for i in range(n):
-        if block_reentry:
-            block_reentry = False
-
-        if position_dir == 0:
-            sig = direction[i]
-            if sig != 0:
-                qty = _compute_quantity(capital, sizing_mode, sizing_a, sizing_b, sizing_c)
-                if qty > 0.0:
-                    if sig > 0:
-                        position_dir = 1
-                        pos_entry_price = ask[i]
-                    else:
-                        position_dir = -1
-                        pos_entry_price = bid[i]
-
-                    pos_entry_idx = i
-                    pos_quantity = qty
-
-                    sl_pts = sl_points[i]
-                    tp_pts = tp_points[i]
-                    has_sl = not np.isnan(sl_pts)
-                    has_tp = not np.isnan(tp_pts)
-
-                    if has_sl:
-                        if position_dir > 0:
-                            sl_price = pos_entry_price - sl_pts
-                        else:
-                            sl_price = pos_entry_price + sl_pts
-                    if has_tp:
-                        if position_dir > 0:
-                            tp_price = pos_entry_price + tp_pts
-                        else:
-                            tp_price = pos_entry_price - tp_pts
-        else:
-            exited = False
-            reason = 0
-            fill_price = 0.0
-
-            if position_dir > 0:
-                fill_price = bid[i]
-                if has_sl and bid[i] <= sl_price:
-                    reason = _EXIT_STOP_LOSS
-                    exited = True
-                elif has_tp and bid[i] >= tp_price:
-                    reason = _EXIT_TAKE_PROFIT
-                    exited = True
-                elif direction[i] < 0:
-                    reason = _EXIT_SIGNAL
-                    exited = True
-            else:
-                fill_price = ask[i]
-                if has_sl and ask[i] >= sl_price:
-                    reason = _EXIT_STOP_LOSS
-                    exited = True
-                elif has_tp and ask[i] <= tp_price:
-                    reason = _EXIT_TAKE_PROFIT
-                    exited = True
-                elif direction[i] > 0:
-                    reason = _EXIT_SIGNAL
-                    exited = True
-
-            if exited:
-                if position_dir > 0:
-                    pnl = (fill_price - pos_entry_price) * pos_quantity * point_value
-                else:
-                    pnl = (pos_entry_price - fill_price) * pos_quantity * point_value
-
-                capital += pnl
-
-                entry_idx[trade_count] = pos_entry_idx
-                exit_idx[trade_count] = i
-                entry_price[trade_count] = pos_entry_price
-                exit_price[trade_count] = fill_price
-                trade_direction[trade_count] = position_dir
-                quantity[trade_count] = pos_quantity
-                exit_reason[trade_count] = reason
-                trade_count += 1
-
-                position_dir = 0
-                block_reentry = True
-
-    if position_dir != 0:
-        if position_dir > 0:
-            fill_price = bid[n - 1]
-            pnl = (fill_price - pos_entry_price) * pos_quantity * point_value
-        else:
-            fill_price = ask[n - 1]
-            pnl = (pos_entry_price - fill_price) * pos_quantity * point_value
-
-        capital += pnl
-
-        entry_idx[trade_count] = pos_entry_idx
-        exit_idx[trade_count] = n - 1
-        entry_price[trade_count] = pos_entry_price
-        exit_price[trade_count] = fill_price
-        trade_direction[trade_count] = position_dir
-        quantity[trade_count] = pos_quantity
-        exit_reason[trade_count] = _EXIT_END_OF_DAY
-        trade_count += 1
-
-    return (
-        entry_idx,
-        exit_idx,
-        entry_price,
-        exit_price,
-        trade_direction,
-        quantity,
-        exit_reason,
-        trade_count,
-        capital,
+    Returns exact-length ledger arrays and final capital:
+      entry_idx, exit_idx, entry_price, exit_price, direction, quantity,
+      exit_reason, final_capital.
+    """
+    sizing_dict = _sizing_config_to_dict(sizing)
+    return engine.tick_simulate(
+        bid=np.ascontiguousarray(bid, dtype=np.float64),
+        ask=np.ascontiguousarray(ask, dtype=np.float64),
+        direction=np.ascontiguousarray(direction, dtype=np.int8),
+        sl_points=np.ascontiguousarray(sl_points, dtype=np.float64),
+        tp_points=np.ascontiguousarray(tp_points, dtype=np.float64),
+        initial_capital=float(initial_capital),
+        point_value=float(point_value),
+        sizing=sizing_dict,
     )
 
 
@@ -205,22 +105,96 @@ def simulate(
     sizing_c: float,
 ) -> tuple[np.ndarray, ...]:
     """
-    Single-position intrabar simulation.
+    Single-position intrabar simulation bridge.
 
     Returns parallel arrays (one row per closed trade) plus trailing metadata:
       entry_idx, exit_idx, entry_price, exit_price, direction (+1/-1),
       quantity, exit_reason (ExitReason int codes), trade_count, final_capital.
+    Arrays are allocated at length n and zero-filled past trade_count.
     """
-    return _simulate_njit(
-        bid,
-        ask,
-        direction,
-        sl_points,
-        tp_points,
-        initial_capital,
-        point_value,
-        sizing_mode,
-        sizing_a,
-        sizing_b,
-        sizing_c,
+    if sizing_mode == SIZING_FIXED_QUANTITY:
+        sizing_dict = {"type": "fixed_quantity", "quantity": float(sizing_a)}
+    elif sizing_mode == SIZING_FIXED_SAFETY_MARGIN:
+        max_c = int(sizing_c) if sizing_c > 0.0 else 0
+        sizing_dict = {
+            "type": "fixed_safety_margin",
+            "safety_margin_per_contract": float(sizing_a),
+            "min_contracts": int(sizing_b),
+            "max_contracts": max_c,
+        }
+    else:
+        raise ValueError(f"unknown sizing mode: {sizing_mode}")
+
+    ledger = engine.tick_simulate(
+        bid=np.ascontiguousarray(bid, dtype=np.float64),
+        ask=np.ascontiguousarray(ask, dtype=np.float64),
+        direction=np.ascontiguousarray(direction, dtype=np.int8),
+        sl_points=np.ascontiguousarray(sl_points, dtype=np.float64),
+        tp_points=np.ascontiguousarray(tp_points, dtype=np.float64),
+        initial_capital=float(initial_capital),
+        point_value=float(point_value),
+        sizing=sizing_dict,
+    )
+
+    n = len(bid)
+    trade_count = len(ledger["entry_idx"])
+
+    entry_idx = np.zeros(n, dtype=np.int64)
+    exit_idx = np.zeros(n, dtype=np.int64)
+    entry_price = np.zeros(n, dtype=np.float64)
+    exit_price = np.zeros(n, dtype=np.float64)
+    trade_direction = np.zeros(n, dtype=np.int8)
+    quantity = np.zeros(n, dtype=np.float64)
+    exit_reason = np.zeros(n, dtype=np.int32)
+
+    if trade_count > 0:
+        entry_idx[:trade_count] = ledger["entry_idx"]
+        exit_idx[:trade_count] = ledger["exit_idx"]
+        entry_price[:trade_count] = ledger["entry_price"]
+        exit_price[:trade_count] = ledger["exit_price"]
+        trade_direction[:trade_count] = ledger["direction"]
+        quantity[:trade_count] = ledger["quantity"]
+        exit_reason[:trade_count] = ledger["exit_reason"]
+
+    return (
+        entry_idx,
+        exit_idx,
+        entry_price,
+        exit_price,
+        trade_direction,
+        quantity,
+        exit_reason,
+        trade_count,
+        float(ledger["final_capital"]),
+    )
+
+
+def day_bounds(time_msc: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Find start and end indices for contiguous UTC days in a tick stream."""
+    starts, ends = engine.tick_day_bounds(np.ascontiguousarray(time_msc, dtype=np.int64))
+    return starts, ends
+
+
+def bars(ticks: TickArrays, bar_ms: int) -> dict[str, np.ndarray]:
+    """Resample ticks into OHLCV bars using q_core."""
+    return engine.tick_bars(
+        time_msc=np.ascontiguousarray(ticks.time_msc, dtype=np.int64),
+        bid=np.ascontiguousarray(ticks.bid, dtype=np.float64),
+        ask=np.ascontiguousarray(ticks.ask, dtype=np.float64),
+        last=np.ascontiguousarray(ticks.last, dtype=np.float64),
+        volume=np.ascontiguousarray(ticks.volume, dtype=np.float64),
+        bar_ms=int(bar_ms),
+    )
+
+
+def resolve_bar_ms(base_bar_ms: int, span_msc: int) -> int:
+    """Resolve display bar millisecond interval with adaptive doubling."""
+    return int(engine.resolve_bar_ms(int(base_bar_ms), int(span_msc)))
+
+
+def sample_at_bar_ends(series: np.ndarray, tick_end: np.ndarray) -> np.ndarray:
+    """Sample indicator values at bar closes using tick_end indices from bars()."""
+    return engine.sample_at_bar_ends(
+        np.ascontiguousarray(series, dtype=np.float64),
+        np.ascontiguousarray(tick_end, dtype=np.int64),
     )
