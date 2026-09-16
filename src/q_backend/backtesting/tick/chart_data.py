@@ -2,10 +2,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
+from q_backend.backtesting.tick.kernel import bars, resolve_bar_ms, sample_at_bar_ends
 from q_backend.backtesting.tick.strategy import TickArrays, TickStrategy
 from q_backend.market_data.timezone import mt5_datetime_to_utc_iso, unix_seconds_to_brasilia_naive
-
-_MAX_DISPLAY_BARS = 50_000
 
 DISPLAY_TIMEFRAME_MS: Dict[str, int] = {
     "M1": 60_000,
@@ -37,25 +36,13 @@ def _msc_to_iso(time_msc: int) -> str:
     return mt5_datetime_to_utc_iso(unix_seconds_to_brasilia_naive(sec))
 
 
-def _mid_price(ticks: TickArrays) -> np.ndarray:
-    last = ticks.last
-    if np.any(last > 0):
-        return last.astype(np.float64, copy=False)
-    return (ticks.bid + ticks.ask) / 2.0
-
-
 def _resolve_bar_ms(display_timeframe: str, span_msc: int) -> int:
     key = display_timeframe.upper()
     if key not in DISPLAY_TIMEFRAME_MS:
         raise ValueError(
             f"Invalid display_timeframe '{display_timeframe}'. " f"Choose from: {sorted(DISPLAY_TIMEFRAME_MS.keys())}"
         )
-    bar_ms = DISPLAY_TIMEFRAME_MS[key]
-    while span_msc > 0 and span_msc // bar_ms > _MAX_DISPLAY_BARS:
-        bar_ms *= 2
-        if bar_ms > DISPLAY_TIMEFRAME_MS["D1"]:
-            break
-    return bar_ms
+    return resolve_bar_ms(DISPLAY_TIMEFRAME_MS[key], span_msc)
 
 
 def _resample_ticks_to_bars(
@@ -66,45 +53,44 @@ def _resample_ticks_to_bars(
     if n == 0:
         return [], []
 
-    prices = _mid_price(ticks)
-    bar_ids = ticks.time_msc // bar_ms
-    boundaries = np.where(bar_ids[1:] != bar_ids[:-1])[0] + 1
-    starts = np.concatenate((np.array([0], dtype=np.int64), boundaries))
-    ends = np.concatenate((boundaries, np.array([n], dtype=np.int64)))
+    arrays = bars(ticks, bar_ms)
 
-    bars: List[Dict[str, Any]] = []
+    open_msc = arrays["open_msc"]
+    opens = arrays["open"]
+    highs = arrays["high"]
+    lows = arrays["low"]
+    closes = arrays["close"]
+    volumes = arrays["volume"]
+    tick_start = arrays["tick_start"]
+    tick_end = arrays["tick_end"]
+
+    bar_list: List[Dict[str, Any]] = []
     bar_ranges: List[Tuple[int, int]] = []
-    for start, end in zip(starts, ends):
-        slice_prices = prices[start:end]
-        bar_open_msc = int(bar_ids[start] * bar_ms)
-        bars.append(
+    for i in range(len(open_msc)):
+        bar_list.append(
             {
-                "timestamp": _msc_to_iso(bar_open_msc),
-                "open": float(slice_prices[0]),
-                "high": float(np.max(slice_prices)),
-                "low": float(np.min(slice_prices)),
-                "close": float(slice_prices[-1]),
-                "volume": int(np.sum(ticks.volume[start:end])),
+                "timestamp": _msc_to_iso(int(open_msc[i])),
+                "open": float(opens[i]),
+                "high": float(highs[i]),
+                "low": float(lows[i]),
+                "close": float(closes[i]),
+                "volume": int(volumes[i]),
             }
         )
-        bar_ranges.append((int(start), int(end)))
+        bar_ranges.append((int(tick_start[i]), int(tick_end[i])))
 
-    return bars, bar_ranges
+    return bar_list, bar_ranges
 
 
 def _sample_indicator_at_bars(
     series: np.ndarray,
     bar_ranges: List[Tuple[int, int]],
 ) -> List[Optional[float]]:
-    values: List[Optional[float]] = []
-    for start, end in bar_ranges:
-        last_idx = end - 1
-        val = series[last_idx]
-        if np.isnan(val):
-            values.append(None)
-        else:
-            values.append(float(val))
-    return values
+    if not bar_ranges:
+        return []
+    tick_end = np.asarray([end for _, end in bar_ranges], dtype=np.int64)
+    sampled = sample_at_bar_ends(series, tick_end)
+    return [None if np.isnan(val) else float(val) for val in sampled]
 
 
 def serialize_tick_chart_data(
@@ -117,7 +103,7 @@ def serialize_tick_chart_data(
     """
     span_msc = int(ticks.time_msc[-1] - ticks.time_msc[0]) if len(ticks.time_msc) else 0
     bar_ms = _resolve_bar_ms(display_timeframe, span_msc)
-    bars, bar_ranges = _resample_ticks_to_bars(ticks, bar_ms)
+    bars_out, bar_ranges = _resample_ticks_to_bars(ticks, bar_ms)
 
     indicator_series: Dict[str, np.ndarray] = {}
     compute_series = getattr(strategy, "compute_indicator_series", None)
@@ -139,4 +125,4 @@ def serialize_tick_chart_data(
             }
         )
 
-    return {"bars": bars, "indicators": indicators}
+    return {"bars": bars_out, "indicators": indicators}
