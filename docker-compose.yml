@@ -103,5 +103,22 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Publishes jobs.terminal events from the Postgres outbox to Redis Streams, which
+  # is how the API's WebSocket tells the UI a job finished. Without it a backtest
+  # completes but the UI waits forever — its polling is stream-aware and backs off
+  # expecting an event that never arrives. No GPU: this is pure IO.
+  relay:
+    <<: *backend-runtime
+    profiles: ["containerized"]
+    command: ["q-outbox-relay"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres_data:
