@@ -36,6 +36,14 @@ readonly PYTHON_VERSION="3.11.9"
 # MetaTrader5 pip version. To bump: check https://pypi.org/project/MetaTrader5/#history
 # and confirm a win_amd64 wheel exists for PYTHON_VERSION's cpXY tag, then update both.
 readonly MT5_PIP_VERSION="5.0.5735"
+# numpy arrives as a MetaTrader5 dependency, and MetaTrader5 does not constrain it, so
+# an unpinned install floats to the latest release. numpy 2.x calls the C99 complex
+# helpers (crealf and friends) that Wine's builtin ucrtbase.dll does not implement, and
+# the gateway aborts on `import numpy` with:
+#   wine: Call ... to unimplemented function ucrtbase.dll.crealf, aborting
+# 1.26.4 is the last 1.x with a cp311 win_amd64 wheel and imports cleanly under Wine.
+# To bump: verify `import numpy` still works inside the prefix under the pinned Wine.
+readonly NUMPY_VERSION="1.26.4"
 # Windows install target for Python, inside the prefix (drive_c/Python311).
 readonly PYTHON_WIN_DIR='C:\Python311'
 readonly PYTHON_REL_DIR="drive_c/Python311"
@@ -140,6 +148,7 @@ else
         printf 'created_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         printf 'python_version=%s\n' "${PYTHON_VERSION}"
         printf 'metatrader5_pip=%s\n' "${MT5_PIP_VERSION}"
+        printf 'numpy=%s\n' "${NUMPY_VERSION}"
     } >"${WINE_MARKER}"
     log "recorded pins in ${WINE_MARKER}"
 fi
@@ -168,19 +177,32 @@ else
 fi
 
 # --------------------------------------------------------------------------------------
-# 3. Pinned MetaTrader5 pip package inside the Wine Python.
-#    numpy is pulled in as a MetaTrader5 dependency; nothing else is needed by the gateway.
+# 3. Pinned MetaTrader5 pip package (and its numpy dependency) inside the Wine Python.
+#    Both are pinned: an unpinned numpy breaks the gateway under Wine (see NUMPY_VERSION).
 # --------------------------------------------------------------------------------------
-installed_mt5="$(wine "${PYTHON_WIN_DIR}\\python.exe" -m pip show MetaTrader5 2>/dev/null \
-    | awk -F': ' '/^Version:/ {print $2}' | tr -d '\r' || true)"
-if [[ "${installed_mt5}" == "${MT5_PIP_VERSION}" ]]; then
-    log "MetaTrader5==${MT5_PIP_VERSION} already installed in the Wine Python."
+pip_version_of() {
+    wine "${PYTHON_WIN_DIR}\\python.exe" -m pip show "$1" 2>/dev/null \
+        | awk -F': ' '/^Version:/ {print $2}' | tr -d '\r' || true
+}
+
+installed_mt5="$(pip_version_of MetaTrader5)"
+installed_numpy="$(pip_version_of numpy)"
+if [[ "${installed_mt5}" == "${MT5_PIP_VERSION}" && "${installed_numpy}" == "${NUMPY_VERSION}" ]]; then
+    log "MetaTrader5==${MT5_PIP_VERSION} and numpy==${NUMPY_VERSION} already installed in the Wine Python."
 else
-    log "installing MetaTrader5==${MT5_PIP_VERSION} into the Wine Python ..."
+    log "installing MetaTrader5==${MT5_PIP_VERSION} and numpy==${NUMPY_VERSION} into the Wine Python ..."
     wine "${PYTHON_WIN_DIR}\\python.exe" -m pip install --no-input --disable-pip-version-check \
-        "MetaTrader5==${MT5_PIP_VERSION}"
-    log "MetaTrader5 installed."
+        "MetaTrader5==${MT5_PIP_VERSION}" "numpy==${NUMPY_VERSION}"
+    log "MetaTrader5 and numpy installed."
 fi
+
+# Fail here rather than at first request: a numpy that Wine cannot load makes the
+# gateway abort on import, long after this script has reported success.
+log "verifying the MetaTrader5 module imports under Wine ..."
+if ! wine "${PYTHON_WIN_DIR}\\python.exe" -c "import MetaTrader5" >/dev/null 2>&1; then
+    die "MetaTrader5 failed to import inside the prefix. Re-run with WINEDEBUG=+all to see why; an unimplemented ucrtbase function usually means the numpy pin needs revisiting."
+fi
+log "MetaTrader5 imports cleanly."
 
 # --------------------------------------------------------------------------------------
 # 4. MetaTrader 5 terminal.
@@ -215,6 +237,7 @@ Pins recorded in: ${WINE_MARKER}
   wine (system) : ${WINE_VERSION}   (change-checked on every run)
   python (win)  : ${PYTHON_VERSION}
   MetaTrader5   : ${MT5_PIP_VERSION}
+  numpy         : ${NUMPY_VERSION}
 
 MANUAL, ONE-TIME (credentials never touch this script):
   1. Start the terminal and log in to your broker account in its GUI:
