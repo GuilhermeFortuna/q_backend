@@ -16,11 +16,17 @@ Everything is pinned; upgrades are a deliberate operator action (edit the pin, r
 | Wine                 | **whatever is installed at first setup** — recorded in the prefix marker and change-checked on every run (see risk mitigation) |
 | Windows Python       | **3.11.9** (`setup_wine.sh` `PYTHON_VERSION`)                                 |
 | `MetaTrader5` (pip)  | **5.0.5735** (`setup_wine.sh` `MT5_PIP_VERSION`)                              |
+| `numpy` (pip)        | **1.26.4** (`setup_wine.sh` `NUMPY_VERSION`) — pinned because numpy 2.x aborts under Wine; see Troubleshooting |
 | MT5 terminal build   | provided by the MetaQuotes/broker installer; recorded after first login (`/v1/health` → `terminal_build`) |
 
 ## Prerequisites
 
-- `wine` (64-bit) installed system-wide. Fedora: `sudo dnf install wine`.
+- `wine` (64-bit) installed system-wide.
+  - Ubuntu/Debian: `sudo apt install wine`
+  - Fedora: `sudo dnf install wine`
+
+  The setup script itself is distro-agnostic — it shells out only to `wine`,
+  `wineboot` and `winepath` and probes everything else with `command -v`.
 - `winetricks` is **not** required for the read-only gateway; install it only if the
   terminal complains about a missing component (rare).
 - `curl` or `wget`, `sha256sum`, `awk` (all standard).
@@ -42,8 +48,9 @@ The script is idempotent (safe to re-run) and:
    can break the terminal or the `MetaTrader5` module, so the prefix is pinned on purpose.
 2. Downloads + installs Windows Python `3.11.9` into the prefix (`C:\Python311`), printing
    each installer's SHA-256 so you can verify it against the official source.
-3. `pip install MetaTrader5==5.0.5735` inside that Wine Python (numpy comes along as a
-   dependency — nothing else is needed).
+3. `pip install MetaTrader5==5.0.5735 numpy==1.26.4` inside that Wine Python — numpy is
+   pinned explicitly rather than left to float, then the script imports `MetaTrader5`
+   once to prove the pair actually loads under Wine before reporting success.
 4. Installs the MetaTrader 5 terminal into the prefix.
 5. Prints the launch commands and where to log in.
 
@@ -134,6 +141,7 @@ curl -s http://127.0.0.1:18812/v1/health
 | Symptom                                              | Likely cause / fix                                                                                                                                                 |
 | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Terminal won't start under Wine                     | Check `wine --version` matches the recorded pin (`~/.local/share/mt5-gateway-prefix/.gateway-setup-marker`). Try `WINEDEBUG=+err wine .../terminal64.exe`. If Wine changed, reset the prefix and re-run `setup_wine.sh`. As a fallback, run the gateway on a Windows box (below). |
+| `wine: Call ... to unimplemented function ucrtbase.dll.crealf, aborting` | An unpinned numpy floated to 2.x. numpy 2 calls C99 complex helpers that Wine's builtin `ucrtbase.dll` does not implement, so the gateway dies on `import numpy` — the terminal is unaffected, only the gateway unit fails. Fix: `wine "C:\Python311\python.exe" -m pip install "numpy==1.26.4"`, then restart `mt5-gateway.service`. `setup_wine.sh` pins this now and verifies the import before reporting success. |
 | `MetaTrader5` fails to import in the Wine Python     | Version/ABI mismatch. Confirm the pinned wheel matches the Wine Python: `wine "C:\Python311\python.exe" -m pip show MetaTrader5`. Re-run `setup_wine.sh` to reinstall the pinned version; if a Wine bump broke it, revert Wine or move to a Windows VM. |
 | `/v1/health` shows `"mt5_connected": false`          | The terminal isn't running or isn't logged in. Start `mt5-terminal.service` (or the terminal GUI), log in, confirm symbols in Market Watch. The gateway retries MT5 init lazily, so health flips to `true` once the terminal is up. |
 | Schema-version mismatch after a repo update          | The client refuses a gateway whose `schema_version` major differs (it treats it as unavailable and degrades to `local`). Redeploy the updated `gateway/mt5_gateway.py` to the prefix/box and restart `mt5-gateway.service` so both sides speak the same `/vN/`. |
