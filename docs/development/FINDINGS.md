@@ -38,7 +38,11 @@ accepted deviation, or no action. Record the decision beside the item.
     leaves both in Python.
 11. **`gatev_pairs` overwrites the price columns and writes a float `spread`**,
     which collides with the contract's int64 `spread` bar column. Found while
-    planning Q-025. Its resolution is expected in Q-028.
+    planning Q-025. **Q-028 triage: no action.** The candle kernel receives
+    plain backend columns and does not build a Q-025 contract frame on this
+    path, so the reserved-name collision cannot occur here. The strategy's
+    synthetic-price fills remain existing behaviour and are pinned by the
+    `gatev_pairs` golden.
 
 ## Market data and the lake
 
