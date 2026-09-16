@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from typing import List
+from typing import Any, List
 
 import numpy as np
 
@@ -8,7 +8,7 @@ from q_backend.backtesting.engine import ParallelMode
 from q_backend.backtesting.models import OrderAction, Trade
 from q_backend.backtesting.position_sizing import PositionSizingConfig
 from q_backend.backtesting.registry import TradeRegistry
-from q_backend.backtesting.tick.kernel import simulate
+from q_backend.backtesting.tick.kernel import day_bounds, simulate_config
 from q_backend.backtesting.tick.orders import ExitReason, kernel_sizing_params
 from q_backend.backtesting.tick.strategy import TickArrays, TickStrategy
 
@@ -22,10 +22,7 @@ def _split_ticks_by_day(ticks: TickArrays) -> List[TickArrays]:
     if n == 0:
         return []
 
-    day_ids = ticks.time_msc // 86400000
-    boundaries = np.where(day_ids[1:] != day_ids[:-1])[0] + 1
-    starts = np.concatenate((np.array([0], dtype=np.int64), boundaries))
-    ends = np.concatenate((boundaries, np.array([n], dtype=np.int64)))
+    starts, ends = day_bounds(ticks.time_msc)
 
     chunks: List[TickArrays] = []
     for start, end in zip(starts, ends):
@@ -42,22 +39,32 @@ def _split_ticks_by_day(ticks: TickArrays) -> List[TickArrays]:
 
 
 def _events_to_registry(
-    events: tuple,
+    events: tuple | dict[str, Any],
     time_msc: np.ndarray,
     symbol: str,
     point_value: float,
 ) -> TradeRegistry:
-    (
-        entry_idx,
-        exit_idx,
-        entry_prices,
-        exit_prices,
-        directions,
-        quantities,
-        _exit_reasons,
-        trade_count,
-        _final_capital,
-    ) = events
+    if isinstance(events, dict):
+        entry_idx = events["entry_idx"]
+        exit_idx = events["exit_idx"]
+        entry_prices = events["entry_price"]
+        exit_prices = events["exit_price"]
+        directions = events["direction"]
+        quantities = events["quantity"]
+        _exit_reasons = events["exit_reason"]
+        trade_count = len(entry_idx)
+    else:
+        (
+            entry_idx,
+            exit_idx,
+            entry_prices,
+            exit_prices,
+            directions,
+            quantities,
+            _exit_reasons,
+            trade_count,
+            _final_capital,
+        ) = events
 
     registry = TradeRegistry()
     for i in range(trade_count):
@@ -105,7 +112,7 @@ class TickBacktestEngine:
         self.initial_capital = initial_capital
         self.point_value = point_value
         self.symbol = symbol
-        self._sizing_mode, self._sizing_a, self._sizing_b, self._sizing_c = kernel_sizing_params(sizing_config)
+        kernel_sizing_params(sizing_config)
 
     def run(
         self,
@@ -128,7 +135,7 @@ class TickBacktestEngine:
 
     def _run_single_chunk(self, ticks: TickArrays) -> TradeRegistry:
         signals = self.strategy.compute_signals(ticks)
-        events = simulate(
+        events = simulate_config(
             ticks.bid,
             ticks.ask,
             signals.direction,
@@ -136,9 +143,6 @@ class TickBacktestEngine:
             signals.tp_points,
             self.initial_capital,
             self.point_value,
-            self._sizing_mode,
-            self._sizing_a,
-            self._sizing_b,
-            self._sizing_c,
+            self.sizing_config,
         )
         return _events_to_registry(events, ticks.time_msc, self.symbol, self.point_value)
