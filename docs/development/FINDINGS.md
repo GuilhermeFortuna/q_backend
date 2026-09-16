@@ -79,8 +79,10 @@ continues from Batch 04.
     open trade, and `worker.poll_once` never calls `set_open_trade` after a fill,
     so exit rules and strategy exits cannot close such a position until the worker
     restarts. Found while planning Q-031 (`execution/worker.py`,
-    `execution/recovery.py`, `execution/evaluator.py`). Needs triage before any
-    live activation; Q-031 preserves the behaviour.
+    `execution/recovery.py`, `execution/evaluator.py`). **Triage (Q-031):** needs
+    its own task before live activation — call `set_open_trade` from the execution
+    service after paper fills, with paper-broker tests and operator review; block
+    live activation on that task. Q-031 preserves today's behaviour.
 19. **The tick engine fails with `AttributeError` for inverse-volatility sizing.**
     `tick/orders.kernel_sizing_params` reads `safety_margin_per_contract` from any
     config that is not fixed quantity, and tick backtest requests accept the
@@ -91,3 +93,9 @@ continues from Batch 04.
 20. **Tick backtests ignore transaction costs.** The tick kernel charges no costs,
     while candle backtests apply `TransactionCostConfig`. Found while planning
     Q-029. Q-029 and Q-030 preserve the behaviour.
+
+21. **The forward evaluator keeps a pandas rolling window while q_core carries
+    contracted bar columns only.** Swapping the evaluator window would change
+    indicator inputs for genome nodes that read `volume`. **Defer (Q-031):** revisit
+    when a consumer needs contracted columns only, or a benchmark shows the pandas
+    window is the forward-path bottleneck.

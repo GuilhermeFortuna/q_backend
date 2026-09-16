@@ -698,8 +698,8 @@ uv run q-execution flatten <deployment-uuid>
 
 | Phase | CCM$ H1 p50 | WIN$ H1 p50 | WDO$ M15 p50 |
 |-------|-------------|-------------|--------------|
-| Indicators | ~2 ms | ~2 ms | ~3 ms |
-| Evaluate | ~0.5 ms | ~0.5 ms | ~0.5 ms |
+| Indicators | ~2 ms | ~2 ms | ~2 ms |
+| Evaluate | ~0.2 ms | ~0.2 ms | ~0.2 ms |
 | Full path (eval + risk + broker + persist) | <50 ms p95 | <50 ms p95 | <50 ms p95 |
 
 Run benchmarks: `uv run pytest tests/execution/test_evaluator_benchmark.py tests/execution/test_worker.py -k benchmark -s`
