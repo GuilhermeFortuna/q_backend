@@ -112,6 +112,13 @@ class FixedQuantitySizer(PositionSizer):
         self.quantity = quantity
         self.scale_by_signal_strength = scale_by_signal_strength
 
+    def _kernel(self):
+        from q_backend.backtesting.candle_kernel import sizer_to_kernel
+
+        if not hasattr(self, "_kernel_sizing"):
+            self._kernel_sizing = sizer_to_kernel(self)
+        return self._kernel_sizing
+
     def size_signal(
         self,
         signal: Signal,
@@ -120,22 +127,16 @@ class FixedQuantitySizer(PositionSizer):
         *,
         current_data: Optional[pd.Series] = None,
     ) -> Optional[Order]:
-        if signal.action == SignalAction.HOLD:
+        if signal.action in (SignalAction.HOLD, SignalAction.CLOSE):
             return None
 
-        if signal.action == SignalAction.CLOSE:
+        from q_backend.backtesting.candle_kernel import size_order
+
+        qty = size_order(self._kernel(), signal, current_price, current_capital, current_data=current_data)
+        if qty is None:
             return None
 
         action = OrderAction.BUY if signal.action == SignalAction.BUY else OrderAction.SELL
-
-        qty = self.quantity
-        if self.scale_by_signal_strength:
-            qty *= getattr(signal, "strength", 1.0)
-
-        qty = float(math.floor(qty))
-        if qty <= 0.0:
-            return None
-
         return Order(
             id=str(uuid.uuid4()),
             symbol=signal.symbol,
@@ -145,7 +146,9 @@ class FixedQuantitySizer(PositionSizer):
         )
 
     def max_position_size(self, current_price: float, current_capital: float) -> Optional[float]:
-        return self.quantity
+        from q_backend.backtesting.candle_kernel import max_position as kernel_max_position
+
+        return kernel_max_position(self._kernel(), current_price, current_capital)
 
 
 class FixedSafetyMarginSizer(PositionSizer):
@@ -172,6 +175,13 @@ class FixedSafetyMarginSizer(PositionSizer):
         self.min_contracts = min_contracts
         self.scale_by_signal_strength = scale_by_signal_strength
 
+    def _kernel(self):
+        from q_backend.backtesting.candle_kernel import sizer_to_kernel
+
+        if not hasattr(self, "_kernel_sizing"):
+            self._kernel_sizing = sizer_to_kernel(self)
+        return self._kernel_sizing
+
     def _target_contracts(self, current_capital: float) -> int:
         """Contracts this model would hold given available capital (0 if none)."""
         quantity = math.floor(current_capital / self.safety_margin_per_contract)
@@ -194,24 +204,16 @@ class FixedSafetyMarginSizer(PositionSizer):
         *,
         current_data: Optional[pd.Series] = None,
     ) -> Optional[Order]:
-        if signal.action == SignalAction.HOLD:
+        if signal.action in (SignalAction.HOLD, SignalAction.CLOSE):
             return None
 
-        if signal.action == SignalAction.CLOSE:
-            return None
+        from q_backend.backtesting.candle_kernel import size_order
 
-        quantity = self._target_contracts(current_capital)
-        if quantity <= 0:
+        qty = size_order(self._kernel(), signal, current_price, current_capital, current_data=current_data)
+        if qty is None:
             return None
-
-        qty = float(quantity)
-        if self.scale_by_signal_strength:
-            qty = float(math.floor(qty * getattr(signal, "strength", 1.0)))
-            if qty <= 0.0:
-                return None
 
         action = OrderAction.BUY if signal.action == SignalAction.BUY else OrderAction.SELL
-
         return Order(
             id=str(uuid.uuid4()),
             symbol=signal.symbol,
@@ -221,7 +223,9 @@ class FixedSafetyMarginSizer(PositionSizer):
         )
 
     def max_position_size(self, current_price: float, current_capital: float) -> Optional[float]:
-        return float(self._target_contracts(current_capital))
+        from q_backend.backtesting.candle_kernel import max_position as kernel_max_position
+
+        return kernel_max_position(self._kernel(), current_price, current_capital)
 
 
 class InverseVolatilitySizer(PositionSizer):
@@ -255,6 +259,13 @@ class InverseVolatilitySizer(PositionSizer):
         self.max_contracts = max_contracts
         self.min_contracts = min_contracts
         self.scale_by_signal_strength = scale_by_signal_strength
+
+    def _kernel(self):
+        from q_backend.backtesting.candle_kernel import sizer_to_kernel
+
+        if not hasattr(self, "_kernel_sizing"):
+            self._kernel_sizing = sizer_to_kernel(self)
+        return self._kernel_sizing
 
     def _read_volatility(self, current_data: Optional[pd.Series]) -> Optional[float]:
         if current_data is None:
@@ -301,15 +312,11 @@ class InverseVolatilitySizer(PositionSizer):
         if signal.action in (SignalAction.HOLD, SignalAction.CLOSE):
             return None
 
-        quantity = self._target_contracts(current_price, current_capital, current_data)
-        if quantity is None:
-            return None
+        from q_backend.backtesting.candle_kernel import size_order
 
-        qty = float(quantity)
-        if self.scale_by_signal_strength:
-            qty = float(math.floor(qty * getattr(signal, "strength", 1.0)))
-            if qty <= 0.0:
-                return None
+        qty = size_order(self._kernel(), signal, current_price, current_capital, current_data=current_data)
+        if qty is None:
+            return None
 
         action = OrderAction.BUY if signal.action == SignalAction.BUY else OrderAction.SELL
         return Order(
@@ -321,12 +328,9 @@ class InverseVolatilitySizer(PositionSizer):
         )
 
     def max_position_size(self, current_price: float, current_capital: float) -> Optional[float]:
-        quantity = self._target_contracts(current_price, current_capital, None)
-        if quantity is not None:
-            return float(quantity)
-        if self.max_contracts is not None:
-            return float(self.max_contracts)
-        return None
+        from q_backend.backtesting.candle_kernel import max_position as kernel_max_position
+
+        return kernel_max_position(self._kernel(), current_price, current_capital)
 
 
 def build_position_sizer(

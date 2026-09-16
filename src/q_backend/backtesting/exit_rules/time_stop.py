@@ -2,10 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-import pandas as pd
-
+from q_backend.backtesting.candle_kernel import enabled_rule_ids
 from q_backend.backtesting.exit_rules.base import ExitRule
-from q_backend.backtesting.models import Trade
 from q_backend.backtesting.strategy_registry import StrategyParamSpec
 
 
@@ -33,23 +31,4 @@ class TimeStopRule(ExitRule):
         ]
 
     def is_enabled(self, params: dict[str, Any]) -> bool:
-        return int(params.get("max_bars_in_trade", 0)) > 0
-
-    def on_bar(
-        self,
-        trade: Trade,
-        data: pd.Series,
-        state: dict[str, Any],
-        params: dict[str, Any],
-    ) -> None:
-        state["bars"] = state.get("bars", 0) + 1
-
-    def should_exit(
-        self,
-        trade: Trade,
-        data: pd.Series,
-        state: dict[str, Any],
-        params: dict[str, Any],
-    ) -> bool:
-        max_bars = int(params.get("max_bars_in_trade", 0))
-        return state.get("bars", 0) >= max_bars
+        return self.id in enabled_rule_ids(params)

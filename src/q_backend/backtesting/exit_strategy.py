@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, List
 
+import numpy as np
 import pandas as pd
+import q_core
 
 from q_backend.backtesting.exit_rules.registry import (
     all_param_specs,
     enabled_rules,
     required_columns as registry_required_columns,
 )
-from q_backend.backtesting.models import Signal, SignalAction, Trade
+from q_backend.backtesting.models import OrderAction, Signal, SignalAction, Trade
 from q_backend.backtesting.strategy_registry import StrategyParamSpec
+
+_engine = q_core.engine
 
 
 class ExitStrategy:
@@ -20,8 +25,10 @@ class ExitStrategy:
             merged.update(params)
         merged.update(kwargs)
         self.params = merged
-        self._rules = enabled_rules(self.params)
-        self._state: dict[str, dict[str, dict[str, Any]]] = {}
+        filtered = {spec.name: merged[spec.name] for spec in all_param_specs() if spec.name in merged}
+        self._rules = enabled_rules(filtered)
+        self._step = _engine.DecisionStep(exit_params=filtered)
+        self._last_open_ids: set[str] = set()
 
     @property
     def stop_loss_pct(self) -> float:
@@ -48,6 +55,15 @@ class ExitStrategy:
         return int(self.params.get("atr_period", 14))
 
     @property
+    def _state(self) -> Mapping[str, dict[str, dict[str, Any]]]:
+        result: dict[str, dict[str, dict[str, Any]]] = {}
+        for trade_id in self._last_open_ids:
+            state = self._step.state(trade_id)
+            if state is not None:
+                result[trade_id] = state
+        return result
+
+    @property
     def _extreme_prices(self) -> dict[str, float]:
         extremes: dict[str, float] = {}
         for trade_id, rule_states in self._state.items():
@@ -56,38 +72,61 @@ class ExitStrategy:
                 extremes[trade_id] = trailing_state["extreme"]
         return extremes
 
-    def _prune_stale_state(self, open_trades: List[Trade]) -> None:
-        active_ids = {trade.id for trade in open_trades}
-        self._state = {trade_id: rule_states for trade_id, rule_states in self._state.items() if trade_id in active_ids}
-
-    def _rule_state(self, trade_id: str, rule_id: str) -> dict[str, Any]:
-        trade_state = self._state.setdefault(trade_id, {})
-        return trade_state.setdefault(rule_id, {})
-
-    def _columns_ready(self, rule, data: pd.Series) -> bool:
-        for col in rule.required_columns(self.params):
-            val = data.get(col, None)
-            if val is None or pd.isna(val):
-                return False
-        return True
+    def _sync_open_trade_ids(self, open_trades: List[Trade]) -> None:
+        self._last_open_ids = {trade.id for trade in open_trades}
 
     def check_exits(self, open_trades: List[Trade], current_data: pd.Series) -> List[Signal]:
-        self._prune_stale_state(open_trades)
+        self._sync_open_trade_ids(open_trades)
         if not open_trades:
             return []
 
-        signals: list[Signal] = []
-        for trade in open_trades:
-            for rule in self._rules:
-                state = self._rule_state(trade.id, rule.id)
-                rule.on_bar(trade, current_data, state, self.params)
-                if not self._columns_ready(rule, current_data):
-                    continue
-                if rule.should_exit(trade, current_data, state, self.params):
-                    signals.append(Signal(symbol=trade.symbol, action=SignalAction.CLOSE, exit_reason=rule.id))
-                    break
+        close = np.array([float(current_data.get("close", 0.0))], dtype=np.float64)
+        high = (
+            np.array([float(current_data.get("high", close[0]))], dtype=np.float64)
+            if "high" in current_data.index
+            else None
+        )
+        low = (
+            np.array([float(current_data.get("low", close[0]))], dtype=np.float64)
+            if "low" in current_data.index
+            else None
+        )
+        columns: dict[str, np.ndarray] = {}
+        for col in self.required_columns():
+            if col in current_data.index:
+                val = current_data.get(col)
+                columns[col] = np.array([float(val) if pd.notna(val) else np.nan], dtype=np.float64)
 
-        return signals
+        trades = [
+            (
+                trade.id,
+                1 if trade.action in {SignalAction.BUY, OrderAction.BUY} else -1,
+                trade.entry_price,
+                0,
+            )
+            for trade in open_trades
+        ]
+        bar = 0
+        exits, _entry = self._step.decide(
+            bar=bar,
+            trades=trades,
+            close=close,
+            high=high,
+            low=low,
+            entry=np.zeros(1, dtype=np.int8),
+            exit_long=np.zeros(1, dtype=bool),
+            exit_short=np.zeros(1, dtype=bool),
+            strength=np.zeros(1, dtype=np.float64),
+            bar_index=None,
+            columns=columns,
+            holding_period_bars=None,
+        )
+        trade_by_id = {trade.id: trade for trade in open_trades}
+        return [
+            Signal(symbol=trade_by_id[trade_id].symbol, action=SignalAction.CLOSE, exit_reason=reason)
+            for trade_id, reason in exits
+            if trade_id in trade_by_id
+        ]
 
     def required_columns(self) -> list[str]:
         return registry_required_columns(self.params)

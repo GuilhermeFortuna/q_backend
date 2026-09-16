@@ -2,22 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-import pandas as pd
-
+from q_backend.backtesting.candle_kernel import enabled_rule_ids
 from q_backend.backtesting.exit_rules.base import ExitRule
-from q_backend.backtesting.models import SignalAction, Trade
 from q_backend.backtesting.strategy_registry import StrategyParamSpec
-
-
-def _is_long(trade: Trade) -> bool:
-    return trade.action == SignalAction.BUY or trade.action == "BUY"
-
-
-def _bar_prices(data: pd.Series) -> tuple[float, float, float]:
-    current_close = data.get("close", 0.0)
-    current_high = data.get("high", current_close)
-    current_low = data.get("low", current_close)
-    return current_close, current_high, current_low
 
 
 class FixedStopLossRule(ExitRule):
@@ -47,24 +34,7 @@ class FixedStopLossRule(ExitRule):
         ]
 
     def is_enabled(self, params: dict[str, Any]) -> bool:
-        return float(params.get("stop_loss_pct", 0.0)) > 0
-
-    def should_exit(
-        self,
-        trade: Trade,
-        data: pd.Series,
-        state: dict[str, Any],
-        params: dict[str, Any],
-    ) -> bool:
-        stop_loss_pct = float(params.get("stop_loss_pct", 0.0))
-        _, current_high, current_low = _bar_prices(data)
-
-        if _is_long(trade):
-            sl_price = trade.entry_price * (1.0 - stop_loss_pct)
-            return current_low <= sl_price
-
-        sl_price = trade.entry_price * (1.0 + stop_loss_pct)
-        return current_high >= sl_price
+        return self.id in enabled_rule_ids(params)
 
 
 class AtrStopLossRule(ExitRule):
@@ -111,36 +81,13 @@ class AtrStopLossRule(ExitRule):
         ]
 
     def is_enabled(self, params: dict[str, Any]) -> bool:
-        return float(params.get("stop_loss_atr", 0.0)) > 0
+        return self.id in enabled_rule_ids(params)
 
     def required_columns(self, params: dict[str, Any]) -> list[str]:
         if not self.is_enabled(params):
             return []
         period = int(params.get("atr_period", 14))
         return [f"atr_{period}"]
-
-    def should_exit(
-        self,
-        trade: Trade,
-        data: pd.Series,
-        state: dict[str, Any],
-        params: dict[str, Any],
-    ) -> bool:
-        stop_loss_atr = float(params.get("stop_loss_atr", 0.0))
-        period = int(params.get("atr_period", 14))
-        atr_col = f"atr_{period}"
-        atr_val = data.get(atr_col, None)
-        if atr_val is None or pd.isna(atr_val):
-            return False
-
-        _, current_high, current_low = _bar_prices(data)
-
-        if _is_long(trade):
-            sl_price = trade.entry_price - (stop_loss_atr * atr_val)
-            return current_low <= sl_price
-
-        sl_price = trade.entry_price + (stop_loss_atr * atr_val)
-        return current_high >= sl_price
 
 
 class FixedTakeProfitRule(ExitRule):
@@ -170,24 +117,7 @@ class FixedTakeProfitRule(ExitRule):
         ]
 
     def is_enabled(self, params: dict[str, Any]) -> bool:
-        return float(params.get("take_profit_pct", 0.0)) > 0
-
-    def should_exit(
-        self,
-        trade: Trade,
-        data: pd.Series,
-        state: dict[str, Any],
-        params: dict[str, Any],
-    ) -> bool:
-        take_profit_pct = float(params.get("take_profit_pct", 0.0))
-        _, current_high, current_low = _bar_prices(data)
-
-        if _is_long(trade):
-            tp_price = trade.entry_price * (1.0 + take_profit_pct)
-            return current_high >= tp_price
-
-        tp_price = trade.entry_price * (1.0 - take_profit_pct)
-        return current_low <= tp_price
+        return self.id in enabled_rule_ids(params)
 
 
 class AtrTakeProfitRule(ExitRule):
@@ -220,36 +150,13 @@ class AtrTakeProfitRule(ExitRule):
         ]
 
     def is_enabled(self, params: dict[str, Any]) -> bool:
-        return float(params.get("take_profit_atr", 0.0)) > 0
+        return self.id in enabled_rule_ids(params)
 
     def required_columns(self, params: dict[str, Any]) -> list[str]:
         if not self.is_enabled(params):
             return []
         period = int(params.get("atr_period", 14))
         return [f"atr_{period}"]
-
-    def should_exit(
-        self,
-        trade: Trade,
-        data: pd.Series,
-        state: dict[str, Any],
-        params: dict[str, Any],
-    ) -> bool:
-        take_profit_atr = float(params.get("take_profit_atr", 0.0))
-        period = int(params.get("atr_period", 14))
-        atr_col = f"atr_{period}"
-        atr_val = data.get(atr_col, None)
-        if atr_val is None or pd.isna(atr_val):
-            return False
-
-        _, current_high, current_low = _bar_prices(data)
-
-        if _is_long(trade):
-            tp_price = trade.entry_price + (take_profit_atr * atr_val)
-            return current_high >= tp_price
-
-        tp_price = trade.entry_price - (take_profit_atr * atr_val)
-        return current_low <= tp_price
 
 
 class TrailingStopRule(ExitRule):
@@ -279,45 +186,7 @@ class TrailingStopRule(ExitRule):
         ]
 
     def is_enabled(self, params: dict[str, Any]) -> bool:
-        return float(params.get("trailing_stop_pct", 0.0)) > 0
-
-    def on_bar(
-        self,
-        trade: Trade,
-        data: pd.Series,
-        state: dict[str, Any],
-        params: dict[str, Any],
-    ) -> None:
-        _, current_high, current_low = _bar_prices(data)
-
-        if "extreme" not in state:
-            if _is_long(trade):
-                state["extreme"] = max(trade.entry_price, current_high)
-            else:
-                state["extreme"] = min(trade.entry_price, current_low)
-        elif _is_long(trade):
-            state["extreme"] = max(state["extreme"], current_high)
-        else:
-            state["extreme"] = min(state["extreme"], current_low)
-
-    def should_exit(
-        self,
-        trade: Trade,
-        data: pd.Series,
-        state: dict[str, Any],
-        params: dict[str, Any],
-    ) -> bool:
-        trailing_stop_pct = float(params.get("trailing_stop_pct", 0.0))
-        _, current_high, current_low = _bar_prices(data)
-
-        if _is_long(trade):
-            highest_seen = state.get("extreme", trade.entry_price)
-            trail_price = highest_seen * (1.0 - trailing_stop_pct)
-            return current_low <= trail_price
-
-        lowest_seen = state.get("extreme", trade.entry_price)
-        trail_price = lowest_seen * (1.0 + trailing_stop_pct)
-        return current_high >= trail_price
+        return self.id in enabled_rule_ids(params)
 
 
 LEGACY_EXIT_RULES: list[ExitRule] = [

@@ -13,7 +13,7 @@ from q_backend.backtesting.strategy import TradingStrategy
 from q_backend.execution.bars import bar_close_time
 from q_backend.execution.evaluator import StrategyEvaluator
 from q_backend.execution.domain import StrategyIdentity
-from q_backend.execution.signal_eval import signal_arrays
+from q_backend.backtesting.signal_columns import signal_arrays
 
 
 def augment_with_exit_columns(
