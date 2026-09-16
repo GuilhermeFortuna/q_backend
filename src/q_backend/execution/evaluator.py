@@ -41,14 +41,14 @@ from q_backend.backtesting.models import Signal, SignalAction as BacktestSignalA
 from pydantic import TypeAdapter
 
 from q_backend.backtesting.position_sizing import PositionSizingConfig, build_position_sizer
-from q_backend.backtesting.signal_columns import SignalArrays
+from q_backend.backtesting.candle_kernel import evaluate_bar, sizer_to_kernel, size_order
+from q_backend.backtesting.signal_columns import SignalArrays, signal_arrays
 from q_backend.backtesting.strategy import TradingStrategy
 from q_backend.execution.bars import bar_close_time, frame_close_times, trim_rolling_window
 from q_backend.execution.domain import SignalAction, StrategyIdentity
 from q_backend.execution.indicator_frame import augment_indicator_frame
 from q_backend.execution.position_adapter import execution_position_to_trade
 from q_backend.execution.results import EvaluationPhaseTiming, ForwardDecisionResult
-from q_backend.execution.signal_eval import evaluate_queued_signals, signal_arrays
 from q_backend.execution.strategy_build import build_strategy_from_compiled
 from q_backend.execution.warmup import compute_window_bound_bars
 
@@ -119,6 +119,7 @@ class StrategyEvaluator:
         )
         sizing_config = _map_position_sizing_config(identity.sizing_config)
         self.sizer = build_position_sizer(sizing_config, point_value=point_value)
+        self._kernel_sizing = sizer_to_kernel(self.sizer)
         self._rolling = pd.DataFrame()
         self._open_trade = open_trade
         self._last_evaluated_close = last_evaluated_close
@@ -218,6 +219,7 @@ class StrategyEvaluator:
             row = augmented.iloc[position]
             results.append(
                 self._evaluate_row(
+                    augmented,
                     row,
                     close_time,
                     signals=signals,
@@ -232,6 +234,7 @@ class StrategyEvaluator:
 
     def _evaluate_row(
         self,
+        augmented: pd.DataFrame,
         current_data: pd.Series,
         bar_close_time_value: datetime,
         *,
@@ -248,11 +251,11 @@ class StrategyEvaluator:
 
         evaluate_started = time.perf_counter()
         open_trades = [self._open_trade] if self._open_trade is not None else []
-        pending_exits, pending_entries = evaluate_queued_signals(
+        pending_exits, pending_entries = evaluate_bar(
             self.strategy,
+            augmented,
             signals,
             position,
-            current_data,
             open_trades,
         )
         evaluate_ms = (time.perf_counter() - evaluate_started) * 1000.0
@@ -269,14 +272,15 @@ class StrategyEvaluator:
         }
         if signal_action in {SignalAction.BUY, SignalAction.SELL} and pending_entries:
             entry_signal = pending_entries[0]
-            order = self.sizer.size_signal(
+            sized = size_order(
+                self._kernel_sizing,
                 entry_signal,
                 close_price,
                 self.initial_capital,
                 current_data=current_data,
             )
-            if order is not None:
-                requested_quantity = float(order.quantity)
+            if sized is not None:
+                requested_quantity = float(sized)
                 sizing_inputs["order_quantity"] = requested_quantity
         sizing_ms = (time.perf_counter() - sizing_started) * 1000.0
 

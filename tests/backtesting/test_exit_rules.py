@@ -270,40 +270,50 @@ def test_breakeven_short_mirror():
     assert _run_bars(exit_strat, trade, bars) == 2
 
 
-def test_parabolic_sar_long_clamps_sar_below_prior_lows():
-    from q_backend.backtesting.exit_rules.parabolic_sar import update_psar_long
+def _psar_state(exit_strat: ExitStrategy, trade: Trade, bars: list[tuple[float, float]]) -> dict:
+    for high, low in bars:
+        exit_strat.check_exits(
+            [trade],
+            pd.Series({"close": (high + low) / 2, "high": high, "low": low}),
+        )
+    return dict(exit_strat._state[trade.id]["psar"])
 
-    state: dict = {}
-    update_psar_long(state, 105.0, 98.0, 0.02, 0.02, 0.2, 100.0)
+
+def test_parabolic_sar_long_clamps_sar_below_prior_lows():
+    exit_strat = ExitStrategy(psar_af_start=0.02, psar_af_step=0.02, psar_af_max=0.2)
+    trade = _long_trade()
+    exit_strat.check_exits([trade], pd.Series({"close": 101.5, "high": 105.0, "low": 98.0}))
+    state = exit_strat._state[trade.id]["psar"]
     assert state["sar"] == 98.0
 
     prior_low = state["prior_low"]
     naive_sar = state["sar"] + state["af"] * (state["ep"] - state["sar"])
-
-    update_psar_long(state, 106.0, 99.0, 0.02, 0.02, 0.2, 100.0)
+    exit_strat.check_exits([trade], pd.Series({"close": 102.5, "high": 106.0, "low": 99.0}))
+    state = exit_strat._state[trade.id]["psar"]
     assert naive_sar > prior_low
     assert state["sar"] <= prior_low
 
 
 def test_parabolic_sar_short_clamps_sar_above_prior_highs():
-    from q_backend.backtesting.exit_rules.parabolic_sar import update_psar_short
-
-    state: dict = {}
-    update_psar_short(state, 102.0, 95.0, 0.02, 0.02, 0.2, 100.0)
+    exit_strat = ExitStrategy(psar_af_start=0.02, psar_af_step=0.02, psar_af_max=0.2)
+    trade = _short_trade()
+    exit_strat.check_exits([trade], pd.Series({"close": 98.5, "high": 102.0, "low": 95.0}))
+    state = exit_strat._state[trade.id]["psar"]
     assert state["sar"] == 102.0
 
-    update_psar_short(state, 101.0, 94.0, 0.02, 0.02, 0.2, 100.0)
+    exit_strat.check_exits([trade], pd.Series({"close": 97.5, "high": 101.0, "low": 94.0}))
+    state = exit_strat._state[trade.id]["psar"]
     assert state["sar"] >= 102.0
 
 
 def test_parabolic_sar_long_reversal_bars_stay_physical():
-    from q_backend.backtesting.exit_rules.parabolic_sar import update_psar_long
-
-    state: dict = {}
+    exit_strat = ExitStrategy(psar_af_start=0.02, psar_af_step=0.02, psar_af_max=0.2)
+    trade = _long_trade()
     bars = [(108.0, 100.0), (102.0, 96.0), (104.0, 98.0)]
     prior_lows: list[float] = []
     for high, low in bars:
-        update_psar_long(state, high, low, 0.02, 0.02, 0.2, 100.0)
+        exit_strat.check_exits([trade], pd.Series({"close": (high + low) / 2, "high": high, "low": low}))
+        state = exit_strat._state[trade.id]["psar"]
         if len(prior_lows) >= 1:
             assert state["sar"] <= prior_lows[-1]
         if len(prior_lows) >= 2:
@@ -311,31 +321,21 @@ def test_parabolic_sar_long_reversal_bars_stay_physical():
         prior_lows.append(low)
 
 
-def test_atr_period_grouped_as_general():
-    specs = {spec.name: spec for spec in all_param_specs()}
-    assert specs["atr_period"].exit_group == "general"
-
-
 def test_parabolic_sar_long_hand_computed_series():
-    from q_backend.backtesting.exit_rules.parabolic_sar import update_psar_long
-
-    state: dict = {}
+    exit_strat = ExitStrategy(psar_af_start=0.02, psar_af_step=0.02, psar_af_max=0.2)
+    trade = _long_trade()
     bars = [
         (105.0, 101.0),
         (108.0, 104.0),
         (110.0, 106.0),
         (109.0, 100.0),
     ]
-    for high, low in bars:
-        update_psar_long(state, high, low, 0.02, 0.02, 0.2, 100.0)
-
-    exit_strat = ExitStrategy(psar_af_start=0.02, psar_af_step=0.02, psar_af_max=0.2)
-    trade = _long_trade()
+    reference = _psar_state(ExitStrategy(psar_af_start=0.02, psar_af_step=0.02, psar_af_max=0.2), trade, bars)
     for idx, (high, low) in enumerate(bars):
         bar = {"close": (high + low) / 2, "high": high, "low": low}
         if exit_strat.check_exits([trade], pd.Series(bar)):
             assert idx == 3
-            assert pytest.approx(state["sar"], rel=1e-6) == exit_strat._state[trade.id]["psar"]["sar"]
+            assert pytest.approx(reference["sar"], rel=1e-6) == exit_strat._state[trade.id]["psar"]["sar"]
             return
     pytest.fail("expected PSAR exit on bar 3")
 
@@ -352,12 +352,16 @@ def test_parabolic_sar_short_mirror():
     assert _run_bars(exit_strat, trade, bars) == 3
 
 
-def test_parabolic_sar_af_caps_at_max():
-    from q_backend.backtesting.exit_rules.parabolic_sar import update_psar_long
+def test_atr_period_grouped_as_general():
+    specs = {spec.name: spec for spec in all_param_specs()}
+    assert specs["atr_period"].exit_group == "general"
 
-    state: dict = {}
-    for high in range(101, 111):
-        update_psar_long(state, float(high), float(high - 1), 0.02, 0.02, 0.08, 100.0)
+
+def test_parabolic_sar_af_caps_at_max():
+    exit_strat = ExitStrategy(psar_af_start=0.02, psar_af_step=0.02, psar_af_max=0.08)
+    trade = _long_trade()
+    bars = [(float(high), float(high - 1)) for high in range(101, 111)]
+    state = _psar_state(exit_strat, trade, bars)
     assert state["af"] == 0.08
 
 
@@ -410,7 +414,8 @@ def test_profit_target_ratchet_long_never_arms_without_multiple():
         {"close": 103.0, "high": 103.5, "low": 102.0, "atr_14": 2.0},
     ]
     assert _run_bars(exit_strat, trade, bars) is None
-    assert "armed" not in exit_strat._state[trade.id]["profit_target_ratchet"]
+    ratchet_state = exit_strat._state.get(trade.id, {}).get("profit_target_ratchet", {})
+    assert "armed" not in ratchet_state
 
 
 def test_profit_target_ratchet_short_mirror():

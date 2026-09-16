@@ -119,6 +119,151 @@ def _column(frame: pd.DataFrame, name: str) -> np.ndarray | None:
     return np.ascontiguousarray(pd.to_numeric(frame[name], errors="coerce").to_numpy(dtype=np.float64, na_value=np.nan))
 
 
+def _exit_params(source: dict[str, object]) -> dict[str, object]:
+    from q_backend.backtesting.exit_rules.registry import all_param_specs
+
+    return {spec.name: source[spec.name] for spec in all_param_specs() if spec.name in source}
+
+
+def _exit_params_from_strategy(strategy: TradingStrategy) -> dict[str, object]:
+    exit_strategy = getattr(strategy, "exit_strategy", None)
+    source = exit_strategy.params if exit_strategy is not None else strategy.parameters
+    return _exit_params(source)
+
+
+def _columns_for_frame(frame: pd.DataFrame, exit_params: dict[str, object]) -> dict[str, np.ndarray]:
+    return {
+        name: values for name in engine.required_columns(exit_params) if (values := _column(frame, name)) is not None
+    }
+
+
+def _trade_tuples(
+    open_trades: list[Trade],
+    index: pd.DatetimeIndex,
+) -> list[tuple[str, int, float, int | None]]:
+    trades: list[tuple[str, int, float, int | None]] = []
+    for trade in open_trades:
+        entry_pos = int(index.get_indexer([trade.entry_time])[0])
+        entry_bar = entry_pos if entry_pos >= 0 else None
+        side = 1 if trade.action == OrderAction.BUY else -1
+        trades.append((trade.id, side, trade.entry_price, entry_bar))
+    return trades
+
+
+def enabled_rule_ids(params: dict[str, object]) -> list[str]:
+    return list(engine.enabled_rules(_exit_params(params)))
+
+
+def required_exit_columns(params: dict[str, object]) -> list[str]:
+    return list(engine.required_columns(_exit_params(params)))
+
+
+def exit_step(exit_strategy: Any) -> Any:
+    """Return the q_core DecisionStep owned by an ExitStrategy."""
+    return exit_strategy._step
+
+
+def evaluate_bar(
+    strategy: TradingStrategy,
+    frame: pd.DataFrame,
+    signals: SignalArrays,
+    position: int,
+    open_trades: list[Trade],
+) -> tuple[list[Signal], list[Signal]]:
+    """Produce queued exits and entries for one bar through q_core section D."""
+    exit_strategy = getattr(strategy, "exit_strategy", None)
+    if exit_strategy is not None:
+        exit_strategy._sync_open_trade_ids(open_trades)
+        step = exit_strategy._step
+        exit_params = _exit_params(exit_strategy.params)
+    else:
+        step = engine.DecisionStep(exit_params={})
+        exit_params = {}
+
+    columns = _columns_for_frame(frame, exit_params)
+    trades = _trade_tuples(open_trades, signals.index)
+    exits, entry = step.decide(
+        bar=position,
+        trades=trades,
+        close=_column(frame, "close"),
+        high=_column(frame, "high"),
+        low=_column(frame, "low"),
+        entry=np.ascontiguousarray(signals.entry),
+        exit_long=np.ascontiguousarray(signals.exit_long),
+        exit_short=np.ascontiguousarray(signals.exit_short),
+        strength=np.ascontiguousarray(signals.strength),
+        bar_index=None if signals.bar_index is None else np.ascontiguousarray(signals.bar_index),
+        columns=columns,
+        holding_period_bars=signals.holding_period_bars,
+    )
+    exit_signals = [
+        Signal(symbol=strategy.symbol, action=SignalAction.CLOSE, exit_reason=reason) for _id, reason in exits
+    ]
+    entry_signals: list[Signal] = []
+    if entry is not None:
+        entry_signals.append(
+            Signal(
+                symbol=strategy.symbol,
+                action=SignalAction.BUY if entry[0] == 1 else SignalAction.SELL,
+                strength=entry[1],
+            )
+        )
+    return exit_signals, entry_signals
+
+
+def _read_volatility(current_data: pd.Series | None) -> float | None:
+    if current_data is None:
+        return None
+    vol = current_data.get("volatility")
+    if vol is None or pd.isna(vol):
+        return None
+    try:
+        vol_f = float(vol)
+    except (TypeError, ValueError):
+        return None
+    if vol_f <= 0 or np.isnan(vol_f):
+        return None
+    return vol_f
+
+
+def size_order(
+    sizing: KernelSizing,
+    signal: Signal,
+    price: float,
+    capital: float,
+    *,
+    current_data: pd.Series | None = None,
+) -> float | None:
+    import math
+
+    volatility = _read_volatility(current_data) if sizing.needs_volatility else None
+    quantity = engine.size_entry(
+        sizing.mapping,
+        point_value=sizing.point_value,
+        strength=float(getattr(signal, "strength", 1.0)),
+        price=price,
+        capital=capital,
+        volatility=volatility,
+    )
+    if quantity is None:
+        return None
+    qty = float(math.floor(quantity))
+    return qty if qty > 0.0 else None
+
+
+def max_position(
+    sizing: KernelSizing,
+    price: float,
+    capital: float,
+) -> float | None:
+    return engine.max_position(
+        sizing.mapping,
+        point_value=sizing.point_value,
+        price=price,
+        capital=capital,
+    )
+
+
 def run_chunk(
     strategy: TradingStrategy,
     chunk: pd.DataFrame,
@@ -209,53 +354,5 @@ def ledger_to_registry(run: ChunkRun, index: pd.DatetimeIndex, *, symbol: str, p
 def reference_decisions(
     strategy: TradingStrategy, frame: pd.DataFrame, signals: SignalArrays, open_trades: list[Trade]
 ) -> list[tuple[list[Signal], list[Signal]]]:
-    """Produce queued decisions through one q_core DecisionStep for live parity."""
-    from q_backend.backtesting.exit_rules.registry import all_param_specs
-
-    source_params = getattr(getattr(strategy, "exit_strategy", None), "params", strategy.parameters)
-    exit_params = {spec.name: source_params[spec.name] for spec in all_param_specs() if spec.name in source_params}
-    columns = {
-        name: values for name in engine.required_columns(exit_params) if (values := _column(frame, name)) is not None
-    }
-    step = engine.DecisionStep(exit_params=exit_params)
-    trades = [
-        (
-            trade.id,
-            1 if trade.action == OrderAction.BUY else -1,
-            trade.entry_price,
-            int(signals.index.get_indexer([trade.entry_time])[0]),
-        )
-        for trade in open_trades
-    ]
-    out: list[tuple[list[Signal], list[Signal]]] = []
-    for bar in range(len(frame)):
-        exits, entry = step.decide(
-            bar=bar,
-            trades=trades,
-            close=_column(frame, "close"),
-            high=_column(frame, "high"),
-            low=_column(frame, "low"),
-            entry=np.ascontiguousarray(signals.entry),
-            exit_long=np.ascontiguousarray(signals.exit_long),
-            exit_short=np.ascontiguousarray(signals.exit_short),
-            strength=np.ascontiguousarray(signals.strength),
-            bar_index=None if signals.bar_index is None else np.ascontiguousarray(signals.bar_index),
-            columns=columns,
-            holding_period_bars=signals.holding_period_bars,
-        )
-        exit_signals = [
-            Signal(symbol=strategy.symbol, action=SignalAction.CLOSE, exit_reason=reason) for _id, reason in exits
-        ]
-        entry_signals = (
-            []
-            if entry is None
-            else [
-                Signal(
-                    symbol=strategy.symbol,
-                    action=SignalAction.BUY if entry[0] == 1 else SignalAction.SELL,
-                    strength=entry[1],
-                )
-            ]
-        )
-        out.append((exit_signals, entry_signals))
-    return out
+    """Produce queued decisions bar-by-bar through evaluate_bar for live parity."""
+    return [evaluate_bar(strategy, frame, signals, position, open_trades) for position in range(len(frame))]

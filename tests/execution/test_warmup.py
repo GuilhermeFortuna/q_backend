@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import pytest
 
+from q_backend.backtesting.exit_rules.presets import EXIT_PRESETS
+from q_backend.backtesting.strategy_registry import default_params_for
 from q_backend.execution.warmup import (
     WindowBoundUndeterminedError,
     compute_window_bound_bars,
 )
+
+EXIT_PRESET_WINDOW_BOUNDS: dict[str, int] = {preset.id: 605 for preset in EXIT_PRESETS}
 
 
 def test_window_bound_from_strategy_and_exit_params():
@@ -44,3 +48,15 @@ def test_window_bound_rejects_missing_lookbacks():
                 "timeframe": "H1",
             }
         )
+
+
+@pytest.mark.parametrize("preset", EXIT_PRESETS, ids=lambda preset: preset.id)
+def test_window_bound_matches_development_for_exit_presets(preset):
+    compiled = {
+        "strategy": "MACrossover",
+        "strategy_params": {**default_params_for("MACrossover"), **preset.parameters},
+        "symbol": "WIN$",
+        "timeframe": "H1",
+    }
+    expected = EXIT_PRESET_WINDOW_BOUNDS[preset.id]
+    assert compute_window_bound_bars(compiled) == expected

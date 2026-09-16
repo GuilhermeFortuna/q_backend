@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from q_backend.backtesting.candle_kernel import enabled_rule_ids, required_exit_columns
 from q_backend.backtesting.exit_rules.base import ExitRule
 from q_backend.backtesting.exit_rules.breakeven import BreakevenStopRule
 from q_backend.backtesting.exit_rules.chandelier import ChandelierExitRule
@@ -57,7 +58,8 @@ def shared_exit_params() -> list[str]:
 
 
 def enabled_rules(params: dict[str, Any]) -> list[ExitRule]:
-    return [rule for rule in EXIT_RULES if rule.is_enabled(params)]
+    by_id = {rule.id: rule for rule in EXIT_RULES}
+    return [by_id[rule_id] for rule_id in enabled_rule_ids(params) if rule_id in by_id]
 
 
 def all_param_specs() -> list[StrategyParamSpec]:
@@ -73,7 +75,4 @@ def all_param_specs() -> list[StrategyParamSpec]:
 
 
 def required_columns(params: dict[str, Any]) -> list[str]:
-    cols: set[str] = set()
-    for rule in enabled_rules(params):
-        cols.update(rule.required_columns(params))
-    return sorted(cols)
+    return required_exit_columns(params)

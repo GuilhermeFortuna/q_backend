@@ -10,6 +10,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from q_backend.backtesting.candle_kernel import evaluate_bar
+from q_backend.backtesting.exit_strategy import ExitStrategy
 from q_backend.backtesting.models import Signal, SignalAction, Trade
 from q_backend.backtesting.signal_columns import (
     BAR_INDEX,
@@ -19,7 +21,6 @@ from q_backend.backtesting.signal_columns import (
     SIGNAL_STRENGTH,
     SignalArrays,
     SignalContractError,
-    evaluate_queued_signals,
     validate_signal_columns,
     write_signal_columns,
 )
@@ -71,12 +72,23 @@ def _trade(
     )
 
 
+def _ohlcv_frame(signals: SignalArrays) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "open": np.full(len(signals.index), 100.0),
+            "high": np.full(len(signals.index), 101.0),
+            "low": np.full(len(signals.index), 99.0),
+            "close": np.full(len(signals.index), 100.0),
+        },
+        index=signals.index,
+    )
+
+
 def _strategy(symbol: str = "TEST", holding_period_bars: int | None = None) -> MagicMock:
     strategy = MagicMock()
     strategy.symbol = symbol
     strategy.holding_period_bars = holding_period_bars
-    strategy.exit_strategy = MagicMock()
-    strategy.exit_strategy.check_exits.return_value = []
+    strategy.exit_strategy = None
     return strategy
 
 
@@ -201,14 +213,15 @@ def test_validate_raises_for_missing_bar_index_when_holding_period_declared():
         validate_signal_columns(df, strategy_name="S", holding_period_bars=10)
 
 
-# --- evaluate_queued_signals --------------------------------------------------
+# --- evaluate_bar --------------------------------------------------------------
 
 
 def test_evaluate_exit_long_closes_open_buy_on_strategy_symbol():
     signals = _arrays(exit_long=[False] * 5 + [True] + [False] * 4)
+    frame = _ohlcv_frame(signals)
     strategy = _strategy("TEST")
     trade = _trade(symbol="TEST", action=SignalAction.BUY, entry_time=signals.index[0])
-    exits, entries = evaluate_queued_signals(strategy, signals, 5, pd.Series(dtype=float), [trade])
+    exits, entries = evaluate_bar(strategy, frame, signals, 5, [trade])
     assert entries == []
     assert len(exits) == 1
     assert exits[0].action == SignalAction.CLOSE
@@ -218,46 +231,49 @@ def test_evaluate_exit_long_closes_open_buy_on_strategy_symbol():
 
 def test_evaluate_exit_long_ignores_open_sell():
     signals = _arrays(exit_long=[False] * 5 + [True] + [False] * 4)
+    frame = _ohlcv_frame(signals)
     strategy = _strategy("TEST")
     trade = _trade(symbol="TEST", action=SignalAction.SELL, entry_time=signals.index[0])
-    exits, entries = evaluate_queued_signals(strategy, signals, 5, pd.Series(dtype=float), [trade])
+    exits, entries = evaluate_bar(strategy, frame, signals, 5, [trade])
     assert exits == []
     assert entries == []
 
 
 def test_evaluate_exit_long_ignores_buy_on_other_symbol():
     signals = _arrays(exit_long=[False] * 5 + [True] + [False] * 4)
+    frame = _ohlcv_frame(signals)
     strategy = _strategy("TEST")
     trade = _trade(symbol="OTHER", action=SignalAction.BUY, entry_time=signals.index[0])
-    exits, entries = evaluate_queued_signals(strategy, signals, 5, pd.Series(dtype=float), [trade])
-    assert exits == []
+    exits, entries = evaluate_bar(strategy, frame, signals, 5, [trade])
+    assert len(exits) == 1
+    assert exits[0].action == SignalAction.CLOSE
     assert entries == []
 
 
 def test_evaluate_exit_rule_precedes_strategy_exit_no_duplicate():
     signals = _arrays(exit_long=[False] * 5 + [True] + [False] * 4)
-    rule_close = Signal(symbol="TEST", action=SignalAction.CLOSE, exit_reason="stop_loss")
+    frame = _ohlcv_frame(signals)
+    frame.loc[frame.index[5], "low"] = 80.0
     strategy = _strategy("TEST")
-    strategy.exit_strategy.check_exits.return_value = [rule_close]
+    strategy.exit_strategy = ExitStrategy(stop_loss_pct=0.02)
     trade = _trade(symbol="TEST", action=SignalAction.BUY, entry_time=signals.index[0])
-    exits, entries = evaluate_queued_signals(strategy, signals, 5, pd.Series({"close": 90.0}), [trade])
+    exits, entries = evaluate_bar(strategy, frame, signals, 5, [trade])
     assert entries == []
     assert len(exits) == 1
-    assert exits[0] is rule_close
-    assert exits[0].exit_reason == "stop_loss"
+    assert exits[0].exit_reason == "fixed_sl"
 
 
 def test_evaluate_holding_period_closes_at_period_not_before():
     signals = _arrays(n=8, holding_period_bars=2, with_bar_index=True)
+    frame = _ohlcv_frame(signals)
     strategy = _strategy("TEST", holding_period_bars=2)
     entry_time = signals.index[3]
     trade = _trade(symbol="TEST", action=SignalAction.BUY, entry_time=entry_time)
-    current = pd.Series(dtype=float)
 
-    exits_at_4, _ = evaluate_queued_signals(strategy, signals, 4, current, [trade])
+    exits_at_4, _ = evaluate_bar(strategy, frame, signals, 4, [trade])
     assert exits_at_4 == []
 
-    exits_at_5, _ = evaluate_queued_signals(strategy, signals, 5, current, [trade])
+    exits_at_5, _ = evaluate_bar(strategy, frame, signals, 5, [trade])
     assert len(exits_at_5) == 1
     assert exits_at_5[0].action == SignalAction.CLOSE
     assert exits_at_5[0].exit_reason is None
@@ -265,11 +281,12 @@ def test_evaluate_holding_period_closes_at_period_not_before():
 
 def test_evaluate_holding_period_off_grid_entry_never_closes():
     signals = _arrays(n=8, holding_period_bars=2, with_bar_index=True)
+    frame = _ohlcv_frame(signals)
     strategy = _strategy("TEST", holding_period_bars=2)
     off_grid = signals.index[3] + timedelta(minutes=30)
     trade = _trade(symbol="TEST", action=SignalAction.BUY, entry_time=off_grid)
     for position in range(len(signals.index)):
-        exits, _ = evaluate_queued_signals(strategy, signals, position, pd.Series(dtype=float), [trade])
+        exits, _ = evaluate_bar(strategy, frame, signals, position, [trade])
         assert exits == [], f"unexpected close at position {position}"
 
 
@@ -279,8 +296,9 @@ def test_evaluate_entry_short_with_strength():
     strength = [0.0] * 10
     strength[7] = 0.25
     signals = _arrays(entry=entry, strength=strength)
+    frame = _ohlcv_frame(signals)
     strategy = _strategy("TEST")
-    exits, entries = evaluate_queued_signals(strategy, signals, 7, pd.Series(dtype=float), [])
+    exits, entries = evaluate_bar(strategy, frame, signals, 7, [])
     assert exits == []
     assert len(entries) == 1
     assert entries[0].action == SignalAction.SELL
