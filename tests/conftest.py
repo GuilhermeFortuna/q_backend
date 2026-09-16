@@ -27,7 +27,7 @@ except ImportError:  # pragma: no cover
 
 
 @pytest.fixture(autouse=True)
-def _isolate_remote_gateway_env(monkeypatch):
+def _isolate_remote_gateway_env(monkeypatch, tmp_path):
     """Keep a developer's live MT5 gateway out of the test suite.
 
     MarketDataService loads the repo .env into os.environ, so a configured
@@ -35,14 +35,24 @@ def _isolate_remote_gateway_env(monkeypatch):
     provider reachable and flip routing/availability assertions. load_env() is
     no-oped too, since every MarketDataService() re-reads .env into os.environ.
     Gateway tests that need a URL set it explicitly after this runs.
+
+    The env var is only half of it: get_remote_gateway_url() falls back to the
+    ``remote_gateway_url`` key in data/runtime_config.json, so once an operator
+    configures the Wine gateway there (see docs/mt5-wine-gateway.md) the remote
+    provider becomes reachable again and MT5-absent assertions see "remote"
+    instead of "local". Pointing Q_RUNTIME_CONFIG_PATH at a temp file closes
+    that path, and also stops tests that call set_data_source() from writing
+    into the developer's real runtime config as a side effect.
     """
+    monkeypatch.setenv("Q_RUNTIME_CONFIG_PATH", str(tmp_path / "runtime_config.json"))
     monkeypatch.setattr("q_backend.market_data.service.load_env", lambda: None)
     monkeypatch.delenv("Q_MT5_GATEWAY_URL", raising=False)
     monkeypatch.delenv("Q_MT5_GATEWAY_TOKEN", raising=False)
 
     # The api.dependencies singleton was built at import time, when .env may
     # already have injected the URL — its remote client baked it in. Swap in a
-    # fresh, unconfigured client (constructed after the delenv above).
+    # fresh, unconfigured client (constructed after the delenv and the
+    # runtime-config redirect above, so it resolves no URL from either source).
     from q_backend.api import dependencies
     from q_backend.market_data.clients.remote import RemoteMt5Client
 
