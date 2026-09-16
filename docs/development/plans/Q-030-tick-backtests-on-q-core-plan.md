@@ -141,20 +141,20 @@ docs/development/FINDINGS.md                         item 19 (inverse-volatility
 
 ## Ordered implementation
 
-1. Work on the branch `Q-030-tick-backtests-on-q-core` in `q_backend`, created
+1. [x] Work on the branch `Q-030-tick-backtests-on-q-core` in `q_backend`, created
    from `development` by `./work start`. Confirm a `q_core` tag containing Q-029
    exists, and, if Q-028 has merged, that the tag also contains Q-027. If not, set
    the task blocked and stop.
-2. Measurement before. Run the commands below: five warm runs and one cold run of
+2. [x] Measurement before. Run the commands below: five warm runs and one cold run of
    the tick engine over the golden stream and a 1,000,000-tick stream, and five
    chart serializations of the 1,000,000-tick stream at M1. Record every reading.
    Nothing to commit.
-3. Write `tests/backtesting/tick/test_tick_chart_baseline.py` with the five cases in
+3. [x] Write `tests/backtesting/tick/test_tick_chart_baseline.py` with the five cases in
    the decisions, record with `--regen-goldens`, confirm a second run is green and
    that editing one bar's volume fails with a diff. Commit.
-4. Bump the `q-core` tag and refresh `uv.lock`. Run `tests/backtesting` to confirm
+4. [x] Bump the `q-core` tag and refresh `uv.lock`. Run `tests/backtesting` to confirm
    the pin alone changes nothing. Commit.
-5. Write failing tests in `tests/backtesting/tick/test_tick_kernel_bridge.py`:
+5. [x] Write failing tests in `tests/backtesting/tick/test_tick_kernel_bridge.py`:
    - `simulate` returns nine elements, arrays of length `n`, zeros past
      `trade_count`, and values up to `trade_count` equal to `simulate_config` on
      the same inputs;
@@ -167,24 +167,24 @@ docs/development/FINDINGS.md                         item 19 (inverse-volatility
    Confirm they fail. Rewrite `tick/kernel.py` as the bridge and change
    `kernel_sizing_params`. Confirm they pass, and that `test_kernel.py` passes
    unedited. Commit.
-6. Swap the engine: `_split_ticks_by_day` slices at `day_bounds`, and
+6. [x] Swap the engine: `_split_ticks_by_day` slices at `day_bounds`, and
    `_run_single_chunk` calls `simulate_config`. Confirm `test_tick_engine.py`, the
    tick golden and determinism tests, and `tests/optimization` tick runner tests
    pass unchanged. Commit.
-7. Swap the chart: delegate `_resolve_bar_ms`, `_resample_ticks_to_bars` and
+7. [x] Swap the chart: delegate `_resolve_bar_ms`, `_resample_ticks_to_bars` and
    `_sample_indicator_at_bars`, delete `_mid_price`. Confirm the chart baseline and
    `test_tick_chart_data.py` pass unchanged. Commit.
-8. Update the hygiene allowlist, add a test that no module under
+8. [x] Update the hygiene allowlist, add a test that no module under
    `backtesting/tick/` imports `numba`, and add the `numba` dependency comment.
    Commit.
-9. Write the triage beside FINDINGS item 19. Commit.
-10. Regression. Confirm `git diff <step-3 commit> -- tests/backtesting/goldens/tick_ma_breakout.json tests/backtesting/goldens/tick_chart`
+9. [x] Write the triage beside FINDINGS item 19. Commit.
+10. [x] Regression. Confirm `git diff <step-3 commit> -- tests/backtesting/goldens/tick_ma_breakout.json tests/backtesting/goldens/tick_chart`
     is empty and `git diff development -- tests/backtesting/tick/test_kernel.py tests/backtesting/tick/test_tick_engine.py tests/backtesting/tick/test_tick_chart_data.py tests/backtesting/tick/test_tick_strategy_causality.py`
     is empty. Commit any fixes.
-11. Measurement after. Repeat step 2 on the same machine. Nothing to commit.
-12. Human step, matching human-verifiable criterion 1: one day of real WIN$N ticks
+11. [x] Measurement after. Repeat step 2 on the same machine. Nothing to commit.
+12. [ ] Human step, matching human-verifiable criterion 1: one day of real WIN$N ticks
     on both branches.
-13. Run the full validation suite. Commit.
+13. [ ] Run the full validation suite. Commit.
 
 ## Validation
 
