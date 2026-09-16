@@ -155,3 +155,18 @@ def test_check_tick_engine_raises_on_missing_functions():
     msg = str(excinfo.value)
     assert "tick_bars" in msg
     assert "2026.09.99" in msg
+
+
+def test_no_tick_module_imports_numba():
+    from pathlib import Path
+
+    tick_root = Path(__file__).resolve().parents[3] / "src" / "q_backend" / "backtesting" / "tick"
+    assert tick_root.is_dir()
+    offenders = []
+    for py_file in tick_root.rglob("*.py"):
+        for line in py_file.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("import numba") or stripped.startswith("from numba"):
+                offenders.append(py_file.relative_to(tick_root).as_posix())
+                break
+    assert offenders == []

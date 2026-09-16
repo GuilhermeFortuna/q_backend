@@ -23,6 +23,7 @@ dependencies = [
     "uvicorn>=0.48.0",
     "websockets>=16",
     "yfinance>=1.3.0",
+    # Candle strategies only (tsmom.py, gatev_pairs.py); tick simulation is q_core.
     "numba>=0.65.1",
     "pyarrow>=24.0.0",
     "torch>=2.6.0",
