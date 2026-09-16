@@ -1,0 +1,205 @@
+{
+  "case": "gatev_pairs",
+  "order_count": 9,
+  "trade_count": 9,
+  "trades": [
+    {
+      "action": "BUY",
+      "commission": 0.0,
+      "entry_price": -0.0010699796,
+      "entry_time": "2023-01-03T17:00:00+00:00",
+      "entry_time_type": "Timestamp",
+      "exit_price": -2.2095380965,
+      "exit_reason": "SIGNAL",
+      "exit_time": "2023-01-04T12:00:00+00:00",
+      "exit_time_type": "Timestamp",
+      "order": {
+        "action": "BUY",
+        "order_type": "MARKET",
+        "quantity": 1.0,
+        "symbol": "SYNTH"
+      },
+      "pnl": -2.2084681169,
+      "point_value": 1.0,
+      "quantity": 1.0,
+      "status": "CLOSED",
+      "symbol": "SYNTH"
+    },
+    {
+      "action": "BUY",
+      "commission": 0.0,
+      "entry_price": -2.2115474864,
+      "entry_time": "2023-01-06T05:00:00+00:00",
+      "entry_time_type": "Timestamp",
+      "exit_price": -3.5404452616,
+      "exit_reason": "SIGNAL",
+      "exit_time": "2023-01-06T16:00:00+00:00",
+      "exit_time_type": "Timestamp",
+      "order": {
+        "action": "BUY",
+        "order_type": "MARKET",
+        "quantity": 1.0,
+        "symbol": "SYNTH"
+      },
+      "pnl": -1.3288977751,
+      "point_value": 1.0,
+      "quantity": 1.0,
+      "status": "CLOSED",
+      "symbol": "SYNTH"
+    },
+    {
+      "action": "SELL",
+      "commission": 0.0,
+      "entry_price": -3.3379912656,
+      "entry_time": "2023-01-06T17:00:00+00:00",
+      "entry_time_type": "Timestamp",
+      "exit_price": -5.6356251339,
+      "exit_reason": "SIGNAL",
+      "exit_time": "2023-01-07T00:00:00+00:00",
+      "exit_time_type": "Timestamp",
+      "order": {
+        "action": "SELL",
+        "order_type": "MARKET",
+        "quantity": 1.0,
+        "symbol": "SYNTH"
+      },
+      "pnl": 2.2976338683,
+      "point_value": 1.0,
+      "quantity": 1.0,
+      "status": "CLOSED",
+      "symbol": "SYNTH"
+    },
+    {
+      "action": "BUY",
+      "commission": 0.0,
+      "entry_price": -7.3177990715,
+      "entry_time": "2023-01-08T17:00:00+00:00",
+      "entry_time_type": "Timestamp",
+      "exit_price": -8.1190432984,
+      "exit_reason": "SIGNAL",
+      "exit_time": "2023-01-09T12:00:00+00:00",
+      "exit_time_type": "Timestamp",
+      "order": {
+        "action": "BUY",
+        "order_type": "MARKET",
+        "quantity": 1.0,
+        "symbol": "SYNTH"
+      },
+      "pnl": -0.8012442269,
+      "point_value": 1.0,
+      "quantity": 1.0,
+      "status": "CLOSED",
+      "symbol": "SYNTH"
+    },
+    {
+      "action": "SELL",
+      "commission": 0.0,
+      "entry_price": -10.7562506001,
+      "entry_time": "2023-01-11T05:00:00+00:00",
+      "entry_time_type": "Timestamp",
+      "exit_price": -9.2935033959,
+      "exit_reason": "SIGNAL",
+      "exit_time": "2023-01-11T15:00:00+00:00",
+      "exit_time_type": "Timestamp",
+      "order": {
+        "action": "SELL",
+        "order_type": "MARKET",
+        "quantity": 1.0,
+        "symbol": "SYNTH"
+      },
+      "pnl": -1.4627472042,
+      "point_value": 1.0,
+      "quantity": 1.0,
+      "status": "CLOSED",
+      "symbol": "SYNTH"
+    },
+    {
+      "action": "BUY",
+      "commission": 0.0,
+      "entry_price": -9.5887339632,
+      "entry_time": "2023-01-11T18:00:00+00:00",
+      "entry_time_type": "Timestamp",
+      "exit_price": -7.1814003464,
+      "exit_reason": "SIGNAL",
+      "exit_time": "2023-01-12T00:00:00+00:00",
+      "exit_time_type": "Timestamp",
+      "order": {
+        "action": "BUY",
+        "order_type": "MARKET",
+        "quantity": 1.0,
+        "symbol": "SYNTH"
+      },
+      "pnl": 2.4073336168,
+      "point_value": 1.0,
+      "quantity": 1.0,
+      "status": "CLOSED",
+      "symbol": "SYNTH"
+    },
+    {
+      "action": "SELL",
+      "commission": 0.0,
+      "entry_price": -4.975830229,
+      "entry_time": "2023-01-13T17:00:00+00:00",
+      "entry_time_type": "Timestamp",
+      "exit_price": -4.5420602668,
+      "exit_reason": "SIGNAL",
+      "exit_time": "2023-01-13T23:00:00+00:00",
+      "exit_time_type": "Timestamp",
+      "order": {
+        "action": "SELL",
+        "order_type": "MARKET",
+        "quantity": 1.0,
+        "symbol": "SYNTH"
+      },
+      "pnl": -0.4337699622,
+      "point_value": 1.0,
+      "quantity": 1.0,
+      "status": "CLOSED",
+      "symbol": "SYNTH"
+    },
+    {
+      "action": "SELL",
+      "commission": 0.0,
+      "entry_price": -3.2235971491,
+      "entry_time": "2023-01-14T05:00:00+00:00",
+      "entry_time_type": "Timestamp",
+      "exit_price": -1.2938762206,
+      "exit_reason": "SIGNAL",
+      "exit_time": "2023-01-14T12:00:00+00:00",
+      "exit_time_type": "Timestamp",
+      "order": {
+        "action": "SELL",
+        "order_type": "MARKET",
+        "quantity": 1.0,
+        "symbol": "SYNTH"
+      },
+      "pnl": -1.9297209285,
+      "point_value": 1.0,
+      "quantity": 1.0,
+      "status": "CLOSED",
+      "symbol": "SYNTH"
+    },
+    {
+      "action": "BUY",
+      "commission": 0.0,
+      "entry_price": -0.6715346274,
+      "entry_time": "2023-01-16T05:00:00+00:00",
+      "entry_time_type": "Timestamp",
+      "exit_price": -1.7668729727,
+      "exit_reason": "SIGNAL",
+      "exit_time": "2023-01-17T00:00:00+00:00",
+      "exit_time_type": "Timestamp",
+      "order": {
+        "action": "BUY",
+        "order_type": "MARKET",
+        "quantity": 1.0,
+        "symbol": "SYNTH"
+      },
+      "pnl": -1.0953383453,
+      "point_value": 1.0,
+      "quantity": 1.0,
+      "status": "CLOSED",
+      "symbol": "SYNTH"
+    }
+  ]
+}

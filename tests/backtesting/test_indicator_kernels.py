@@ -161,6 +161,7 @@ def test_indicator_modules_hygiene():
                 break
 
     assert sorted(q_core_importers) == [
+        "backtesting/candle_kernel.py",
         "backtesting/indicator_kernels.py",
         "backtesting/tick/kernel.py",
     ]

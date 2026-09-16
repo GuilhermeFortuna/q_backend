@@ -95,7 +95,7 @@ select = ["BLE001", "S110"]
 "tests/**" = ["BLE001", "S110"]
 
 [tool.uv.sources]
-q-core = { git = "https://github.com/GuilhermeFortuna/q_core.git", tag = "v2026.09.15" }
+q-core = { git = "https://github.com/GuilhermeFortuna/q_core.git", tag = "v2026.09.15.2" }
 metatrader5 = [
     { path = "docker/metatrader5-stub", marker = "sys_platform != 'win32'" }
 ]
