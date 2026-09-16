@@ -184,7 +184,7 @@ docs/development/FINDINGS.md                         item 19 (inverse-volatility
 11. [x] Measurement after. Repeat step 2 on the same machine. Nothing to commit.
 12. [ ] Human step, matching human-verifiable criterion 1: one day of real WIN$N ticks
     on both branches.
-13. [ ] Run the full validation suite. Commit.
+13. [x] Run the full validation suite. Commit.
 
 ## Validation
 

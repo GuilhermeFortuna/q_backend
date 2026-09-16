@@ -27,7 +27,10 @@ router = APIRouter(tags=["backtest"])
 @router.post("/api/v1/backtest", response_model=BacktestStartResponse)
 def start_backtest(request: BacktestJobRequest):
     """Dispatch a backtest to the worker pool and return its run id for polling."""
-    if request.engine == "tick" and request.entries is not None:
+    # The tick path builds its strategy from ``strategy``/``strategy_params`` and
+    # has no multi-entry support, but clients send a one-element ``entries`` list
+    # alongside them for every run. Only a genuine multi-entry request is refused.
+    if request.engine == "tick" and request.entries is not None and len(request.entries) > 1:
         raise HTTPException(
             status_code=400,
             detail="Multi-entry backtests are only supported for the candle engine.",
