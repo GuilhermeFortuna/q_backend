@@ -8,11 +8,12 @@ from typing import Optional
 import pandas as pd
 
 from q_backend.backtesting.models import Signal, Trade
+from q_backend.backtesting.candle_kernel import reference_decisions
 from q_backend.backtesting.strategy import TradingStrategy
 from q_backend.execution.bars import bar_close_time
 from q_backend.execution.evaluator import StrategyEvaluator
 from q_backend.execution.domain import StrategyIdentity
-from q_backend.execution.signal_eval import evaluate_queued_signals, signal_arrays
+from q_backend.execution.signal_eval import signal_arrays
 
 
 def augment_with_exit_columns(
@@ -52,11 +53,9 @@ def reference_queued_signals_by_close(
     signals = signal_arrays(strategy, augmented)
     open_trades = [open_trade] if open_trade else []
     rows: list[tuple[datetime, list[Signal], list[Signal]]] = []
-    for position in range(len(augmented)):
-        row = augmented.iloc[position]
+    for position, (exits, entries) in enumerate(reference_decisions(strategy, augmented, signals, open_trades)):
         open_time = signals.index[position]
         close_time = bar_close_time(open_time.to_pydatetime(), timeframe)
-        exits, entries = evaluate_queued_signals(strategy, signals, position, row, open_trades)
         rows.append((close_time, exits, entries))
     return rows
 
