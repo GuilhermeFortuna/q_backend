@@ -5,5 +5,9 @@ echo "==> Running pre-commit hook (ruff check & black check)..."
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
+# shellcheck source=.githooks/_common.sh
+source "$REPO_ROOT/.githooks/_common.sh"
+ensure_uv_on_path
+
 uv run ruff check .
 uv run black --check .

@@ -21,6 +21,9 @@ if [[ "${CI_RESOURCE_CONTROLLED:-0}" != "1" ]]; then
       --setenv=CI_RESOURCE_CONTROLLED=1
       --setenv=XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR}"
       --setenv=DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS}"
+      # Carry PATH across the re-exec: a GUI-spawned hook may have prepended the
+      # directory holding `uv`, and losing it here reintroduces the same failure.
+      --setenv=PATH="${PATH}"
     )
     if command -v ionice >/dev/null 2>&1; then
       exec "${_ci_run[@]}" ionice -c 3 "$0" "$@"

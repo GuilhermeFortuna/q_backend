@@ -5,4 +5,8 @@ echo "==> Running pre-push hook (full CI pipeline)..."
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
+# shellcheck source=.githooks/_common.sh
+source "$REPO_ROOT/.githooks/_common.sh"
+ensure_uv_on_path
+
 ./scripts/ci.sh
