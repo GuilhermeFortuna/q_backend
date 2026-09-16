@@ -150,7 +150,7 @@ def test_indicator_modules_hygiene():
     backend_src = Path(__file__).resolve().parents[2] / "src" / "q_backend"
     assert backend_src.is_dir()
 
-    # 1. Only backtesting/indicator_kernels.py imports q_core
+    # 1. Only the bridge modules import q_core
     q_core_importers = []
     for py_file in backend_src.rglob("*.py"):
         content = py_file.read_text(encoding="utf-8")
@@ -160,7 +160,10 @@ def test_indicator_modules_hygiene():
                 q_core_importers.append(py_file.relative_to(backend_src).as_posix())
                 break
 
-    assert q_core_importers == ["backtesting/indicator_kernels.py"]
+    assert sorted(q_core_importers) == [
+        "backtesting/indicator_kernels.py",
+        "backtesting/tick/kernel.py",
+    ]
 
     # 2. The three indicator modules contain no legacy pandas/numpy arithmetic constructs
     forbidden_tokens = (

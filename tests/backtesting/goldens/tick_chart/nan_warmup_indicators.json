@@ -1,0 +1,100 @@
+{
+  "bar_count": 6,
+  "bars": [
+    {
+      "close": 10.0,
+      "high": 10.0,
+      "low": 10.0,
+      "open": 10.0,
+      "timestamp": "2023-11-15T01:13:00Z",
+      "volume": 1
+    },
+    {
+      "close": 11.0,
+      "high": 11.0,
+      "low": 11.0,
+      "open": 11.0,
+      "timestamp": "2023-11-15T01:14:00Z",
+      "volume": 1
+    },
+    {
+      "close": 12.0,
+      "high": 12.0,
+      "low": 12.0,
+      "open": 12.0,
+      "timestamp": "2023-11-15T01:15:00Z",
+      "volume": 1
+    },
+    {
+      "close": 13.0,
+      "high": 13.0,
+      "low": 13.0,
+      "open": 13.0,
+      "timestamp": "2023-11-15T01:16:00Z",
+      "volume": 1
+    },
+    {
+      "close": 14.0,
+      "high": 14.0,
+      "low": 14.0,
+      "open": 14.0,
+      "timestamp": "2023-11-15T01:17:00Z",
+      "volume": 1
+    },
+    {
+      "close": 15.0,
+      "high": 15.0,
+      "low": 15.0,
+      "open": 15.0,
+      "timestamp": "2023-11-15T01:18:00Z",
+      "volume": 1
+    }
+  ],
+  "case": "nan_warmup_indicators",
+  "description": "TickMaBreakout indicators with NaN warm-up values sampled as None at bar ends",
+  "display_timeframe": "M1",
+  "indicators": [
+    {
+      "color": "#c9a227",
+      "key": "ma_short",
+      "label": "SMA Short (2 ticks)",
+      "pane": "price",
+      "values": [
+        null,
+        10.5,
+        11.5,
+        12.5,
+        13.5,
+        14.5
+      ]
+    },
+    {
+      "color": "#6eb5ff",
+      "key": "ma_long",
+      "label": "SMA Long (3 ticks)",
+      "pane": "price",
+      "values": [
+        null,
+        null,
+        11.0,
+        12.0,
+        13.0,
+        14.0
+      ]
+    },
+    {
+      "color": "#c9a227",
+      "key": "delta",
+      "label": "Delta",
+      "pane": "oscillator",
+      "values": [
+        null,
+        null,
+        0.5,
+        0.5,
+        0.5,
+        0.5
+      ]
+    }
+  ]
+}

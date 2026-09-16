@@ -209,3 +209,57 @@ def test_tick_backtest_mt5_offline_returns_503(run_jobs_sync, api_session_scope)
     with pytest.raises(HTTPException) as exc:
         get_backtest_result(run_id)
     assert exc.value.status_code == 404
+
+
+def _tick_request(entries):
+    """A minimal tick request carrying the UI's single-strategy entry payload."""
+    return BacktestJobRequest.model_validate(
+        {
+            "symbol": "WIN$",
+            "engine": "tick",
+            "start": "2024-01-01T00:00:00Z",
+            "end": "2024-01-02T00:00:00Z",
+            "strategy": "TickMaBreakout",
+            "strategy_params": {"fast_period": 50, "slow_period": 200},
+            "entries": entries,
+        }
+    )
+
+
+def test_tick_backtest_accepts_a_single_entry(run_jobs_sync, api_session_scope):
+    """The UI always sends ``entries``; one entry is the tick engine's own case.
+
+    ``strategy``/``strategy_params`` carry the same strategy, which is what the
+    tick path actually builds from, so a lone entry must not be rejected.
+    """
+    request = _tick_request([{"strategy": "TickMaBreakout", "params": {"fast_period": 50}}])
+    mock_service = mock_worker_market_service()
+    mock_service.get_ticks_columnar.side_effect = ConnectionError("MetaTrader 5 terminal is offline.")
+
+    with (
+        patch(
+            "q_backend.tasks.worker_context.get_worker_market_data_service",
+            return_value=mock_service,
+        ),
+        patch("q_backend.api.backtest_jobs.session_scope", api_session_scope),
+    ):
+        start_resp = start_backtest(request)
+
+    assert start_resp["status"] == "running"
+    assert start_resp["run_id"]
+
+
+def test_tick_backtest_rejects_multiple_entries(run_jobs_sync, api_session_scope):
+    """Two or more entries genuinely need the candle engine's multi-entry path."""
+    request = _tick_request(
+        [
+            {"strategy": "TickMaBreakout", "params": {"fast_period": 50}},
+            {"strategy": "TickMaBreakout", "params": {"fast_period": 20}},
+        ]
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        start_backtest(request)
+
+    assert exc.value.status_code == 400
+    assert "candle engine" in exc.value.detail

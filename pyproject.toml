@@ -23,6 +23,7 @@ dependencies = [
     "uvicorn>=0.48.0",
     "websockets>=16",
     "yfinance>=1.3.0",
+    # Candle strategies only (tsmom.py, gatev_pairs.py); tick simulation is q_core.
     "numba>=0.65.1",
     "pyarrow>=24.0.0",
     "torch>=2.6.0",
@@ -94,7 +95,7 @@ select = ["BLE001", "S110"]
 "tests/**" = ["BLE001", "S110"]
 
 [tool.uv.sources]
-q-core = { git = "https://github.com/GuilhermeFortuna/q_core.git", tag = "v2026.09.14" }
+q-core = { git = "https://github.com/GuilhermeFortuna/q_core.git", tag = "v2026.09.15" }
 metatrader5 = [
     { path = "docker/metatrader5-stub", marker = "sys_platform != 'win32'" }
 ]

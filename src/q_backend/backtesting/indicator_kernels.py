@@ -1,6 +1,7 @@
 """Bridge module connecting q_backend to q_core indicator kernels.
 
-This is the only module in q_backend that imports q_core.
+q_core is imported only by bridge modules (this file and
+``backtesting/tick/kernel.py``).
 """
 
 from __future__ import annotations

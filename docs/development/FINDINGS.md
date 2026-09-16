@@ -81,6 +81,9 @@ continues from Batch 04.
     `tick/orders.kernel_sizing_params` reads `safety_margin_per_contract` from any
     config that is not fixed quantity, and tick backtest requests accept the
     inverse-volatility config. Found while planning Q-029.
+    **Triage (Q-030):** explicit rejection with
+    `ValueError("tick engine does not support position sizing type 'inverse_volatility'")`
+    before simulation; supporting the model is a feature decision.
 20. **Tick backtests ignore transaction costs.** The tick kernel charges no costs,
     while candle backtests apply `TransactionCostConfig`. Found while planning
     Q-029. Q-029 and Q-030 preserve the behaviour.

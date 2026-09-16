@@ -31,10 +31,13 @@ def kernel_sizing_params(
     if config.type == "fixed_quantity":
         return SIZING_FIXED_QUANTITY, float(config.quantity), 0.0, 0.0
 
-    max_c = float(config.max_contracts) if config.max_contracts is not None else 0.0
-    return (
-        SIZING_FIXED_SAFETY_MARGIN,
-        float(config.safety_margin_per_contract),
-        float(config.min_contracts),
-        max_c,
-    )
+    if config.type == "fixed_safety_margin":
+        max_c = float(config.max_contracts) if config.max_contracts is not None else 0.0
+        return (
+            SIZING_FIXED_SAFETY_MARGIN,
+            float(config.safety_margin_per_contract),
+            float(config.min_contracts),
+            max_c,
+        )
+
+    raise ValueError(f"tick engine does not support position sizing type '{config.type}'")

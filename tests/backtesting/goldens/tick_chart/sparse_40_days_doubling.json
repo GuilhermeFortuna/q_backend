@@ -1,0 +1,78 @@
+{
+  "bar_count": 4,
+  "bars": [
+    {
+      "close": 100.0,
+      "high": 100.0,
+      "low": 100.0,
+      "open": 100.0,
+      "timestamp": "2023-11-15T01:12:00Z",
+      "volume": 10
+    },
+    {
+      "close": 102.0,
+      "high": 102.0,
+      "low": 102.0,
+      "open": 102.0,
+      "timestamp": "2023-11-25T01:12:00Z",
+      "volume": 20
+    },
+    {
+      "close": 101.0,
+      "high": 101.0,
+      "low": 101.0,
+      "open": 101.0,
+      "timestamp": "2023-12-05T01:12:00Z",
+      "volume": 30
+    },
+    {
+      "close": 105.0,
+      "high": 105.0,
+      "low": 105.0,
+      "open": 105.0,
+      "timestamp": "2023-12-25T01:12:00Z",
+      "volume": 40
+    }
+  ],
+  "case": "sparse_40_days_doubling",
+  "description": "Sparse 40-day stream that doubles the M1 interval to 120s (M2)",
+  "display_timeframe": "M1",
+  "indicators": [
+    {
+      "color": "#c9a227",
+      "key": "ma_short",
+      "label": "SMA Short (2 ticks)",
+      "pane": "price",
+      "values": [
+        null,
+        101.0,
+        101.5,
+        103.0
+      ]
+    },
+    {
+      "color": "#6eb5ff",
+      "key": "ma_long",
+      "label": "SMA Long (3 ticks)",
+      "pane": "price",
+      "values": [
+        null,
+        null,
+        101.0,
+        102.6666666667
+      ]
+    },
+    {
+      "color": "#c9a227",
+      "key": "delta",
+      "label": "Delta",
+      "pane": "oscillator",
+      "values": [
+        null,
+        null,
+        0.5,
+        0.3333333333
+      ]
+    }
+  ]
+}
