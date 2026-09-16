@@ -135,9 +135,8 @@ def run_chunk(
     """Run one already-augmented candle chunk through q_core without row objects."""
     from q_backend.backtesting.exit_rules.registry import all_param_specs
 
-    exit_params = {
-        spec.name: strategy.parameters[spec.name] for spec in all_param_specs() if spec.name in strategy.parameters
-    }
+    source_params = getattr(getattr(strategy, "exit_strategy", None), "params", strategy.parameters)
+    exit_params = {spec.name: source_params[spec.name] for spec in all_param_specs() if spec.name in source_params}
     columns = {
         name: values for name in engine.required_columns(exit_params) if (values := _column(chunk, name)) is not None
     }
@@ -213,9 +212,8 @@ def reference_decisions(
     """Produce queued decisions through one q_core DecisionStep for live parity."""
     from q_backend.backtesting.exit_rules.registry import all_param_specs
 
-    exit_params = {
-        spec.name: strategy.parameters[spec.name] for spec in all_param_specs() if spec.name in strategy.parameters
-    }
+    source_params = getattr(getattr(strategy, "exit_strategy", None), "params", strategy.parameters)
+    exit_params = {spec.name: source_params[spec.name] for spec in all_param_specs() if spec.name in source_params}
     columns = {
         name: values for name in engine.required_columns(exit_params) if (values := _column(frame, name)) is not None
     }
