@@ -11,12 +11,13 @@ from q_backend.api.deps import get_session
 from q_backend.api.schemas.stream import (
     EpochMismatchResponse,
     ErrorResponse,
+    ExecutionSnapshotResponse,
     HistoryExpiredResponse,
     HistoryPageResponse,
     JobSnapshotResponse,
     LatestResponse,
 )
-from q_backend.storage.db.engine import create_session_factory
+from q_backend.storage.db import engine as db_engine
 from q_backend.storage.redis.client import get_redis
 from q_backend.streaming.redis_binary import get_binary_redis
 from q_backend.streaming.outbox import OutboxTopicError
@@ -27,6 +28,7 @@ from q_backend.streaming.snapshot import (
     history_to_response,
     job_snapshot_to_response,
     latest_to_response,
+    read_execution_snapshot,
     read_history,
     read_job_snapshot,
     read_latest,
@@ -59,8 +61,40 @@ def get_job_snapshot(
             content=ErrorResponse(message="Stream unavailable", code="stream_unavailable").model_dump(),
         )
 
-    result = read_job_snapshot(create_session_factory(), client)
+    result = read_job_snapshot(db_engine.create_session_factory(), client)
     return JobSnapshotResponse.model_validate(job_snapshot_to_response(result))
+
+
+@router.get(
+    "/api/v1/stream/execution/snapshot",
+    response_model=ExecutionSnapshotResponse,
+    responses={503: {"model": ErrorResponse}},
+)
+def get_execution_snapshot(
+    deployments_limit: int = Query(50, ge=1, le=500),
+    decisions_limit: int = Query(500, ge=1, le=2000),
+    orders_limit: int = Query(500, ge=1, le=2000),
+    fills_limit: int = Query(500, ge=1, le=2000),
+    risk_limit: int = Query(500, ge=1, le=2000),
+    ledger_limit: int = Query(500, ge=1, le=2000),
+) -> ExecutionSnapshotResponse | JSONResponse:
+    try:
+        factory = db_engine.create_session_factory()
+        result = read_execution_snapshot(
+            factory,
+            deployments_limit=deployments_limit,
+            decisions_limit=decisions_limit,
+            orders_limit=orders_limit,
+            fills_limit=fills_limit,
+            risk_limit=risk_limit,
+            ledger_limit=ledger_limit,
+        )
+        return ExecutionSnapshotResponse.model_validate(result)
+    except Exception:  # noqa: BLE001 - map database connection / query failure to 503
+        return JSONResponse(
+            status_code=503,
+            content=ErrorResponse(message="Database unavailable", code="database_unavailable").model_dump(),
+        )
 
 
 @router.get(

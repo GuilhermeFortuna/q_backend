@@ -1,0 +1,279 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stream/payloads/execution-common",
+  "title": "ExecutionCommon",
+  "description": "Shared primitives, domain vocabularies, and entity definitions for execution stream payloads.",
+  "type": "object",
+  "$defs": {
+    "Decimal": {
+      "type": "string",
+      "pattern": "^-?\\d+(\\.\\d+)?$",
+      "description": "Exact decimal numeric string."
+    },
+    "UUID": {
+      "type": "string",
+      "format": "uuid",
+      "description": "RFC 4122 UUID string."
+    },
+    "BrokerMode": {
+      "type": "string",
+      "enum": [
+        "paper",
+        "mt5_live"
+      ],
+      "description": "Execution broker mode."
+    },
+    "DeploymentLifecycle": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "running",
+        "paused",
+        "stopped",
+        "error"
+      ],
+      "description": "Deployment lifecycle state."
+    },
+    "DecisionOutcome": {
+      "type": "string",
+      "enum": [
+        "hold",
+        "signal",
+        "risk_rejected",
+        "order_intent",
+        "order_filled",
+        "order_rejected",
+        "order_unknown",
+        "error"
+      ],
+      "description": "Decision outcome."
+    },
+    "SignalAction": {
+      "type": "string",
+      "enum": [
+        "buy",
+        "sell",
+        "hold",
+        "close"
+      ],
+      "description": "Strategy signal action."
+    },
+    "ExecutionSide": {
+      "type": "string",
+      "enum": [
+        "buy",
+        "sell"
+      ],
+      "description": "Order or fill execution side."
+    },
+    "ExecutionOrderType": {
+      "type": "string",
+      "enum": [
+        "market"
+      ],
+      "description": "Order type."
+    },
+    "ExecutionOrderStatus": {
+      "type": "string",
+      "enum": [
+        "intent",
+        "submitted",
+        "filled",
+        "rejected",
+        "unknown",
+        "cancelled"
+      ],
+      "description": "Order execution lifecycle status."
+    },
+    "PositionSide": {
+      "type": "string",
+      "enum": [
+        "long",
+        "short",
+        "flat"
+      ],
+      "description": "Net position side."
+    },
+    "ReconciliationState": {
+      "type": "string",
+      "enum": [
+        "not_applicable",
+        "pending",
+        "reconciled",
+        "ambiguous"
+      ],
+      "description": "Order reconciliation state."
+    },
+    "RiskRejectionCode": {
+      "type": "string",
+      "enum": [
+        "kill_switch",
+        "lifecycle",
+        "lease_lost",
+        "stale_bar",
+        "stale_quote",
+        "symbol_unavailable",
+        "invalid_quantity",
+        "notional_limit",
+        "one_position_violation",
+        "insufficient_equity",
+        "daily_loss_limit",
+        "database_unavailable",
+        "broker_unavailable",
+        "unknown_prior_order"
+      ],
+      "description": "Risk rejection reason code."
+    },
+    "LedgerEntryType": {
+      "type": "string",
+      "enum": [
+        "initial_balance",
+        "fill_cash",
+        "realized_pnl",
+        "fee",
+        "adjustment"
+      ],
+      "description": "Ledger entry classification."
+    },
+    "ExecutionPosition": {
+      "type": "object",
+      "title": "ExecutionPosition",
+      "description": "Deployment net position state.",
+      "required": [
+        "id",
+        "deployment_id",
+        "side",
+        "quantity",
+        "is_open",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/UUID"
+        },
+        "deployment_id": {
+          "$ref": "#/$defs/UUID"
+        },
+        "side": {
+          "$ref": "#/$defs/PositionSide"
+        },
+        "quantity": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "average_entry_price": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Decimal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "is_open": {
+          "type": "boolean"
+        },
+        "opened_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "closed_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ExecutionAccount": {
+      "type": "object",
+      "title": "ExecutionAccount",
+      "description": "Trading account state with balance and realized PnL.",
+      "required": [
+        "id",
+        "name",
+        "currency",
+        "initial_balance",
+        "cash_balance",
+        "realized_pnl",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/UUID"
+        },
+        "name": {
+          "type": "string"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "initial_balance": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "cash_balance": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "realized_pnl": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "sizing_config": {
+          "type": "object"
+        },
+        "risk_config": {
+          "type": "object"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ExecutionControl": {
+      "type": "object",
+      "title": "ExecutionControl",
+      "description": "Global execution control state including kill switch.",
+      "required": [
+        "kill_switch_enabled",
+        "updated_at"
+      ],
+      "properties": {
+        "kill_switch_enabled": {
+          "type": "boolean"
+        },
+        "kill_switch_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "updated_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

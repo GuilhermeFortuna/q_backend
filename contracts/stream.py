@@ -189,7 +189,9 @@ class ExecutionOrderState:
     submitted_at: str | None = None
 
 
-ExecutionOrderStatus = Literal["intent", "submitted", "filled", "rejected", "unknown", "cancelled"]
+ExecutionOrderStatus = Literal[
+    "intent", "submitted", "filled", "rejected", "unknown", "cancelled"
+]
 
 
 ExecutionOrderType = Literal["market"]
@@ -292,7 +294,9 @@ class LatestValuesResponse:
     topic: str
 
 
-LedgerEntryType = Literal["initial_balance", "fill_cash", "realized_pnl", "fee", "adjustment"]
+LedgerEntryType = Literal[
+    "initial_balance", "fill_cash", "realized_pnl", "fee", "adjustment"
+]
 
 
 PositionSide = Literal["long", "short", "flat"]

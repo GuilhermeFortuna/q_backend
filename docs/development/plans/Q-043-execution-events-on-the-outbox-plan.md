@@ -133,35 +133,35 @@ q_contracts: schema/api/openapi.yaml, schema/api/FINDINGS.md Finding 4, COMPAT.m
 
 ## Ordered implementation
 
-- [ ] 1. Work on the branch `Q-043-execution-events-on-the-outbox` in `q_backend`,
+- [x] 1. Work on the branch `Q-043-execution-events-on-the-outbox` in `q_backend`,
    created from `development` by `./work start`. Confirm Q-039 is merged, set
    `CONTRACTS_REV`, run `make contracts` and `make contracts-check`. Commit.
-- [ ] 2. Register the six payload models in `PAYLOAD_MODELS`. Write
+- [x] 2. Register the six payload models in `PAYLOAD_MODELS`. Write
    `execution_events.py`'s shape functions with a unit test per entity that
    validates against the vendored schema, using rows built by the existing
    execution test factories. Commit.
-- [ ] 3. Write failing tests in `test_execution_events.py`: one per repository
+- [x] 3. Write failing tests in `test_execution_events.py`: one per repository
    function (event topic, count, sequence, payload equals the post-commit
    row), `apply_fill` composite, rollback leaves nothing, invalid payload
    fails the transaction. Confirm they fail. Commit.
-- [ ] 4. Add `emit` calls and the `producer` keyword to each repository function,
+- [x] 4. Add `emit` calls and the `producer` keyword to each repository function,
    convert `mark_incomplete_orders_unknown` to per-order updates, and pass the
    worker id from worker, service, recovery and reconciler call sites. Confirm
    step 3's tests and all of `tests/execution` and `tests/api` pass unchanged.
    Commit.
-- [ ] 5. Write failing tests for the snapshot: contract validation; watermark
+- [x] 5. Write failing tests for the snapshot: contract validation; watermark
    equals the per-topic maximum; a concurrent commit during the read does not
    enter the snapshot or the watermark; `503` with Postgres down. Implement
    `read_execution_snapshot` and the route. Confirm they pass. Commit.
-- [ ] 6. Write `test_execution_snapshot_race.py` (200 seeds in CI, 2 000 under an
+- [x] 6. Write `test_execution_snapshot_race.py` (200 seeds in CI, 2 000 under an
    environment flag) and fix anything it finds. Commit.
-- [ ] 7. Update `README.md` (execution topics are live on the stream; the snapshot
+- [x] 7. Update `README.md` (execution topics are live on the stream; the snapshot
    route). Commit.
-- [ ] 8. Recapture the OpenAPI in `q_contracts` on the branch
+- [x] 8. Recapture the OpenAPI in `q_contracts` on the branch
    `Q-043-execution-events-on-the-outbox`. Close FINDINGS Finding 4 there and
    update `COMPAT.md`. If another batch-07 recapture merged first, rebase and
    capture again. Commit in `q_contracts`.
-- [ ] 9. Run `scripts/ci.sh`. Fix, re-run, commit.
+- [x] 9. Run `scripts/ci.sh`. Fix, re-run, commit.
 - [ ] 10. **Human:** human-verifiable criterion 1.
 
 ## Validation

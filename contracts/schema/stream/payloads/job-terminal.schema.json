@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stream/payloads/job-terminal",
+  "title": "JobTerminalPayload",
+  "description": "Payload for jobs.terminal durable stream events.",
+  "type": "object",
+  "required": [
+    "kind",
+    "job_id",
+    "status",
+    "finished_at"
+  ],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "alpha_research",
+        "backtest",
+        "discovery_ab",
+        "encoder_ablation",
+        "neural_training",
+        "optimization",
+        "storage_ingest",
+        "strategy_search",
+        "walkforward"
+      ],
+      "description": "Closed vocabulary of job kinds matching backend progress namespaces."
+    },
+    "job_id": {
+      "type": "string",
+      "description": "Unique identifier of the job instance."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "completed",
+        "failed",
+        "cancelled"
+      ],
+      "description": "Closed vocabulary of terminal job outcomes."
+    },
+    "error": {
+      "type": "string",
+      "description": "Error message when status is failed or cancelled; omitted on success."
+    },
+    "finished_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 UTC timestamp when the job reached its terminal state."
+    }
+  },
+  "additionalProperties": false
+}

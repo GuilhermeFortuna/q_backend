@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stream/payloads/execution-order",
+  "title": "ExecutionOrderState",
+  "description": "Payload for orders durable stream events carrying full order lifecycle state.",
+  "type": "object",
+  "required": [
+    "entity",
+    "id",
+    "intent_id",
+    "deployment_id",
+    "account_id",
+    "broker_mode",
+    "side",
+    "order_type",
+    "quantity",
+    "status",
+    "reconciliation_state",
+    "updated_at"
+  ],
+  "properties": {
+    "entity": {
+      "const": "order",
+      "description": "Entity kind discriminator."
+    },
+    "id": {
+      "$ref": "execution-common.schema.json#/$defs/UUID",
+      "description": "Order entity identifier."
+    },
+    "intent_id": {
+      "$ref": "execution-common.schema.json#/$defs/UUID",
+      "description": "Client order intent identifier matching broker magic/comment derivation."
+    },
+    "deployment_id": {
+      "$ref": "execution-common.schema.json#/$defs/UUID",
+      "description": "Deployment identifier."
+    },
+    "account_id": {
+      "$ref": "execution-common.schema.json#/$defs/UUID",
+      "description": "Trading account identifier."
+    },
+    "decision_id": {
+      "oneOf": [
+        {
+          "$ref": "execution-common.schema.json#/$defs/UUID"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Causal decision identifier if triggered by strategy signal."
+    },
+    "broker_mode": {
+      "$ref": "execution-common.schema.json#/$defs/BrokerMode"
+    },
+    "side": {
+      "$ref": "execution-common.schema.json#/$defs/ExecutionSide"
+    },
+    "order_type": {
+      "$ref": "execution-common.schema.json#/$defs/ExecutionOrderType"
+    },
+    "quantity": {
+      "$ref": "execution-common.schema.json#/$defs/Decimal",
+      "description": "Order quantity in exact decimal format."
+    },
+    "status": {
+      "$ref": "execution-common.schema.json#/$defs/ExecutionOrderStatus"
+    },
+    "reconciliation_state": {
+      "$ref": "execution-common.schema.json#/$defs/ReconciliationState"
+    },
+    "external_order_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Broker-assigned external order identifier."
+    },
+    "rejection_reason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Rejection explanation when status is rejected."
+    },
+    "intent_committed_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Timestamp when intent was committed in transactional ledger."
+    },
+    "submitted_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Timestamp when order was submitted to broker edge."
+    },
+    "completed_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Timestamp when order reached terminal status (filled, rejected, cancelled)."
+    },
+    "reconciliation_attempted_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Timestamp of last reconciliation lookup attempt."
+    },
+    "reconciliation_error": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Error message from reconciliation lookup failure."
+    },
+    "reconciled_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Timestamp when order was reconciled."
+    },
+    "reconciled_by": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Actor or process that completed reconciliation."
+    },
+    "reconciliation_detail": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Reconciliation diagnostic details."
+    },
+    "details": {
+      "type": "object",
+      "description": "Order execution details and broker attributes."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 UTC creation timestamp."
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 UTC last update timestamp."
+    }
+  },
+  "additionalProperties": false
+}

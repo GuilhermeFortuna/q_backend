@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stream/payloads/execution-decision",
+  "title": "ExecutionDecisionState",
+  "description": "Payload for decisions durable stream events carrying full trading decision state.",
+  "type": "object",
+  "required": [
+    "entity",
+    "id",
+    "deployment_id",
+    "account_id",
+    "bar_close_time",
+    "strategy_name",
+    "strategy_version",
+    "config_hash",
+    "symbol",
+    "timeframe",
+    "signal_action",
+    "outcome",
+    "updated_at"
+  ],
+  "properties": {
+    "entity": {
+      "const": "decision",
+      "description": "Entity kind discriminator."
+    },
+    "id": {
+      "$ref": "execution-common.schema.json#/$defs/UUID",
+      "description": "Decision entity identifier."
+    },
+    "deployment_id": {
+      "$ref": "execution-common.schema.json#/$defs/UUID",
+      "description": "Deployment identifier."
+    },
+    "account_id": {
+      "$ref": "execution-common.schema.json#/$defs/UUID",
+      "description": "Trading account identifier."
+    },
+    "bar_close_time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Bar close instant that evaluated this decision."
+    },
+    "strategy_name": {
+      "type": "string",
+      "description": "Strategy identifier."
+    },
+    "strategy_version": {
+      "type": "integer",
+      "description": "Strategy version."
+    },
+    "config_hash": {
+      "type": "string",
+      "description": "Config hash."
+    },
+    "symbol": {
+      "type": "string",
+      "description": "Instrument symbol."
+    },
+    "timeframe": {
+      "type": "string",
+      "description": "Bar timeframe."
+    },
+    "signal_action": {
+      "$ref": "execution-common.schema.json#/$defs/SignalAction"
+    },
+    "outcome": {
+      "$ref": "execution-common.schema.json#/$defs/DecisionOutcome"
+    },
+    "requested_quantity": {
+      "oneOf": [
+        {
+          "$ref": "execution-common.schema.json#/$defs/Decimal"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Requested order quantity."
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Signal or rejection reason explanation."
+    },
+    "compiled_config": {
+      "type": "object",
+      "description": "Compiled strategy configuration snapshot."
+    },
+    "sizing_config": {
+      "type": "object",
+      "description": "Sizing configuration snapshot."
+    },
+    "risk_config": {
+      "type": "object",
+      "description": "Risk configuration snapshot."
+    },
+    "context": {
+      "type": "object",
+      "description": "Decision evaluation context metadata."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 UTC creation timestamp."
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 UTC update timestamp."
+    }
+  },
+  "additionalProperties": false
+}

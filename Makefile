@@ -14,9 +14,10 @@ contracts:
 	cp "$$contracts_tmp/q_contracts/schema/api/arrow/"*.schema.json contracts/schema/api/arrow/; \
 	mkdir -p contracts/schema/catalog; \
 	cp "$$contracts_tmp/q_contracts/schema/catalog/dataset-manifest.schema.json" contracts/schema/catalog/; \
-	mkdir -p contracts/schema/stream/replay; \
+	mkdir -p contracts/schema/stream/replay contracts/schema/stream/payloads; \
 	cp "$$contracts_tmp/q_contracts/schema/stream/envelope.schema.json" contracts/schema/stream/; \
 	cp "$$contracts_tmp/q_contracts/schema/stream/replay/"*.schema.json contracts/schema/stream/replay/; \
+	cp "$$contracts_tmp/q_contracts/schema/stream/payloads/"*.schema.json contracts/schema/stream/payloads/; \
 	mkdir -p contracts/schema/edge/common contracts/schema/edge/execution; \
 	cp "$$contracts_tmp/q_contracts/schema/edge/common/"*.schema.json contracts/schema/edge/common/; \
 	cp "$$contracts_tmp/q_contracts/schema/edge/execution/"*.schema.json contracts/schema/edge/execution/
@@ -37,9 +38,10 @@ contracts-check:
 	cp "$$contracts_tmp/q_contracts/schema/api/arrow/"*.schema.json "$$generated_tmp/python/q_contracts/schema/api/arrow/"; \
 	mkdir -p "$$generated_tmp/python/q_contracts/schema/catalog"; \
 	cp "$$contracts_tmp/q_contracts/schema/catalog/dataset-manifest.schema.json" "$$generated_tmp/python/q_contracts/schema/catalog/"; \
-	mkdir -p "$$generated_tmp/python/q_contracts/schema/stream/replay"; \
+	mkdir -p "$$generated_tmp/python/q_contracts/schema/stream/replay" "$$generated_tmp/python/q_contracts/schema/stream/payloads"; \
 	cp "$$contracts_tmp/q_contracts/schema/stream/envelope.schema.json" "$$generated_tmp/python/q_contracts/schema/stream/"; \
 	cp "$$contracts_tmp/q_contracts/schema/stream/replay/"*.schema.json "$$generated_tmp/python/q_contracts/schema/stream/replay/"; \
+	cp "$$contracts_tmp/q_contracts/schema/stream/payloads/"*.schema.json "$$generated_tmp/python/q_contracts/schema/stream/payloads/"; \
 	diff -ru --exclude='__pycache__' --exclude='*.pyc' --exclude='schema' contracts "$$generated_tmp/python/q_contracts"; \
 	python3 -c 'import json, pathlib, sys; left=pathlib.Path("contracts/schema/api/arrow"); right=pathlib.Path("'"$$generated_tmp"'/python/q_contracts/schema/api/arrow"); names=sorted(p.name for p in left.glob("*.schema.json")); sys.exit(names != sorted(p.name for p in right.glob("*.schema.json")) or any(json.loads((left / n).read_text()) != json.loads((right / n).read_text()) for n in names))'; \
 	python3 -c 'import json, pathlib, sys; left=pathlib.Path("contracts/schema/catalog/dataset-manifest.schema.json"); right=pathlib.Path("'"$$generated_tmp"'/python/q_contracts/schema/catalog/dataset-manifest.schema.json"); sys.exit(not left.exists() or not right.exists() or json.loads(left.read_text()) != json.loads(right.read_text()))'; \

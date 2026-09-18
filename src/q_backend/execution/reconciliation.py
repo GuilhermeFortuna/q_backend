@@ -114,6 +114,7 @@ def apply_filled_resolution(
     reconciled_by: str,
     detail: Optional[str],
     at: Optional[datetime] = None,
+    producer: str = "api",
 ) -> None:
     """Apply a confirmed fill through the same atomic ledger path as the happy path."""
     ts = at or _utcnow()
@@ -126,10 +127,15 @@ def apply_filled_resolution(
         point_value=point_value,
         symbol=deployment.symbol,
         reconciling=True,
+        producer=producer,
     )
-    finalize_order_reconciliation(session, order.id, reconciled_by=reconciled_by, detail=detail, at=ts)
+    finalize_order_reconciliation(
+        session, order.id, reconciled_by=reconciled_by, detail=detail, at=ts, producer=producer
+    )
     if order.decision_id is not None:
-        update_execution_decision_outcome(session, order.decision_id, outcome=DecisionOutcome.ORDER_FILLED)
+        update_execution_decision_outcome(
+            session, order.decision_id, outcome=DecisionOutcome.ORDER_FILLED, producer=producer
+        )
 
 
 def apply_failed_resolution(
@@ -140,6 +146,7 @@ def apply_failed_resolution(
     detail: Optional[str],
     reason: str,
     at: Optional[datetime] = None,
+    producer: str = "api",
 ) -> None:
     """Fail the order and release its intent; the ledger is left untouched."""
     ts = at or _utcnow()
@@ -149,10 +156,15 @@ def apply_failed_resolution(
         ExecutionOrderStatus.REJECTED,
         rejection_reason=reason,
         completed_at=ts,
+        producer=producer,
     )
-    finalize_order_reconciliation(session, order.id, reconciled_by=reconciled_by, detail=detail, at=ts)
+    finalize_order_reconciliation(
+        session, order.id, reconciled_by=reconciled_by, detail=detail, at=ts, producer=producer
+    )
     if order.decision_id is not None:
-        update_execution_decision_outcome(session, order.decision_id, outcome=DecisionOutcome.ORDER_REJECTED)
+        update_execution_decision_outcome(
+            session, order.decision_id, outcome=DecisionOutcome.ORDER_REJECTED, producer=producer
+        )
 
 
 def resolve_order_manually(
@@ -218,11 +230,13 @@ class OrderReconciler:
         ledger: ExecutionLedger,
         point_value: Decimal,
         clock: Optional[Callable[[], datetime]] = None,
+        worker_id: str = AUTO_ACTOR,
     ) -> None:
         self._broker = broker
         self._ledger = ledger
         self._point_value = point_value
         self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._worker_id = worker_id
 
     def reconcile_deployment(self, session: Session, deployment: ExecutionDeployment) -> list[ReconciliationOutcome]:
         outcomes = []
@@ -259,6 +273,7 @@ class OrderReconciler:
                     order.id,
                     at=now,
                     error="broker reported filled without fill details",
+                    producer=self._worker_id,
                 )
                 return ReconciliationOutcome(
                     order_id=order.id,
@@ -276,6 +291,7 @@ class OrderReconciler:
                 reconciled_by=AUTO_ACTOR,
                 detail=state.message or "broker confirmed fill",
                 at=now,
+                producer=self._worker_id,
             )
             return ReconciliationOutcome(
                 order_id=order.id,
@@ -296,6 +312,7 @@ class OrderReconciler:
                 detail=state.message or reason,
                 reason=reason,
                 at=now,
+                producer=self._worker_id,
             )
             return ReconciliationOutcome(
                 order_id=order.id,
@@ -310,6 +327,7 @@ class OrderReconciler:
             order.id,
             at=now,
             error=state.message or "broker unavailable",
+            producer=self._worker_id,
         )
         return ReconciliationOutcome(
             order_id=order.id,

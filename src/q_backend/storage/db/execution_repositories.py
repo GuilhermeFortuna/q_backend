@@ -43,6 +43,7 @@ from q_backend.storage.db.execution_models import (
     ExecutionWorkerLease,
     PaperAccount,
 )
+from q_backend.streaming import execution_events
 
 
 class LeaseConflictError(ValueError):
@@ -117,6 +118,7 @@ def create_execution_deployment(
     broker_mode: BrokerMode = BrokerMode.PAPER,
     lifecycle: DeploymentLifecycle = DeploymentLifecycle.DRAFT,
     live_activation_enabled: bool = False,
+    producer: str = "api",
 ) -> ExecutionDeployment:
     deployment = ExecutionDeployment(
         paper_account_id=paper_account_id,
@@ -135,6 +137,12 @@ def create_execution_deployment(
     )
     session.add(deployment)
     session.flush()
+    execution_events.emit(
+        session,
+        "deployments",
+        execution_events.deployment_state(deployment),
+        producer_id=producer,
+    )
     return deployment
 
 
@@ -148,6 +156,7 @@ def transition_deployment_lifecycle(
     target: DeploymentLifecycle,
     *,
     at: Optional[datetime] = None,
+    producer: str = "api",
 ) -> ExecutionDeployment:
     deployment = session.get(ExecutionDeployment, deployment_id)
     if deployment is None:
@@ -161,6 +170,12 @@ def transition_deployment_lifecycle(
     if target in {DeploymentLifecycle.STOPPED, DeploymentLifecycle.ERROR}:
         deployment.stopped_at = now
     session.flush()
+    execution_events.emit(
+        session,
+        "deployments",
+        execution_events.deployment_state(deployment),
+        producer_id=producer,
+    )
     return deployment
 
 
@@ -178,6 +193,7 @@ def create_execution_decision(
     requested_quantity: Optional[Decimal] = None,
     reason: Optional[str] = None,
     context: Optional[dict[str, Any]] = None,
+    producer: str = "api",
 ) -> ExecutionDecision:
     decision = ExecutionDecision(
         deployment_id=deployment_id,
@@ -198,6 +214,12 @@ def create_execution_decision(
     )
     session.add(decision)
     session.flush()
+    execution_events.emit(
+        session,
+        "decisions",
+        execution_events.decision_state(decision),
+        producer_id=producer,
+    )
     return decision
 
 
@@ -229,6 +251,7 @@ def create_execution_order_intent(
     order_type: ExecutionOrderType = ExecutionOrderType.MARKET,
     metadata: Optional[dict[str, Any]] = None,
     intent_committed_at: Optional[datetime] = None,
+    producer: str = "api",
 ) -> ExecutionOrder:
     order = ExecutionOrder(
         deployment_id=deployment_id,
@@ -244,6 +267,12 @@ def create_execution_order_intent(
     )
     session.add(order)
     session.flush()
+    execution_events.emit(
+        session,
+        "orders",
+        execution_events.order_state(order),
+        producer_id=producer,
+    )
     return order
 
 
@@ -257,6 +286,7 @@ def transition_execution_order(
     rejection_reason: Optional[str] = None,
     submitted_at: Optional[datetime] = None,
     completed_at: Optional[datetime] = None,
+    producer: str = "api",
 ) -> ExecutionOrder:
     order = session.get(ExecutionOrder, order_id)
     if order is None:
@@ -275,6 +305,12 @@ def transition_execution_order(
     if completed_at is not None:
         order.completed_at = completed_at
     session.flush()
+    execution_events.emit(
+        session,
+        "orders",
+        execution_events.order_state(order),
+        producer_id=producer,
+    )
     return order
 
 
@@ -298,6 +334,8 @@ def create_execution_fill(
     quote_ask: Optional[Decimal] = None,
     quote_timestamp: Optional[datetime] = None,
     metadata: Optional[dict[str, Any]] = None,
+    position: Optional[ExecutionNetPosition] = None,
+    producer: str = "api",
 ) -> ExecutionFill:
     fill = ExecutionFill(
         deployment_id=deployment_id,
@@ -317,6 +355,14 @@ def create_execution_fill(
     )
     session.add(fill)
     session.flush()
+    if position is None:
+        position = get_open_net_position(session, deployment_id)
+    execution_events.emit(
+        session,
+        "fills",
+        execution_events.fill_event(fill, position),
+        producer_id=producer,
+    )
     return fill
 
 
@@ -413,6 +459,8 @@ def append_ledger_entry(
     balance_after: Decimal,
     fill_id: Optional[uuid.UUID] = None,
     description: Optional[str] = None,
+    account: Optional[PaperAccount] = None,
+    producer: str = "api",
 ) -> ExecutionLedgerEntry:
     entry = ExecutionLedgerEntry(
         paper_account_id=paper_account_id,
@@ -425,6 +473,14 @@ def append_ledger_entry(
     )
     session.add(entry)
     session.flush()
+    if account is None:
+        account = session.get(PaperAccount, paper_account_id)
+    execution_events.emit(
+        session,
+        "ledger",
+        execution_events.ledger_event(entry, account),
+        producer_id=producer,
+    )
     return entry
 
 
@@ -440,6 +496,7 @@ def record_risk_event(
     decision_id: Optional[uuid.UUID] = None,
     order_id: Optional[uuid.UUID] = None,
     context: Optional[dict[str, Any]] = None,
+    producer: str = "api",
 ) -> ExecutionRiskEvent:
     event = ExecutionRiskEvent(
         deployment_id=deployment_id,
@@ -451,6 +508,12 @@ def record_risk_event(
     )
     session.add(event)
     session.flush()
+    execution_events.emit(
+        session,
+        "risk",
+        execution_events.risk_rejection_event(event),
+        producer_id=producer,
+    )
     return event
 
 
@@ -555,12 +618,19 @@ def set_kill_switch(
     enabled: bool,
     reason: Optional[str] = None,
     updated_by: Optional[str] = None,
+    producer: str = "api",
 ) -> ExecutionControlState:
     state = get_execution_control_state(session)
     state.kill_switch_enabled = enabled
     state.kill_switch_reason = reason
     state.updated_by = updated_by
     session.flush()
+    execution_events.emit(
+        session,
+        "risk",
+        execution_events.kill_switch_event(state),
+        producer_id=producer,
+    )
     return state
 
 
@@ -579,12 +649,20 @@ def update_deployment_last_bar_close(
     session: Session,
     deployment_id: uuid.UUID,
     bar_close_time: datetime,
+    *,
+    producer: str = "api",
 ) -> ExecutionDeployment:
     deployment = session.get(ExecutionDeployment, deployment_id)
     if deployment is None:
         raise ValueError(f"ExecutionDeployment {deployment_id} not found")
     deployment.last_bar_close_time = bar_close_time
     session.flush()
+    execution_events.emit(
+        session,
+        "deployments",
+        execution_events.deployment_state(deployment),
+        producer_id=producer,
+    )
     return deployment
 
 
@@ -594,6 +672,7 @@ def update_execution_decision_outcome(
     *,
     outcome: DecisionOutcome,
     context: Optional[dict[str, Any]] = None,
+    producer: str = "api",
 ) -> ExecutionDecision:
     decision = session.get(ExecutionDecision, decision_id)
     if decision is None:
@@ -602,6 +681,12 @@ def update_execution_decision_outcome(
     if context is not None:
         decision.context = context
     session.flush()
+    execution_events.emit(
+        session,
+        "decisions",
+        execution_events.decision_state(decision),
+        producer_id=producer,
+    )
     return decision
 
 
@@ -622,6 +707,7 @@ def mark_incomplete_orders_unknown(
     deployment_id: uuid.UUID,
     *,
     reason: str = "recovery: incomplete order intent",
+    producer: str = "api",
 ) -> int:
     incomplete = list_orders_for_deployment(
         session,
@@ -641,6 +727,7 @@ def mark_incomplete_orders_unknown(
                 ExecutionOrderStatus.UNKNOWN,
                 reconciliation_state=ReconciliationState.PENDING,
                 rejection_reason=reason,
+                producer=producer,
             )
             marked += 1
         elif current == ExecutionOrderStatus.SUBMITTED:
@@ -650,6 +737,7 @@ def mark_incomplete_orders_unknown(
                 ExecutionOrderStatus.UNKNOWN,
                 reconciliation_state=ReconciliationState.PENDING,
                 rejection_reason=reason,
+                producer=producer,
             )
             marked += 1
     return marked
@@ -699,6 +787,7 @@ def record_reconciliation_attempt(
     *,
     at: Optional[datetime] = None,
     error: Optional[str] = None,
+    producer: str = "api",
 ) -> ExecutionOrder:
     """Record a (failed) reconciliation attempt without resolving the order."""
     order = session.get(ExecutionOrder, order_id)
@@ -707,6 +796,12 @@ def record_reconciliation_attempt(
     order.reconciliation_attempted_at = at or _utcnow()
     order.reconciliation_error = error
     session.flush()
+    execution_events.emit(
+        session,
+        "orders",
+        execution_events.order_state(order),
+        producer_id=producer,
+    )
     return order
 
 
@@ -717,6 +812,7 @@ def finalize_order_reconciliation(
     reconciled_by: str,
     detail: Optional[str] = None,
     at: Optional[datetime] = None,
+    producer: str = "api",
 ) -> ExecutionOrder:
     """Stamp who/when/why on a resolved order and clear its pending state."""
     order = session.get(ExecutionOrder, order_id)
@@ -728,6 +824,12 @@ def finalize_order_reconciliation(
     order.reconciliation_detail = detail
     order.reconciliation_error = None
     session.flush()
+    execution_events.emit(
+        session,
+        "orders",
+        execution_events.order_state(order),
+        producer_id=producer,
+    )
     return order
 
 
@@ -1026,6 +1128,7 @@ def set_pending_deployment_action(
     *,
     action: str,
     at: Optional[datetime] = None,
+    producer: str = "api",
 ) -> ExecutionDeployment:
     deployment = session.get(ExecutionDeployment, deployment_id)
     if deployment is None:
@@ -1033,16 +1136,33 @@ def set_pending_deployment_action(
     deployment.pending_action = action
     deployment.pending_action_requested_at = at or _utcnow()
     session.flush()
+    execution_events.emit(
+        session,
+        "deployments",
+        execution_events.deployment_state(deployment),
+        producer_id=producer,
+    )
     return deployment
 
 
-def clear_pending_deployment_action(session: Session, deployment_id: uuid.UUID) -> ExecutionDeployment:
+def clear_pending_deployment_action(
+    session: Session,
+    deployment_id: uuid.UUID,
+    *,
+    producer: str = "api",
+) -> ExecutionDeployment:
     deployment = session.get(ExecutionDeployment, deployment_id)
     if deployment is None:
         raise ValueError(f"ExecutionDeployment {deployment_id} not found")
     deployment.pending_action = None
     deployment.pending_action_requested_at = None
     session.flush()
+    execution_events.emit(
+        session,
+        "deployments",
+        execution_events.deployment_state(deployment),
+        producer_id=producer,
+    )
     return deployment
 
 

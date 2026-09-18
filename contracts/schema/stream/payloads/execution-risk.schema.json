@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stream/payloads/execution-risk",
+  "title": "ExecutionRiskEvent",
+  "description": "Payload for risk durable stream events carrying risk rejection or kill switch control changes.",
+  "oneOf": [
+    {
+      "type": "object",
+      "title": "RiskRejectionEvent",
+      "description": "Pre-trade risk check rejection event.",
+      "required": [
+        "entity",
+        "kind",
+        "id",
+        "deployment_id",
+        "account_id",
+        "rejection_code",
+        "message",
+        "updated_at"
+      ],
+      "properties": {
+        "entity": {
+          "enum": [
+            "risk",
+            "risk_rejection"
+          ],
+          "description": "Entity kind discriminator."
+        },
+        "kind": {
+          "const": "risk_rejection",
+          "description": "Risk event kind."
+        },
+        "id": {
+          "$ref": "execution-common.schema.json#/$defs/UUID",
+          "description": "Risk event identifier."
+        },
+        "deployment_id": {
+          "$ref": "execution-common.schema.json#/$defs/UUID",
+          "description": "Deployment identifier."
+        },
+        "account_id": {
+          "$ref": "execution-common.schema.json#/$defs/UUID",
+          "description": "Trading account identifier."
+        },
+        "decision_id": {
+          "oneOf": [
+            {
+              "$ref": "execution-common.schema.json#/$defs/UUID"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Associated decision identifier if evaluated."
+        },
+        "order_id": {
+          "oneOf": [
+            {
+              "$ref": "execution-common.schema.json#/$defs/UUID"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Associated order identifier if attempted."
+        },
+        "rejection_code": {
+          "$ref": "execution-common.schema.json#/$defs/RiskRejectionCode"
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable risk rejection explanation."
+        },
+        "context": {
+          "type": "object",
+          "description": "Diagnostic evaluation metadata at rejection time."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC 3339 UTC creation timestamp."
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC 3339 UTC last update timestamp."
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "title": "KillSwitchEvent",
+      "description": "Global risk control kill switch modification event.",
+      "required": [
+        "entity",
+        "kind",
+        "id",
+        "deployment_id",
+        "kill_switch_enabled",
+        "updated_at"
+      ],
+      "properties": {
+        "entity": {
+          "enum": [
+            "risk",
+            "kill_switch"
+          ],
+          "description": "Entity kind discriminator."
+        },
+        "kind": {
+          "const": "kill_switch",
+          "description": "Risk event kind."
+        },
+        "id": {
+          "$ref": "execution-common.schema.json#/$defs/UUID",
+          "description": "Control event identifier."
+        },
+        "deployment_id": {
+          "type": "null",
+          "description": "Null for global risk controls."
+        },
+        "account_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Account identifier or null for global controls."
+        },
+        "kill_switch_enabled": {
+          "type": "boolean",
+          "description": "Whether trading is globally disabled by kill switch."
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "Alias for kill_switch_enabled."
+        },
+        "kill_switch_reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reason for activating or deactivating kill switch."
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Alias for kill_switch_reason."
+        },
+        "updated_by": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Operator or system actor initiating the change."
+        },
+        "actor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Alias for updated_by."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC 3339 UTC creation timestamp."
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC 3339 UTC last update timestamp."
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

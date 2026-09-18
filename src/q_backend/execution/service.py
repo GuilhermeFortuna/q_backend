@@ -199,10 +199,11 @@ class ExecutionService:
             requested_quantity=requested_qty,
             reason=eval_result.reason,
             context={"timing": eval_result.timing.model_dump()},
+            producer=worker_id,
         )
 
         if eval_result.signal_action == SignalAction.HOLD and not flatten:
-            update_deployment_last_bar_close(session, deployment.id, eval_result.bar_close_time)
+            update_deployment_last_bar_close(session, deployment.id, eval_result.bar_close_time, producer=worker_id)
             self._commit(session)
             timing = timing.model_copy(update={"total_ms": _elapsed_ms(started)})
             return BarProcessResult(
@@ -230,6 +231,7 @@ class ExecutionService:
                     decision.id,
                     outcome=DecisionOutcome.HOLD,
                     context={"flatten": "no open position"},
+                    producer=worker_id,
                 )
                 self._commit(session)
                 timing = timing.model_copy(update={"total_ms": _elapsed_ms(started)})
@@ -249,8 +251,10 @@ class ExecutionService:
                 requested_quantity=requested_qty,
             )
             if mapped is None:
-                update_execution_decision_outcome(session, decision.id, outcome=DecisionOutcome.HOLD)
-                update_deployment_last_bar_close(session, deployment.id, eval_result.bar_close_time)
+                update_execution_decision_outcome(
+                    session, decision.id, outcome=DecisionOutcome.HOLD, producer=worker_id
+                )
+                update_deployment_last_bar_close(session, deployment.id, eval_result.bar_close_time, producer=worker_id)
                 self._commit(session)
                 timing = timing.model_copy(update={"total_ms": _elapsed_ms(started)})
                 return BarProcessResult(
@@ -320,14 +324,16 @@ class ExecutionService:
                 message=rejection.message,
                 decision_id=decision.id,
                 context=rejection.context,
+                producer=worker_id,
             )
             update_execution_decision_outcome(
                 session,
                 decision.id,
                 outcome=DecisionOutcome.RISK_REJECTED,
                 context={"rejection": rejection.model_dump(mode="json")},
+                producer=worker_id,
             )
-            update_deployment_last_bar_close(session, deployment.id, eval_result.bar_close_time)
+            update_deployment_last_bar_close(session, deployment.id, eval_result.bar_close_time, producer=worker_id)
             self._commit(session)
             timing = timing.model_copy(update={"total_ms": _elapsed_ms(started)})
             return BarProcessResult(
@@ -348,6 +354,7 @@ class ExecutionService:
             side=side,
             quantity=quantity,
             metadata={"flatten": flatten, "bar_close_time": eval_result.bar_close_time.isoformat()},
+            producer=worker_id,
         )
         session.flush()
         self._crash.maybe_raise("before_intent_commit")
@@ -382,13 +389,15 @@ class ExecutionService:
                 reconciliation_state=ReconciliationState.PENDING,
                 rejection_reason="broker outcome unknown",
                 external_order_id=submission.external_order_id,
+                producer=worker_id,
             )
             update_execution_decision_outcome(
                 session,
                 decision.id,
                 outcome=DecisionOutcome.ORDER_UNKNOWN,
+                producer=worker_id,
             )
-            update_deployment_last_bar_close(session, deployment.id, eval_result.bar_close_time)
+            update_deployment_last_bar_close(session, deployment.id, eval_result.bar_close_time, producer=worker_id)
             self._commit(session)
             timing = timing.model_copy(update={"total_ms": _elapsed_ms(started)})
             return BarProcessResult(
@@ -408,13 +417,15 @@ class ExecutionService:
                 ExecutionOrderStatus.REJECTED,
                 rejection_reason=reason,
                 completed_at=now,
+                producer=worker_id,
             )
             update_execution_decision_outcome(
                 session,
                 decision.id,
                 outcome=DecisionOutcome.ORDER_REJECTED,
+                producer=worker_id,
             )
-            update_deployment_last_bar_close(session, deployment.id, eval_result.bar_close_time)
+            update_deployment_last_bar_close(session, deployment.id, eval_result.bar_close_time, producer=worker_id)
             self._commit(session)
             timing = timing.model_copy(update={"total_ms": _elapsed_ms(started)})
             return BarProcessResult(
@@ -435,6 +446,7 @@ class ExecutionService:
                 fill=submission.fill,
                 point_value=point_value,
                 symbol=deployment.symbol,
+                producer=worker_id,
                 position_opened_at=eval_result.bar_close_time,
             )
             self._crash.maybe_raise("before_fill_commit")
@@ -442,8 +454,9 @@ class ExecutionService:
                 session,
                 decision.id,
                 outcome=DecisionOutcome.ORDER_FILLED,
+                producer=worker_id,
             )
-            update_deployment_last_bar_close(session, deployment.id, eval_result.bar_close_time)
+            update_deployment_last_bar_close(session, deployment.id, eval_result.bar_close_time, producer=worker_id)
             self._commit(session)
         except Exception:
             # Already-handled by the state machine: the fill may or may not have
@@ -459,11 +472,13 @@ class ExecutionService:
                     ExecutionOrderStatus.UNKNOWN,
                     reconciliation_state=ReconciliationState.PENDING,
                     rejection_reason="fill persistence failed",
+                    producer=worker_id,
                 )
                 update_execution_decision_outcome(
                     session,
                     decision.id,
                     outcome=DecisionOutcome.ORDER_UNKNOWN,
+                    producer=worker_id,
                 )
             raise
 

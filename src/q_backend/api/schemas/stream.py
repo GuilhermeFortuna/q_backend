@@ -49,3 +49,30 @@ class JobSnapshotResponse(BaseModel):
         ...,
         description="Snapshot watermark keyed by topic name.",
     )
+
+
+class ExecutionSnapshotLimits(BaseModel):
+    recent_decisions: int = Field(..., ge=0)
+    recent_fills: int = Field(..., ge=0)
+    recent_orders: int = Field(..., ge=0)
+    recent_risk: int = Field(..., ge=0)
+
+
+class ExecutionSnapshotRecent(BaseModel):
+    decisions: list[dict[str, Any]]
+    fills: list[dict[str, Any]]
+    risk: list[dict[str, Any]]
+
+
+class ExecutionSnapshotResponse(BaseModel):
+    deployments: list[dict[str, Any]]
+    accounts: list[dict[str, Any]]
+    positions: list[dict[str, Any]]
+    orders: list[dict[str, Any]]
+    recent: ExecutionSnapshotRecent
+    control: dict[str, Any]
+    limits: ExecutionSnapshotLimits
+    watermark: dict[str, dict[str, Any]] = Field(
+        ...,
+        description="Snapshot watermark keyed by topic name.",
+    )

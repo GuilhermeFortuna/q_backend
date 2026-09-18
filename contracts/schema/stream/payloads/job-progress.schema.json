@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stream/payloads/job-progress",
+  "title": "JobProgressPayload",
+  "description": "Payload for jobs.progress ephemeral stream events.",
+  "type": "object",
+  "required": [
+    "kind",
+    "job_id",
+    "status",
+    "progress"
+  ],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "alpha_research",
+        "backtest",
+        "discovery_ab",
+        "encoder_ablation",
+        "neural_training",
+        "optimization",
+        "storage_ingest",
+        "strategy_search",
+        "walkforward"
+      ],
+      "description": "Closed vocabulary of job kinds matching backend progress namespaces."
+    },
+    "job_id": {
+      "type": "string",
+      "description": "Unique identifier of the job instance."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "running"
+      ],
+      "description": "Current non-terminal lifecycle status."
+    },
+    "progress": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Numeric progress fraction between 0.0 and 1.0, or null when the job reports unstructured progress."
+    },
+    "message": {
+      "type": "string",
+      "description": "Human-readable progress or step description (e.g. 'Epoch 3/10')."
+    }
+  },
+  "additionalProperties": false
+}
