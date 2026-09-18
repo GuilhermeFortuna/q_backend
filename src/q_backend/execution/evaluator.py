@@ -31,7 +31,7 @@ Warm-up / window bound: see ``execution.warmup.compute_window_bound_bars``.
 from __future__ import annotations
 
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 import numpy as np
@@ -51,6 +51,14 @@ from q_backend.execution.position_adapter import execution_position_to_trade
 from q_backend.execution.results import EvaluationPhaseTiming, ForwardDecisionResult
 from q_backend.execution.strategy_build import build_strategy_from_compiled
 from q_backend.execution.warmup import compute_window_bound_bars
+
+ForwardEvaluationResult = ForwardDecisionResult
+
+
+def _utc_aware(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def _signal_to_dict(signal: Signal) -> dict[str, Any]:
@@ -122,7 +130,7 @@ class StrategyEvaluator:
         self._kernel_sizing = sizer_to_kernel(self.sizer)
         self._rolling = pd.DataFrame()
         self._open_trade = open_trade
-        self._last_evaluated_close = last_evaluated_close
+        self._last_evaluated_close = _utc_aware(last_evaluated_close) if last_evaluated_close is not None else None
         self._replay_mode = False
 
     @classmethod
@@ -186,6 +194,13 @@ class StrategyEvaluator:
         finally:
             self._replay_mode = False
 
+    def ingest_completed_bar(self, bar: pd.DataFrame) -> Optional[ForwardDecisionResult]:
+        """Evaluate a single newly completed bar."""
+        results = self.ingest_completed_bars(bar)
+        if not results:
+            return None
+        return results[-1]
+
     def ingest_completed_bars(
         self,
         frame: pd.DataFrame,
@@ -195,18 +210,19 @@ class StrategyEvaluator:
         if frame.empty:
             return []
 
+        replay_through = _utc_aware(through_close) if through_close is not None else None
         ordered = frame.sort_index()
-        merged = pd.concat([self._rolling, ordered]) if not self._rolling.empty else ordered
-        merged = merged[~merged.index.duplicated(keep="last")].sort_index()
-        self._rolling = trim_rolling_window(merged, self.window_bound)
-
-        closes = frame_close_times(ordered.index, self.timeframe)
         results: list[ForwardDecisionResult] = []
-        for open_time, close_ts in zip(ordered.index, closes):
-            close_time = close_ts.to_pydatetime()
-            if through_close is not None and close_time > through_close:
+        for open_time in ordered.index:
+            single = ordered.loc[[open_time]]
+            merged = pd.concat([self._rolling, single]) if not self._rolling.empty else single
+            merged = merged[~merged.index.duplicated(keep="last")].sort_index()
+            self._rolling = trim_rolling_window(merged, self.window_bound)
+
+            close_time = _utc_aware(frame_close_times(single.index, self.timeframe)[0].to_pydatetime())
+            if replay_through is not None and close_time > replay_through:
                 break
-            if self._last_evaluated_close is not None and close_time < self._last_evaluated_close:
+            if self._last_evaluated_close is not None and close_time < _utc_aware(self._last_evaluated_close):
                 continue
             indicators_started = time.perf_counter()
             augmented = self._augmented_frame()
@@ -246,7 +262,7 @@ class StrategyEvaluator:
         duplicate = (
             not self._replay_mode
             and self._last_evaluated_close is not None
-            and bar_close_time_value == self._last_evaluated_close
+            and _utc_aware(bar_close_time_value) == _utc_aware(self._last_evaluated_close)
         )
 
         evaluate_started = time.perf_counter()
