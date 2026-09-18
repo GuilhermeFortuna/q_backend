@@ -39,4 +39,5 @@ def build_strategy_from_compiled(
         )
 
     entry_params = {key: value for key, value in entries[0].params.items()}
-    return build_strategy(request.strategy, entry_params, symbol)
+    merged_params = {**entry_params, **exit_params}
+    return build_strategy(request.strategy, merged_params, symbol)

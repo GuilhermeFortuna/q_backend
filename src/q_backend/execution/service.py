@@ -431,6 +431,7 @@ class ExecutionService:
                 fill=submission.fill,
                 point_value=point_value,
                 symbol=deployment.symbol,
+                position_opened_at=eval_result.bar_close_time,
             )
             self._crash.maybe_raise("before_fill_commit")
             update_execution_decision_outcome(
