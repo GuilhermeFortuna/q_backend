@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "edge/execution/account-request",
+  "title": "AccountRequest",
+  "description": "Request terminal account status, balance, and trading permissions.",
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}

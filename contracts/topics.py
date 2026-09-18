@@ -47,7 +47,7 @@ TOPICS: Mapping[str, TopicPolicy] = {
         coalesce_key=(),
         on_overflow="lag",
         replay="unbounded",
-        payload_schema="schema/stream/envelope.schema.json",
+        payload_schema="schema/stream/payloads/execution-decision.schema.json",
     ),
     "deployments": TopicPolicy(
         name="deployments",
@@ -57,7 +57,7 @@ TOPICS: Mapping[str, TopicPolicy] = {
         coalesce_key=(),
         on_overflow="lag",
         replay="unbounded",
-        payload_schema="schema/stream/envelope.schema.json",
+        payload_schema="schema/stream/payloads/execution-deployment.schema.json",
     ),
     "fills": TopicPolicy(
         name="fills",
@@ -67,7 +67,7 @@ TOPICS: Mapping[str, TopicPolicy] = {
         coalesce_key=(),
         on_overflow="lag",
         replay="unbounded",
-        payload_schema="schema/stream/envelope.schema.json",
+        payload_schema="schema/stream/payloads/execution-fill.schema.json",
     ),
     "jobs.progress": TopicPolicy(
         name="jobs.progress",
@@ -97,7 +97,7 @@ TOPICS: Mapping[str, TopicPolicy] = {
         coalesce_key=(),
         on_overflow="lag",
         replay="unbounded",
-        payload_schema="schema/stream/envelope.schema.json",
+        payload_schema="schema/stream/payloads/execution-ledger.schema.json",
     ),
     "orders": TopicPolicy(
         name="orders",
@@ -107,7 +107,7 @@ TOPICS: Mapping[str, TopicPolicy] = {
         coalesce_key=(),
         on_overflow="lag",
         replay="unbounded",
-        payload_schema="schema/stream/envelope.schema.json",
+        payload_schema="schema/stream/payloads/execution-order.schema.json",
     ),
     "quotes": TopicPolicy(
         name="quotes",
@@ -127,6 +127,6 @@ TOPICS: Mapping[str, TopicPolicy] = {
         coalesce_key=(),
         on_overflow="lag",
         replay="unbounded",
-        payload_schema="schema/stream/envelope.schema.json",
+        payload_schema="schema/stream/payloads/execution-risk.schema.json",
     ),
 }

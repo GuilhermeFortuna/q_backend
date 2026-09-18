@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "edge/execution/submit-request",
+  "title": "SubmitRequest",
+  "description": "Order submission request to the execution edge carrying caller-minted intent identifier.",
+  "type": "object",
+  "properties": {
+    "intent_id": {
+      "type": "string",
+      "description": "Caller-minted UUID identifying this submission intent for at-most-once semantics."
+    },
+    "order": {
+      "$ref": "order.schema.json",
+      "description": "Order parameters to be submitted to the broker terminal."
+    }
+  },
+  "required": [
+    "intent_id",
+    "order"
+  ],
+  "additionalProperties": false
+}

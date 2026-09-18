@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "edge/execution/lookup-outcome",
+  "title": "LookupOutcome",
+  "description": "Exactly four possible outcomes for intent lookup. Each branch explicitly declares closes_intent.",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "outcome": {
+          "const": "filled"
+        },
+        "deals": {
+          "type": "array",
+          "items": {
+            "$ref": "deal.schema.json"
+          },
+          "description": "Executed deal details found in terminal history matching the intent."
+        },
+        "closes_intent": {
+          "const": true
+        }
+      },
+      "required": [
+        "outcome",
+        "deals",
+        "closes_intent"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "outcome": {
+          "const": "rejected"
+        },
+        "retcode": {
+          "type": "integer",
+          "description": "Terminal or broker rejection code."
+        },
+        "closes_intent": {
+          "const": true
+        },
+        "reason": {
+          "type": "string",
+          "description": "Optional rejection reason text."
+        }
+      },
+      "required": [
+        "outcome",
+        "retcode",
+        "closes_intent"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "outcome": {
+          "const": "not_found"
+        },
+        "closes_intent": {
+          "const": true
+        }
+      },
+      "required": [
+        "outcome",
+        "closes_intent"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "outcome": {
+          "const": "unavailable"
+        },
+        "reason": {
+          "type": "string",
+          "description": "Explanation of query unavailability (MT5 disconnected, timeout, etc.)."
+        },
+        "closes_intent": {
+          "const": false
+        }
+      },
+      "required": [
+        "outcome",
+        "reason",
+        "closes_intent"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

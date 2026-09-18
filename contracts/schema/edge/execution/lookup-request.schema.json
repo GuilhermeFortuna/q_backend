@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "edge/execution/lookup-request",
+  "title": "LookupRequest",
+  "description": "Intent status lookup request querying terminal history within a specified time window.",
+  "type": "object",
+  "properties": {
+    "intent_id": {
+      "type": "string",
+      "description": "Intent identifier whose terminal execution outcome is being queried."
+    },
+    "window_start": {
+      "type": ["string", "integer"],
+      "description": "Search window start as ISO-8601 string or epoch milliseconds."
+    },
+    "window_end": {
+      "type": ["string", "integer"],
+      "description": "Search window end as ISO-8601 string or epoch milliseconds."
+    },
+    "magic": {
+      "type": "integer",
+      "description": "Optional derived magic number to accelerate terminal history filtering."
+    }
+  },
+  "required": [
+    "intent_id",
+    "window_start",
+    "window_end"
+  ],
+  "additionalProperties": false
+}

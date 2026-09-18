@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "edge/common/error",
+  "title": "EdgeErrorResponse",
+  "description": "Standard error response shape for edge services with machine-readable error vocabulary.",
+  "type": "object",
+  "properties": {
+    "error": {
+      "type": "string",
+      "description": "Human-readable error description."
+    },
+    "code": {
+      "type": "string",
+      "description": "Machine-readable error code.",
+      "enum": [
+        "invalid_timeframe",
+        "symbol_not_found",
+        "range_unavailable",
+        "tick_range_too_large",
+        "invalid_flags",
+        "mt5_unavailable",
+        "unauthorized",
+        "not_found",
+        "internal_error",
+        "duplicate_intent",
+        "intent_field_mismatch",
+        "schema_major_mismatch"
+      ]
+    }
+  },
+  "required": [
+    "error",
+    "code"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "edge/execution/quote-request",
+  "title": "QuoteRequest",
+  "description": "Request current pricing snapshot for a symbol from the execution edge.",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Financial instrument ticker symbol."
+    }
+  },
+  "required": [
+    "symbol"
+  ],
+  "additionalProperties": false
+}

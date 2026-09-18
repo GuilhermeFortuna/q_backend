@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "edge/execution/deals-request",
+  "title": "DealsRequest",
+  "description": "Request deal history within a time window, optionally filtered by magic or symbol.",
+  "type": "object",
+  "properties": {
+    "window_start": {
+      "type": ["string", "integer"],
+      "description": "History window start as ISO-8601 string or epoch milliseconds."
+    },
+    "window_end": {
+      "type": ["string", "integer"],
+      "description": "History window end as ISO-8601 string or epoch milliseconds."
+    },
+    "magic": {
+      "type": "integer",
+      "description": "Optional magic number filter."
+    },
+    "symbol": {
+      "type": "string",
+      "description": "Optional symbol filter."
+    }
+  },
+  "required": [
+    "window_start",
+    "window_end"
+  ],
+  "additionalProperties": false
+}

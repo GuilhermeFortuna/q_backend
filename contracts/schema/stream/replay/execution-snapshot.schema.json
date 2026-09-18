@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stream/replay/execution-snapshot",
+  "title": "ExecutionSnapshot",
+  "description": "Current execution state snapshot across deployments, accounts, positions, orders, recent events, control state, limits, and watermarks.",
+  "type": "object",
+  "required": [
+    "deployments",
+    "accounts",
+    "positions",
+    "orders",
+    "recent",
+    "control",
+    "limits",
+    "watermark"
+  ],
+  "properties": {
+    "deployments": {
+      "type": "array",
+      "items": {
+        "$ref": "../payloads/execution-deployment.schema.json"
+      },
+      "description": "All currently registered deployments and their lifecycle states."
+    },
+    "accounts": {
+      "type": "array",
+      "items": {
+        "$ref": "../payloads/execution-common.schema.json#/$defs/ExecutionAccount"
+      },
+      "description": "All trading accounts with current cash balance and realized PnL."
+    },
+    "positions": {
+      "type": "array",
+      "items": {
+        "$ref": "../payloads/execution-common.schema.json#/$defs/ExecutionPosition"
+      },
+      "description": "Current open net positions across deployments."
+    },
+    "orders": {
+      "type": "array",
+      "items": {
+        "$ref": "../payloads/execution-order.schema.json"
+      },
+      "description": "Open and recent orders within the snapshot window."
+    },
+    "recent": {
+      "type": "object",
+      "description": "Recent decisions, fills, and risk events bounded by declared limits.",
+      "required": [
+        "decisions",
+        "fills",
+        "risk"
+      ],
+      "properties": {
+        "decisions": {
+          "type": "array",
+          "items": {
+            "$ref": "../payloads/execution-decision.schema.json"
+          },
+          "description": "Recent strategy evaluation decisions."
+        },
+        "fills": {
+          "type": "array",
+          "items": {
+            "$ref": "../payloads/execution-fill.schema.json"
+          },
+          "description": "Recent order fills."
+        },
+        "risk": {
+          "type": "array",
+          "items": {
+            "$ref": "../payloads/execution-risk.schema.json"
+          },
+          "description": "Recent risk events and control changes."
+        }
+      },
+      "additionalProperties": false
+    },
+    "control": {
+      "$ref": "../payloads/execution-common.schema.json#/$defs/ExecutionControl",
+      "description": "Current global execution control state (kill switch)."
+    },
+    "limits": {
+      "type": "object",
+      "description": "Window capacities for recent event collections.",
+      "required": [
+        "recent_decisions",
+        "recent_fills",
+        "recent_orders",
+        "recent_risk"
+      ],
+      "properties": {
+        "recent_decisions": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum number of recent decisions included."
+        },
+        "recent_fills": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum number of recent fills included."
+        },
+        "recent_orders": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum number of recent orders included."
+        },
+        "recent_risk": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum number of recent risk events included."
+        }
+      },
+      "additionalProperties": false
+    },
+    "watermark": {
+      "type": "object",
+      "description": "Sequence watermarks covering all six execution topics.",
+      "required": [
+        "decisions",
+        "orders",
+        "fills",
+        "risk",
+        "ledger",
+        "deployments"
+      ],
+      "properties": {
+        "decisions": {
+          "type": "object",
+          "required": [
+            "epoch",
+            "seq"
+          ],
+          "properties": {
+            "epoch": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "orders": {
+          "type": "object",
+          "required": [
+            "epoch",
+            "seq"
+          ],
+          "properties": {
+            "epoch": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "fills": {
+          "type": "object",
+          "required": [
+            "epoch",
+            "seq"
+          ],
+          "properties": {
+            "epoch": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "risk": {
+          "type": "object",
+          "required": [
+            "epoch",
+            "seq"
+          ],
+          "properties": {
+            "epoch": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "ledger": {
+          "type": "object",
+          "required": [
+            "epoch",
+            "seq"
+          ],
+          "properties": {
+            "epoch": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "deployments": {
+          "type": "object",
+          "required": [
+            "epoch",
+            "seq"
+          ],
+          "properties": {
+            "epoch": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

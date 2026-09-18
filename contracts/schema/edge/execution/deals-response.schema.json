@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "edge/execution/deals-response",
+  "title": "DealsResponse",
+  "description": "List of executed deals returned by the execution edge.",
+  "type": "array",
+  "items": {
+    "$ref": "deal.schema.json"
+  }
+}

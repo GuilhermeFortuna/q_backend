@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "edge/execution/order",
+  "title": "ExecutionOrder",
+  "description": "Order parameters submitted to the execution edge.",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Financial instrument ticker symbol."
+    },
+    "volume": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Order volume in lots."
+    },
+    "side": {
+      "type": "string",
+      "enum": ["buy", "sell"],
+      "description": "Order side (buy or sell)."
+    },
+    "type": {
+      "type": "integer",
+      "description": "Raw MT5 order type (0=buy, 1=sell, etc.)."
+    },
+    "price": {
+      "type": "number",
+      "description": "Execution price or limit/stop trigger price."
+    },
+    "deviation": {
+      "type": "integer",
+      "description": "Maximum allowed price slippage in points."
+    },
+    "sl": {
+      "type": "number",
+      "description": "Stop loss price level."
+    },
+    "tp": {
+      "type": "number",
+      "description": "Take profit price level."
+    },
+    "magic": {
+      "type": "integer",
+      "description": "Broker-visible magic number derived from intent_id."
+    },
+    "comment": {
+      "type": "string",
+      "description": "Broker-visible order comment derived from intent_id."
+    },
+    "type_time": {
+      "type": "integer",
+      "description": "MT5 order expiration type (e.g. GTC, DAY)."
+    },
+    "type_filling": {
+      "type": "integer",
+      "description": "MT5 filling policy (FOK, IOC, RETURN)."
+    }
+  },
+  "required": [
+    "symbol",
+    "volume"
+  ],
+  "additionalProperties": false
+}
