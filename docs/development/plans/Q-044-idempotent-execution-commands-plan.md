@@ -107,16 +107,16 @@ Replay responses carry the header `Idempotency-Replayed: true`.
    pin it. Run `make contracts-check`. Commit.
 - [x] 2. Write the migration and model. Confirm upgrade and downgrade in
    `tests/storage`' migration test. Commit.
-- [ ] 3. Write failing tests for criteria 1–8 in
+- [x] 3. Write failing tests for criteria 1–8 in
    `tests/api/test_execution_idempotency.py`, one class per route, and a
    concurrency test using two threads and a barrier inside
    `reconciliation.apply_filled_resolution`. Confirm they fail. Commit.
-- [ ] 4. Implement `api/idempotency.py`. Move commits out of the five service
+- [x] 4. Implement `api/idempotency.py`. Move commits out of the five service
    functions and into the routes, and apply `@idempotent`. Confirm the new tests
    and all of `tests/api` and `tests/execution` pass. Commit.
-- [ ] 5. Add `prune_idempotency` to `q-outbox prune` and to the relay's periodic
+- [x] 5. Add `prune_idempotency` to `q-outbox prune` and to the relay's periodic
    prune, with a test. Commit.
-- [ ] 6. Document the header, the replay marker, the in-progress conflict and the
+- [x] 6. Document the header, the replay marker, the in-progress conflict and the
    enforcement flag in `README.md`. Record the research-job remainder in
    `FINDINGS.md`. Commit.
 - [ ] 7. In `q_contracts`, on the branch `Q-044-idempotent-execution-commands`:
