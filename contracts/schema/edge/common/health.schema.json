@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "edge/common/health",
+  "title": "EdgeHealthResponse",
+  "description": "Shared health response shape for edge services (data gateway and execution edge).",
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "description": "Service operational status, typically 'ok'."
+    },
+    "schema_version": {
+      "type": "string",
+      "description": "Schema version served by this edge process (e.g. '1.0')."
+    },
+    "mt5_connected": {
+      "type": "boolean",
+      "description": "True if terminal IPC connection is active and initialized."
+    },
+    "terminal_build": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Terminal build number if connected, or null if unavailable."
+    }
+  },
+  "required": [
+    "status",
+    "schema_version",
+    "mt5_connected",
+    "terminal_build"
+  ],
+  "additionalProperties": false
+}

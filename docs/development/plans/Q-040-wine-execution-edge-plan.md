@@ -129,40 +129,40 @@ docs/mt5-wine-gateway.md                               # edge section
 
 ## Ordered implementation
 
-- [ ] 1. Work on the branch `Q-040-wine-execution-edge` in `q_backend`, created
+- [x] 1. Work on the branch `Q-040-wine-execution-edge` in `q_backend`, created
    from `development` by `./work start`. Confirm Q-039 is merged in
    `q_contracts`. Set `CONTRACTS_REV` to its commit, extend `make contracts` to
    vendor `schema/edge`, run `make contracts` and `make contracts-check`.
    Commit.
-- [ ] 2. Extract the fake `MetaTrader5` into `tests/gateway/fake_metatrader5.py` and
+- [x] 2. Extract the fake `MetaTrader5` into `tests/gateway/fake_metatrader5.py` and
    move the gateway tests beside it. Confirm they pass unchanged. Commit.
-- [ ] 3. Write failing hygiene tests in `tests/gateway/test_edge_hygiene.py`:
+- [x] 3. Write failing hygiene tests in `tests/gateway/test_edge_hygiene.py`:
    imports parsed from source are stdlib, `MetaTrader5` or `numpy`; the
    `_ROUTES` keys equal the contract's `endpoints`; `intent_magic` and
    `intent_comment` reproduce the contract vectors. Commit.
-- [ ] 4. Write `gateway/mt5_execution_edge.py`: server, handler, errors,
+- [x] 4. Write `gateway/mt5_execution_edge.py`: server, handler, errors,
    schema-major check, loopback enforcement, `health`, derivation functions,
    `IntentTable`. Confirm the hygiene tests pass. Commit.
-- [ ] 5. Write failing conformance tests for `account`, `quote`, `check`,
+- [x] 5. Write failing conformance tests for `account`, `quote`, `check`,
    `positions` and `deals` (each outcome validates against its schema; a disconnected terminal
    gives the contract's error; schema major 2 is refused). Implement them.
    Confirm they pass. Commit.
-- [ ] 6. Write failing tests for `submit`: accepted, rejected and each
+- [x] 6. Write failing tests for `submit`: accepted, rejected and each
    indeterminate path, each with exactly one `order_send`; concurrent duplicate
    with a barrier inside the fake `order_send`; a duplicate after completion;
    `intent_field_mismatch` with zero terminal calls; refused unsupported
    fields. Implement `submit`. Confirm they pass. Commit.
-- [ ] 7. Write failing tests for `lookup`: filled from deals, rejected from a
+- [x] 7. Write failing tests for `lookup`: filled from deals, rejected from a
    history order without a deal, not found, unavailable when not initialized
    and when history returns `None`, with `closes_intent` correct for each.
    Implement. Confirm they pass. Commit.
-- [ ] 8. Add `gateway/systemd/mt5-edge.service` and `mt5-edge.env.example`,
+- [x] 8. Add `gateway/systemd/mt5-edge.service` and `mt5-edge.env.example`,
    extend `tests/deploy/test_units.py` for `BindsTo`/`After` and the loopback
    host, and document the edge in `docs/mt5-wine-gateway.md`: port, unit,
    logs, health check, what the intent table does and does not remember. Commit.
-- [ ] 9. Add the matching-rule tightening to `docs/development/FINDINGS.md`
+- [x] 9. Add the matching-rule tightening to `docs/development/FINDINGS.md`
    under a Batch 07 heading. Commit.
-- [ ] 10. Run `scripts/ci.sh`. Fix, re-run, commit.
+- [x] 10. Run `scripts/ci.sh`. Fix, re-run, commit.
 - [ ] 11. **Human:** human-verifiable criteria 1 and 2 on the demo account.
 
 ## Validation

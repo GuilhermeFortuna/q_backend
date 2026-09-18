@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "edge/execution/positions-response",
+  "title": "PositionsResponse",
+  "description": "List of active open positions returned by the execution edge.",
+  "type": "array",
+  "items": {
+    "$ref": "position.schema.json"
+  }
+}

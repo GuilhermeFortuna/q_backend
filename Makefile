@@ -16,7 +16,10 @@ contracts:
 	cp "$$contracts_tmp/q_contracts/schema/catalog/dataset-manifest.schema.json" contracts/schema/catalog/; \
 	mkdir -p contracts/schema/stream/replay; \
 	cp "$$contracts_tmp/q_contracts/schema/stream/envelope.schema.json" contracts/schema/stream/; \
-	cp "$$contracts_tmp/q_contracts/schema/stream/replay/"*.schema.json contracts/schema/stream/replay/
+	cp "$$contracts_tmp/q_contracts/schema/stream/replay/"*.schema.json contracts/schema/stream/replay/; \
+	mkdir -p contracts/schema/edge/common contracts/schema/edge/execution; \
+	cp "$$contracts_tmp/q_contracts/schema/edge/common/"*.schema.json contracts/schema/edge/common/; \
+	cp "$$contracts_tmp/q_contracts/schema/edge/execution/"*.schema.json contracts/schema/edge/execution/
 
 contracts-check:
 	contracts_tmp="$$(mktemp -d)"; \
@@ -40,7 +43,11 @@ contracts-check:
 	diff -ru --exclude='__pycache__' --exclude='*.pyc' --exclude='schema' contracts "$$generated_tmp/python/q_contracts"; \
 	python3 -c 'import json, pathlib, sys; left=pathlib.Path("contracts/schema/api/arrow"); right=pathlib.Path("'"$$generated_tmp"'/python/q_contracts/schema/api/arrow"); names=sorted(p.name for p in left.glob("*.schema.json")); sys.exit(names != sorted(p.name for p in right.glob("*.schema.json")) or any(json.loads((left / n).read_text()) != json.loads((right / n).read_text()) for n in names))'; \
 	python3 -c 'import json, pathlib, sys; left=pathlib.Path("contracts/schema/catalog/dataset-manifest.schema.json"); right=pathlib.Path("'"$$generated_tmp"'/python/q_contracts/schema/catalog/dataset-manifest.schema.json"); sys.exit(not left.exists() or not right.exists() or json.loads(left.read_text()) != json.loads(right.read_text()))'; \
-	python3 -c 'import json, pathlib, sys; left=pathlib.Path("contracts/schema/stream"); right=pathlib.Path("'"$$generated_tmp"'/python/q_contracts/schema/stream"); left_files=sorted(p.relative_to(left).as_posix() for p in left.rglob("*.schema.json")); right_files=sorted(p.relative_to(right).as_posix() for p in right.rglob("*.schema.json")); sys.exit(left_files != right_files or any(json.loads((left / n).read_text()) != json.loads((right / n).read_text()) for n in left_files))'
+	python3 -c 'import json, pathlib, sys; left=pathlib.Path("contracts/schema/stream"); right=pathlib.Path("'"$$generated_tmp"'/python/q_contracts/schema/stream"); left_files=sorted(p.relative_to(left).as_posix() for p in left.rglob("*.schema.json")); right_files=sorted(p.relative_to(right).as_posix() for p in right.rglob("*.schema.json")); sys.exit(left_files != right_files or any(json.loads((left / n).read_text()) != json.loads((right / n).read_text()) for n in left_files))'; \
+	mkdir -p "$$generated_tmp/python/q_contracts/schema/edge/common" "$$generated_tmp/python/q_contracts/schema/edge/execution"; \
+	cp "$$contracts_tmp/q_contracts/schema/edge/common/"*.schema.json "$$generated_tmp/python/q_contracts/schema/edge/common/"; \
+	cp "$$contracts_tmp/q_contracts/schema/edge/execution/"*.schema.json "$$generated_tmp/python/q_contracts/schema/edge/execution/"; \
+	python3 -c 'import json, pathlib, sys; left=pathlib.Path("contracts/schema/edge"); right=pathlib.Path("'"$$generated_tmp"'/python/q_contracts/schema/edge"); left_files=sorted(p.relative_to(left).as_posix() for p in left.rglob("*.schema.json")); right_files=sorted(p.relative_to(right).as_posix() for p in right.rglob("*.schema.json")); sys.exit(left_files != right_files or any(json.loads((left / n).read_text()) != json.loads((right / n).read_text()) for n in left_files))'
 
 hooks:
 	git config core.hooksPath .githooks

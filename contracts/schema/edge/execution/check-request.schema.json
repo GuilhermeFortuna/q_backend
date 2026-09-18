@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "edge/execution/check-request",
+  "title": "CheckRequest",
+  "description": "Pre-check margin and order validity before submission.",
+  "type": "object",
+  "properties": {
+    "intent_id": {
+      "type": "string",
+      "description": "Intent identifier for the prospective submission."
+    },
+    "order": {
+      "$ref": "order.schema.json",
+      "description": "Order parameters to check."
+    }
+  },
+  "required": [
+    "intent_id",
+    "order"
+  ],
+  "additionalProperties": false
+}

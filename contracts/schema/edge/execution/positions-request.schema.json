@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "edge/execution/positions-request",
+  "title": "PositionsRequest",
+  "description": "Request open positions from the terminal, optionally filtered by symbol.",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Optional symbol to filter open positions."
+    }
+  },
+  "additionalProperties": false
+}

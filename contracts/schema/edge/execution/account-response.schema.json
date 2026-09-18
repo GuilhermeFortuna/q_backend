@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "edge/execution/account-response",
+  "title": "AccountResponse",
+  "description": "Terminal account status, trading permissions, and balance metrics.",
+  "type": "object",
+  "properties": {
+    "login": {
+      "type": "integer",
+      "description": "MetaTrader account login number."
+    },
+    "server": {
+      "type": "string",
+      "description": "Trade server name."
+    },
+    "currency": {
+      "type": "string",
+      "description": "Account base currency."
+    },
+    "trade_allowed": {
+      "type": "boolean",
+      "description": "True if trading is allowed for this account."
+    },
+    "terminal_trade_allowed": {
+      "type": "boolean",
+      "description": "True if trading is enabled at the MetaTrader terminal level."
+    },
+    "balance": {
+      "type": "number",
+      "description": "Account balance in account currency."
+    },
+    "equity": {
+      "type": "number",
+      "description": "Account equity in account currency."
+    },
+    "margin_free": {
+      "type": "number",
+      "description": "Free margin available for trading."
+    }
+  },
+  "required": [
+    "login",
+    "server",
+    "currency",
+    "trade_allowed",
+    "terminal_trade_allowed",
+    "balance",
+    "equity",
+    "margin_free"
+  ],
+  "additionalProperties": false
+}

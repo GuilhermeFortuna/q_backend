@@ -1,8 +1,25 @@
-# GENERATED FILE - DO NOT EDIT. Source schemas: schema/edge/common/error.schema.json, schema/edge/common/health.schema.json, schema/edge/execution/check-request.schema.json, schema/edge/execution/check-response.schema.json, schema/edge/execution/deal.schema.json, schema/edge/execution/deals-request.schema.json, schema/edge/execution/deals-response.schema.json, schema/edge/execution/lookup-outcome.schema.json, schema/edge/execution/lookup-request.schema.json, schema/edge/execution/order.schema.json, schema/edge/execution/position.schema.json, schema/edge/execution/positions-request.schema.json, schema/edge/execution/positions-response.schema.json, schema/edge/execution/quote-request.schema.json, schema/edge/execution/quote-response.schema.json, schema/edge/execution/submit-outcome.schema.json, schema/edge/execution/submit-request.schema.json
+# GENERATED FILE - DO NOT EDIT. Source schemas: schema/edge/common/error.schema.json, schema/edge/common/health.schema.json, schema/edge/execution/account-request.schema.json, schema/edge/execution/account-response.schema.json, schema/edge/execution/check-request.schema.json, schema/edge/execution/check-response.schema.json, schema/edge/execution/deal.schema.json, schema/edge/execution/deals-request.schema.json, schema/edge/execution/deals-response.schema.json, schema/edge/execution/lookup-outcome.schema.json, schema/edge/execution/lookup-request.schema.json, schema/edge/execution/order.schema.json, schema/edge/execution/position.schema.json, schema/edge/execution/positions-request.schema.json, schema/edge/execution/positions-response.schema.json, schema/edge/execution/quote-request.schema.json, schema/edge/execution/quote-response.schema.json, schema/edge/execution/submit-outcome.schema.json, schema/edge/execution/submit-request.schema.json
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Literal
+
+
+@dataclass(frozen=True)
+class AccountRequest:
+    pass
+
+
+@dataclass(frozen=True)
+class AccountResponse:
+    balance: float
+    currency: str
+    equity: float
+    login: int
+    margin_free: float
+    server: str
+    terminal_trade_allowed: bool
+    trade_allowed: bool
 
 
 @dataclass(frozen=True)
@@ -43,6 +60,7 @@ class EdgeErrorResponse:
         "not_found",
         "internal_error",
         "duplicate_intent",
+        "intent_field_mismatch",
         "schema_major_mismatch",
     ]
     error: str

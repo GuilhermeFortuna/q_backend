@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "edge/execution/deal",
+  "title": "ExecutionDeal",
+  "description": "Executed deal record from terminal trade history.",
+  "type": "object",
+  "properties": {
+    "ticket": {
+      "type": "integer",
+      "description": "Deal ticket identifier."
+    },
+    "order_ticket": {
+      "type": "integer",
+      "description": "Order ticket that produced this deal."
+    },
+    "symbol": {
+      "type": "string",
+      "description": "Financial instrument ticker symbol."
+    },
+    "type": {
+      "type": "integer",
+      "description": "Deal type (e.g. 0=buy, 1=sell)."
+    },
+    "entry": {
+      "type": "integer",
+      "description": "Deal entry direction (0=in, 1=out, 2=in/out, 3=out_by)."
+    },
+    "volume": {
+      "type": "number",
+      "description": "Filled volume in lots."
+    },
+    "price": {
+      "type": "number",
+      "description": "Executed deal price."
+    },
+    "commission": {
+      "type": "number",
+      "description": "Deal commission charged."
+    },
+    "swap": {
+      "type": "number",
+      "description": "Cumulative swap on deal."
+    },
+    "profit": {
+      "type": "number",
+      "description": "Realized profit/loss on deal."
+    },
+    "fee": {
+      "type": "number",
+      "description": "Additional exchange or broker fee."
+    },
+    "magic": {
+      "type": "integer",
+      "description": "Broker magic number matching the intent."
+    },
+    "comment": {
+      "type": "string",
+      "description": "Deal comment string matching the intent."
+    },
+    "time_msc": {
+      "type": "integer",
+      "description": "Deal execution timestamp in raw MT5 milliseconds."
+    }
+  },
+  "required": [
+    "ticket",
+    "order_ticket",
+    "symbol",
+    "volume",
+    "price"
+  ],
+  "additionalProperties": false
+}

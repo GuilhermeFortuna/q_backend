@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "edge/execution/position",
+  "title": "ExecutionPosition",
+  "description": "Open position record in the terminal account.",
+  "type": "object",
+  "properties": {
+    "ticket": {
+      "type": "integer",
+      "description": "Position ticket identifier."
+    },
+    "symbol": {
+      "type": "string",
+      "description": "Financial instrument ticker symbol."
+    },
+    "type": {
+      "type": "integer",
+      "description": "Position direction (0=buy, 1=sell)."
+    },
+    "volume": {
+      "type": "number",
+      "description": "Current position volume in lots."
+    },
+    "price_open": {
+      "type": "number",
+      "description": "Position open price."
+    },
+    "sl": {
+      "type": "number",
+      "description": "Stop loss price level."
+    },
+    "tp": {
+      "type": "number",
+      "description": "Take profit price level."
+    },
+    "price_current": {
+      "type": "number",
+      "description": "Current market price for the position."
+    },
+    "profit": {
+      "type": "number",
+      "description": "Unrealized floating profit/loss."
+    },
+    "magic": {
+      "type": "integer",
+      "description": "Magic number assigned when opened."
+    },
+    "comment": {
+      "type": "string",
+      "description": "Position comment string."
+    },
+    "time": {
+      "type": "integer",
+      "description": "Position open timestamp in epoch seconds."
+    }
+  },
+  "required": [
+    "ticket",
+    "symbol",
+    "type",
+    "volume",
+    "price_open"
+  ],
+  "additionalProperties": false
+}

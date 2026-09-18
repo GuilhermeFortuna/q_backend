@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "edge/execution/check-response",
+  "title": "CheckResponse",
+  "description": "Result of order pre-check and margin calculation.",
+  "type": "object",
+  "properties": {
+    "allowed": {
+      "type": "boolean",
+      "description": "True if order passes terminal margin and risk checks."
+    },
+    "retcode": {
+      "type": "integer",
+      "description": "MT5 return code from order_check."
+    },
+    "margin": {
+      "type": "number",
+      "description": "Required margin for the order in account currency."
+    },
+    "reason": {
+      "type": "string",
+      "description": "Explanation if order pre-check failed or was disallowed."
+    }
+  },
+  "required": [
+    "allowed",
+    "retcode",
+    "margin"
+  ],
+  "additionalProperties": false
+}

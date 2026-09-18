@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "edge/execution/submit-outcome",
+  "title": "SubmitOutcome",
+  "description": "Exactly three possible outcomes for an order submission attempt. duplicate_intent is returned as an HTTP error response, not an outcome.",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "outcome": {
+          "const": "accepted"
+        },
+        "order_ticket": {
+          "type": "integer",
+          "description": "Terminal order ticket assigned by the broker."
+        },
+        "retcode": {
+          "type": "integer",
+          "description": "MT5 return code (typically 10009 TRADE_RETCODE_DONE)."
+        }
+      },
+      "required": [
+        "outcome",
+        "order_ticket",
+        "retcode"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "outcome": {
+          "const": "rejected"
+        },
+        "retcode": {
+          "type": "integer",
+          "description": "MT5 rejection return code."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Description of why the broker or edge rejected the submission."
+        }
+      },
+      "required": [
+        "outcome",
+        "retcode",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "outcome": {
+          "const": "indeterminate"
+        },
+        "reason": {
+          "type": "string",
+          "description": "Explanation of indeterminate state (transport timeout, terminal crash, etc.)."
+        }
+      },
+      "required": [
+        "outcome",
+        "reason"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

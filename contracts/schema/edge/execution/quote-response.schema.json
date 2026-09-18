@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "edge/execution/quote-response",
+  "title": "QuoteResponse",
+  "description": "Current pricing snapshot for an instrument with edge-calculated quote age.",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Financial instrument ticker symbol."
+    },
+    "bid": {
+      "type": "number",
+      "description": "Current best bid price."
+    },
+    "ask": {
+      "type": "number",
+      "description": "Current best ask price."
+    },
+    "last": {
+      "type": "number",
+      "description": "Last traded price."
+    },
+    "time_msc": {
+      "type": "integer",
+      "description": "Raw MT5 quote timestamp in milliseconds."
+    },
+    "age_ms": {
+      "type": "integer",
+      "description": "Quote age in milliseconds computed by the edge process against its local clock."
+    }
+  },
+  "required": [
+    "symbol",
+    "bid",
+    "ask",
+    "last",
+    "time_msc",
+    "age_ms"
+  ],
+  "additionalProperties": false
+}
