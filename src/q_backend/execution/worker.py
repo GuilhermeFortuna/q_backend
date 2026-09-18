@@ -15,8 +15,7 @@ from typing import Callable, Optional
 from sqlalchemy.orm import Session, sessionmaker
 
 from q_backend.execution.bar_coordinator import BarCoordinator, DeploymentBarConsumer
-from q_backend.execution.brokers.base import PaperCostConfig, QuoteSource
-from q_backend.execution.brokers.paper import PaperBroker
+from q_backend.execution.brokers.base import ExecutionBroker, PaperCostConfig, QuoteSource
 from q_backend.execution.domain import DeploymentLifecycle
 from q_backend.execution.ledger import ExecutionLedger
 from q_backend.execution.reconciliation import OrderReconciler
@@ -52,7 +51,7 @@ class ExecutionWorker:
     session_factory: sessionmaker[Session]
     coordinator: BarCoordinator
     quote_source: QuoteSource
-    broker: PaperBroker
+    broker: ExecutionBroker
     ledger: ExecutionLedger
     service: ExecutionService
     recovery: ExecutionRecovery
