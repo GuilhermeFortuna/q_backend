@@ -153,7 +153,7 @@ q_contracts: schema/api/openapi.yaml, schema/api/FINDINGS.md Finding 4, COMPAT.m
    equals the per-topic maximum; a concurrent commit during the read does not
    enter the snapshot or the watermark; `503` with Postgres down. Implement
    `read_execution_snapshot` and the route. Confirm they pass. Commit.
-- [ ] 6. Write `test_execution_snapshot_race.py` (200 seeds in CI, 2 000 under an
+- [x] 6. Write `test_execution_snapshot_race.py` (200 seeds in CI, 2 000 under an
    environment flag) and fix anything it finds. Commit.
 - [ ] 7. Update `README.md` (execution topics are live on the stream; the snapshot
    route). Commit.
