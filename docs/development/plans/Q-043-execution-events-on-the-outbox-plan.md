@@ -161,7 +161,7 @@ q_contracts: schema/api/openapi.yaml, schema/api/FINDINGS.md Finding 4, COMPAT.m
    `Q-043-execution-events-on-the-outbox`. Close FINDINGS Finding 4 there and
    update `COMPAT.md`. If another batch-07 recapture merged first, rebase and
    capture again. Commit in `q_contracts`.
-- [ ] 9. Run `scripts/ci.sh`. Fix, re-run, commit.
+- [x] 9. Run `scripts/ci.sh`. Fix, re-run, commit.
 - [ ] 10. **Human:** human-verifiable criterion 1.
 
 ## Validation
