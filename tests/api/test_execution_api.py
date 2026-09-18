@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -342,8 +342,74 @@ def test_health_with_running_deployment_and_lease(api_db_session: Session):
         now=now,
     )
     health = execution_service.get_execution_health(api_db_session, mt5_connected=True)
-    assert health.worker_status == "healthy"
+    assert health.worker_status == "offline"  # a lease alone is not a heartbeat
     assert len(health.deployments) == 1
+
+
+def _beat(session, *, age_s: float, reachable=True, build=4500, stopped=False):
+    from q_backend.storage.db.execution_repositories import (
+        EdgeHealthSnapshot,
+        record_worker_heartbeat,
+        record_worker_stopped,
+    )
+
+    now = datetime.now(timezone.utc)
+    beat = now - timedelta(seconds=age_s)
+    edge = EdgeHealthSnapshot(reachable, True if reachable else None, build if reachable else None, beat)
+    record_worker_heartbeat(session, worker_id="w1", started_at=beat, version="1", edge=edge, now=beat)
+    if stopped:
+        record_worker_stopped(session, worker_id="w1", now=beat)
+
+
+def test_health_healthy_with_fresh_heartbeat_and_edge_fields(api_db_session: Session):
+    _beat(api_db_session, age_s=1)
+    health = execution_service.get_execution_health(api_db_session, mt5_connected=True)
+    assert health.worker_status == "healthy"
+    assert 0.5 < health.worker_heartbeat_age_s < 5
+    assert health.edge.reachable is True and health.edge.terminal_build == 4500
+
+
+def test_health_stale_after_bound_and_edge_unreachable(api_db_session: Session):
+    _beat(api_db_session, age_s=11, reachable=False)
+    health = execution_service.get_execution_health(api_db_session, mt5_connected=True)
+    assert health.worker_status == "stale"
+    assert health.edge.reachable is False and health.edge.terminal_build is None
+
+
+def test_health_offline_after_clean_shutdown(api_db_session: Session):
+    _beat(api_db_session, age_s=1, stopped=True)
+    health = execution_service.get_execution_health(api_db_session, mt5_connected=True)
+    assert health.worker_status == "offline"
+
+
+def test_health_lease_with_stopped_poll_loop_is_stale(api_db_session: Session):
+    account = create_paper_account(api_db_session, name="stale-account", initial_balance=Decimal("100000"))
+    deployment = create_execution_deployment(
+        api_db_session,
+        paper_account_id=account.id,
+        name="stale-dep",
+        identity=StrategyIdentity(
+            strategy_name="MACrossover",
+            strategy_version=1,
+            compiled_config=_identity_payload().compiled_config,
+            config_hash=_identity_payload().config_hash,
+            symbol="WIN$",
+            timeframe="H1",
+            sizing_config={"type": "fixed_quantity", "quantity": 1.0},
+        ),
+        lifecycle=DeploymentLifecycle.RUNNING,
+    )
+    acquire_worker_lease(
+        api_db_session,
+        deployment_id=deployment.id,
+        worker_id="w1",
+        lease_token="t",
+        ttl_seconds=120,
+        now=datetime.now(timezone.utc),
+    )
+    _beat(api_db_session, age_s=60)
+    health = execution_service.get_execution_health(api_db_session, mt5_connected=True)
+    assert health.worker_status == "stale"
 
 
 def test_paginated_decisions_empty(api_db_session: Session):

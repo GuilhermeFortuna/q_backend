@@ -38,6 +38,11 @@ ARCHITECTURE_TABLE = {
         "Wants": set(),
         "After": {"q-postgres.service", "q-redis.service"},
     },
+    "q-execution-worker.service": {
+        "Requires": {"q-postgres.service"},
+        "Wants": {"q-redis.service", "mt5-edge.service"},
+        "After": {"q-postgres.service", "q-redis.service", "mt5-edge.service"},
+    },
 }
 
 LONG_RUNNING_SERVICES = {
@@ -64,7 +69,7 @@ def _render_templates(backend_dir: str, dest: Path) -> dict[str, Path]:
 def test_rendered_templates_placeholders_and_execstart(tmp_path: Path):
     backend_dir = "/opt/q_backend"
     rendered = _render_templates(backend_dir, tmp_path)
-    assert len(rendered) >= 5
+    assert len(rendered) >= 6
 
     for unit_name, file_path in rendered.items():
         content = file_path.read_text()
@@ -123,6 +128,28 @@ def test_dependencies_match_architecture_table(tmp_path: Path):
         assert after == expected["After"], f"{unit_name} After mismatch: expected {expected['After']}, got {after}"
 
 
+def test_execution_worker_unit_structure(tmp_path: Path):
+    rendered = _render_templates("/opt/q_backend", tmp_path)
+    config = configparser.ConfigParser(strict=False, interpolation=None)
+    config.read_string(rendered["q-execution-worker.service"].read_text())
+
+    assert config.get("Service", "Type") == "notify"
+    assert config.get("Service", "WatchdogSec")
+    assert config.get("Service", "Restart") == "on-failure"
+    assert config.get("Service", "RestartMaxDelaySec") == "30"
+    assert set(config.get("Service", "RestartPreventExitStatus").split()) == {"78", "79"}
+    assert config.get("Install", "WantedBy") == "default.target"
+
+
+def test_execution_worker_not_in_backend_target():
+    target = configparser.ConfigParser(strict=False, interpolation=None)
+    target.read_string((TEMPLATES_DIR / "q-backend.target").read_text())
+    for key in ("Wants", "Requires", "Upholds", "BindsTo"):
+        assert "q-execution-worker" not in target.get("Unit", key, fallback="")
+    worker = (TEMPLATES_DIR / "q-execution-worker.service.in").read_text()
+    assert "q-backend.target" not in worker
+
+
 GATEWAY_SYSTEMD_DIR = REPO_ROOT / "gateway/systemd"
 
 
@@ -166,6 +193,7 @@ def test_systemd_analyze_verify(tmp_path: Path):
     # Stubs for quadlet-generated units and gateway unit so systemd-analyze can resolve dependencies
     (tmp_path / "q-postgres.service").write_text("[Unit]\nDescription=Postgres\n[Service]\nExecStart=/bin/true\n")
     (tmp_path / "q-redis.service").write_text("[Unit]\nDescription=Redis\n[Service]\nExecStart=/bin/true\n")
+    (tmp_path / "mt5-edge.service").write_text("[Unit]\nDescription=Edge\n[Service]\nExecStart=/bin/true\n")
     (tmp_path / "mt5-gateway.service").write_text("[Unit]\nDescription=Gateway\n[Service]\nExecStart=/bin/true\n")
 
     # Ensure %h/.config/q/backend.env exists for verification of EnvironmentFile

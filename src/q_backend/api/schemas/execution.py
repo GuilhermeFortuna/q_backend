@@ -307,9 +307,19 @@ class DeploymentHealthResponse(BaseModel):
     pending_action: Optional[str] = None
 
 
+class EdgeStatusResponse(BaseModel):
+    reachable: bool
+    mt5_connected: Optional[bool] = None
+    terminal_build: Optional[int] = None
+    checked_at: Optional[datetime] = None
+
+
 class ExecutionHealthResponse(BaseModel):
     api_status: Literal["ok", "degraded", "unavailable"]
     worker_status: Literal["healthy", "stale", "offline"]
+    worker_heartbeat_age_s: Optional[float] = None
+    worker_started_at: Optional[datetime] = None
+    edge: EdgeStatusResponse = EdgeStatusResponse(reachable=False)
     market_data_status: Literal["online", "offline", "stale"]
     kill_switch_enabled: bool
     live_capability_locked: bool

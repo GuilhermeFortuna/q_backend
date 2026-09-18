@@ -31,6 +31,7 @@ EXPECTED_TABLES = {
     "execution_ledger_entries",
     "execution_risk_events",
     "execution_worker_leases",
+    "execution_worker_heartbeats",
     "execution_audit_events",
     "stream_outbox",
     "stream_outbox_topic_state",

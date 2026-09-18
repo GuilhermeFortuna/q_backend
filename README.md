@@ -560,7 +560,7 @@ uv sync --group dev
 
 ### 3. Start Storage & Services (local dev)
 
-The recommended production and local development stack runs as **systemd user units** (Podman quadlets for Postgres and Redis, plus supervised user units for migrations, API, outbox relay, market publisher, and research worker). See [`docs/operations/systemd-user-units.md`](docs/operations/systemd-user-units.md) for installation, operation, and migration instructions:
+The recommended production and local development stack runs as **systemd user units** (Podman quadlets for Postgres and Redis, plus supervised user units for migrations, API, outbox relay, market publisher, and research worker; the execution worker unit is installed but enabled separately). See [`docs/operations/systemd-user-units.md`](docs/operations/systemd-user-units.md) for installation, operation, and migration instructions:
 
 ```bash
 # Install user units and quadlets (idempotent, rootless)
@@ -682,6 +682,8 @@ uv run q-execution flatten <deployment-uuid>
 | `Q_EXECUTION_WORKER_ID` | `execution-worker-1` | Lease owner identity |
 | `Q_EXECUTION_LEASE_TTL_SECONDS` | `30` | Deployment lease TTL / heartbeat |
 | `Q_EXECUTION_POLL_INTERVAL_SECONDS` | `1.0` | Bar poll cadence |
+| `Q_EXECUTION_HEARTBEAT_STALE_AFTER_S` | `10.0` | Heartbeat age after which health reports the worker `stale` |
+| `Q_EXECUTION_EDGE_HEALTH_INTERVAL_S` | `5.0` | Minimum spacing of the worker's edge health probe (recorded on the heartbeat) |
 | `Q_EXECUTION_MAX_QUOTE_AGE_SECONDS` | `30` | Executable quote freshness |
 | `Q_EXECUTION_MAX_BAR_AGE_SECONDS` | `7200` | Completed-bar freshness |
 | `Q_EXECUTION_BENCHMARK_P95_BUDGET_MS` | `500` | Closed-bar → fill p95 budget |

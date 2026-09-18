@@ -357,6 +357,22 @@ class ExecutionWorkerLease(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
 
+class ExecutionWorkerHeartbeat(Base):
+    """One row per execution worker: proof the poll loop is alive plus the last edge check."""
+
+    __tablename__ = "execution_worker_heartbeats"
+
+    worker_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    heartbeat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    stopped_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    version: Mapped[str] = mapped_column(String(64), nullable=False)
+    edge_reachable: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    edge_mt5_connected: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    edge_terminal_build: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    edge_checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class ExecutionControlState(TimestampMixin, Base):
     """Singleton row (id=1) for global execution controls such as kill switch."""
 

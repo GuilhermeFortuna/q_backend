@@ -23,6 +23,7 @@ from q_backend.api.schemas.execution import (
     DeploymentHealthResponse,
     DeploymentListResponse,
     DeploymentSummaryResponse,
+    EdgeStatusResponse,
     ExecutionHealthResponse,
     FillListResponse,
     FillResponse,
@@ -78,6 +79,7 @@ from q_backend.storage.db.execution_repositories import (
     create_execution_deployment,
     create_paper_account,
     get_execution_control_state,
+    get_worker_heartbeat,
     get_execution_deployment,
     get_execution_order,
     get_latest_decision,
@@ -692,12 +694,24 @@ def get_execution_health(
                 )
             )
         unknown_total = count_unknown_orders(session)
-        if active_leases > 0:
-            worker_status = "healthy"
-        elif deployments:
-            worker_status = "offline"
-        else:
-            worker_status = "offline"
+        heartbeat = get_worker_heartbeat(session)
+        worker_status = "offline"
+        heartbeat_age_s: Optional[float] = None
+        worker_started_at = None
+        edge_status = EdgeStatusResponse(reachable=False)
+        if heartbeat is not None:
+            beat_at = _as_utc(heartbeat.heartbeat_at)
+            heartbeat_age_s = max((now - beat_at).total_seconds(), 0.0)
+            worker_started_at = _as_utc(heartbeat.started_at)
+            if heartbeat.stopped_at is None:
+                stale = heartbeat_age_s > settings.execution_heartbeat_stale_after_s
+                worker_status = "stale" if stale else "healthy"
+            edge_status = EdgeStatusResponse(
+                reachable=heartbeat.edge_reachable,
+                mt5_connected=heartbeat.edge_mt5_connected,
+                terminal_build=heartbeat.edge_terminal_build,
+                checked_at=_as_utc(heartbeat.edge_checked_at),
+            )
         market_data_status = "online" if mt5_connected else "offline"
         api_status = "ok"
         if unknown_total > 0 or control.kill_switch_enabled:
@@ -705,6 +719,9 @@ def get_execution_health(
         return ExecutionHealthResponse(
             api_status=api_status,
             worker_status=worker_status,
+            worker_heartbeat_age_s=heartbeat_age_s,
+            worker_started_at=worker_started_at,
+            edge=edge_status,
             market_data_status=market_data_status,
             kill_switch_enabled=control.kill_switch_enabled,
             live_capability_locked=settings.execution_live_capability_locked,

@@ -122,26 +122,26 @@ q_contracts: schema/api/openapi.yaml, COMPAT.md    on branch Q-045-execution-wor
 - [ ] 1. Work on the branch `Q-045-execution-worker-service-and-health` in
    `q_backend`, created from `development` by `./work start`. Confirm Q-042 is
    merged.
-- [ ] 2. Write the migration, model and repository functions, with tests for
+- [x] 2. Write the migration, model and repository functions, with tests for
    upsert and the stopped marker. Commit.
-- [ ] 3. Write failing tests for the heartbeat in `test_worker_heartbeat.py`, and for
+- [x] 3. Write failing tests for the heartbeat in `test_worker_heartbeat.py`, and for
    health status in `test_execution_health.py`, including criterion 4.
    Implement the heartbeat in `poll_once`, `record_worker_stopped` in
    `_shutdown`, and the health derivation. Confirm they pass. Commit.
-- [ ] 4. Write failing notify tests with `tests/deploy/notify_socket.py`. Add
+- [x] 4. Write failing notify tests with `tests/deploy/notify_socket.py`. Add
    `on_ready` and `on_poll` to the worker, and `notify_watchdog` and exit 79
    to `cmd_run`. Confirm they pass. Commit.
-- [ ] 5. Write `q-execution-worker.service.in`, extend `install-user-units.sh`
+- [x] 5. Write `q-execution-worker.service.in`, extend `install-user-units.sh`
    and `test_units.py` (criterion 1, including absence from the target).
    Commit.
-- [ ] 6. Document the unit in `docs/operations/`: enable and disable, logs,
+- [x] 6. Document the unit in `docs/operations/`: enable and disable, logs,
    meaning of exit 79, the watchdog, and how health reads. Update `README.md`.
    Commit.
-- [ ] 7. Recapture the OpenAPI in `q_contracts` on the branch
+- [x] 7. Recapture the OpenAPI in `q_contracts` on the branch
    `Q-045-execution-worker-service-and-health`, and update `COMPAT.md`. Rebase
    and capture again if another batch-07 recapture merged first. Commit in
    `q_contracts`.
-- [ ] 8. Run `scripts/ci.sh`. Fix, re-run, commit.
+- [x] 8. Run `scripts/ci.sh`. Fix, re-run, commit.
 - [ ] 9. **Human:** human-verifiable criterion 1.
 
 ## Validation
