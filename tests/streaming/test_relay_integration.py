@@ -42,6 +42,25 @@ def clean_test_topics():
         client.delete(stream_key(t))
 
 
+def _deployment_payload(deployment_id: str) -> dict:
+    return {
+        "entity": "deployment",
+        "id": deployment_id,
+        "deployment_id": deployment_id,
+        "account_id": "22222222-2222-2222-2222-222222222222",
+        "name": "relay-test",
+        "broker_mode": "paper",
+        "lifecycle": "running",
+        "strategy_name": "MACrossover",
+        "strategy_version": 1,
+        "config_hash": "a1b2c3d4e5f67890abcdef1234567890abcdef12",
+        "symbol": "WIN$",
+        "timeframe": "M1",
+        "live_activation_enabled": False,
+        "updated_at": "2026-09-18T14:30:00Z",
+    }
+
+
 @pytest.mark.integration
 def test_relay_run_once_orders_and_advances_progress(clean_test_topics):
     session_factory, client = clean_test_topics
@@ -62,14 +81,12 @@ def test_relay_run_once_orders_and_advances_progress(clean_test_topics):
                 producer_id="worker-test",
             )
         for j in range(1, 3):
+            dep_id = f"33333333-3333-3333-3333-3333333333{j:02d}"
             record_event(
                 session,
                 "deployments",
-                {
-                    "deployment_id": f"dep-{j}",
-                    "status": "active",
-                },
-                payload_schema="schema/stream/envelope.schema.json",
+                _deployment_payload(dep_id),
+                payload_schema="schema/stream/payloads/execution-deployment.schema.json",
                 producer_id="deployer-test",
             )
         session.commit()
@@ -94,7 +111,7 @@ def test_relay_run_once_orders_and_advances_progress(clean_test_topics):
         env, _ = decode_entry(fields)
         assert env.seq == idx
         assert env.topic == "deployments"
-        assert env.payload["deployment_id"] == f"dep-{idx}"
+        assert env.payload["deployment_id"] == f"33333333-3333-3333-3333-3333333333{idx:02d}"
 
     # 4. Check Postgres last_relayed_seq
     with session_factory() as session:
