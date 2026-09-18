@@ -7,16 +7,80 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
+from dataclasses import dataclass
+from typing import Any, Literal
+
 from q_backend.storage.db.base import utc_now
 from q_backend.storage.db.outbox_models import OutboxEvent, OutboxTopicState
-from q_contracts.stream import JobProgressPayload, JobTerminalPayload, StreamEnvelope
+from q_contracts.stream import (
+    ExecutionDecisionState,
+    ExecutionDeploymentState,
+    ExecutionFillEvent,
+    ExecutionLedgerEvent,
+    ExecutionOrderState,
+    JobProgressPayload,
+    JobTerminalPayload,
+    RiskRejectionCode,
+    StreamEnvelope,
+)
 from q_contracts.topics import TOPICS
 
 logger = logging.getLogger(__name__)
 
+
+@dataclass(frozen=True)
+class RiskRejectionPayload:
+    account_id: str
+    deployment_id: str
+    entity: Literal["risk", "risk_rejection"]
+    id: str
+    kind: Literal["risk_rejection"]
+    message: str
+    rejection_code: RiskRejectionCode
+    updated_at: str
+    context: dict[str, Any] | None = None
+    created_at: str | None = None
+    decision_id: str | None = None
+    order_id: str | None = None
+
+
+@dataclass(frozen=True)
+class KillSwitchPayload:
+    entity: Literal["risk", "kill_switch"]
+    id: str
+    kind: Literal["kill_switch"]
+    kill_switch_enabled: bool
+    updated_at: str
+    deployment_id: None = None
+    account_id: str | None = None
+    actor: str | None = None
+    created_at: str | None = None
+    enabled: bool | None = None
+    kill_switch_reason: str | None = None
+    reason: str | None = None
+    updated_by: str | None = None
+
+
+class ExecutionRiskPayload:
+    def __init__(self, **payload: Any) -> None:
+        kind = payload.get("kind")
+        if kind == "risk_rejection":
+            RiskRejectionPayload(**payload)
+        elif kind == "kill_switch":
+            KillSwitchPayload(**payload)
+        else:
+            raise ValueError(f"Unknown risk event kind: {kind!r}")
+
+
 PAYLOAD_MODELS: dict[str, type] = {
     "schema/stream/payloads/job-terminal.schema.json": JobTerminalPayload,
     "schema/stream/payloads/job-progress.schema.json": JobProgressPayload,
+    "schema/stream/payloads/execution-decision.schema.json": ExecutionDecisionState,
+    "schema/stream/payloads/execution-deployment.schema.json": ExecutionDeploymentState,
+    "schema/stream/payloads/execution-fill.schema.json": ExecutionFillEvent,
+    "schema/stream/payloads/execution-ledger.schema.json": ExecutionLedgerEvent,
+    "schema/stream/payloads/execution-order.schema.json": ExecutionOrderState,
+    "schema/stream/payloads/execution-risk.schema.json": ExecutionRiskPayload,
 }
 
 

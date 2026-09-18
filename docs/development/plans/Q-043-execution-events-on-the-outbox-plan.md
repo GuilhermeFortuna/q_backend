@@ -136,7 +136,7 @@ q_contracts: schema/api/openapi.yaml, schema/api/FINDINGS.md Finding 4, COMPAT.m
 - [x] 1. Work on the branch `Q-043-execution-events-on-the-outbox` in `q_backend`,
    created from `development` by `./work start`. Confirm Q-039 is merged, set
    `CONTRACTS_REV`, run `make contracts` and `make contracts-check`. Commit.
-- [ ] 2. Register the six payload models in `PAYLOAD_MODELS`. Write
+- [x] 2. Register the six payload models in `PAYLOAD_MODELS`. Write
    `execution_events.py`'s shape functions with a unit test per entity that
    validates against the vendored schema, using rows built by the existing
    execution test factories. Commit.

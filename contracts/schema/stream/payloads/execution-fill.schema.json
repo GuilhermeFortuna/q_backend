@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stream/payloads/execution-fill",
+  "title": "ExecutionFillEvent",
+  "description": "Payload for fills durable stream events carrying fill execution details and post-fill net position.",
+  "type": "object",
+  "required": [
+    "entity",
+    "id",
+    "deployment_id",
+    "account_id",
+    "order_id",
+    "broker_mode",
+    "external_fill_id",
+    "side",
+    "quantity",
+    "price",
+    "fee",
+    "slippage",
+    "filled_at",
+    "position_after",
+    "updated_at"
+  ],
+  "properties": {
+    "entity": {
+      "const": "fill",
+      "description": "Entity kind discriminator."
+    },
+    "id": {
+      "$ref": "execution-common.schema.json#/$defs/UUID",
+      "description": "Fill entity identifier."
+    },
+    "deployment_id": {
+      "$ref": "execution-common.schema.json#/$defs/UUID",
+      "description": "Deployment identifier."
+    },
+    "account_id": {
+      "$ref": "execution-common.schema.json#/$defs/UUID",
+      "description": "Trading account identifier."
+    },
+    "order_id": {
+      "$ref": "execution-common.schema.json#/$defs/UUID",
+      "description": "Associated order identifier."
+    },
+    "broker_mode": {
+      "$ref": "execution-common.schema.json#/$defs/BrokerMode"
+    },
+    "external_fill_id": {
+      "type": "string",
+      "description": "Broker-assigned external fill or deal identifier."
+    },
+    "side": {
+      "$ref": "execution-common.schema.json#/$defs/ExecutionSide"
+    },
+    "quantity": {
+      "$ref": "execution-common.schema.json#/$defs/Decimal",
+      "description": "Executed fill quantity."
+    },
+    "price": {
+      "$ref": "execution-common.schema.json#/$defs/Decimal",
+      "description": "Execution fill price."
+    },
+    "fee": {
+      "$ref": "execution-common.schema.json#/$defs/Decimal",
+      "description": "Transaction fee or broker commission."
+    },
+    "slippage": {
+      "$ref": "execution-common.schema.json#/$defs/Decimal",
+      "description": "Execution price slippage."
+    },
+    "quote_bid": {
+      "oneOf": [
+        {
+          "$ref": "execution-common.schema.json#/$defs/Decimal"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Prevailing quote bid at execution time."
+    },
+    "quote_ask": {
+      "oneOf": [
+        {
+          "$ref": "execution-common.schema.json#/$defs/Decimal"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Prevailing quote ask at execution time."
+    },
+    "quote_timestamp": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Quote timestamp."
+    },
+    "filled_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Execution timestamp from broker."
+    },
+    "position_after": {
+      "$ref": "execution-common.schema.json#/$defs/ExecutionPosition",
+      "description": "Deployment net position immediately following this fill."
+    },
+    "details": {
+      "type": "object",
+      "description": "Broker fill metadata and execution attributes."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 UTC creation timestamp."
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 UTC last update timestamp."
+    }
+  },
+  "additionalProperties": false
+}

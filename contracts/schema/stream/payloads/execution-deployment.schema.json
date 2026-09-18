@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stream/payloads/execution-deployment",
+  "title": "ExecutionDeploymentState",
+  "description": "Payload for deployments durable stream events carrying full deployment state.",
+  "type": "object",
+  "required": [
+    "entity",
+    "id",
+    "deployment_id",
+    "account_id",
+    "name",
+    "broker_mode",
+    "lifecycle",
+    "strategy_name",
+    "strategy_version",
+    "config_hash",
+    "symbol",
+    "timeframe",
+    "live_activation_enabled",
+    "updated_at"
+  ],
+  "properties": {
+    "entity": {
+      "const": "deployment",
+      "description": "Entity kind discriminator."
+    },
+    "id": {
+      "$ref": "execution-common.schema.json#/$defs/UUID",
+      "description": "Deployment entity identifier."
+    },
+    "deployment_id": {
+      "$ref": "execution-common.schema.json#/$defs/UUID",
+      "description": "Deployment routing and entity identifier."
+    },
+    "account_id": {
+      "$ref": "execution-common.schema.json#/$defs/UUID",
+      "description": "Trading account identifier."
+    },
+    "paper_account_id": {
+      "$ref": "execution-common.schema.json#/$defs/UUID",
+      "description": "Paper account identifier alias."
+    },
+    "name": {
+      "type": "string",
+      "description": "Deployment display name."
+    },
+    "broker_mode": {
+      "$ref": "execution-common.schema.json#/$defs/BrokerMode"
+    },
+    "lifecycle": {
+      "$ref": "execution-common.schema.json#/$defs/DeploymentLifecycle"
+    },
+    "strategy_name": {
+      "type": "string",
+      "description": "Strategy identifier."
+    },
+    "strategy_version": {
+      "type": "integer",
+      "description": "Strategy code version."
+    },
+    "compiled_config": {
+      "type": "object",
+      "description": "Compiled strategy configuration parameters."
+    },
+    "config_hash": {
+      "type": "string",
+      "description": "Hex digest hash of compiled strategy configuration."
+    },
+    "symbol": {
+      "type": "string",
+      "description": "Trading instrument symbol."
+    },
+    "timeframe": {
+      "type": "string",
+      "description": "Execution timeframe (e.g. M1, H1)."
+    },
+    "sizing_config": {
+      "type": "object",
+      "description": "Position sizing configuration."
+    },
+    "risk_config": {
+      "type": "object",
+      "description": "Deployment-level risk configuration."
+    },
+    "live_activation_enabled": {
+      "type": "boolean",
+      "description": "Whether live order routing is enabled."
+    },
+    "pending_action": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Pending lifecycle action requested by operator."
+    },
+    "pending_action_requested_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Timestamp when pending action was requested."
+    },
+    "last_bar_close_time": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Bar close timestamp of last evaluated decision."
+    },
+    "started_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Timestamp when deployment started."
+    },
+    "stopped_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Timestamp when deployment stopped."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 UTC creation timestamp."
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 UTC last update timestamp."
+    }
+  },
+  "additionalProperties": false
+}
