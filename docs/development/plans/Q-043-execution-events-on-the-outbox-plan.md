@@ -157,7 +157,7 @@ q_contracts: schema/api/openapi.yaml, schema/api/FINDINGS.md Finding 4, COMPAT.m
    environment flag) and fix anything it finds. Commit.
 - [x] 7. Update `README.md` (execution topics are live on the stream; the snapshot
    route). Commit.
-- [ ] 8. Recapture the OpenAPI in `q_contracts` on the branch
+- [x] 8. Recapture the OpenAPI in `q_contracts` on the branch
    `Q-043-execution-events-on-the-outbox`. Close FINDINGS Finding 4 there and
    update `COMPAT.md`. If another batch-07 recapture merged first, rebase and
    capture again. Commit in `q_contracts`.
