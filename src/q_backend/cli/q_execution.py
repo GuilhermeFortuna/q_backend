@@ -15,14 +15,18 @@ from typing import Generator
 import sentry_sdk
 
 from q_backend.execution.bar_coordinator import BarCoordinator
-from q_backend.execution.brokers.base import PaperCostConfig
+from q_backend.execution.brokers.base import ExecutionBroker, PaperCostConfig, QuoteSource
+from q_backend.execution.brokers.edge import EdgeBroker
+from q_backend.execution.brokers.live_gates import LiveExecutionGates
 from q_backend.execution.brokers.paper import PaperBroker
+from q_backend.execution.brokers.routing import BrokerRouter
 from q_backend.execution.commands import get_deployment_or_raise
 from q_backend.execution.domain import DecisionOutcome
+from q_backend.execution.edge_client import EdgeClient, EdgeTimeouts
 from q_backend.execution.ledger import ExecutionLedger
-from q_backend.execution.quote_source import quote_source_from_market_data_service
+from q_backend.execution.quote_source import EdgeQuoteSource
 from q_backend.execution.recovery import ExecutionRecovery
-from q_backend.execution.service import ExecutionService
+from q_backend.execution.service import CrashInjector, ExecutionService
 from q_backend.execution.worker import ExecutionWorker
 from q_backend.market_data.service import MarketDataService
 from q_backend.observability.sentry import init_sentry
@@ -36,6 +40,15 @@ from q_backend.storage.settings import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
+_CRASH_CHECKPOINTS = frozenset(
+    {
+        "before_intent_commit",
+        "after_intent_commit",
+        "after_broker_response",
+        "before_fill_commit",
+    }
+)
+
 
 class _LiveClock:
     def now(self) -> datetime:
@@ -45,8 +58,8 @@ class _LiveClock:
 @dataclass(frozen=True)
 class _ExecutionComponents:
     market_data: MarketDataService
-    quote_source: object
-    broker: PaperBroker
+    quote_source: QuoteSource
+    broker: ExecutionBroker
     ledger: ExecutionLedger
     service: ExecutionService
     coordinator: BarCoordinator
@@ -87,20 +100,51 @@ def _paper_cost_config(settings: Settings) -> PaperCostConfig:
     )
 
 
+def _edge_client(settings: Settings) -> EdgeClient:
+    return EdgeClient(
+        settings.mt5_edge_url,
+        timeouts=EdgeTimeouts(
+            connect_s=settings.mt5_edge_connect_timeout_s,
+            read_s=settings.mt5_edge_read_timeout_s,
+            submit_read_s=settings.mt5_edge_submit_timeout_s,
+        ),
+    )
+
+
+def _live_gates(settings: Settings) -> LiveExecutionGates:
+    return LiveExecutionGates.from_settings(
+        enabled=settings.live_execution_enabled,
+        account_allowlist=settings.live_execution_account_allowlist,
+        deployment_live_activation_enabled=False,
+        controlled_account_validated=settings.live_execution_validated,
+    )
+
+
 def _build_components(
     market_data: MarketDataService,
     *,
     settings: Settings | None = None,
+    crash_injector: CrashInjector | None = None,
 ) -> _ExecutionComponents:
     settings = settings or get_settings()
     clock = _LiveClock()
-    quote_source = quote_source_from_market_data_service(market_data)
-    broker = PaperBroker(quote_source=quote_source, clock=clock)
+    edge_client = _edge_client(settings)
+    quote_source = EdgeQuoteSource(client=edge_client, clock=clock.now)
+    paper_broker = PaperBroker(quote_source=quote_source, clock=clock)
+    live_broker = EdgeBroker(
+        client=edge_client,
+        clock=clock,
+        gates=_live_gates(settings),
+        slippage_deviation=settings.live_execution_slippage_deviation,
+        lookup_window_lead_s=settings.execution_lookup_window_lead_s,
+    )
+    broker = BrokerRouter(paper=paper_broker, mt5_live=live_broker)
     ledger = ExecutionLedger()
     service = ExecutionService(
         broker=broker,
         quote_source=quote_source,
         ledger=ledger,
+        crash_injector=crash_injector,
         max_bar_age_seconds=settings.execution_max_bar_age_seconds,
         clock=clock.now,
     )
@@ -151,17 +195,33 @@ def _parse_deployment_id(raw: str) -> uuid.UUID:
         raise argparse.ArgumentTypeError(f"invalid deployment UUID: {raw}") from exc
 
 
+def _validate_crash_at(crash_at: str | None, log_level: str) -> CrashInjector | None:
+    if crash_at is None:
+        return None
+    if crash_at not in _CRASH_CHECKPOINTS:
+        raise SystemExit(f"invalid --crash-at checkpoint: {crash_at}")
+    if log_level != "INFO":
+        raise SystemExit("--crash-at requires --log-level INFO so the banner is visible")
+    logger.warning(
+        "VALIDATION ONLY: crash checkpoint %s is enabled; process will exit at that point",
+        crash_at,
+    )
+    return CrashInjector(checkpoints={crash_at})
+
+
 def cmd_run(args: argparse.Namespace) -> int:
+    crash_injector = _validate_crash_at(args.crash_at, args.log_level)
     with _market_data_session() as md:
-        components = _build_components(md)
+        components = _build_components(md, crash_injector=crash_injector)
         worker = _build_worker(
             components,
             poll_interval_seconds=args.poll_interval,
         )
         logger.info(
-            "starting execution worker id=%s poll_interval=%ss",
+            "starting execution worker id=%s poll_interval=%ss edge=%s",
             components.settings.execution_worker_id,
             args.poll_interval or components.settings.execution_poll_interval_seconds,
+            components.settings.mt5_edge_url,
         )
         worker.run()
     return 0
@@ -241,6 +301,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="SECONDS",
         help="Override Q_EXECUTION_POLL_INTERVAL_SECONDS for this process",
+    )
+    run_parser.add_argument(
+        "--crash-at",
+        choices=sorted(_CRASH_CHECKPOINTS),
+        default=None,
+        help="Validation-only crash checkpoint (requires --log-level INFO)",
     )
     run_parser.set_defaults(func=cmd_run)
 
