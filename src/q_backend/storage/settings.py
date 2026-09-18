@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     execution_benchmark_p95_budget_ms: float = 500.0
     execution_initial_window_bars: int = 260
     execution_live_capability_locked: bool = True
+    mt5_edge_url: str = "http://127.0.0.1:18813"
+    mt5_edge_connect_timeout_s: float = 1.0
+    mt5_edge_read_timeout_s: float = 5.0
+    mt5_edge_submit_timeout_s: float = 15.0
+    execution_lookup_window_lead_s: float = 60.0
     # MT5 live execution gates (WO172) — all default deny; capability stays live_locked.
     live_execution_enabled: bool = False
     live_execution_account_allowlist: str = ""
