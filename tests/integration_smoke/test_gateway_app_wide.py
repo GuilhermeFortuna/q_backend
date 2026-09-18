@@ -28,12 +28,9 @@ from q_backend.market_data.read_through import read_ohlcv_fresh
 from q_backend.market_data.service import MarketDataService
 from q_backend.storage.runtime_config import set_data_source
 
-from market_data.test_mt5_gateway import (  # type: ignore[import-not-found]
-    _RATE_DTYPE,
-    _load_gateway,
-    _make_fake_mt5,
-    _running_server,
-)
+from tests.gateway.conftest import GATEWAY_PATH, load_module, running_gateway_server
+from tests.gateway.fake_metatrader5 import make_fake_mt5
+from tests.gateway.test_mt5_gateway import _RATE_DTYPE
 
 _SYMBOL = "WIN$"
 _TIMEFRAME = "M5"
@@ -129,13 +126,13 @@ def gateway_market_root(tmp_path, monkeypatch):
 @pytest.fixture
 def fake_http_gateway(gateway_market_root, monkeypatch):
     """In-process gateway + RemoteMt5Client wired through a real MarketDataService."""
-    fake_mt5 = _make_fake_mt5()
+    fake_mt5 = make_fake_mt5()
     fake_mt5._state["known_symbols"].add(_SYMBOL)
     fake_mt5._state["symbol_info"][_SYMBOL] = fake_mt5._state["symbol_info"]["WIN$"]
     rates_calls = _install_counting_rates(fake_mt5)
-    gateway = _load_gateway(fake_mt5)
+    gateway = load_module(GATEWAY_PATH, "gateway_app_wide_gateway", fake_mt5)
 
-    with _running_server(gateway) as base_url:
+    with running_gateway_server(gateway) as base_url:
         monkeypatch.setenv("Q_MT5_GATEWAY_URL", base_url)
         service = MarketDataService()
         monkeypatch.setattr(
