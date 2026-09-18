@@ -663,7 +663,7 @@ once shares the cores fairly instead of oversubscribing the machine. Size it wit
 
 ### 7. Forward execution worker (`q-execution`)
 
-Paper/live forward execution runs in a **standalone process** — not inside the API lifespan and not in the Dramatiq pool. It is the only component authorized to poll completed bars, run the risk gate, commit order intents, and submit paper fills.
+Paper/live forward execution runs in a **standalone process** — not inside the API lifespan and not in the Dramatiq pool. It is the only component authorized to poll completed bars, run the risk gate, commit order intents, and submit orders. Paper fills and `mt5_live` submissions both price from the **execution edge** (`Q_MT5_EDGE_URL`, default `http://127.0.0.1:18813`); the worker never imports `MetaTrader5`.
 
 ```bash
 uv run q-execution run
@@ -683,6 +683,11 @@ uv run q-execution flatten <deployment-uuid>
 | `Q_EXECUTION_MAX_QUOTE_AGE_SECONDS` | `30` | Executable quote freshness |
 | `Q_EXECUTION_MAX_BAR_AGE_SECONDS` | `7200` | Completed-bar freshness |
 | `Q_EXECUTION_BENCHMARK_P95_BUDGET_MS` | `500` | Closed-bar → fill p95 budget |
+| `Q_MT5_EDGE_URL` | `http://127.0.0.1:18813` | Execution edge base URL (quotes, account, submit, lookup) |
+| `Q_MT5_EDGE_CONNECT_TIMEOUT_S` | `1.0` | Edge connect timeout |
+| `Q_MT5_EDGE_READ_TIMEOUT_S` | `5.0` | Edge read timeout (health, quote, lookup) |
+| `Q_MT5_EDGE_SUBMIT_TIMEOUT_S` | `15.0` | Edge submit read timeout |
+| `Q_EXECUTION_LOOKUP_WINDOW_LEAD_S` | `60.0` | Lookup window lead before intent commit time |
 
 **Lifecycle commands** (via API in WO171; semantics today):
 
@@ -707,7 +712,7 @@ Run benchmarks: `uv run pytest tests/execution/test_evaluator_benchmark.py tests
 **Execution API contracts (WO171 → WO173/WO174):** control-plane routes under `/api/v1/execution/*` never submit broker orders. Key bodies:
 
 - `POST /api/v1/execution/accounts` — `{"name":"desk-main","initial_balance":"100000.00","currency":"BRL"}`
-- `POST /api/v1/execution/deployments` — paper account id + immutable `identity` (or `source_backtest_run_id` from a saved run)
+- `POST /api/v1/execution/deployments` — paper account id + immutable `identity` (or `source_backtest_run_id` from a saved run); `broker_mode` is `paper` (default) or `mt5_live`
 - `POST /api/v1/execution/deployments/{id}/actions` — `{"action":"start|pause|stop|flatten","confirm":true}`
 - `GET /api/v1/execution/health` — separate `api_status`, `worker_status`, `market_data_status`, `live_capability_locked`
 - `PUT /api/v1/execution/kill-switch` — `{"enabled":true,"confirm":true,"reason":"…","updated_by":"operator"}`
