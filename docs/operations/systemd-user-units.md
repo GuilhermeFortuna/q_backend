@@ -17,6 +17,7 @@ The backend stack runs as rootless systemd user units under the logged-in user:
 | `q-outbox-relay.service` | notify | Outbox to Redis stream relay | `Requires=q-postgres.service q-redis.service` `After=q-postgres.service q-redis.service` | `sd_notify(READY=1)` after first successful relay pass |
 | `q-market-publisher.service` | notify | Live market data publisher | `Requires=q-redis.service` `Wants=mt5-gateway.service` `After=q-redis.service mt5-gateway.service` | `sd_notify(READY=1)` once Redis connection is confirmed |
 | `q-research-worker.service` | notify | Dramatiq CPU-bound worker pool | `Requires=q-postgres.service q-redis.service` `After=q-postgres.service q-redis.service` | `sd_notify(READY=1)` when worker process connects to broker |
+| `q-execution-worker.service` | notify | Forward execution worker (the only process that trades). **Not** in `q-backend.target` | `Requires=q-postgres.service` `Wants=q-redis.service mt5-edge.service` `After=` all three | `READY=1` after startup recovery and the first successful poll (leases acquired or confirmed idle); `WATCHDOG=1` once per poll |
 | `q-backend.target` | target | Master stack coordinator | `Wants` all units above | Active when all wanted units are reached |
 
 > **Note on Quadlet Names:** Quadlets are named `q-postgres` and `q-redis` (rather than generic `postgres` and `redis`) to avoid collisions in the user's rootless Podman quadlet namespace where other projects may reside.
@@ -113,6 +114,28 @@ journalctl --user -u q-research-worker.service -f
 Check unit initialization timing:
 ```bash
 systemd-analyze --user blame | grep -E 'q-'
+```
+
+---
+
+## 3b. Execution Worker
+
+`q-execution-worker.service` is installed with the other units but is never started by `q-backend.target`, `./research` or the research stack. Enabling trading is a separate, explicit act:
+
+```bash
+systemctl --user enable --now q-execution-worker.service   # start, and start at login
+systemctl --user disable --now q-execution-worker.service  # stop trading, stop starting at login
+journalctl --user -u q-execution-worker.service -f
+```
+
+- **Readiness:** the unit is `active` only after recovery completed and the first poll acquired (or confirmed no need for) leases. `TimeoutStartSec=180`.
+- **Watchdog:** `WatchdogSec=30`. The worker feeds it once per poll (default poll 1 s), not per bar, so a long bar does not trigger a restart; a hung poll loop does within 30 s.
+- **Exit 79 (fail-closed recovery):** startup recovery refused to let the worker trade (for example, an unavailable quote). The reason is in `systemctl --user status` (`STATUS=`) and the journal. `RestartPreventExitStatus=78 79` keeps systemd from restart-looping; fix the cause, then `systemctl --user restart q-execution-worker.service`. Exit 78 remains configuration errors.
+- **Kill switch:** unchanged. It is a Postgres flag the worker reads, not a unit action.
+- **Health:** each poll upserts a row in `execution_worker_heartbeats` (worker id, start time, heartbeat time, version, last edge check). `GET /api/v1/execution/health` derives `worker_status` from it: `healthy` when the heartbeat is younger than `Q_EXECUTION_HEARTBEAT_STALE_AFTER_S` (10 s), `stale` beyond that, `offline` with no heartbeat or after a clean shutdown (`stopped_at` set, so a stopped worker is distinguishable from a crashed one that goes stale). The response also carries `worker_heartbeat_age_s`, `worker_started_at` and `edge` (`reachable`, `mt5_connected`, `terminal_build`, `checked_at`) as the worker last saw it. The edge is probed at most every `Q_EXECUTION_EDGE_HEALTH_INTERVAL_S` (5 s).
+
+```bash
+watch -n1 'curl -s http://127.0.0.1:8000/api/v1/execution/health | jq "{worker_status, worker_heartbeat_age_s, edge}"'
 ```
 
 ---
