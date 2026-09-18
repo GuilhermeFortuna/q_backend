@@ -144,7 +144,7 @@ q_contracts: schema/api/openapi.yaml, schema/api/FINDINGS.md Finding 4, COMPAT.m
    function (event topic, count, sequence, payload equals the post-commit
    row), `apply_fill` composite, rollback leaves nothing, invalid payload
    fails the transaction. Confirm they fail. Commit.
-- [ ] 4. Add `emit` calls and the `producer` keyword to each repository function,
+- [x] 4. Add `emit` calls and the `producer` keyword to each repository function,
    convert `mark_incomplete_orders_unknown` to per-order updates, and pass the
    worker id from worker, service, recovery and reconciler call sites. Confirm
    step 3's tests and all of `tests/execution` and `tests/api` pass unchanged.

@@ -88,7 +88,7 @@ class ExecutionRecovery:
         leases_released = release_expired_leases(session, now=ts)
         unknown_marked = 0
         for deployment in list_deployments(session):
-            unknown_marked += mark_incomplete_orders_unknown(session, deployment.id)
+            unknown_marked += mark_incomplete_orders_unknown(session, deployment.id, producer=worker_id)
 
         running = list_deployments(
             session,

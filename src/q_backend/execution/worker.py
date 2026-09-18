@@ -81,6 +81,7 @@ class ExecutionWorker:
                 ledger=self.ledger,
                 point_value=Decimal(str(self.settings.execution_default_point_value)),
                 clock=self.clock,
+                worker_id=self.settings.execution_worker_id,
             )
         return self._reconciler
 
@@ -195,7 +196,9 @@ class ExecutionWorker:
                             cost_config=cost_config,
                             point_value=point_value,
                         )
-                        clear_pending_deployment_action(session, deployment.id)
+                        clear_pending_deployment_action(
+                            session, deployment.id, producer=self.settings.execution_worker_id
+                        )
                     continue
 
             for runtime in list(self._runtimes.values()):

@@ -216,6 +216,7 @@ class ExecutionLedger:
         point_value: Decimal,
         symbol: str,
         reconciling: bool = False,
+        producer: str = "api",
     ) -> LedgerApplyResult:
         existing = get_execution_fill_by_external_id(
             session,
@@ -270,6 +271,19 @@ class ExecutionLedger:
 
         cash = account.cash_balance + realized - fill.fee
 
+        # Update position and balance before fill and ledger creation so emitted
+        # events reflect the post-state.
+        updated_position = upsert_open_net_position(
+            session,
+            deployment_id=deployment_id,
+            side=transition.new_side,
+            quantity=transition.new_quantity,
+            average_entry_price=transition.new_average_entry_price,
+            opened_at=fill.filled_at,
+        )
+        session.refresh(updated_position)
+        updated_account = update_paper_cash_balance(session, paper_account_id, cash)
+
         persisted_fill = create_execution_fill(
             session,
             deployment_id=deployment_id,
@@ -286,6 +300,8 @@ class ExecutionLedger:
             quote_ask=fill.quote_ask,
             quote_timestamp=fill.quote_timestamp,
             metadata=fill.metadata,
+            position=updated_position,
+            producer=producer,
         )
 
         if realized != 0:
@@ -298,6 +314,8 @@ class ExecutionLedger:
                 balance_after=cash,
                 fill_id=persisted_fill.id,
                 description=f"{symbol} close {transition.close_quantity}",
+                account=updated_account,
+                producer=producer,
             )
         if fill.fee != 0:
             append_ledger_entry(
@@ -309,17 +327,10 @@ class ExecutionLedger:
                 balance_after=cash,
                 fill_id=persisted_fill.id,
                 description=f"{symbol} commission",
+                account=updated_account,
+                producer=producer,
             )
 
-        update_paper_cash_balance(session, paper_account_id, cash)
-        upsert_open_net_position(
-            session,
-            deployment_id=deployment_id,
-            side=transition.new_side,
-            quantity=transition.new_quantity,
-            average_entry_price=transition.new_average_entry_price,
-            opened_at=fill.filled_at,
-        )
         if reconciling:
             # Reconciled orders are already UNKNOWN; go straight to FILLED
             # (UNKNOWN -> SUBMITTED is not a legal transition).
@@ -329,6 +340,7 @@ class ExecutionLedger:
                 ExecutionOrderStatus.FILLED,
                 submitted_at=fill.filled_at,
                 completed_at=fill.filled_at,
+                producer=producer,
             )
         else:
             transition_execution_order(
@@ -336,12 +348,14 @@ class ExecutionLedger:
                 order_id,
                 ExecutionOrderStatus.SUBMITTED,
                 submitted_at=fill.filled_at,
+                producer=producer,
             )
             transition_execution_order(
                 session,
                 order_id,
                 ExecutionOrderStatus.FILLED,
                 completed_at=fill.filled_at,
+                producer=producer,
             )
 
         return LedgerApplyResult(

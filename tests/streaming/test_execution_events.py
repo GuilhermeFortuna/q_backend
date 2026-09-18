@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from q_backend.execution.domain import (
     BrokerMode,
     DecisionOutcome,
+    DeploymentLifecycle,
     ExecutionOrderStatus,
     ExecutionSide,
     LedgerEntryType,
@@ -665,12 +666,6 @@ def test_apply_fill_composite_emission(db_session: Session):
         fill=fill_record,
         point_value=Decimal("0.2"),
         symbol="WIN$",
-        producer="worker-fill-composite",
-    )
-    transition_execution_order(
-        db_session,
-        order.id,
-        ExecutionOrderStatus.FILLED,
         producer="worker-fill-composite",
     )
 
