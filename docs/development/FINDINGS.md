@@ -94,10 +94,11 @@ continues from Batch 04.
     open trade, and `worker.poll_once` never calls `set_open_trade` after a fill,
     so exit rules and strategy exits cannot close such a position until the worker
     restarts. Found while planning Q-031 (`execution/worker.py`,
-    `execution/recovery.py`, `execution/evaluator.py`). **Triage (Q-031):** needs
-    its own task before live activation — call `set_open_trade` from the execution
-    service after paper fills, with paper-broker tests and operator review; block
-    live activation on that task. Q-031 preserves today's behaviour.
+    `execution/recovery.py`, `execution/evaluator.py`). **Resolved (Q-041):** the
+    worker re-reads the durable net position and calls `set_open_trade` after
+    reconciliation, flatten, and each processed bar; trade ids include
+    `opened_at` so a new position does not inherit exit-rule state. Item 3
+    (holding-period exits vs live fill times) remains open.
 19. **The tick engine fails with `AttributeError` for inverse-volatility sizing.**
     `tick/orders.kernel_sizing_params` reads `safety_margin_per_contract` from any
     config that is not fixed quantity, and tick backtest requests accept the
