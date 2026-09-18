@@ -101,6 +101,7 @@ def _submit_and_apply(
         side=side,
         quantity=quantity,
         external_fill_id=external_fill_id,
+        intent_created_at=order.intent_committed_at,
     )
     submission = broker.submit_market_order(request, cost_config=cost_config)
     assert submission.accepted and submission.fill is not None
@@ -302,6 +303,7 @@ def test_duplicate_fill_identity_is_idempotent(db_session, now, cost_config):
         side=ExecutionSide.BUY,
         quantity=Decimal("1"),
         external_fill_id=f"paper:{order.id}:dup",
+        intent_created_at=now,
     )
     submission = broker.submit_market_order(request, cost_config=cost_config)
     first = ledger.apply_fill(
@@ -379,6 +381,7 @@ def test_ledger_transaction_rollback_drops_partial_writes(db_engine, now, cost_c
             side=ExecutionSide.BUY,
             quantity=Decimal("1"),
             external_fill_id=f"paper:{order.id}:rollback",
+            intent_created_at=now,
         ),
         cost_config=cost_config,
     )

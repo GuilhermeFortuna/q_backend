@@ -50,7 +50,9 @@ def test_cmd_run_starts_worker_with_market_data_lifecycle(
     code = q_execution.cmd_run(q_execution.build_parser().parse_args(["run", "--poll-interval", "2.5"]))
 
     assert code == 0
-    build_components.assert_called_once_with(md)
+    build_components.assert_called_once()
+    assert build_components.call_args.args[0] is md
+    assert build_components.call_args.kwargs.get("crash_injector") is None
     build_worker.assert_called_once_with(components, poll_interval_seconds=2.5)
     worker.run.assert_called_once()
     market_data_cm.return_value.__enter__.assert_called_once()

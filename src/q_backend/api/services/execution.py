@@ -188,7 +188,7 @@ def create_deployment(session: Session, body: DeploymentCreateRequest) -> Deploy
     if account is None:
         raise HTTPException(status_code=404, detail="paper account not found")
     try:
-        validate_broker_mode(
+        broker_mode = validate_broker_mode(
             body.broker_mode,
             live_capability_locked=settings.execution_live_capability_locked,
             live_activation_enabled=body.live_activation_enabled,
@@ -218,9 +218,9 @@ def create_deployment(session: Session, body: DeploymentCreateRequest) -> Deploy
             paper_account_id=body.paper_account_id,
             name=body.name,
             identity=identity,
-            broker_mode=BrokerMode.PAPER,
+            broker_mode=broker_mode,
             lifecycle=DeploymentLifecycle.DRAFT,
-            live_activation_enabled=False,
+            live_activation_enabled=body.live_activation_enabled,
         )
         session.flush()
         return get_deployment_detail(session, deployment.id)

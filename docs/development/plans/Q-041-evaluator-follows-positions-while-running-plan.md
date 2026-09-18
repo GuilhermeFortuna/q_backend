@@ -92,28 +92,28 @@ docs/development/FINDINGS.md                   item 18 resolved
 
 ## Ordered implementation
 
-- [ ] 1. Work on the branch `Q-041-evaluator-follows-positions-while-running` in
+- [x] 1. Work on the branch `Q-041-evaluator-follows-positions-while-running` in
    `q_backend`, created from `development` by `./work start`.
-- [ ] 2. Write `tests/execution/test_worker_position_sync.py` with criteria 1–6,
+- [x] 2. Write `tests/execution/test_worker_position_sync.py` with criteria 1–6,
    using the paper broker, a fake coordinator that yields scripted bars, and
    MACrossover with `trailing_stop_pct`. Confirm that criteria 1–5 fail on
    today's code and 6 passes. Commit.
-- [ ] 3. Add `position_trade_id` and use it in `execution_position_to_trade`. Update
+- [x] 3. Add `position_trade_id` and use it in `execution_position_to_trade`. Update
    `test_evaluator_recovery_state.py` only if it hard-codes the old id, in its
    own commit. Confirm criterion 5's identity half and `tests/execution` pass.
    Commit.
-- [ ] 4. Add `open_trade_for_deployment` to `recovery.py` and use it in
+- [x] 4. Add `open_trade_for_deployment` to `recovery.py` and use it in
    `build_runtime`. Commit.
-- [ ] 5. Add `ingest_completed_bar` and make `ingest_completed_bars` loop it. Confirm
+- [x] 5. Add `ingest_completed_bar` and make `ingest_completed_bars` loop it. Confirm
    the evaluator, q_core and recovery-state tests pass unchanged. Commit.
-- [ ] 6. Restructure `poll_once` to go bar at a time, and add `_sync_open_trade`
+- [x] 6. Restructure `poll_once` to go bar at a time, and add `_sync_open_trade`
    after reconciliation, after flatten, and after each processed bar. Confirm
    criteria 1–4 and 6 pass. Commit.
-- [ ] 7. Run `tests/execution`, the parity test and goldens. List and justify any
+- [x] 7. Run `tests/execution`, the parity test and goldens. List and justify any
    changed test. Commit.
-- [ ] 8. Mark FINDINGS item 18 resolved by Q-041, and note that item 3 remains open
+- [x] 8. Mark FINDINGS item 18 resolved by Q-041, and note that item 3 remains open
    and still affects holding-period exits live. Commit.
-- [ ] 9. Run `scripts/ci.sh`. Fix, re-run, commit.
+- [x] 9. Run `scripts/ci.sh`. Fix, re-run, commit.
 - [ ] 10. **Human:** human-verifiable criterion 1.
 
 ## Validation

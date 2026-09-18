@@ -164,44 +164,44 @@ q_contracts: COMPAT.md                         q_backend row
 
 ## Ordered implementation
 
-- [ ] 1. Work on the branch `Q-042-execution-worker-on-the-edge` in `q_backend`,
+- [x] 1. Work on the branch `Q-042-execution-worker-on-the-edge` in `q_backend`,
    created from `development` by `./work start`. Confirm Q-040 and Q-041 are
    merged. Commit nothing.
-- [ ] 2. Write `tests/execution/fake_edge.py`: a threaded HTTP server serving the
+- [x] 2. Write `tests/execution/fake_edge.py`: a threaded HTTP server serving the
    contract routes from scripted responses, recording every request, and able
    to delay or drop the connection. Validate its responses against the vendored
    schemas in its own test. Commit.
-- [ ] 3. Write failing tests for `EdgeClient`: schema-major refusal; submit
+- [x] 3. Write failing tests for `EdgeClient`: schema-major refusal; submit
    timeout and connection reset return indeterminate with one request sent;
    other operations raise `EdgeUnavailable`. Implement `edge_client.py` and the
    settings. Confirm they pass. Commit.
-- [ ] 4. Add `broker_mode` and `intent_created_at` to `MarketOrderRequest`, and
+- [x] 4. Add `broker_mode` and `intent_created_at` to `MarketOrderRequest`, and
    fill them in `service.py`, `reconciliation.lookup_request_for_order` and
    `flatten_deployment`. Confirm `tests/execution` passes unchanged. Commit.
-- [ ] 5. Write failing tests for `EdgeQuoteSource` (age-based timestamp; `None`
+- [x] 5. Write failing tests for `EdgeQuoteSource` (age-based timestamp; `None`
    on unavailability; criterion 6 through the risk gate). Implement it, and
    switch the CLI to it. Delete `quote_source_from_market_data_service`. Run the
    paper tests with the fake edge serving quotes (criterion 9). Commit.
-- [ ] 6. Write failing tests in `test_edge_broker.py` for criteria 1 and 4, and
+- [x] 6. Write failing tests in `test_edge_broker.py` for criteria 1 and 4, and
    for the move of the `test_metatrader_broker.py` behaviours. Implement
    `brokers/edge.py` and `brokers/routing.py`. Confirm they pass. Commit.
-- [ ] 7. Wire the router in `cli/q_execution.py` (paper plus live), and add
+- [x] 7. Wire the router in `cli/q_execution.py` (paper plus live), and add
    `--crash-at`. Write `test_worker_on_edge.py` for criteria 2, 3 and 5,
    including the restart with an unknown live order. Confirm they pass. Commit.
-- [ ] 8. Delete `brokers/metatrader.py`, `brokers/mt5_runtime.py`,
+- [x] 8. Delete `brokers/metatrader.py`, `brokers/mt5_runtime.py`,
    `fake_mt5_runtime.py` and `test_metatrader_broker.py`, and update
    `brokers/__init__.py`. Add `test_no_mt5_import.py`. Confirm the full
    execution suite passes. Commit.
-- [ ] 9. Allow `mt5_live` in `DeploymentCreateRequest`, with an API test that
+- [x] 9. Allow `mt5_live` in `DeploymentCreateRequest`, with an API test that
    creates one and shows its orders rejected as live-locked while the gates are
    closed. Commit.
-- [ ] 10. Update `README.md` (worker needs the edge; settings) and
+- [x] 10. Update `README.md` (worker needs the edge; settings) and
    `docs/mt5-wine-gateway.md` (the worker's use of the edge), and add the
    invariant-3 residual to FINDINGS. Commit.
-- [ ] 11. Recapture the OpenAPI in `q_contracts` on the branch
+- [x] 11. Recapture the OpenAPI in `q_contracts` on the branch
    `Q-042-execution-worker-on-the-edge`, run `make check` there, and update the
    `q_backend` row of `COMPAT.md`. Commit in `q_contracts`.
-- [ ] 12. Run `scripts/ci.sh`. Fix, re-run, commit.
+- [x] 12. Run `scripts/ci.sh`. Fix, re-run, commit.
 - [ ] 13. **Human:** human-verifiable criteria 1–3 on the demo account, with the
    gates set in `~/.config/q/backend.env` for the demo login only
    (`Q_LIVE_EXECUTION_ENABLED`, `Q_LIVE_EXECUTION_ACCOUNT_ALLOWLIST`,

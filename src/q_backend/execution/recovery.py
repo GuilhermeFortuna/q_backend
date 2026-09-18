@@ -19,6 +19,7 @@ from q_backend.execution.brokers.base import QuoteSource
 from q_backend.execution.domain import DeploymentLifecycle, StrategyIdentity
 from q_backend.execution.evaluator import StrategyEvaluator
 from q_backend.execution.ledger import ExecutionLedger
+from q_backend.backtesting.models import Trade
 from q_backend.execution.position_adapter import execution_position_to_trade
 from q_backend.storage.db.execution_models import ExecutionDeployment
 from q_backend.storage.db.execution_repositories import (
@@ -44,6 +45,27 @@ class DeploymentRuntime:
     identity: StrategyIdentity
     evaluator: StrategyEvaluator
     lease_token: str
+
+
+def open_trade_for_deployment(
+    session: Session,
+    deployment: ExecutionDeployment,
+    *,
+    point_value: float,
+) -> Optional[Trade]:
+    """Read the durable net position and map it to the evaluator's open trade."""
+    position = get_open_net_position(session, deployment.id)
+    if position is None or not position.is_open:
+        return None
+    return execution_position_to_trade(
+        deployment_id=deployment.id,
+        symbol=deployment.symbol,
+        side=position.side,
+        quantity=position.quantity,
+        average_entry_price=position.average_entry_price,
+        opened_at=position.opened_at,
+        point_value=point_value,
+    )
 
 
 def _identity_from_deployment(deployment: ExecutionDeployment) -> StrategyIdentity:
@@ -124,18 +146,7 @@ class ExecutionRecovery:
         initial_capital: float,
     ) -> DeploymentRuntime:
         identity = _identity_from_deployment(deployment)
-        position = get_open_net_position(session, deployment.id)
-        trade = None
-        if position is not None and position.is_open:
-            trade = execution_position_to_trade(
-                deployment_id=deployment.id,
-                symbol=deployment.symbol,
-                side=position.side,
-                quantity=position.quantity,
-                average_entry_price=position.average_entry_price,
-                opened_at=position.opened_at,
-                point_value=point_value,
-            )
+        trade = open_trade_for_deployment(session, deployment, point_value=point_value)
         evaluator = StrategyEvaluator(
             deployment_id=str(deployment.id),
             identity=identity,

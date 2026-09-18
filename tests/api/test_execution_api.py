@@ -173,6 +173,23 @@ def test_reject_m1_timeframe(api_db_session: Session):
     assert "M15" in str(exc.value.detail)
 
 
+def test_create_mt5_live_deployment(api_db_session: Session):
+    account = execution_service.create_account(
+        api_db_session,
+        PaperAccountCreateRequest(name="desk-live", initial_balance=Decimal("10000")),
+    )
+    detail = execution_service.create_deployment(
+        api_db_session,
+        DeploymentCreateRequest(
+            paper_account_id=account.id,
+            name="win-live",
+            broker_mode="mt5_live",
+            identity=_identity_payload(),
+        ),
+    )
+    assert detail.broker_mode == "mt5_live"
+
+
 def test_reject_live_activation(api_db_session: Session):
     account = execution_service.create_account(
         api_db_session,
@@ -188,7 +205,7 @@ def test_reject_live_activation(api_db_session: Session):
                 identity=_identity_payload(),
             ),
         )
-    assert "locked" in str(exc.value.detail).lower()
+    assert "mt5_live" in str(exc.value.detail).lower()
 
 
 def test_deployment_lifecycle_actions(api_db_session: Session):

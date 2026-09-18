@@ -217,6 +217,7 @@ class ExecutionLedger:
         symbol: str,
         reconciling: bool = False,
         producer: str = "api",
+        position_opened_at: Optional[datetime] = None,
     ) -> LedgerApplyResult:
         existing = get_execution_fill_by_external_id(
             session,
@@ -271,6 +272,14 @@ class ExecutionLedger:
 
         cash = account.cash_balance + realized - fill.fee
 
+        opened_at = fill.filled_at
+        if (
+            position_opened_at is not None
+            and current_side == PositionSide.FLAT
+            and transition.new_side != PositionSide.FLAT
+        ):
+            opened_at = position_opened_at
+
         # Update position and balance before fill and ledger creation so emitted
         # events reflect the post-state.
         updated_position = upsert_open_net_position(
@@ -279,7 +288,7 @@ class ExecutionLedger:
             side=transition.new_side,
             quantity=transition.new_quantity,
             average_entry_price=transition.new_average_entry_price,
-            opened_at=fill.filled_at,
+            opened_at=opened_at,
         )
         session.refresh(updated_position)
         updated_account = update_paper_cash_balance(session, paper_account_id, cash)

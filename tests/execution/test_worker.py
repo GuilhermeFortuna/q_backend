@@ -43,12 +43,20 @@ class StaticOhlcvProvider:
     def get_ohlcv(self, symbol: str, timeframe: str, start: datetime, end: datetime):
         if symbol != self.symbol or timeframe.upper() != self.timeframe.upper():
             return []
+        start_utc = start if start.tzinfo is not None else start.replace(tzinfo=timezone.utc)
+        end_utc = end if end.tzinfo is not None else end.replace(tzinfo=timezone.utc)
         rows = []
         for open_time, row in self._frame.iterrows():
             close_time = open_time + pd.Timedelta(hours=1)
-            if close_time.to_pydatetime().replace(tzinfo=timezone.utc) < start:
+            open_utc = open_time.to_pydatetime()
+            if open_utc.tzinfo is None:
+                open_utc = open_utc.replace(tzinfo=timezone.utc)
+            close_utc = close_time.to_pydatetime()
+            if close_utc.tzinfo is None:
+                close_utc = close_utc.replace(tzinfo=timezone.utc)
+            if close_utc < start_utc:
                 continue
-            if open_time.to_pydatetime().replace(tzinfo=timezone.utc) > end:
+            if open_utc > end_utc:
                 continue
             rows.append(
                 OHLCV(
