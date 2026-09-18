@@ -37,6 +37,7 @@ EXPECTED_TABLES = {
     "stream_job_terminal_markers",
     "lake_datasets",
     "lake_dataset_files",
+    "command_idempotency",
 }
 
 FORBIDDEN_TABLE_NAMES = {"ohlcv", "ticks", "bars", "features", "tick", "candles"}
