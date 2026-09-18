@@ -140,7 +140,7 @@ q_contracts: schema/api/openapi.yaml, schema/api/FINDINGS.md Finding 4, COMPAT.m
    `execution_events.py`'s shape functions with a unit test per entity that
    validates against the vendored schema, using rows built by the existing
    execution test factories. Commit.
-- [ ] 3. Write failing tests in `test_execution_events.py`: one per repository
+- [x] 3. Write failing tests in `test_execution_events.py`: one per repository
    function (event topic, count, sequence, payload equals the post-commit
    row), `apply_fill` composite, rollback leaves nothing, invalid payload
    fails the transaction. Confirm they fail. Commit.

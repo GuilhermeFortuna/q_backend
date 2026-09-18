@@ -41,6 +41,7 @@ from q_backend.storage.db.execution_repositories import (
     record_risk_event,
     upsert_open_net_position,
 )
+from q_backend.storage.db.outbox_models import OutboxEvent
 from q_backend.streaming import execution_events
 
 
@@ -263,3 +264,492 @@ def test_kill_switch_event_validates_schema():
     )
     payload = execution_events.kill_switch_event(control, actor="risk_officer")
     _assert_valid("execution-risk.schema.json", payload)
+
+
+# --- Repository emission tests (Plan step 3) ---
+
+
+def _events_for_topic(session: Session, topic: str) -> list[OutboxEvent]:
+    from sqlalchemy import select
+    from q_backend.storage.db.outbox_models import OutboxEvent
+
+    return list(
+        session.execute(select(OutboxEvent).where(OutboxEvent.topic == topic).order_by(OutboxEvent.seq)).scalars().all()
+    )
+
+
+def test_create_execution_deployment_emits_event(db_session: Session):
+    account = create_paper_account(db_session, name="acc-dep-emit", initial_balance=Decimal("100000.00"))
+    deployment = create_execution_deployment(
+        db_session,
+        paper_account_id=account.id,
+        name="dep-emit",
+        identity=_identity(),
+        producer="test-worker",
+    )
+    events = _events_for_topic(db_session, "deployments")
+    assert len(events) == 1
+    ev = events[0]
+    assert ev.seq == 1
+    assert ev.producer_id == "test-worker"
+    assert ev.payload == execution_events.deployment_state(deployment)
+
+
+def test_transition_deployment_lifecycle_emits_event(db_session: Session):
+    from q_backend.storage.db.execution_repositories import transition_deployment_lifecycle
+
+    account = create_paper_account(db_session, name="acc-trans-dep", initial_balance=Decimal("100000.00"))
+    deployment = create_execution_deployment(
+        db_session,
+        paper_account_id=account.id,
+        name="dep-trans",
+        identity=_identity(),
+    )
+    transition_deployment_lifecycle(
+        db_session,
+        deployment.id,
+        DeploymentLifecycle.RUNNING,
+        producer="worker-lifecycle",
+    )
+    events = _events_for_topic(db_session, "deployments")
+    assert len(events) == 2
+    assert events[1].seq == 2
+    assert events[1].producer_id == "worker-lifecycle"
+    assert events[1].payload["lifecycle"] == "running"
+    assert events[1].payload == execution_events.deployment_state(deployment)
+
+
+def test_set_and_clear_pending_deployment_action_emits_events(db_session: Session):
+    from q_backend.storage.db.execution_repositories import (
+        clear_pending_deployment_action,
+        set_pending_deployment_action,
+    )
+
+    account = create_paper_account(db_session, name="acc-action", initial_balance=Decimal("100000.00"))
+    deployment = create_execution_deployment(
+        db_session,
+        paper_account_id=account.id,
+        name="dep-action",
+        identity=_identity(),
+    )
+    set_pending_deployment_action(db_session, deployment.id, action="stop", producer="api-action")
+    events = _events_for_topic(db_session, "deployments")
+    assert len(events) == 2
+    assert events[1].payload["pending_action"] == "stop"
+    assert events[1].producer_id == "api-action"
+
+    clear_pending_deployment_action(db_session, deployment.id, producer="api-action")
+    events = _events_for_topic(db_session, "deployments")
+    assert len(events) == 3
+    assert events[2].payload["pending_action"] is None
+
+
+def test_update_deployment_last_bar_close_emits_event(db_session: Session):
+    from q_backend.storage.db.execution_repositories import update_deployment_last_bar_close
+
+    account = create_paper_account(db_session, name="acc-bar", initial_balance=Decimal("100000.00"))
+    deployment = create_execution_deployment(
+        db_session,
+        paper_account_id=account.id,
+        name="dep-bar",
+        identity=_identity(),
+    )
+    bar_time = datetime(2026, 9, 18, 15, 0, tzinfo=timezone.utc)
+    update_deployment_last_bar_close(db_session, deployment.id, bar_time, producer="worker-bar")
+    events = _events_for_topic(db_session, "deployments")
+    assert len(events) == 2
+    assert events[1].seq == 2
+    assert events[1].producer_id == "worker-bar"
+    assert events[1].payload["last_bar_close_time"] == "2026-09-18T15:00:00Z"
+
+
+def test_create_and_update_execution_decision_emits_events(db_session: Session):
+    from q_backend.storage.db.execution_repositories import update_execution_decision_outcome
+
+    account = create_paper_account(db_session, name="acc-dec-emit", initial_balance=Decimal("100000.00"))
+    deployment = create_execution_deployment(
+        db_session,
+        paper_account_id=account.id,
+        name="dep-dec-emit",
+        identity=_identity(),
+    )
+    decision = create_execution_decision(
+        db_session,
+        deployment_id=deployment.id,
+        bar_close_time=datetime(2026, 9, 18, 14, 30, tzinfo=timezone.utc),
+        identity=_identity(),
+        signal_action=SignalAction.BUY,
+        outcome=DecisionOutcome.ORDER_INTENT,
+        requested_quantity=Decimal("1.0"),
+        producer="worker-decision",
+    )
+    events = _events_for_topic(db_session, "decisions")
+    assert len(events) == 1
+    assert events[0].seq == 1
+    assert events[0].producer_id == "worker-decision"
+    assert events[0].payload == execution_events.decision_state(decision)
+
+    update_execution_decision_outcome(
+        db_session,
+        decision.id,
+        outcome=DecisionOutcome.ORDER_FILLED,
+        producer="worker-decision",
+    )
+    events = _events_for_topic(db_session, "decisions")
+    assert len(events) == 2
+    assert events[1].seq == 2
+    assert events[1].payload["outcome"] == "order_filled"
+    assert events[1].payload == execution_events.decision_state(decision)
+
+
+def test_create_and_transition_execution_order_emits_events(db_session: Session):
+    from q_backend.storage.db.execution_repositories import transition_execution_order
+
+    account = create_paper_account(db_session, name="acc-ord-emit", initial_balance=Decimal("100000.00"))
+    deployment = create_execution_deployment(
+        db_session,
+        paper_account_id=account.id,
+        name="dep-ord-emit",
+        identity=_identity(),
+    )
+    order = create_execution_order_intent(
+        db_session,
+        deployment_id=deployment.id,
+        decision_id=None,
+        broker_mode=BrokerMode.PAPER,
+        side=ExecutionSide.BUY,
+        quantity=Decimal("1.0"),
+        producer="worker-ord",
+    )
+    events = _events_for_topic(db_session, "orders")
+    assert len(events) == 1
+    assert events[0].seq == 1
+    assert events[0].producer_id == "worker-ord"
+    assert events[0].payload == execution_events.order_state(order)
+
+    transition_execution_order(
+        db_session,
+        order.id,
+        ExecutionOrderStatus.SUBMITTED,
+        producer="worker-ord",
+    )
+    events = _events_for_topic(db_session, "orders")
+    assert len(events) == 2
+    assert events[1].seq == 2
+    assert events[1].payload["status"] == "submitted"
+    assert events[1].payload == execution_events.order_state(order)
+
+
+def test_mark_incomplete_orders_unknown_emits_events(db_session: Session):
+    from q_backend.storage.db.execution_repositories import mark_incomplete_orders_unknown
+
+    account = create_paper_account(db_session, name="acc-unk", initial_balance=Decimal("100000.00"))
+    deployment = create_execution_deployment(
+        db_session,
+        paper_account_id=account.id,
+        name="dep-unk",
+        identity=_identity(),
+    )
+    o1 = create_execution_order_intent(
+        db_session,
+        deployment_id=deployment.id,
+        decision_id=None,
+        broker_mode=BrokerMode.PAPER,
+        side=ExecutionSide.BUY,
+        quantity=Decimal("1.0"),
+    )
+    o2 = create_execution_order_intent(
+        db_session,
+        deployment_id=deployment.id,
+        decision_id=None,
+        broker_mode=BrokerMode.PAPER,
+        side=ExecutionSide.SELL,
+        quantity=Decimal("2.0"),
+    )
+    initial_events = _events_for_topic(db_session, "orders")
+    assert len(initial_events) == 2
+
+    marked = mark_incomplete_orders_unknown(db_session, deployment.id, producer="recovery-worker")
+    assert marked == 2
+    events = _events_for_topic(db_session, "orders")
+    assert len(events) == 4
+    assert events[2].seq == 3
+    assert events[2].payload["status"] == "unknown"
+    assert events[2].producer_id == "recovery-worker"
+    assert events[3].seq == 4
+    assert events[3].payload["status"] == "unknown"
+
+
+def test_record_and_finalize_order_reconciliation_emits_events(db_session: Session):
+    from q_backend.storage.db.execution_repositories import (
+        finalize_order_reconciliation,
+        record_reconciliation_attempt,
+        transition_execution_order,
+    )
+
+    account = create_paper_account(db_session, name="acc-recon", initial_balance=Decimal("100000.00"))
+    deployment = create_execution_deployment(
+        db_session,
+        paper_account_id=account.id,
+        name="dep-recon",
+        identity=_identity(),
+    )
+    order = create_execution_order_intent(
+        db_session,
+        deployment_id=deployment.id,
+        decision_id=None,
+        broker_mode=BrokerMode.PAPER,
+        side=ExecutionSide.BUY,
+        quantity=Decimal("1.0"),
+    )
+    transition_execution_order(db_session, order.id, ExecutionOrderStatus.UNKNOWN)
+
+    record_reconciliation_attempt(db_session, order.id, error="timeout", producer="reconciler-1")
+    events = _events_for_topic(db_session, "orders")
+    assert events[-1].payload["reconciliation_error"] == "timeout"
+    assert events[-1].producer_id == "reconciler-1"
+
+    finalize_order_reconciliation(
+        db_session,
+        order.id,
+        reconciled_by="manual",
+        detail="matched fill",
+        producer="reconciler-1",
+    )
+    events = _events_for_topic(db_session, "orders")
+    assert events[-1].payload["reconciliation_state"] == "reconciled"
+    assert events[-1].payload["reconciled_by"] == "manual"
+
+
+def test_create_execution_fill_emits_event(db_session: Session):
+    account = create_paper_account(db_session, name="acc-fill-repo", initial_balance=Decimal("100000.00"))
+    deployment = create_execution_deployment(
+        db_session,
+        paper_account_id=account.id,
+        name="dep-fill-repo",
+        identity=_identity(),
+    )
+    order = create_execution_order_intent(
+        db_session,
+        deployment_id=deployment.id,
+        decision_id=None,
+        broker_mode=BrokerMode.PAPER,
+        side=ExecutionSide.BUY,
+        quantity=Decimal("1.0"),
+    )
+    fill = create_execution_fill(
+        db_session,
+        deployment_id=deployment.id,
+        order_id=order.id,
+        broker_mode=BrokerMode.PAPER,
+        external_fill_id="ext-fill-repo-1",
+        side=ExecutionSide.BUY,
+        quantity=Decimal("1.0"),
+        price=Decimal("100.00"),
+        filled_at=datetime(2026, 9, 18, 14, 30, tzinfo=timezone.utc),
+        producer="worker-fill",
+    )
+    events = _events_for_topic(db_session, "fills")
+    assert len(events) == 1
+    assert events[0].seq == 1
+    assert events[0].producer_id == "worker-fill"
+    assert events[0].payload == execution_events.fill_event(fill, None)
+
+
+def test_append_ledger_entry_emits_event(db_session: Session):
+    account = create_paper_account(db_session, name="acc-ledg-repo", initial_balance=Decimal("100000.00"))
+    deployment = create_execution_deployment(
+        db_session,
+        paper_account_id=account.id,
+        name="dep-ledg-repo",
+        identity=_identity(),
+    )
+    entry = append_ledger_entry(
+        db_session,
+        paper_account_id=account.id,
+        deployment_id=deployment.id,
+        entry_type=LedgerEntryType.INITIAL_BALANCE,
+        amount=Decimal("100000.00"),
+        balance_after=Decimal("100000.00"),
+        description="Funded",
+        producer="worker-ledg",
+    )
+    events = _events_for_topic(db_session, "ledger")
+    assert len(events) == 1
+    assert events[0].seq == 1
+    assert events[0].producer_id == "worker-ledg"
+    assert events[0].payload == execution_events.ledger_event(entry, account)
+
+
+def test_record_risk_event_emits_event(db_session: Session):
+    account = create_paper_account(db_session, name="acc-risk-repo", initial_balance=Decimal("100000.00"))
+    deployment = create_execution_deployment(
+        db_session,
+        paper_account_id=account.id,
+        name="dep-risk-repo",
+        identity=_identity(),
+    )
+    risk = record_risk_event(
+        db_session,
+        deployment_id=deployment.id,
+        rejection_code=RiskRejectionCode.KILL_SWITCH,
+        message="Kill switch engaged",
+        producer="worker-risk",
+    )
+    events = _events_for_topic(db_session, "risk")
+    assert len(events) == 1
+    assert events[0].seq == 1
+    assert events[0].producer_id == "worker-risk"
+    assert events[0].payload == execution_events.risk_rejection_event(risk)
+
+
+def test_set_kill_switch_emits_event(db_session: Session):
+    from q_backend.storage.db.execution_repositories import set_kill_switch
+
+    state = set_kill_switch(
+        db_session,
+        enabled=True,
+        reason="Halt for maintenance",
+        updated_by="admin-user",
+        producer="admin-cli",
+    )
+    events = _events_for_topic(db_session, "risk")
+    assert len(events) == 1
+    assert events[0].seq == 1
+    assert events[0].producer_id == "admin-cli"
+    assert events[0].payload["kind"] == "kill_switch"
+    assert events[0].payload["kill_switch_enabled"] is True
+    assert events[0].payload["updated_by"] == "admin-user"
+
+
+def test_apply_fill_composite_emission(db_session: Session):
+    from q_backend.execution.domain import FillRecord
+    from q_backend.execution.ledger import ExecutionLedger
+    from q_backend.storage.db.execution_repositories import (
+        get_open_net_position,
+        get_paper_account,
+        transition_execution_order,
+    )
+
+    account = create_paper_account(db_session, name="acc-apply-fill", initial_balance=Decimal("100000.00"))
+    deployment = create_execution_deployment(
+        db_session,
+        paper_account_id=account.id,
+        name="dep-apply-fill",
+        identity=_identity(),
+    )
+    order = create_execution_order_intent(
+        db_session,
+        deployment_id=deployment.id,
+        decision_id=None,
+        broker_mode=BrokerMode.PAPER,
+        side=ExecutionSide.BUY,
+        quantity=Decimal("1.0"),
+    )
+    ledger = ExecutionLedger()
+    fill_record = FillRecord(
+        broker_mode=BrokerMode.PAPER,
+        external_fill_id="ext-fill-apply-1",
+        side=ExecutionSide.BUY,
+        quantity=Decimal("1.0"),
+        price=Decimal("125000.00"),
+        fee=Decimal("2.50"),
+        slippage=Decimal("0.00"),
+        filled_at=datetime(2026, 9, 18, 14, 30, tzinfo=timezone.utc),
+    )
+    ledger.apply_fill(
+        db_session,
+        paper_account_id=account.id,
+        deployment_id=deployment.id,
+        order_id=order.id,
+        fill=fill_record,
+        point_value=Decimal("0.2"),
+        symbol="WIN$",
+        producer="worker-fill-composite",
+    )
+    transition_execution_order(
+        db_session,
+        order.id,
+        ExecutionOrderStatus.FILLED,
+        producer="worker-fill-composite",
+    )
+
+    # 1. Orders topic: status=filled
+    order_events = _events_for_topic(db_session, "orders")
+    assert order_events[-1].payload["status"] == "filled"
+    assert order_events[-1].producer_id == "worker-fill-composite"
+
+    # 2. Fills topic: position_after matches the committed net position
+    fill_events = _events_for_topic(db_session, "fills")
+    assert len(fill_events) == 1
+    assert fill_events[0].producer_id == "worker-fill-composite"
+    current_pos = get_open_net_position(db_session, deployment.id)
+    assert fill_events[0].payload["position_after"] == execution_events.position_state(current_pos)
+
+    # 3. Ledger topic: account_after matches the committed account
+    ledger_events = _events_for_topic(db_session, "ledger")
+    assert len(ledger_events) >= 1
+    assert ledger_events[-1].producer_id == "worker-fill-composite"
+    current_acc = get_paper_account(db_session, account.id)
+    assert ledger_events[-1].payload["account_after"] == execution_events.account_state(current_acc)
+
+
+def test_rollback_leaves_no_events_or_sequence(db_session: Session):
+    from sqlalchemy import select
+    from q_backend.storage.db.outbox_models import OutboxEvent, OutboxTopicState
+
+    account = create_paper_account(db_session, name="acc-rb", initial_balance=Decimal("100000.00"))
+    deployment = create_execution_deployment(
+        db_session,
+        paper_account_id=account.id,
+        name="dep-rb",
+        identity=_identity(),
+    )
+    db_session.commit()
+
+    # Get initial sequence
+    init_seq = db_session.execute(
+        select(OutboxTopicState.last_seq).where(OutboxTopicState.topic == "orders")
+    ).scalar_one()
+
+    # Begin transaction, create order, then rollback
+    create_execution_order_intent(
+        db_session,
+        deployment_id=deployment.id,
+        decision_id=None,
+        broker_mode=BrokerMode.PAPER,
+        side=ExecutionSide.BUY,
+        quantity=Decimal("1.0"),
+    )
+    db_session.rollback()
+
+    # Confirm no events were committed
+    events = list(
+        db_session.execute(
+            select(OutboxEvent).where(
+                OutboxEvent.topic == "orders",
+                OutboxEvent.payload["deployment_id"].as_string() == str(deployment.id),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(events) == 0
+
+    # Confirm sequence counter was not incremented
+    after_seq = db_session.execute(
+        select(OutboxTopicState.last_seq).where(OutboxTopicState.topic == "orders")
+    ).scalar_one()
+    assert after_seq == init_seq
+
+
+def test_invalid_payload_fails_transaction(db_session: Session):
+    from q_backend.streaming.outbox import OutboxEnvelopeError
+
+    with pytest.raises(OutboxEnvelopeError):
+        execution_events.emit(
+            db_session,
+            "orders",
+            {"entity": "order", "id": str(uuid.uuid4())},  # missing required fields
+            producer_id="test",
+        )
