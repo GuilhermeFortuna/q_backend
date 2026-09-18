@@ -8,7 +8,8 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from importlib import metadata
 from decimal import Decimal
 from typing import Callable, Optional
 
@@ -22,17 +23,31 @@ from q_backend.execution.reconciliation import OrderReconciler
 from q_backend.execution.recovery import DeploymentRuntime, ExecutionRecovery, open_trade_for_deployment
 from q_backend.execution.service import ExecutionService
 from q_backend.storage.db.execution_repositories import (
+    EdgeHealthSnapshot,
     LeaseConflictError,
     acquire_worker_lease,
     get_execution_deployment,
     get_paper_account,
     heartbeat_worker_lease,
     list_deployments,
+    record_worker_heartbeat,
+    record_worker_stopped,
     release_worker_lease,
 )
 from q_backend.storage.settings import Settings, get_settings
 
 logger = logging.getLogger(__name__)
+
+
+class RecoveryFailedClosed(RuntimeError):
+    """Startup recovery refused to let the worker trade; a restart will not fix it."""
+
+
+def _package_version() -> str:
+    try:
+        return metadata.version("q-backend")
+    except metadata.PackageNotFoundError:
+        return "unknown"
 
 
 @dataclass
@@ -59,7 +74,13 @@ class ExecutionWorker:
     clock: Callable[[], datetime] = field(default_factory=lambda: lambda: datetime.now(timezone.utc))
     poll_interval_seconds: Optional[float] = None
     shutdown_event: threading.Event = field(default_factory=threading.Event)
+    edge_health: Optional[Callable[[], object]] = None
+    on_ready: Callable[[], None] = lambda: None
+    on_poll: Callable[[], None] = lambda: None
+    version: str = field(default_factory=_package_version)
 
+    _started_at: Optional[datetime] = field(default=None, init=False)
+    _edge_snapshot: Optional[EdgeHealthSnapshot] = field(default=None, init=False)
     _runtimes: dict[uuid.UUID, DeploymentRuntime] = field(default_factory=dict, init=False)
     _lease_tokens: dict[uuid.UUID, str] = field(default_factory=dict, init=False)
     _health: WorkerHealth = field(init=False)
@@ -100,6 +121,7 @@ class ExecutionWorker:
     def run(self) -> None:
         """Block until shutdown is requested."""
         self._install_signal_handlers()
+        self._started_at = self.clock()
         self._running = True
         self._health.running = True
         try:
@@ -110,7 +132,7 @@ class ExecutionWorker:
                 )
                 session.commit()
                 if result.failed_closed:
-                    raise RuntimeError(result.message)
+                    raise RecoveryFailedClosed(result.message)
                 logger.info(
                     "execution recovery: leases=%s unknown_orders=%s",
                     result.leases_released,
@@ -128,12 +150,17 @@ class ExecutionWorker:
                 if self.poll_interval_seconds is not None
                 else self.settings.execution_poll_interval_seconds
             )
+            ready = False
             while not self.shutdown_event.is_set():
                 try:
                     self.poll_once()
+                    if not ready:
+                        ready = True
+                        self.on_ready()
                 except Exception as exc:
                     self._health.last_error = str(exc)
                     logger.exception("execution worker poll failed")
+                self.on_poll()
                 self.shutdown_event.wait(interval)
         finally:
             self._shutdown()
@@ -143,6 +170,50 @@ class ExecutionWorker:
     def poll_once(self) -> None:
         """Single poll cycle: refresh deployments, heartbeat leases, process bars."""
         now = self.clock()
+        try:
+            self._poll_body(now)
+        finally:
+            self._record_heartbeat(now)
+
+    def _check_edge(self, now: datetime) -> EdgeHealthSnapshot:
+        last = self._edge_snapshot
+        interval = self.settings.execution_edge_health_interval_s
+        if last is not None and now - last.checked_at < timedelta(seconds=interval):
+            return last
+        if self.edge_health is None:
+            snapshot = EdgeHealthSnapshot(False, None, None, now)
+        else:
+            try:
+                health = self.edge_health()
+                snapshot = EdgeHealthSnapshot(
+                    True,
+                    bool(getattr(health, "mt5_connected", False)),
+                    getattr(health, "terminal_build", None),
+                    now,
+                )
+            except Exception:  # noqa: BLE001 - any edge failure means unreachable
+                logger.warning("edge health check failed", exc_info=True)
+                snapshot = EdgeHealthSnapshot(False, None, None, now)
+        self._edge_snapshot = snapshot
+        return snapshot
+
+    def _record_heartbeat(self, now: datetime) -> None:
+        try:
+            edge = self._check_edge(now)
+            with self.session_factory() as session:
+                record_worker_heartbeat(
+                    session,
+                    worker_id=self.settings.execution_worker_id,
+                    started_at=self._started_at or now,
+                    version=self.version,
+                    edge=edge,
+                    now=now,
+                )
+                session.commit()
+        except Exception:  # noqa: BLE001 - a heartbeat failure must not stop trading
+            logger.exception("execution worker heartbeat write failed")
+
+    def _poll_body(self, now: datetime) -> None:
         with self.session_factory() as session:
             self._refresh_deployments(session, now=now)
             # Reconcile pending unknowns for leased deployments before processing
@@ -346,6 +417,12 @@ class ExecutionWorker:
             for deployment_id in list(self._runtimes):
                 self._release_deployment(session, deployment_id)
             session.commit()
+        try:
+            with self.session_factory() as session:
+                record_worker_stopped(session, worker_id=self.settings.execution_worker_id, now=self.clock())
+                session.commit()
+        except Exception:  # noqa: BLE001 - shutdown must finish
+            logger.exception("could not record clean worker shutdown")
 
     def _cost_config(self) -> PaperCostConfig:
         return PaperCostConfig(

@@ -27,7 +27,8 @@ from q_backend.execution.ledger import ExecutionLedger
 from q_backend.execution.quote_source import EdgeQuoteSource
 from q_backend.execution.recovery import ExecutionRecovery
 from q_backend.execution.service import CrashInjector, ExecutionService
-from q_backend.execution.worker import ExecutionWorker
+from q_backend.execution.worker import ExecutionWorker, RecoveryFailedClosed
+from q_backend.observability.systemd import EX_FAILED_CLOSED, notify_ready, notify_status, notify_watchdog
 from q_backend.market_data.service import MarketDataService
 from q_backend.observability.sentry import init_sentry
 from q_backend.storage.db.engine import create_session_factory, session_scope
@@ -66,6 +67,7 @@ class _ExecutionComponents:
     recovery: ExecutionRecovery
     settings: Settings
     clock: _LiveClock
+    edge_client: EdgeClient
 
 
 def _configure_logging(level: str) -> None:
@@ -166,6 +168,7 @@ def _build_components(
         recovery=recovery,
         settings=settings,
         clock=clock,
+        edge_client=edge_client,
     )
 
 
@@ -185,7 +188,15 @@ def _build_worker(
         settings=components.settings,
         clock=components.clock.now,
         poll_interval_seconds=poll_interval_seconds,
+        edge_health=components.edge_client.health,
+        on_ready=_on_ready,
+        on_poll=notify_watchdog,
     )
+
+
+def _on_ready() -> None:
+    notify_status("recovered; polling")
+    notify_ready()
 
 
 def _parse_deployment_id(raw: str) -> uuid.UUID:
@@ -223,7 +234,12 @@ def cmd_run(args: argparse.Namespace) -> int:
             args.poll_interval or components.settings.execution_poll_interval_seconds,
             components.settings.mt5_edge_url,
         )
-        worker.run()
+        try:
+            worker.run()
+        except RecoveryFailedClosed as exc:
+            logger.error("execution recovery failed closed: %s", exc)
+            notify_status(f"failed closed: {exc}")
+            return EX_FAILED_CLOSED
     return 0
 
 

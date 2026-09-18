@@ -5,6 +5,7 @@ import socket
 from typing import Final
 
 EX_CONFIG: Final[int] = 78  # sysexits.h; excluded from restart in units
+EX_FAILED_CLOSED: Final[int] = 79  # execution recovery failed closed; excluded from restart in units
 
 
 def notify(state: str) -> bool:
@@ -32,3 +33,8 @@ def notify_ready() -> bool:
 def notify_status(text: str) -> bool:
     """Send STATUS=<text> notification shown by systemctl status."""
     return notify(f"STATUS={text}")
+
+
+def notify_watchdog() -> bool:
+    """Send WATCHDOG=1 to feed the systemd watchdog."""
+    return notify("WATCHDOG=1")
