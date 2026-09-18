@@ -11,7 +11,6 @@ import sqlalchemy as sa
 from redis.exceptions import RedisError
 from sqlalchemy.orm import Session, sessionmaker
 
-from q_backend.execution.domain import DeploymentLifecycle, ExecutionOrderStatus
 from q_backend.storage.db.base import utc_now
 from q_backend.storage.db.execution_models import (
     ExecutionControlState,
@@ -407,11 +406,11 @@ def _read_execution_snapshot_session(
         .order_by(
             sa.case(
                 {
-                    DeploymentLifecycle.RUNNING.value: 0,
-                    DeploymentLifecycle.PAUSED.value: 1,
-                    DeploymentLifecycle.DRAFT.value: 2,
-                    DeploymentLifecycle.STOPPED.value: 3,
-                    DeploymentLifecycle.ERROR.value: 4,
+                    "running": 0,
+                    "paused": 1,
+                    "draft": 2,
+                    "stopped": 3,
+                    "error": 4,
                 },
                 value=ExecutionDeployment.lifecycle,
                 else_=5,
@@ -437,9 +436,9 @@ def _read_execution_snapshot_session(
         .order_by(
             sa.case(
                 {
-                    ExecutionOrderStatus.UNKNOWN.value: 0,
-                    ExecutionOrderStatus.SUBMITTED.value: 1,
-                    ExecutionOrderStatus.INTENT.value: 2,
+                    "unknown": 0,
+                    "submitted": 1,
+                    "intent": 2,
                 },
                 value=ExecutionOrder.status,
                 else_=3,
