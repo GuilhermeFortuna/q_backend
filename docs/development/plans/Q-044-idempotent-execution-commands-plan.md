@@ -105,7 +105,7 @@ Replay responses carry the header `Idempotency-Replayed: true`.
 - [ ] 1. Work on the branch `Q-044-idempotent-execution-commands` in `q_backend`,
    created from `development` by `./work start`. Confirm Q-039 is merged and
    pin it. Run `make contracts-check`. Commit.
-- [ ] 2. Write the migration and model. Confirm upgrade and downgrade in
+- [x] 2. Write the migration and model. Confirm upgrade and downgrade in
    `tests/storage`' migration test. Commit.
 - [ ] 3. Write failing tests for criteria 1–8 in
    `tests/api/test_execution_idempotency.py`, one class per route, and a
