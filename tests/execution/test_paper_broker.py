@@ -90,6 +90,7 @@ def _order_request(deployment_id, side, quantity, suffix: str) -> MarketOrderReq
         side=side,
         quantity=quantity,
         external_fill_id=f"paper:{order_id}:{suffix}",
+        intent_created_at=datetime(2024, 6, 1, 15, 0, tzinfo=timezone.utc),
     )
 
 

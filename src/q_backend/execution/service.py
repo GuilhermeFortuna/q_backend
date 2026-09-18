@@ -354,6 +354,7 @@ class ExecutionService:
         self._commit(session)
         self._crash.maybe_raise("after_intent_commit")
 
+        broker_mode = BrokerMode(deployment.broker_mode)
         broker_started = time.perf_counter()
         submission = self._broker.submit_market_order(
             MarketOrderRequest(
@@ -362,7 +363,10 @@ class ExecutionService:
                 symbol=deployment.symbol,
                 side=side,
                 quantity=quantity,
-                external_fill_id=f"paper:{order.id}",
+                external_fill_id=f"{broker_mode.value}:{order.id}",
+                broker_mode=broker_mode,
+                intent_created_at=order.intent_committed_at or now,
+                live_activation_enabled=bool(deployment.live_activation_enabled),
             ),
             cost_config=cost_config,
         )

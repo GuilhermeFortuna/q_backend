@@ -470,6 +470,7 @@ def test_reconciliation_fill_syncs_open_trade_before_next_bar(db_engine):
                 side=ExecutionSide.BUY,
                 quantity=Decimal("1"),
                 external_fill_id=f"paper:{order_id}",
+                intent_created_at=clock.now(),
             ),
             cost_config=PaperCostConfig(point_value=Decimal("0.2"), max_quote_age_seconds=60.0),
         )

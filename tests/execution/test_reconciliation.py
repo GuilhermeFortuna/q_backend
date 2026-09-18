@@ -160,6 +160,7 @@ def test_reconcile_filled_matches_never_crashed_run(db_session, paper_cost_confi
             side=ExecutionSide(order_b.side),
             quantity=order_b.quantity,
             external_fill_id=f"paper:{order_b.id}",
+            intent_created_at=order_b.intent_committed_at or clock.now(),
         ),
         cost_config=paper_cost_config,
     )
