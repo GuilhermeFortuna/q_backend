@@ -6,6 +6,21 @@ promise byte-identical goldens and unchanged parity, so each item here is
 recorded as today's behaviour and preserved. Each needs triage: a later task, an
 accepted deviation, or no action. Record the decision beside the item.
 
+## Batch 07 — execution edge
+
+22. **Deal matching on the edge requires magic and comment prefix together.** The Linux
+    `MetaTraderBroker._reconcile_fill` accepts a deal when *either* `magic` or the
+    comment prefix matches. The Wine execution edge (Q-040) requires **both**, because a
+    truncated broker comment still carries the `q:` prefix and magic collisions across
+    the 31-bit space are unlikely but possible. Q-042's `EdgeBroker` will use the edge
+    contract semantics.
+
+23. **`invalid_request` is specified but absent from `edge/common/error.schema.json`.**
+    Q-040 refuses unsupported submit fields (SL/TP, non-market type, non-GTC
+    `type_time`) with HTTP 400 code `invalid_request` per the task spec; the vendored
+    error enum does not yet list that code. Conformance tests assert the code string
+    without validating against the error schema for that case.
+
 ## Backtesting and execution semantics
 
 1. **A genome with a `rebalance` exit never closes its trade.** Found while

@@ -111,6 +111,46 @@ systemctl --user status mt5-gateway.service
 journalctl --user -u mt5-gateway.service -f
 ```
 
+## Execution edge (Q-040)
+
+The **execution edge** (`gateway/mt5_execution_edge.py`) is a separate loopback-only
+process on port **18813** (one above the data gateway). It is the only component that
+will call `order_send` for live trading. It shares the Wine prefix and Python install
+installed by `setup_wine.sh`; nothing new is installed.
+
+The edge keeps an **in-memory intent table for its process lifetime only**. A second
+submit with the same `intent_id` is answered `duplicate_intent` and never reaches the
+terminal. After a restart, deduplication is the Linux worker/ledger's job — the edge
+does not persist intents.
+
+### systemd unit
+
+```bash
+mkdir -p ~/.config/mt5-edge
+cp gateway/systemd/mt5-edge.service ~/.config/systemd/user/
+cp gateway/systemd/mt5-edge.env.example ~/.config/mt5-edge/mt5-edge.env
+$EDITOR ~/.config/mt5-edge/mt5-edge.env    # Q_BACKEND_DIR, prefix, python path
+
+systemctl --user daemon-reload
+systemctl --user enable --now mt5-edge.service
+```
+
+`mt5-edge.service` is `BindsTo=mt5-terminal.service` and `After=mt5-terminal.service`.
+An `ExecStartPost` health wait polls `/v1/health` until `mt5_connected: true` (times out
+without failing the unit if login is slow).
+
+Check it:
+
+```bash
+systemctl --user status mt5-edge.service
+journalctl --user -u mt5-edge.service -f
+curl -s http://127.0.0.1:18813/v1/health | jq
+curl -s 'http://127.0.0.1:18813/v1/quote?symbol=WIN$N' | jq
+```
+
+Send requests with `X-Schema-Major: 1` (omitted defaults to the edge's major). The edge
+refuses other majors with `schema_major_mismatch`.
+
 ## Backend configuration
 
 Point the Linux backend at the gateway (see also `README.md` env table):

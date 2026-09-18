@@ -123,6 +123,28 @@ def test_dependencies_match_architecture_table(tmp_path: Path):
         assert after == expected["After"], f"{unit_name} After mismatch: expected {expected['After']}, got {after}"
 
 
+GATEWAY_SYSTEMD_DIR = REPO_ROOT / "gateway/systemd"
+
+
+def test_mt5_edge_unit_structure():
+    unit_path = GATEWAY_SYSTEMD_DIR / "mt5-edge.service"
+    env_path = GATEWAY_SYSTEMD_DIR / "mt5-edge.env.example"
+    assert unit_path.is_file()
+    assert env_path.is_file()
+
+    config = configparser.ConfigParser(strict=False, interpolation=None)
+    config.read_string(unit_path.read_text())
+
+    after = set(config.get("Unit", "After", fallback="").split())
+    binds_to = set(config.get("Unit", "BindsTo", fallback="").split())
+    assert "mt5-terminal.service" in after
+    assert binds_to == {"mt5-terminal.service"}
+
+    env_text = env_path.read_text()
+    assert "MT5_EDGE_HOST=127.0.0.1" in env_text
+    assert "MT5_EDGE_PORT=18813" in env_text
+
+
 def test_quadlet_and_env_files_exist():
     assert (QUADLET_DIR / "q-postgres.container").is_file()
     assert (QUADLET_DIR / "q-postgres-data.volume").is_file()
