@@ -149,7 +149,7 @@ q_contracts: schema/api/openapi.yaml, schema/api/FINDINGS.md Finding 4, COMPAT.m
    worker id from worker, service, recovery and reconciler call sites. Confirm
    step 3's tests and all of `tests/execution` and `tests/api` pass unchanged.
    Commit.
-- [ ] 5. Write failing tests for the snapshot: contract validation; watermark
+- [x] 5. Write failing tests for the snapshot: contract validation; watermark
    equals the per-topic maximum; a concurrent commit during the read does not
    enter the snapshot or the watermark; `503` with Postgres down. Implement
    `read_execution_snapshot` and the route. Confirm they pass. Commit.

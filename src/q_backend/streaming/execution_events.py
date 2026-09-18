@@ -297,6 +297,16 @@ def kill_switch_event(row: ExecutionControlState, *, actor: str | None = None) -
     }
 
 
+def control_state(row: ExecutionControlState) -> dict[str, Any]:
+    now_iso = _dt(getattr(row, "updated_at", None)) or _dt(getattr(row, "created_at", None)) or _dt(_utcnow())
+    return {
+        "kill_switch_enabled": bool(row.kill_switch_enabled),
+        "kill_switch_reason": row.kill_switch_reason,
+        "updated_by": row.updated_by,
+        "updated_at": now_iso,
+    }
+
+
 def emit(
     session: Session,
     topic: str,

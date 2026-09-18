@@ -11,10 +11,22 @@ import sqlalchemy as sa
 from redis.exceptions import RedisError
 from sqlalchemy.orm import Session, sessionmaker
 
+from q_backend.execution.domain import DeploymentLifecycle, ExecutionOrderStatus
 from q_backend.storage.db.base import utc_now
+from q_backend.storage.db.execution_models import (
+    ExecutionControlState,
+    ExecutionDecision,
+    ExecutionDeployment,
+    ExecutionFill,
+    ExecutionNetPosition,
+    ExecutionOrder,
+    ExecutionRiskEvent,
+    PaperAccount,
+)
 from q_backend.storage.db.models import BacktestRun, OptimizationStudy, StrategySearchRun, WalkForwardRun
-from q_backend.storage.db.outbox_models import JobTerminalMarker, OutboxEvent
+from q_backend.storage.db.outbox_models import INITIAL_EPOCH, JobTerminalMarker, OutboxEvent
 from q_backend.storage.redis.progress import get_job_progress
+from q_backend.streaming import execution_events
 from q_backend.streaming.codec import decode_entry, envelope_to_dict, outbox_event_to_envelope, routing_key_string
 from q_backend.streaming.jobs import STATUS_TO_STREAM, StreamStatus
 from q_backend.streaming.keys import latest_key, stream_key
@@ -356,3 +368,160 @@ def history_to_response(result: HistoryResult) -> dict[str, Any]:
         "entries": [envelope_to_dict(entry) for entry in result.entries],
         "next_seq": result.next_seq,
     }
+
+
+EXECUTION_TOPICS: tuple[str, ...] = ("decisions", "orders", "fills", "risk", "ledger", "deployments")
+
+
+def _read_execution_snapshot_session(
+    session: Session,
+    *,
+    deployments_limit: int = 50,
+    decisions_limit: int = 500,
+    orders_limit: int = 500,
+    fills_limit: int = 500,
+    risk_limit: int = 500,
+) -> dict[str, Any]:
+    watermark_raw = read_watermark(session, EXECUTION_TOPICS)
+    watermark = {}
+    for topic in EXECUTION_TOPICS:
+        if topic in watermark_raw:
+            epoch, seq = watermark_raw[topic]
+        else:
+            epoch, seq = INITIAL_EPOCH, 0
+        watermark[topic] = {"epoch": str(epoch), "seq": int(seq)}
+
+    control = session.get(ExecutionControlState, 1)
+    if control is not None:
+        control_payload = execution_events.control_state(control)
+    else:
+        control_payload = {
+            "kill_switch_enabled": False,
+            "kill_switch_reason": None,
+            "updated_by": None,
+            "updated_at": utc_now().isoformat(),
+        }
+
+    deployments_stmt = (
+        sa.select(ExecutionDeployment)
+        .order_by(
+            sa.case(
+                {
+                    DeploymentLifecycle.RUNNING.value: 0,
+                    DeploymentLifecycle.PAUSED.value: 1,
+                    DeploymentLifecycle.DRAFT.value: 2,
+                    DeploymentLifecycle.STOPPED.value: 3,
+                    DeploymentLifecycle.ERROR.value: 4,
+                },
+                value=ExecutionDeployment.lifecycle,
+                else_=5,
+            ),
+            ExecutionDeployment.created_at.desc(),
+        )
+        .limit(deployments_limit)
+    )
+    deployments = list(session.execute(deployments_stmt).scalars().all())
+
+    accounts_stmt = sa.select(PaperAccount).order_by(PaperAccount.created_at.desc())
+    accounts = list(session.execute(accounts_stmt).scalars().all())
+
+    positions_stmt = (
+        sa.select(ExecutionNetPosition)
+        .where(ExecutionNetPosition.is_open.is_(True))
+        .order_by(ExecutionNetPosition.opened_at.desc())
+    )
+    positions = list(session.execute(positions_stmt).scalars().all())
+
+    orders_stmt = (
+        sa.select(ExecutionOrder)
+        .order_by(
+            sa.case(
+                {
+                    ExecutionOrderStatus.UNKNOWN.value: 0,
+                    ExecutionOrderStatus.SUBMITTED.value: 1,
+                    ExecutionOrderStatus.INTENT.value: 2,
+                },
+                value=ExecutionOrder.status,
+                else_=3,
+            ),
+            ExecutionOrder.created_at.desc(),
+        )
+        .limit(orders_limit)
+    )
+    orders = list(session.execute(orders_stmt).scalars().all())
+
+    decisions_stmt = (
+        sa.select(ExecutionDecision).order_by(ExecutionDecision.bar_close_time.desc()).limit(decisions_limit)
+    )
+    decisions = list(session.execute(decisions_stmt).scalars().all())
+
+    fills_stmt = sa.select(ExecutionFill).order_by(ExecutionFill.filled_at.desc()).limit(fills_limit)
+    fills = list(session.execute(fills_stmt).scalars().all())
+
+    risk_stmt = sa.select(ExecutionRiskEvent).order_by(ExecutionRiskEvent.created_at.desc()).limit(risk_limit)
+    risk_events = list(session.execute(risk_stmt).scalars().all())
+
+    return {
+        "deployments": [execution_events.deployment_state(d) for d in deployments],
+        "accounts": [execution_events.account_state(a) for a in accounts],
+        "positions": [execution_events.position_state(p) for p in positions],
+        "orders": [execution_events.order_state(o) for o in orders],
+        "recent": {
+            "decisions": [execution_events.decision_state(d) for d in decisions],
+            "fills": [execution_events.fill_event(f, None) for f in fills],
+            "risk": [execution_events.risk_rejection_event(r) for r in risk_events],
+        },
+        "control": control_payload,
+        "limits": {
+            "recent_decisions": decisions_limit,
+            "recent_fills": fills_limit,
+            "recent_orders": orders_limit,
+            "recent_risk": risk_limit,
+        },
+        "watermark": watermark,
+    }
+
+
+def read_execution_snapshot(
+    session_factory: sessionmaker[Session] | None = None,
+    *,
+    session: Session | None = None,
+    deployments_limit: int = 50,
+    decisions_limit: int = 500,
+    orders_limit: int = 500,
+    fills_limit: int = 500,
+    risk_limit: int = 500,
+    ledger_limit: int = 500,
+) -> dict[str, Any]:
+    """Build a consistent execution state snapshot bounded by declared limits."""
+    if session is not None:
+        return _read_execution_snapshot_session(
+            session,
+            deployments_limit=deployments_limit,
+            decisions_limit=decisions_limit,
+            orders_limit=orders_limit,
+            fills_limit=fills_limit,
+            risk_limit=risk_limit,
+        )
+
+    if session_factory is None:
+        raise ValueError("Either session_factory or session must be provided")
+
+    bind = session_factory.kw["bind"]
+    conn = bind.connect().execution_options(isolation_level=_snapshot_isolation_level(bind))
+    trans = conn.begin()
+    sess = Session(bind=conn, expire_on_commit=False)
+    try:
+        result = _read_execution_snapshot_session(
+            sess,
+            deployments_limit=deployments_limit,
+            decisions_limit=decisions_limit,
+            orders_limit=orders_limit,
+            fills_limit=fills_limit,
+            risk_limit=risk_limit,
+        )
+        trans.commit()
+        return result
+    finally:
+        sess.close()
+        conn.close()
