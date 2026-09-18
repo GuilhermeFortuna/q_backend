@@ -162,7 +162,7 @@ docs/mt5-wine-gateway.md                               # edge section
    logs, health check, what the intent table does and does not remember. Commit.
 - [x] 9. Add the matching-rule tightening to `docs/development/FINDINGS.md`
    under a Batch 07 heading. Commit.
-- [ ] 10. Run `scripts/ci.sh`. Fix, re-run, commit.
+- [x] 10. Run `scripts/ci.sh`. Fix, re-run, commit.
 - [ ] 11. **Human:** human-verifiable criteria 1 and 2 on the demo account.
 
 ## Validation
