@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Callable, Optional, Protocol
 
 from q_backend.execution.brokers.base import ExecutableQuote, QuoteSource
+from q_backend.execution.edge_client import EdgeClient, EdgeUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ def _as_utc(value: datetime) -> datetime:
 
 
 class CallableQuoteSource:
-    """Quote source backed by injectable callables (tests and MT5 wiring)."""
+    """Quote source backed by injectable callables (tests)."""
 
     def __init__(
         self,
@@ -56,40 +57,31 @@ class CallableQuoteSource:
         )
 
 
-def quote_source_from_market_data_service(service) -> QuoteSource:
-    """Build a quote source from ``MarketDataService``'s MT5 client."""
+class EdgeQuoteSource:
+    """Quote source backed by the execution edge."""
 
-    def _read_tick(symbol: str) -> Optional[tuple[Decimal, Decimal, datetime]]:
-        client = service.mt5_client
-        if not client.is_supported():
-            return None
+    def __init__(
+        self,
+        client: EdgeClient,
+        *,
+        clock: Callable[[], datetime],
+        source: str = "edge",
+    ) -> None:
+        self._client = client
+        self._clock = clock
+        self._source = source
+
+    def get_quote(self, symbol: str) -> Optional[ExecutableQuote]:
         try:
-            client._ensure_connected()
-        except Exception:  # noqa: BLE001 - no-quote is a handled, fail-closed outcome
-            # Best-effort/fail-closed: if the terminal can't be reached we return
-            # no quote, so the execution worker simply takes no action this poll
-            # and retries next tick. Log so a persistent outage is visible.
-            logger.warning(
-                "MT5 connection failed while reading tick for %s",
-                symbol,
-                exc_info=True,
-            )
+            quote = self._client.quote(symbol)
+        except EdgeUnavailable:
+            logger.debug("edge quote unavailable for %s", symbol, exc_info=True)
             return None
-        import MetaTrader5 as mt5  # type: ignore
-
-        if not mt5.symbol_select(symbol, True):
-            return None
-        tick = mt5.symbol_info_tick(symbol)
-        if tick is None:
-            return None
-        ts = datetime.fromtimestamp(int(tick.time), tz=timezone.utc)
-        return Decimal(str(tick.bid)), Decimal(str(tick.ask)), ts
-
-    def _select(symbol: str) -> bool:
-        return service.get_symbol_info(symbol) is not None
-
-    return CallableQuoteSource(
-        read_tick=_read_tick,
-        select_symbol=_select,
-        source="mt5",
-    )
+        timestamp = _as_utc(self._clock()) - timedelta(milliseconds=int(quote.age_ms))
+        return ExecutableQuote(
+            symbol=quote.symbol,
+            bid=Decimal(str(quote.bid)),
+            ask=Decimal(str(quote.ask)),
+            timestamp=timestamp,
+            source=self._source,
+        )

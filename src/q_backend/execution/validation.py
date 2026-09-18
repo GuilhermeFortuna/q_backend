@@ -92,11 +92,9 @@ def validate_broker_mode(
         mode = BrokerMode(broker_mode)
     except ValueError as exc:
         raise ExecutionValidationError(f"unsupported broker_mode '{broker_mode}'") from exc
-    if mode != BrokerMode.PAPER:
-        raise ExecutionValidationError("only paper broker_mode is supported")
-    if live_activation_enabled:
-        raise ExecutionValidationError("live_activation_enabled is locked")
-    if mode == BrokerMode.MT5_LIVE and live_capability_locked:
+    if mode == BrokerMode.PAPER and live_activation_enabled:
+        raise ExecutionValidationError("live_activation_enabled applies only to mt5_live deployments")
+    if mode == BrokerMode.MT5_LIVE and live_activation_enabled and live_capability_locked:
         raise ExecutionValidationError("live execution capability is locked")
     return mode
 

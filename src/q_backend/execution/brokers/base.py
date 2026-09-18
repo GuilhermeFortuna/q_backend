@@ -126,6 +126,9 @@ class MarketOrderRequest(BaseModel):
     side: ExecutionSide
     quantity: Decimal
     external_fill_id: str
+    broker_mode: BrokerMode = BrokerMode.PAPER
+    intent_created_at: datetime
+    live_activation_enabled: bool = False
 
 
 class BrokerRejection(BaseModel):

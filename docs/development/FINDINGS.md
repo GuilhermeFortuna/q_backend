@@ -21,6 +21,11 @@ accepted deviation, or no action. Record the decision beside the item.
     error enum does not yet list that code. Conformance tests assert the code string
     without validating against the error schema for that case.
 
+24. **Invariant 3 residual: `market_data` still imports `MetaTrader5` on Windows.**
+    Q-042 removed every `MetaTrader5` import under `src/q_backend/execution`; the
+    native `MetaTraderClient` in `market_data/clients/metatrader.py` remains until
+    the data gateway covers every call site that path makes.
+
 ## Backtesting and execution semantics
 
 1. **A genome with a `rebalance` exit never closes its trade.** Found while

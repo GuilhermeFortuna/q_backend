@@ -61,7 +61,7 @@ class DeploymentIdentityInput(BaseModel):
 class DeploymentCreateRequest(BaseModel):
     paper_account_id: UUID
     name: str = Field(..., min_length=1, max_length=255)
-    broker_mode: Literal["paper"] = "paper"
+    broker_mode: Literal["paper", "mt5_live"] = "paper"
     live_activation_enabled: bool = False
     source_backtest_run_id: Optional[UUID] = None
     identity: Optional[DeploymentIdentityInput] = None

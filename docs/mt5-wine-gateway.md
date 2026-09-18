@@ -151,6 +151,27 @@ curl -s 'http://127.0.0.1:18813/v1/quote?symbol=WIN$N' | jq
 Send requests with `X-Schema-Major: 1` (omitted defaults to the edge's major). The edge
 refuses other majors with `schema_major_mismatch`.
 
+### Worker integration (Q-042)
+
+The forward execution worker (`uv run q-execution run`) is the Linux-side consumer of
+this edge. It reads executable quotes, account login, live submissions, and intent
+lookups exclusively through `Q_MT5_EDGE_URL` (default `http://127.0.0.1:18813`). Bar
+history still comes from the data gateway (`Q_MT5_GATEWAY_URL`); only order-path
+operations use the execution edge.
+
+Paper deployments fill at edge quotes through the internal paper broker. `mt5_live`
+deployments submit through the edge when all live gates are open; with gates closed,
+orders are rejected as `live_locked` and no submit reaches the edge. The worker never
+resubmits an intent — ambiguous submit outcomes stay `UNKNOWN` until lookup resolves
+them.
+
+Start order for local live/paper forward execution:
+
+```bash
+systemctl --user start mt5-terminal mt5-gateway mt5-edge
+uv run q-execution run
+```
+
 ## Backend configuration
 
 Point the Linux backend at the gateway (see also `README.md` env table):

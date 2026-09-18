@@ -78,6 +78,7 @@ def _utcnow() -> datetime:
 
 def lookup_request_for_order(order: ExecutionOrder, deployment: ExecutionDeployment) -> MarketOrderRequest:
     broker_mode = BrokerMode(order.broker_mode)
+    intent_created_at = order.intent_committed_at or order.created_at
     return MarketOrderRequest(
         deployment_id=deployment.id,
         order_id=order.id,
@@ -85,6 +86,9 @@ def lookup_request_for_order(order: ExecutionOrder, deployment: ExecutionDeploym
         side=ExecutionSide(order.side),
         quantity=order.quantity,
         external_fill_id=f"{broker_mode.value}:{order.id}",
+        broker_mode=broker_mode,
+        intent_created_at=intent_created_at,
+        live_activation_enabled=bool(deployment.live_activation_enabled),
     )
 
 
