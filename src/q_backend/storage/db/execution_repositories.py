@@ -9,6 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from sqlalchemy import select
@@ -40,6 +41,7 @@ from q_backend.storage.db.execution_models import (
     ExecutionNetPosition,
     ExecutionOrder,
     ExecutionRiskEvent,
+    ExecutionWorkerHeartbeat,
     ExecutionWorkerLease,
     PaperAccount,
 )
@@ -515,6 +517,60 @@ def record_risk_event(
         producer_id=producer,
     )
     return event
+
+
+# --- Worker heartbeat ---
+
+
+@dataclass(frozen=True)
+class EdgeHealthSnapshot:
+    """Result of one worker-side edge health check."""
+
+    reachable: bool
+    mt5_connected: Optional[bool]
+    terminal_build: Optional[int]
+    checked_at: datetime
+
+
+def record_worker_heartbeat(
+    session: Session,
+    *,
+    worker_id: str,
+    started_at: datetime,
+    version: str,
+    edge: EdgeHealthSnapshot,
+    now: datetime,
+) -> None:
+    row = session.get(ExecutionWorkerHeartbeat, worker_id)
+    if row is None:
+        row = ExecutionWorkerHeartbeat(worker_id=worker_id)
+        session.add(row)
+    row.started_at = started_at
+    row.heartbeat_at = now
+    row.stopped_at = None
+    row.version = version
+    row.edge_reachable = edge.reachable
+    row.edge_mt5_connected = edge.mt5_connected
+    row.edge_terminal_build = edge.terminal_build
+    row.edge_checked_at = edge.checked_at
+    session.flush()
+
+
+def record_worker_stopped(session: Session, *, worker_id: str, now: datetime) -> None:
+    row = session.get(ExecutionWorkerHeartbeat, worker_id)
+    if row is None:
+        return
+    row.stopped_at = now
+    session.flush()
+
+
+def get_worker_heartbeat(session: Session, worker_id: Optional[str] = None) -> Optional[ExecutionWorkerHeartbeat]:
+    """Return the named worker's heartbeat, or the most recent one when no id is given."""
+    if worker_id is not None:
+        return session.get(ExecutionWorkerHeartbeat, worker_id)
+    return session.execute(
+        select(ExecutionWorkerHeartbeat).order_by(ExecutionWorkerHeartbeat.heartbeat_at.desc()).limit(1)
+    ).scalar_one_or_none()
 
 
 # --- Worker leases ---
@@ -1168,6 +1224,10 @@ def clear_pending_deployment_action(
 
 # Re-export domain transition errors for callers.
 __all__ = [
+    "EdgeHealthSnapshot",
+    "get_worker_heartbeat",
+    "record_worker_heartbeat",
+    "record_worker_stopped",
     "IllegalLifecycleTransition",
     "LeaseConflictError",
     "acquire_worker_lease",

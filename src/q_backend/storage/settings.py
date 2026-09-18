@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     execution_worker_id: str = "execution-worker-1"
     execution_lease_ttl_seconds: int = 30
     execution_poll_interval_seconds: float = 1.0
+    execution_heartbeat_stale_after_s: float = 10.0
+    execution_edge_health_interval_s: float = 5.0
     execution_max_quote_age_seconds: float = 30.0
     execution_max_bar_age_seconds: float = 7200.0
     execution_paper_slippage_points: float = 0.0

@@ -353,6 +353,7 @@ def test_execution_migration_revision_chain() -> None:
         "20260912_0017",
         "20260913_0018",
         "20260915_0019",
+        "20260918_0020",
     ]
 
     assert script.get_current_head() == expected_chain[-1]
@@ -373,3 +374,33 @@ def test_execution_migration_revision_chain() -> None:
     assert head_revision.down_revision == expected_chain[-2]
     assert callable(head_revision.module.upgrade)
     assert callable(head_revision.module.downgrade)
+
+
+def test_worker_heartbeat_upsert_and_stopped_marker(db_session: Session):
+    from q_backend.storage.db.execution_repositories import (
+        EdgeHealthSnapshot,
+        get_worker_heartbeat,
+        record_worker_heartbeat,
+        record_worker_stopped,
+    )
+
+    t0 = datetime(2026, 9, 18, 12, 0, tzinfo=timezone.utc)
+    edge = EdgeHealthSnapshot(reachable=True, mt5_connected=True, terminal_build=4500, checked_at=t0)
+    assert get_worker_heartbeat(db_session) is None
+    record_worker_heartbeat(db_session, worker_id="w1", started_at=t0, version="1", edge=edge, now=t0)
+    t1 = t0 + timedelta(seconds=1)
+    down = EdgeHealthSnapshot(reachable=False, mt5_connected=None, terminal_build=None, checked_at=t1)
+    record_worker_heartbeat(db_session, worker_id="w1", started_at=t0, version="1", edge=down, now=t1)
+    row = get_worker_heartbeat(db_session, "w1")
+    assert (
+        row.heartbeat_at.replace(tzinfo=timezone.utc) == t1
+        and row.edge_reachable is False
+        and row.edge_terminal_build is None
+    )
+    assert row.stopped_at is None
+
+    record_worker_stopped(db_session, worker_id="w1", now=t1)
+    assert get_worker_heartbeat(db_session).stopped_at.replace(tzinfo=timezone.utc) == t1
+    record_worker_heartbeat(db_session, worker_id="w1", started_at=t1, version="1", edge=edge, now=t1)
+    assert get_worker_heartbeat(db_session, "w1").stopped_at is None
+    record_worker_stopped(db_session, worker_id="absent", now=t1)
