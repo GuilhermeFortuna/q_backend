@@ -50,6 +50,7 @@ def test_install_script_idempotent(tmp_path: Path):
         dest / "q-outbox-relay.service",
         dest / "q-market-publisher.service",
         dest / "q-research-worker.service",
+        dest / "q-execution-worker.service",
         dest / "q-backend.target",
     ]
     expected_quadlets = [
@@ -136,6 +137,7 @@ def test_install_script_uninstall(tmp_path: Path):
         dest / "q-outbox-relay.service",
         dest / "q-market-publisher.service",
         dest / "q-research-worker.service",
+        dest / "q-execution-worker.service",
         dest / "q-backend.target",
         quadlet_dest / "q-postgres.container",
         quadlet_dest / "q-postgres-data.volume",

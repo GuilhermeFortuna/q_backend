@@ -61,6 +61,7 @@ if [ "$UNINSTALL" = true ]; then
   rm -f "$DEST_DIR/q-outbox-relay.service"
   rm -f "$DEST_DIR/q-market-publisher.service"
   rm -f "$DEST_DIR/q-research-worker.service"
+  rm -f "$DEST_DIR/q-execution-worker.service"
   rm -f "$DEST_DIR/q-backend.target"
   rm -f "$QUADLET_DEST/q-postgres.container"
   rm -f "$QUADLET_DEST/q-postgres-data.volume"
