@@ -216,6 +216,7 @@ class ExecutionLedger:
         point_value: Decimal,
         symbol: str,
         reconciling: bool = False,
+        position_opened_at: Optional[datetime] = None,
     ) -> LedgerApplyResult:
         existing = get_execution_fill_by_external_id(
             session,
@@ -312,13 +313,20 @@ class ExecutionLedger:
             )
 
         update_paper_cash_balance(session, paper_account_id, cash)
+        opened_at = fill.filled_at
+        if (
+            position_opened_at is not None
+            and current_side == PositionSide.FLAT
+            and transition.new_side != PositionSide.FLAT
+        ):
+            opened_at = position_opened_at
         upsert_open_net_position(
             session,
             deployment_id=deployment_id,
             side=transition.new_side,
             quantity=transition.new_quantity,
             average_entry_price=transition.new_average_entry_price,
-            opened_at=fill.filled_at,
+            opened_at=opened_at,
         )
         if reconciling:
             # Reconciled orders are already UNKNOWN; go straight to FILLED

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Protocol
 
 import pandas as pd
@@ -51,6 +51,12 @@ class CompletedBarBatch:
         return frame_close_times(self.frame.index, self.key.timeframe)
 
 
+def _utc_aware(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 @dataclass
 class BarCoordinator:
     """Groups consumers by ``(symbol, timeframe)`` and shares one OHLCV fetch."""
@@ -66,7 +72,7 @@ class BarCoordinator:
         *,
         initial_window_bars: int | None = None,
     ) -> dict[BarStreamKey, CompletedBarBatch]:
-        now = self.clock()
+        now = _utc_aware(self.clock())
         grouped: dict[BarStreamKey, list[DeploymentBarConsumer]] = {}
         for consumer in consumers:
             key = BarStreamKey(consumer.symbol, consumer.timeframe.upper())
@@ -96,7 +102,10 @@ class BarCoordinator:
         closes = batch.completed_close_times
         if consumer.last_evaluated_close is None:
             return frame
-        mask = closes > pd.Timestamp(consumer.last_evaluated_close)
+        watermark = pd.Timestamp(consumer.last_evaluated_close)
+        if watermark.tzinfo is None:
+            watermark = watermark.tz_localize("UTC")
+        mask = closes > watermark
         if not mask.any():
             return frame.iloc[0:0]
         return frame.loc[mask]
@@ -111,18 +120,22 @@ class BarCoordinator:
     ) -> CompletedBarBatch | None:
         duration = bar_duration(key.timeframe)
         earliest_close = min(
-            (c.last_evaluated_close for c in consumers if c.last_evaluated_close),
+            (_utc_aware(c.last_evaluated_close) for c in consumers if c.last_evaluated_close),
             default=None,
         )
 
+        end = now
         if earliest_close is None:
             if initial_window_bars is None:
                 raise ValueError("initial_window_bars is required when no consumer has a watermark")
-            end = now
             start = now - duration * initial_window_bars
         else:
-            start = earliest_close - duration * self.overlap_bars
-            end = now
+            overlap_start = earliest_close - duration * self.overlap_bars
+            if initial_window_bars is None:
+                start = overlap_start
+            else:
+                window_start = now - duration * initial_window_bars
+                start = min(overlap_start, window_start)
 
         raw = self.provider.get_ohlcv(key.symbol, key.timeframe, start, end)
         self.fetch_count += 1
