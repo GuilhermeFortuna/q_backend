@@ -20,7 +20,7 @@ from q_backend.execution.brokers.paper import PaperBroker
 from q_backend.execution.domain import DeploymentLifecycle
 from q_backend.execution.ledger import ExecutionLedger
 from q_backend.execution.reconciliation import OrderReconciler
-from q_backend.execution.recovery import DeploymentRuntime, ExecutionRecovery
+from q_backend.execution.recovery import DeploymentRuntime, ExecutionRecovery, open_trade_for_deployment
 from q_backend.execution.service import ExecutionService
 from q_backend.storage.db.execution_repositories import (
     LeaseConflictError,
@@ -150,6 +150,9 @@ class ExecutionWorker:
             reconciler = self._order_reconciler()
             for runtime in list(self._runtimes.values()):
                 reconciler.reconcile_deployment(session, runtime.deployment)
+            point_value_float = float(self.settings.execution_default_point_value)
+            for runtime in list(self._runtimes.values()):
+                self._sync_open_trade(session, runtime, point_value=point_value_float)
             consumers = [
                 DeploymentBarConsumer(
                     str(runtime.deployment.id),
@@ -196,6 +199,7 @@ class ExecutionWorker:
                             point_value=point_value,
                         )
                         clear_pending_deployment_action(session, deployment.id)
+                        self._sync_open_trade(session, runtime, point_value=float(point_value))
                     continue
 
             for runtime in list(self._runtimes.values()):
@@ -221,9 +225,12 @@ class ExecutionWorker:
                 new_bars = self.coordinator.new_bars_for_consumer(batch, consumer)
                 if new_bars.empty:
                     continue
-                eval_results = runtime.evaluator.ingest_completed_bars(new_bars)
                 lease_token = self._lease_tokens[deployment.id]
-                for eval_result in eval_results:
+                for open_time in new_bars.sort_index().index:
+                    bar = new_bars.loc[[open_time]]
+                    eval_result = runtime.evaluator.ingest_completed_bar(bar)
+                    if eval_result is None:
+                        continue
                     process_result = self.service.process_completed_bar(
                         session,
                         deployment=deployment,
@@ -233,6 +240,7 @@ class ExecutionWorker:
                         cost_config=cost_config,
                         point_value=point_value,
                     )
+                    self._sync_open_trade(session, runtime, point_value=float(point_value))
                     timing_log = process_result.timing.model_copy(update={"bar_detection_ms": bar_detection_ms})
                     if process_result.timing.total_ms > 0:
                         logger.info(
@@ -245,6 +253,10 @@ class ExecutionWorker:
             session.commit()
             self._health.last_poll_at = now
             self._health.last_error = None
+
+    def _sync_open_trade(self, session: Session, runtime: DeploymentRuntime, *, point_value: float) -> None:
+        trade = open_trade_for_deployment(session, runtime.deployment, point_value=point_value)
+        runtime.evaluator.set_open_trade(trade)
 
     def _refresh_deployments(self, session: Session, *, now: datetime) -> None:
         active_ids: set[uuid.UUID] = set()
