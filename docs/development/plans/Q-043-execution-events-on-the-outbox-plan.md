@@ -155,7 +155,7 @@ q_contracts: schema/api/openapi.yaml, schema/api/FINDINGS.md Finding 4, COMPAT.m
    `read_execution_snapshot` and the route. Confirm they pass. Commit.
 - [x] 6. Write `test_execution_snapshot_race.py` (200 seeds in CI, 2 000 under an
    environment flag) and fix anything it finds. Commit.
-- [ ] 7. Update `README.md` (execution topics are live on the stream; the snapshot
+- [x] 7. Update `README.md` (execution topics are live on the stream; the snapshot
    route). Commit.
 - [ ] 8. Recapture the OpenAPI in `q_contracts` on the branch
    `Q-043-execution-events-on-the-outbox`. Close FINDINGS Finding 4 there and

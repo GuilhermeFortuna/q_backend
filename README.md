@@ -629,6 +629,8 @@ Domain logic stays in the existing packages (`market_data/`, `backtesting/`,
 | Features | `routers/features.py` | `schemas/features.py` | `features/evaluation_service.py`, `features/sync.py` |
 | Storage | `routers/storage.py` | `schemas/storage.py` | `api/storage_jobs.py` |
 | News | `routers/news.py` | `schemas/news.py` | `api/services/news.py` (injectable RSS fetch) |
+| Execution | `routers/execution.py` | `schemas/execution.py` | `execution/` |
+| Stream | `routers/stream_ws.py`, `routers/stream_replay.py` | `schemas/stream.py` | `streaming/` |
 
 After WO60, `main.py` is assembly-only: it wires routers and CORS and defines no business routes directly. Conventions for new routers are documented in `api/routers/__init__.py`.
 
@@ -1003,6 +1005,29 @@ See [`docs/design/feature-intelligence.md`](https://github.com/GuilhermeFortuna/
   * *Description:* Latest finance headlines aggregated from Valor Econômico and CNBC RSS feeds (top 25, deduplicated).
 * **`GET /api/v1/news/{article_id}`**
   * *Description:* Full article body for one feed item. `article_id` is a URL-safe base64 encoding of the source link.
+
+### Stream Protocol & Execution State Streaming
+* **`WS /api/v1/stream`**
+  * *Description:* Real-time bidirectional WebSocket stream providing multiplexed topic subscriptions (`quotes`, `bars.forming`, `bars.completed`, `jobs.progress`, `jobs.terminal`, `deployments`, `decisions`, `orders`, `fills`, `risk`, `ledger`).
+* **`GET /api/v1/stream/execution/snapshot`**
+  * *Description:* Consistent point-in-time snapshot of the execution domain across registered deployments, trading accounts, active positions, open/recent orders, recent decisions, fills, risk events, control state (kill switch), and outbox sequence watermarks. Read in a single repeatable-read transaction. Returns `503` if the database is unavailable.
+  * *Parameters:* Optional query limits `deployments_limit` (1-500, default 50), `decisions_limit`, `orders_limit`, `fills_limit`, `risk_limit`, `ledger_limit` (1-2000, default 500).
+  * *Response:* Matches `stream/replay/execution-snapshot` contract (`deployments`, `accounts`, `positions`, `orders`, `recent`, `control`, `limits`, `watermark`).
+* **`GET /api/v1/stream/{topic}/history`**
+  * *Description:* Replay historical stream events for durable outbox topics (`decisions`, `orders`, `fills`, `risk`, `ledger`, `deployments`, `jobs.terminal`) starting from a given sequence number (`from_seq`) within the current outbox `epoch`.
+* **`GET /api/v1/stream/{topic}/latest`**
+  * *Description:* Current latest value for ephemeral topics (`quotes`, `bars.forming`, `bars.completed`, `jobs.progress`).
+* **`GET /api/v1/stream/jobs/snapshot`**
+  * *Description:* Snapshot of running and recently terminal background jobs with terminal watermarks.
+
+#### Execution Topics on the Stream
+State changes in the execution engine write versioned Q-039 events to the transactional outbox inside the business transaction:
+* **`deployments`:** Emitted on deployment creation, lifecycle transitions (`start`, `pause`, `stop`, `error`), and pending actions.
+* **`decisions`:** Emitted when strategy evaluation evaluates a closed bar, including signals and outcomes.
+* **`orders`:** Emitted on order intent creation and order state transitions (`submitted`, `filled`, `cancelled`, `rejected`, `unknown`).
+* **`fills`:** Emitted on fill execution. Carries the deployment's updated net position in `position_after`.
+* **`ledger`:** Emitted on balance adjustments and trade PnL bookings. Carries the account's updated balance and PnL in `account_after`.
+* **`risk`:** Emitted on risk gate rejections and kill switch toggles.
 
 ---
 
