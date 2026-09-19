@@ -1,0 +1,19 @@
+[Unit]
+Description=Q Market Data Publisher Service (dev, Docker infra)
+After=network-online.target mt5-gateway.service
+Wants=network-online.target
+
+[Service]
+Type=notify
+EnvironmentFile=%h/.config/q/backend.env
+WorkingDirectory=@Q_BACKEND_DIR@
+ExecStart=@Q_BACKEND_DIR@/.venv/bin/q-market-publisher
+Restart=on-failure
+RestartSec=1
+RestartSteps=5
+RestartMaxDelaySec=30
+RestartPreventExitStatus=78
+TimeoutStartSec=90
+
+[Install]
+WantedBy=default.target
