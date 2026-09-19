@@ -102,7 +102,7 @@ Replay responses carry the header `Idempotency-Replayed: true`.
 
 ## Ordered implementation
 
-- [ ] 1. Work on the branch `Q-044-idempotent-execution-commands` in `q_backend`,
+- [x] 1. Work on the branch `Q-044-idempotent-execution-commands` in `q_backend`,
    created from `development` by `./work start`. Confirm Q-039 is merged and
    pin it. Run `make contracts-check`. Commit.
 - [x] 2. Write the migration and model. Confirm upgrade and downgrade in
@@ -119,12 +119,12 @@ Replay responses carry the header `Idempotency-Replayed: true`.
 - [x] 6. Document the header, the replay marker, the in-progress conflict and the
    enforcement flag in `README.md`. Record the research-job remainder in
    `FINDINGS.md`. Commit.
-- [ ] 7. In `q_contracts`, on the branch `Q-044-idempotent-execution-commands`:
+- [x] 7. In `q_contracts`, on the branch `Q-044-idempotent-execution-commands`:
    recapture the OpenAPI, add the header check to `tools/validate.py` with a
    test, close Finding 3, and update `COMPAT.md`. If another batch-07 recapture
    merged first, rebase and capture again. Run `make check`. Commit in
    `q_contracts`.
-- [ ] 8. Run `scripts/ci.sh`. Fix, re-run, commit.
+- [x] 8. Run `scripts/ci.sh`. Fix, re-run, commit.
 - [ ] 9. **Human:** human-verifiable criterion 1, with enforcement on
    (`Q_EXECUTION_IDEMPOTENCY_ENFORCED=true`) and then off.
 
