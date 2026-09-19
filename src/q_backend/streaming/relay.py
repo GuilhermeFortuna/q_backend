@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from q_backend.storage.db.base import utc_now
 from q_backend.storage.db.outbox_models import OutboxEvent, OutboxTopicState
+from q_backend.api.idempotency import prune_idempotency
 from q_backend.streaming.codec import encode_entry
 from q_backend.streaming.keys import stream_key
 from q_backend.streaming.outbox import oldest_retained_seq, prune_relayed
@@ -241,6 +242,7 @@ class OutboxRelay:
                     try:
                         with self.session_factory() as session:
                             prune_relayed(session)
+                            prune_idempotency(session)
                             session.commit()
                         last_prune = now
                     except sa.exc.SQLAlchemyError as prune_err:

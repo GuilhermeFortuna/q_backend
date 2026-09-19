@@ -102,29 +102,29 @@ Replay responses carry the header `Idempotency-Replayed: true`.
 
 ## Ordered implementation
 
-- [ ] 1. Work on the branch `Q-044-idempotent-execution-commands` in `q_backend`,
+- [x] 1. Work on the branch `Q-044-idempotent-execution-commands` in `q_backend`,
    created from `development` by `./work start`. Confirm Q-039 is merged and
    pin it. Run `make contracts-check`. Commit.
-- [ ] 2. Write the migration and model. Confirm upgrade and downgrade in
+- [x] 2. Write the migration and model. Confirm upgrade and downgrade in
    `tests/storage`' migration test. Commit.
-- [ ] 3. Write failing tests for criteria 1–8 in
+- [x] 3. Write failing tests for criteria 1–8 in
    `tests/api/test_execution_idempotency.py`, one class per route, and a
    concurrency test using two threads and a barrier inside
    `reconciliation.apply_filled_resolution`. Confirm they fail. Commit.
-- [ ] 4. Implement `api/idempotency.py`. Move commits out of the five service
+- [x] 4. Implement `api/idempotency.py`. Move commits out of the five service
    functions and into the routes, and apply `@idempotent`. Confirm the new tests
    and all of `tests/api` and `tests/execution` pass. Commit.
-- [ ] 5. Add `prune_idempotency` to `q-outbox prune` and to the relay's periodic
+- [x] 5. Add `prune_idempotency` to `q-outbox prune` and to the relay's periodic
    prune, with a test. Commit.
-- [ ] 6. Document the header, the replay marker, the in-progress conflict and the
+- [x] 6. Document the header, the replay marker, the in-progress conflict and the
    enforcement flag in `README.md`. Record the research-job remainder in
    `FINDINGS.md`. Commit.
-- [ ] 7. In `q_contracts`, on the branch `Q-044-idempotent-execution-commands`:
+- [x] 7. In `q_contracts`, on the branch `Q-044-idempotent-execution-commands`:
    recapture the OpenAPI, add the header check to `tools/validate.py` with a
    test, close Finding 3, and update `COMPAT.md`. If another batch-07 recapture
    merged first, rebase and capture again. Run `make check`. Commit in
    `q_contracts`.
-- [ ] 8. Run `scripts/ci.sh`. Fix, re-run, commit.
+- [x] 8. Run `scripts/ci.sh`. Fix, re-run, commit.
 - [ ] 9. **Human:** human-verifiable criterion 1, with enforcement on
    (`Q_EXECUTION_IDEMPOTENCY_ENFORCED=true`) and then off.
 

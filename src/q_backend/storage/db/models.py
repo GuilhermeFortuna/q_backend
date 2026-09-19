@@ -17,6 +17,7 @@ from q_backend.storage.db.outbox_models import (  # noqa: F401
     OutboxEvent,
     OutboxTopicState,
 )
+from q_backend.storage.db.idempotency_models import CommandIdempotency  # noqa: F401
 
 
 class RunStatus(str, Enum):

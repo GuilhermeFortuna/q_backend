@@ -1,6 +1,9 @@
 import logging
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from q_backend.api.lifespan import lifespan
@@ -32,6 +35,21 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def idempotency_aware_validation_handler(request, exc: RequestValidationError):
+    """Persist validation failures after the idempotency dependency claimed a key."""
+
+    command = getattr(request.state, "idempotency_command", None)
+    if command is not None:
+        if command.early_response is not None:
+            return command.early_response
+        body = {"detail": jsonable_encoder(exc.errors())}
+        command.store(request.state.idempotency_session, 422, body)
+        return JSONResponse(status_code=422, content=body)
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(exc.errors())})
+
 
 app.add_middleware(
     CORSMiddleware,

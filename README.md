@@ -722,6 +722,25 @@ Run benchmarks: `uv run pytest tests/execution/test_evaluator_benchmark.py tests
 - `PUT /api/v1/execution/kill-switch` — `{"enabled":true,"confirm":true,"reason":"…","updated_by":"operator"}`
 - `GET /api/v1/execution/deployments/{id}/chart?bars=200` (WO175) — read-only live chart payload: the same bounded OHLCV window the forward evaluator consumes plus the strategy's own indicator series, computed through the identical `execution.indicator_frame.augment_indicator_frame` path the worker uses (never a re-implementation). `bars` is the display count (default 200, max 1000); the endpoint fetches `bars + compute_window_bound_bars(compiled_config)` completed bars (forming bar excluded), computes indicators, then trims to the last `bars` so warm-up NaNs never reach the display window. Read-only (no worker/evaluator state, no persistence). Payload is cached in-process on `(deployment_id, bars, last completed bar open time)` so 5-second polling recomputes only when a new bar lands. Degrades honestly: unknown deployment → 404; market data unavailable (MT5 offline in `mt5` mode, empty local store in `local` mode) → 503; strategy window that cannot be bounded → 422.
 
+#### Idempotent execution commands
+
+The five mutating execution commands accept a client-generated UUID in the
+`Idempotency-Key` header: account creation, deployment creation, deployment
+actions, order resolution, and kill-switch updates. A keyed request stores its
+status and JSON body in the same transaction as the command for 24 hours. A
+retry with the same method, path, and body returns that body with
+`Idempotency-Replayed: true`; reusing a key for another command returns
+`idempotency_key_reused`, and a concurrent in-flight retry returns
+`idempotency_in_progress` with `Retry-After: 1`.
+
+`Q_EXECUTION_IDEMPOTENCY_ENFORCED` defaults to `false` while the legacy
+frontend execution workspace is still present. With enforcement off, a
+keyless command is accepted and logs a warning; with it on, the command is
+refused with `idempotency_key_required`. Q-050 will flip the shipped default
+after the last keyless client is removed. The existing `q-outbox prune`
+command and the outbox relay's periodic prune remove results older than 24
+hours. Research job submissions remain outside this execution-command policy.
+
 Money/price/quantity fields serialize as decimal strings in JSON responses.
 
 **Deployment chart JSON contract (WO175):** shape mirrors the backtest chart (`bars`, `indicators`) plus additive metadata (`symbol`, `timeframe`, `window_bound_bars`, `last_bar_close_time`, `next_bar_close_time`). Warm-up NaNs serialize as `null`. Example (`bars` and `values` truncated for brevity; two indicators on `price` plus one on `oscillator`):

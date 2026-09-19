@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import uuid
+import json
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from q_backend.api.deps import get_session
 from q_backend.api.dependencies import get_market_data_service
+from q_backend.api.idempotency import IdempotentCommand, IdempotentRoute
 from q_backend.api.schemas.execution import (
     AuditEventListResponse,
     DecisionListResponse,
@@ -40,7 +42,7 @@ from q_backend.api.schemas.execution import (
 from q_backend.api.services import execution as execution_service
 from q_backend.market_data.service import MarketDataService
 
-router = APIRouter(tags=["execution"])
+router = APIRouter(tags=["execution"], route_class=IdempotentRoute)
 
 
 def _session_or_503(session: Session = Depends(get_session)) -> Session:
@@ -54,12 +56,33 @@ def _session_or_503(session: Session = Depends(get_session)) -> Session:
     return session
 
 
+async def _idempotency_dependency(
+    request: Request,
+    session: Session = Depends(_session_or_503),
+    key: uuid.UUID | None = Header(default=None, alias="Idempotency-Key"),
+) -> IdempotentCommand:
+    existing = getattr(request.state, "idempotency_command", None)
+    if existing is not None:
+        return existing
+    raw_body = await request.body()
+    try:
+        body = json.loads(raw_body or b"{}")
+    except json.JSONDecodeError:
+        body = {"_raw": raw_body.decode("utf-8", errors="replace")}
+    command = IdempotentCommand.from_request(request, key, body)
+    command.prepare(session)
+    request.state.idempotency_command = command
+    request.state.idempotency_session = session
+    return command
+
+
 @router.post("/api/v1/execution/accounts", response_model=PaperAccountResponse)
 def create_execution_account(
     body: PaperAccountCreateRequest,
     session: Session = Depends(_session_or_503),
+    command: IdempotentCommand = Depends(_idempotency_dependency),
 ):
-    return execution_service.create_account(session, body)
+    return command.execute(session, lambda: execution_service.create_account(session, body))
 
 
 @router.get("/api/v1/execution/accounts", response_model=PaperAccountListResponse)
@@ -86,8 +109,9 @@ def get_execution_account(
 def create_execution_deployment(
     body: DeploymentCreateRequest,
     session: Session = Depends(_session_or_503),
+    command: IdempotentCommand = Depends(_idempotency_dependency),
 ):
-    return execution_service.create_deployment(session, body)
+    return command.execute(session, lambda: execution_service.create_deployment(session, body))
 
 
 @router.get("/api/v1/execution/deployments", response_model=DeploymentListResponse)
@@ -128,8 +152,12 @@ def deployment_action(
     deployment_id: uuid.UUID,
     body: DeploymentActionRequest,
     session: Session = Depends(_session_or_503),
+    command: IdempotentCommand = Depends(_idempotency_dependency),
 ):
-    return execution_service.apply_deployment_action(session, deployment_id, body)
+    return command.execute(
+        session,
+        lambda: execution_service.apply_deployment_action(session, deployment_id, body),
+    )
 
 
 @router.get(
@@ -204,8 +232,9 @@ def resolve_execution_order(
     order_id: uuid.UUID,
     body: OrderResolutionRequest,
     session: Session = Depends(_session_or_503),
+    command: IdempotentCommand = Depends(_idempotency_dependency),
 ):
-    return execution_service.resolve_order(session, order_id, body)
+    return command.execute(session, lambda: execution_service.resolve_order(session, order_id, body))
 
 
 @router.get(
@@ -358,5 +387,6 @@ def get_kill_switch(session: Session = Depends(_session_or_503)):
 def update_kill_switch(
     body: KillSwitchUpdateRequest,
     session: Session = Depends(_session_or_503),
+    command: IdempotentCommand = Depends(_idempotency_dependency),
 ):
-    return execution_service.update_kill_switch(session, body)
+    return command.execute(session, lambda: execution_service.update_kill_switch(session, body))

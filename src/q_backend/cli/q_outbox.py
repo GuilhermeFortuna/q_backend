@@ -7,6 +7,7 @@ from datetime import timedelta
 import logging
 import sys
 
+from q_backend.api.idempotency import prune_idempotency
 from q_backend.storage.db.engine import session_scope
 from q_backend.streaming.outbox import prune_relayed, rotate_epoch
 
@@ -60,13 +61,17 @@ def main(argv: list[str] | None = None) -> int:
         older_than = timedelta(days=args.older_than_days)
         with session_scope() as session:
             retained = prune_relayed(session, older_than=older_than)
+            pruned_commands = prune_idempotency(session, older_than=older_than)
             logger.info(
-                "Pruned relayed events older than %s days. Oldest retained seqs: %s",
+                "Pruned relayed events and command results older than %s days. "
+                "Oldest retained seqs: %s; command results removed: %s",
                 args.older_than_days,
                 retained,
+                pruned_commands,
             )
             print(
-                f"Pruned relayed events older than {args.older_than_days} days. Oldest retained seq per topic: {retained}"
+                f"Pruned relayed events older than {args.older_than_days} days. "
+                f"Oldest retained seq per topic: {retained}; command results removed: {pruned_commands}"
             )
         return 0
 
