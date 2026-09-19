@@ -38,5 +38,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_command_idempotency_created_at", table_name="command_idempotency")
-    op.drop_table("command_idempotency")
+    # IF EXISTS keeps a recovery downgrade usable when an interrupted first
+    # deployment stamped the revision after its DDL was rolled back.
+    op.execute(sa.text("DROP INDEX IF EXISTS ix_command_idempotency_created_at"))
+    op.execute(sa.text("DROP TABLE IF EXISTS command_idempotency"))
