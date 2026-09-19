@@ -1,7 +1,7 @@
 """execution worker heartbeat table
 
-Revision ID: 20260918_0020
-Revises: 20260915_0019
+Revision ID: 20260918_0021
+Revises: 20260918_0020
 Create Date: 2026-09-18
 
 """
@@ -11,8 +11,8 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
-revision: str = "20260918_0020"
-down_revision: Union[str, Sequence[str], None] = "20260915_0019"
+revision: str = "20260918_0021"
+down_revision: Union[str, Sequence[str], None] = "20260918_0020"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
