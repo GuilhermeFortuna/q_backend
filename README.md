@@ -733,11 +733,10 @@ retry with the same method, path, and body returns that body with
 `idempotency_key_reused`, and a concurrent in-flight retry returns
 `idempotency_in_progress` with `Retry-After: 1`.
 
-`Q_EXECUTION_IDEMPOTENCY_ENFORCED` defaults to `false` while the legacy
-frontend execution workspace is still present. With enforcement off, a
-keyless command is accepted and logs a warning; with it on, the command is
-refused with `idempotency_key_required`. Q-050 will flip the shipped default
-after the last keyless client is removed. The existing `q-outbox prune`
+`Q_EXECUTION_IDEMPOTENCY_ENFORCED` defaults to `true` now that the frontend
+execution workspace is removed (Q-050). With enforcement on, a keyless command
+is refused with `idempotency_key_required`; set the env var to `false` only
+for temporary local debugging. The existing `q-outbox prune`
 command and the outbox relay's periodic prune remove results older than 24
 hours. Research job submissions remain outside this execution-command policy.
 
