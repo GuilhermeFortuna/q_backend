@@ -199,6 +199,27 @@ def test_request_validation_failure_is_stored_and_replayed(
     assert replay.headers["Idempotency-Replayed"] == "true"
 
 
+def test_keyless_execution_command_refused_with_default_settings(
+    idempotency_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from q_backend.api import idempotency as idempotency_module
+
+    monkeypatch.setattr(
+        idempotency_module,
+        "create_session_factory",
+        lambda: sessionmaker(bind=idempotency_session.get_bind(), expire_on_commit=False),
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/execution/accounts",
+        json={"name": "desk", "initial_balance": "100"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "idempotency_key_required"
+
+
 def test_execution_route_replay_does_not_create_a_second_account(
     idempotency_session: Session,
     monkeypatch: pytest.MonkeyPatch,

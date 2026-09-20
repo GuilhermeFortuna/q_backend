@@ -56,8 +56,8 @@ class Settings(BaseSettings):
     execution_benchmark_p95_budget_ms: float = 500.0
     execution_initial_window_bars: int = 260
     execution_live_capability_locked: bool = True
-    # Q-050 flips this default once the final keyless execution client is gone.
-    execution_idempotency_enforced: bool = False
+    # Q-050: the frontend execution workspace is gone; keyless commands are refused.
+    execution_idempotency_enforced: bool = True
     mt5_edge_url: str = "http://127.0.0.1:18813"
     mt5_edge_connect_timeout_s: float = 1.0
     mt5_edge_read_timeout_s: float = 5.0
