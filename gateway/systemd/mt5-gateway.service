@@ -29,7 +29,7 @@ Environment=WINEDEBUG=-all
 Environment=WINEPREFIX=%h/.local/share/mt5-gateway-prefix
 # Health-wait loop: give the terminal a chance to come up + log in before we start
 # serving. Never fails the start (the gateway also retries MT5 init lazily per request).
-ExecStartPre=/usr/bin/env bash -c 'for _ in $(seq 1 30); do pgrep -f terminal64.exe >/dev/null 2>&1 && exit 0; sleep 2; done; echo "terminal64.exe not detected after 60s; starting gateway with lazy MT5 init"; exit 0'
+ExecStartPre=/usr/bin/env bash -c 'for _ in $(seq 1 60); do pgrep -f terminal64.exe >/dev/null 2>&1 && exit 0; sleep 0.5; done; echo "terminal64.exe not detected after 30s; starting gateway with lazy MT5 init"; exit 0'
 # Run the gateway; winepath -w converts the host script path to the Windows form.
 ExecStart=/usr/bin/env bash -c 'exec wine "${MT5_WINE_PYTHON}" "$(winepath -w "${Q_BACKEND_DIR}/gateway/mt5_gateway.py")"'
 Restart=on-failure

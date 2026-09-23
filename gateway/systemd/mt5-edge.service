@@ -16,7 +16,7 @@ Environment=WINEARCH=win64
 Environment=WINEDEBUG=-all
 Environment=WINEPREFIX=%h/.local/share/mt5-gateway-prefix
 ExecStart=/usr/bin/env bash -c 'exec wine "${MT5_WINE_PYTHON}" "$(winepath -w "${Q_BACKEND_DIR}/gateway/mt5_execution_edge.py")"'
-ExecStartPost=/usr/bin/env bash -c 'for _ in $(seq 1 60); do curl -sf "http://127.0.0.1:${MT5_EDGE_PORT:-18813}/v1/health" | grep -q "\"mt5_connected\": true" && exit 0; sleep 2; done; echo "mt5-edge health wait timed out (terminal may still be logging in)"; exit 0'
+ExecStartPost=/usr/bin/env bash -c 'for _ in $(seq 1 60); do curl -sf "http://127.0.0.1:${MT5_EDGE_PORT:-18813}/v1/health" | grep -q "mt5_connected.*true" && exit 0; sleep 0.5; done; echo "mt5-edge health wait timed out (terminal may still be logging in)"; exit 0'
 Restart=on-failure
 RestartSec=5
 
