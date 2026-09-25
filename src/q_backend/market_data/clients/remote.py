@@ -184,6 +184,20 @@ class RemoteMt5Client:
         with np.load(io.BytesIO(content)) as npz:
             return _npz_to_ohlcv(npz)
 
+    def get_recent_ohlcv(self, symbol: str, timeframe: str, count: int) -> list[OHLCV]:
+        """Read a bounded recent window without asking MT5 to scan full history."""
+        if count < 1 or count > 5_000:
+            raise ValueError("count must be between 1 and 5000")
+        try:
+            content = self._get_npz(
+                "/v1/ohlcv/recent",
+                {"symbol": symbol, "timeframe": timeframe, "count": count},
+            )
+        except _GatewayNotFound:
+            return []
+        with np.load(io.BytesIO(content)) as npz:
+            return _npz_to_ohlcv(npz)
+
     def get_ohlcv_columnar(self, symbol: str, timeframe: str, start: datetime, end: datetime) -> dict[str, np.ndarray]:
         """Return gateway OHLCV arrays without creating per-bar models."""
         params = {

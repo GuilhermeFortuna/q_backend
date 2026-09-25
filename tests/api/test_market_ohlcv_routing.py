@@ -167,14 +167,9 @@ def test_ohlcv_available_range_uses_remote_client_when_source_is_remote(market_r
 
 
 def test_ohlcv_uses_remote_client_when_source_is_remote_without_dates(market_root):
-    available_sentinel = MagicMock()
-    available_sentinel.start = datetime(2024, 3, 1)
-    available_sentinel.end = datetime(2024, 3, 10)
-
-    bars_sentinel = [object()]
+    bars_sentinel = _bars()
     remote = MagicMock()
-    remote.get_available_ohlcv_range.return_value = available_sentinel
-    remote.get_ohlcv.return_value = bars_sentinel
+    remote.get_recent_ohlcv.return_value = bars_sentinel
 
     with (
         patch.object(market_data_service, "_remote_client", remote),
@@ -183,23 +178,18 @@ def test_ohlcv_uses_remote_client_when_source_is_remote_without_dates(market_roo
             return_value="remote",
         ),
     ):
-        rows = market_service.fetch_ohlcv_rows(market_data_service, "WIN$", "M5", count=100, start=None, end=None)
+        rows = market_service.fetch_ohlcv_rows(market_data_service, "WIN$", "M5", count=1, start=None, end=None)
 
-    assert rows is bars_sentinel
-    remote.get_available_ohlcv_range.assert_called_once_with("WIN$", "M5")
-    remote.get_ohlcv.assert_called_once()
-    # Check that it called get_ohlcv with estimated start time and available end time
-    args, kwargs = remote.get_ohlcv.call_args
-    assert args[0] == "WIN$"
-    assert args[1] == "M5"
-    assert args[3] == available_sentinel.end
-    assert args[2] <= available_sentinel.end
+    assert rows == bars_sentinel[-1:]
+    remote.get_recent_ohlcv.assert_called_once_with("WIN$", "M5", 1)
+    remote.get_available_ohlcv_range.assert_not_called()
+    remote.get_ohlcv.assert_not_called()
 
 
 def test_ohlcv_remote_falls_back_to_local_when_remote_returns_none(market_root):
-    # Setup mock remote client returning None for available range
+    # Setup mock remote client returning no recent bars.
     remote = MagicMock()
-    remote.get_available_ohlcv_range.return_value = None
+    remote.get_recent_ohlcv.return_value = []
 
     # Setup mock local client returning some bars
     local_available = MagicMock()
@@ -225,5 +215,5 @@ def test_ohlcv_remote_falls_back_to_local_when_remote_returns_none(market_root):
         rows = market_service.fetch_ohlcv_rows(market_data_service, "WIN$", "M5", count=100, start=None, end=None)
 
     assert rows is local_bars
-    remote.get_available_ohlcv_range.assert_called_once_with("WIN$", "M5")
+    remote.get_recent_ohlcv.assert_called_once_with("WIN$", "M5", 100)
     local_client.get_ohlcv.assert_called_once_with("WIN$", "M5", local_available.start, local_available.end)

@@ -27,6 +27,7 @@ Endpoint                                                  Method  Response
 ``/v1/symbol_info?symbol=``                               GET     JSON dict | 404
 ``/v1/symbols/search?query=``                             GET     JSON list
 ``/v1/available_range?symbol=&timeframe=``                GET     JSON ``{symbol, timeframe, start, end, bar_count}`` | 404
+``/v1/ohlcv/recent?symbol=&timeframe=&count=``             GET     recent bars as ``.npz``
 ``/v1/ohlcv?symbol=&timeframe=&start=&end=``              GET     ``.npz`` (application/octet-stream)
 ``/v1/ticks?symbol=&start=&end=&flags=``                  GET     ``.npz`` (application/octet-stream)
 ========================================================  ======  ==========================================================
@@ -101,6 +102,7 @@ logger = logging.getLogger("mt5_gateway")
 # ---------------------------------------------------------------------------
 _MAX_HISTORY_CHUNKS = 1_000
 _MAX_OHLCV_BARS = 50_000
+_MAX_RECENT_OHLCV_BARS = 5_000
 _MAX_TICKS = 50_000_000
 _TICK_RANGE_FETCH_DAYS = 7
 _HISTORY_ANCHOR = datetime(1990, 1, 1)
@@ -530,6 +532,22 @@ class GatewayApp:
             rates = _fetch_ohlcv_chunked(symbol, mt5_timeframe, start, end)
         return _ohlcv_to_npz_bytes(rates)
 
+    def recent_ohlcv(self, symbol: str, timeframe: str, count: int) -> bytes:
+        """Fetch a bounded number of newest bars without probing the full history range."""
+        mt5_timeframe = _resolve_timeframe(timeframe)
+        with self._lock:
+            self._require_ready()
+            if not mt5.symbol_select(symbol, True):
+                raise GatewayError(404, "symbol_not_found", f"Symbol '{symbol}' is not selectable.")
+            rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, count)
+        if rates is None or len(rates) == 0:
+            raise GatewayError(
+                404,
+                "range_unavailable",
+                f"No OHLCV history available for '{symbol}' {timeframe}.",
+            )
+        return _ohlcv_to_npz_bytes(rates[-count:])
+
     def ticks(self, symbol: str, start: datetime, end: datetime, flags: int) -> bytes:
         with self._lock:
             self._require_ready()
@@ -672,6 +690,21 @@ class _GatewayHandler(BaseHTTPRequestHandler):
         end = _parse_dt(_require_param(params, "end"), "end")
         self._send_npz(self.app.ohlcv(symbol, timeframe, start, end))
 
+    def _route_recent_ohlcv(self, params) -> None:
+        symbol = _require_param(params, "symbol")
+        timeframe = _require_param(params, "timeframe")
+        try:
+            count = int(_require_param(params, "count"))
+        except ValueError as exc:
+            raise GatewayError(400, "invalid_count", "'count' must be an integer.") from exc
+        if not 1 <= count <= _MAX_RECENT_OHLCV_BARS:
+            raise GatewayError(
+                400,
+                "invalid_count",
+                f"'count' must be between 1 and {_MAX_RECENT_OHLCV_BARS}.",
+            )
+        self._send_npz(self.app.recent_ohlcv(symbol, timeframe, count))
+
     def _route_ticks(self, params) -> None:
         symbol = _require_param(params, "symbol")
         start = _parse_dt(_require_param(params, "start"), "start")
@@ -684,6 +717,7 @@ class _GatewayHandler(BaseHTTPRequestHandler):
         "/v1/symbol_info": _route_symbol_info,
         "/v1/symbols/search": _route_symbols_search,
         "/v1/available_range": _route_available_range,
+        "/v1/ohlcv/recent": _route_recent_ohlcv,
         "/v1/ohlcv": _route_ohlcv,
         "/v1/ticks": _route_ticks,
     }

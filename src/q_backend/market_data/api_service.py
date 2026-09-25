@@ -315,41 +315,6 @@ def normalize_market_timeframe(timeframe: str) -> str:
     return mapping.get(timeframe.upper(), "D1")
 
 
-def estimate_start_time(end_time: datetime, timeframe: str, count: int) -> datetime:
-    """Estimate a start time going back far enough to contain at least `count` bars.
-
-    Uses a 3x buffer to account for weekends, holidays, and low-activity periods.
-    """
-    seconds_map = {
-        "M1": 60,
-        "M2": 120,
-        "M3": 180,
-        "M4": 240,
-        "M5": 300,
-        "M6": 360,
-        "M10": 600,
-        "M12": 720,
-        "M15": 900,
-        "M20": 1200,
-        "M30": 1800,
-        "H1": 3600,
-        "H2": 7200,
-        "H3": 10800,
-        "H4": 14400,
-        "H6": 21600,
-        "H8": 28800,
-        "H12": 43200,
-        "D1": 86400,
-        "W1": 604800,
-        "MN1": 2592000,
-    }
-    seconds_per_bar = seconds_map.get(timeframe.upper(), 86400)
-    delta_seconds = count * seconds_per_bar * 3
-    from datetime import timedelta
-
-    return end_time - timedelta(seconds=delta_seconds)
-
-
 def fetch_ohlcv_rows(
     service: MarketDataService,
     symbol: str,
@@ -398,16 +363,12 @@ def fetch_ohlcv_rows(
 
     if ohlcv_source == "remote":
         try:
-            available = service._remote_client.get_available_ohlcv_range(symbol, mt5_timeframe)
-            if available is not None:
-                start_est = estimate_start_time(available.end, mt5_timeframe, count)
-                if start_est < available.start:
-                    start_est = available.start
-                try:
-                    bars = service._remote_client.get_ohlcv(symbol, mt5_timeframe, start_est, available.end)
-                    return bars[-count:] if len(bars) > count else bars
-                except ValueError as ve:
-                    raise HTTPException(status_code=400, detail=str(ve)) from ve
+            bars = service._remote_client.get_recent_ohlcv(symbol, mt5_timeframe, count)
+            if bars:
+                service._fetch_through_ohlcv(symbol, mt5_timeframe, bars)
+                return bars[-count:] if len(bars) > count else bars
+        except ValueError as ve:
+            raise HTTPException(status_code=400, detail=str(ve)) from ve
         except Exception:  # noqa: BLE001, S110 - fallback to local store if remote fails
             pass
 

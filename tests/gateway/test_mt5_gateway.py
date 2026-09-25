@@ -94,6 +94,29 @@ def test_ohlcv_round_trip_preserves_raw_epochs_and_dtypes(gateway, fake_mt5):
         np.testing.assert_array_equal(npz["real_volume"], rates["real_volume"].astype(np.int64))
 
 
+def test_recent_ohlcv_uses_one_bounded_positional_read(gateway, fake_mt5):
+    base_epoch = _epoch(datetime(2026, 1, 5, 9, 0, 0))
+    rates = np.array(
+        [(base_epoch + i * 3600, 130000.0, 130100.0, 129900.0, 130050.0, 500, 1, 250) for i in range(3)],
+        dtype=_RATE_DTYPE,
+    )
+    fake_mt5._state["rates_from_pos"] = rates
+    fake_mt5._state["known_symbols"].add("CCM$")
+
+    with running_gateway_server(gateway) as base:
+        status, headers, body = http_get(
+            base,
+            "/v1/ohlcv/recent",
+            {"symbol": "CCM$", "timeframe": "H1", "count": "2"},
+        )
+
+    assert status == 200
+    assert headers["Content-Type"] == "application/octet-stream"
+    assert fake_mt5._state["last_rates_from_pos"] == ("CCM$", fake_mt5.TIMEFRAME_H1, 0, 2)
+    with np.load(io.BytesIO(body)) as npz:
+        assert list(npz["time"]) == [base_epoch + 3600, base_epoch + 7200]
+
+
 def test_ticks_round_trip_and_flags_trade_mapping(gateway, fake_mt5):
     base_epoch = _epoch(datetime(2026, 1, 5, 9, 0, 0))
     rows = [

@@ -176,6 +176,7 @@ def make_fake_mt5() -> types.ModuleType:
         "rates_queue": [],
         "rates_default": np.empty(0, dtype=_RATE_DTYPE),
         "rates_from_pos": None,
+        "last_rates_from_pos": None,
         "rates_from": None,
         "ticks_queue": [],
         "ticks_default": np.empty(0, dtype=_TICK_DTYPE),
@@ -304,7 +305,8 @@ def make_fake_mt5() -> types.ModuleType:
             return state["rates_queue"].pop(0)
         return state["rates_default"]
 
-    def copy_rates_from_pos(_symbol, _timeframe, _pos, _count):
+    def copy_rates_from_pos(symbol, timeframe, pos, count):
+        state["last_rates_from_pos"] = (symbol, timeframe, pos, count)
         return state["rates_from_pos"]
 
     def copy_rates_from(_symbol, _timeframe, _date_from, _count):

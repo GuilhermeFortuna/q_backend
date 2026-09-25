@@ -129,6 +129,11 @@ class _FakeHandler(BaseHTTPRequestHandler):
         if path == "/v1/health":
             st.health_count += 1
             self._json(200, st.health)
+        elif path == "/v1/ohlcv/recent":
+            if st.ohlcv_error is not None:
+                self._json(*st.ohlcv_error)
+            else:
+                self._npz(st.ohlcv_npz)
         elif path == "/v1/ohlcv":
             if st.ohlcv_error is not None:
                 self._json(*st.ohlcv_error)
@@ -347,6 +352,16 @@ def test_available_range_round_trip():
     assert rng.symbol == "WIN$"
     assert rng.timeframe == "D1"
     assert rng.bar_count == 1500
+
+
+def test_recent_ohlcv_uses_bounded_gateway_endpoint():
+    with _fake_gateway() as (base_url, state):
+        client = RemoteMt5Client(base_url=base_url)
+        bars = client.get_recent_ohlcv("CCM$", "H1", 5000)
+
+    assert len(bars) == 1
+    assert bars[0].close == 100.5
+    assert "/v1/ohlcv/recent?symbol=CCM%24&timeframe=H1&count=5000" in state.paths[-1]
 
 
 def test_flags_mapping_sent_to_gateway():
