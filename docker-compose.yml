@@ -24,7 +24,7 @@ x-backend-runtime: &backend-runtime
     Q_RUNTIME_CONFIG_PATH: /data/runtime_config.json
     Q_WORKER_PROCESSES: ${Q_WORKER_PROCESSES:-14}
   volumes:
-    - ./data:/data
+    - ${Q_COMPOSE_DATA_DIR:-./data}:/data
     - ./src:/app/src:ro
     - ./contracts:/app/contracts:ro
     - ./alembic:/app/alembic:ro
@@ -38,7 +38,7 @@ services:
       POSTGRES_PASSWORD: q
       POSTGRES_DB: q
     ports:
-      - "5434:5432"
+      - "${Q_COMPOSE_PG_PORT:-5434}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -50,7 +50,7 @@ services:
   redis:
     image: docker.io/library/redis:7-alpine
     ports:
-      - "6380:6379"
+      - "${Q_COMPOSE_REDIS_PORT:-6380}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -61,7 +61,7 @@ services:
     <<: *backend-runtime
     profiles: ["containerized"]
     ports:
-      - "8000:8000"
+      - "${Q_COMPOSE_API_PORT:-8000}:8000"
     depends_on:
       postgres:
         condition: service_healthy
