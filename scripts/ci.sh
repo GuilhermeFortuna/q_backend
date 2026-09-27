@@ -32,134 +32,230 @@ if [[ "${CI_RESOURCE_CONTROLLED:-0}" != "1" ]]; then
   fi
 fi
 
-# Determine repository root
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-echo "=========================================="
-echo " Starting q_backend CI Pipeline"
-echo "=========================================="
+DEV_DATABASE_URL="postgresql+psycopg://q:q@localhost:5434/q"
+DEV_REDIS_URL="redis://localhost:6380/0"
 
-# 1. Ensure required services are accessible (PostgreSQL & Redis)
-if [ -z "${CI:-}" ]; then
-  echo "==> Checking local Postgres (5434) and Redis (6380)..."
-  SERVICES_READY=true
-  if ! (echo > /dev/tcp/localhost/5434) >/dev/null 2>&1; then
-    SERVICES_READY=false
+_ci_hosted_mode() {
+  [[ -n "${GITHUB_ACTIONS:-}" ]]
+}
+
+_ci_tcp_open() {
+  local host="$1"
+  local port="$2"
+  (echo > "/dev/tcp/${host}/${port}") >/dev/null 2>&1
+}
+
+_ci_parse_url_host_port() {
+  local url="$1"
+  local scheme="${url%%://*}"
+  local rest="${url#*://}"
+  if [[ "$rest" == *"@"* ]]; then
+    rest="${rest#*@}"
   fi
-  if ! (echo > /dev/tcp/localhost/6380) >/dev/null 2>&1; then
-    SERVICES_READY=false
-  fi
-
-  if [ "$SERVICES_READY" = false ]; then
-    UNITS_INSTALLED=false
-    if command -v systemctl >/dev/null 2>&1; then
-      if systemctl --user cat q-postgres.service >/dev/null 2>&1 && systemctl --user cat q-redis.service >/dev/null 2>&1; then
-        UNITS_INSTALLED=true
-      fi
-    fi
-
-    if [ "$UNITS_INSTALLED" = true ]; then
-      echo "Services not running. Starting systemd user units (q-postgres, q-redis)..."
-      systemctl --user start q-postgres.service q-redis.service
-      echo "Waiting for PostgreSQL to be ready..."
-      for i in {1..30}; do
-        if (echo > /dev/tcp/localhost/5434) >/dev/null 2>&1; then
-          echo "PostgreSQL is ready."
-          break
-        fi
-        sleep 1
-      done
+  local hostport="${rest%%/*}"
+  local host="${hostport%%:*}"
+  local port="${hostport#*:}"
+  if [[ "$host" == "$port" ]]; then
+    if [[ "$scheme" == redis* ]]; then
+      port=6379
     else
-      echo "Services not running. Starting Docker services (postgres, redis)..."
-      # Prefer ci-docker.slice for CI containers when the host slice exists;
-      # fall back to plain compose so machines without the slice still work.
-      if systemctl status ci-docker.slice >/dev/null 2>&1; then
-        docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d postgres redis
-      else
-        docker compose up -d postgres redis
-      fi
-      echo "Waiting for PostgreSQL to be ready..."
-      for i in {1..30}; do
-        if docker compose exec -T postgres pg_isready -U postgres >/dev/null 2>&1; then
-          echo "PostgreSQL is ready."
-          break
-        fi
-        sleep 1
-      done
+      port=5432
     fi
+  fi
+  printf '%s %s\n' "$host" "$port"
+}
+
+_ci_verify_service_url() {
+  local label="$1"
+  local url="$2"
+  read -r host port < <(_ci_parse_url_host_port "$url")
+  if [[ -z "$host" || -z "$port" ]]; then
+    echo "ERROR: Could not parse ${label} URL: ${url}" >&2
+    return 1
+  fi
+  if ! _ci_tcp_open "$host" "$port"; then
+    echo "ERROR: ${label} is not reachable at ${host}:${port}" >&2
+    return 1
+  fi
+}
+
+_ci_reject_dev_defaults() {
+  local db_url="${Q_DATABASE_URL:-}"
+  local redis_url="${Q_REDIS_URL:-}"
+  if [[ "$db_url" == "$DEV_DATABASE_URL" || "$redis_url" == "$DEV_REDIS_URL" ]]; then
+    echo "ERROR: Refusing to run against development default Postgres/Redis endpoints." >&2
+    return 1
+  fi
+}
+
+CI_COMPOSE_PROJECT=""
+CI_TMP_ROOT=""
+CI_COMPOSE_FILES=()
+
+_ci_compose() {
+  COMPOSE_PROJECT_NAME="${CI_COMPOSE_PROJECT}" docker compose "${CI_COMPOSE_FILES[@]}" "$@"
+}
+
+_ci_cleanup_local_services() {
+  if [[ -z "${CI_COMPOSE_PROJECT:-}" ]]; then
+    return 0
+  fi
+  echo "==> Tearing down CI Compose project (${CI_COMPOSE_PROJECT})..."
+  _ci_compose down -v --remove-orphans >/dev/null 2>&1 || true
+  if [[ -n "${CI_TMP_ROOT:-}" && -d "${CI_TMP_ROOT}" ]]; then
+    rm -rf "${CI_TMP_ROOT}"
+  fi
+}
+
+_ci_start_local_services() {
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "ERROR: Docker is required for local CI but was not found on PATH." >&2
+    return 1
+  fi
+  if ! docker info >/dev/null 2>&1; then
+    echo "ERROR: Docker daemon is not available." >&2
+    return 1
+  fi
+
+  CI_COMPOSE_PROJECT="q-backend-ci-$$-${RANDOM}"
+  CI_TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/q-backend-ci.XXXXXX")"
+  CI_COMPOSE_FILES=(-f docker-compose.ci.yml)
+  if systemctl status ci-docker.slice >/dev/null 2>&1; then
+    CI_COMPOSE_FILES+=(-f docker-compose.ci-slice.yml)
+  fi
+
+  export Q_DATA_LAKE_ROOT="${CI_TMP_ROOT}/lake"
+  export Q_MARKET_DATA_ROOT="${CI_TMP_ROOT}/market"
+  export Q_TICK_CACHE_DIR="${CI_TMP_ROOT}/tick_cache"
+  export Q_RUNTIME_CONFIG_PATH="${CI_TMP_ROOT}/runtime_config.json"
+  mkdir -p "${Q_DATA_LAKE_ROOT}" "${Q_MARKET_DATA_ROOT}" "${Q_TICK_CACHE_DIR}"
+
+  export Q_CI_ISOLATED=1
+  unset Q_DATABASE_URL Q_REDIS_URL
+
+  echo "==> Starting disposable CI services (Compose project ${CI_COMPOSE_PROJECT})..."
+  if ! _ci_compose up -d --wait postgres redis; then
+    echo "ERROR: CI Postgres/Redis failed to become healthy." >&2
+    _ci_cleanup_local_services
+    return 1
+  fi
+
+  local pg_port redis_port
+  pg_port="$(_ci_compose port postgres 5432 | awk -F: '{print $NF}')"
+  redis_port="$(_ci_compose port redis 6379 | awk -F: '{print $NF}')"
+  if [[ -z "$pg_port" || -z "$redis_port" ]]; then
+    echo "ERROR: Could not resolve published CI service ports." >&2
+    _ci_cleanup_local_services
+    return 1
+  fi
+
+  export Q_DATABASE_URL="postgresql+psycopg://postgres:password@127.0.0.1:${pg_port}/q_storage"
+  export Q_REDIS_URL="redis://127.0.0.1:${redis_port}/0"
+
+  if [[ "${Q_CI_PREFLIGHT_ONLY:-0}" != "1" ]]; then
+    if ! _ci_verify_service_url "Postgres" "${Q_DATABASE_URL}"; then
+      _ci_cleanup_local_services
+      return 1
+    fi
+    if ! _ci_verify_service_url "Redis" "${Q_REDIS_URL}"; then
+      _ci_cleanup_local_services
+      return 1
+    fi
+  fi
+
+  trap _ci_cleanup_local_services EXIT INT TERM
+  echo "==> CI database URL: ${Q_DATABASE_URL}"
+  echo "==> CI Redis URL: ${Q_REDIS_URL}"
+  echo "==> CI services ready (Postgres ${pg_port}, Redis ${redis_port})."
+}
+
+_ci_preflight_hosted() {
+  if [[ -z "${Q_DATABASE_URL:-}" || -z "${Q_REDIS_URL:-}" ]]; then
+    echo "ERROR: Hosted CI requires explicit Q_DATABASE_URL and Q_REDIS_URL." >&2
+    return 1
+  fi
+  if ! _ci_reject_dev_defaults; then
+    return 1
+  fi
+  export Q_CI_ISOLATED=1
+  if ! _ci_verify_service_url "Postgres" "${Q_DATABASE_URL}"; then
+    return 1
+  fi
+  if ! _ci_verify_service_url "Redis" "${Q_REDIS_URL}"; then
+    return 1
+  fi
+  echo "==> Hosted CI service endpoints verified."
+}
+
+_ci_preflight_local() {
+  # Ambient CI=true or development URLs must not redirect local runs to shared services.
+  if [[ -n "${Q_DATABASE_URL:-}" || -n "${Q_REDIS_URL:-}" ]]; then
+    if [[ "${Q_DATABASE_URL:-}" == "$DEV_DATABASE_URL" || "${Q_REDIS_URL:-}" == "$DEV_REDIS_URL" ]]; then
+      echo "ERROR: Refusing to reuse development Postgres/Redis URLs for local CI." >&2
+      return 1
+    fi
+    echo "ERROR: Local CI ignores ambient Q_DATABASE_URL/Q_REDIS_URL; unset them or use hosted CI." >&2
+    return 1
+  fi
+  _ci_start_local_services
+}
+
+run_ci_pipeline() {
+  echo "=========================================="
+  echo " Starting q_backend CI Pipeline"
+  echo "=========================================="
+
+  if _ci_hosted_mode; then
+    _ci_preflight_hosted
   else
-    echo "Local services are reachable."
+    _ci_preflight_local
   fi
 
-  # Pause interfering background systemd services during CI so they do not race
-  # with migrations, schema downgrades, advisory locks, or stream relay integration
-  # tests against the shared database and Redis. Restore them on exit.
-  if command -v systemctl >/dev/null 2>&1 && systemctl --user status >/dev/null 2>&1; then
-    RESTORE_UNITS=()
-    for unit in q-outbox-relay.service q-execution-worker.service q-market-publisher.service q-api.service; do
-      if systemctl --user is-active --quiet "$unit" 2>/dev/null; then
-        RESTORE_UNITS+=("$unit")
-      fi
-    done
-    if [ ${#RESTORE_UNITS[@]} -gt 0 ]; then
-      echo "==> Pausing background systemd units during CI (${RESTORE_UNITS[*]})..."
-      systemctl --user stop "${RESTORE_UNITS[@]}"
-      cleanup_units() {
-        echo "==> Restoring background systemd units (${RESTORE_UNITS[*]})..."
-        systemctl --user start "${RESTORE_UNITS[@]}" || true
-      }
-      trap cleanup_units EXIT INT TERM
-    fi
+  if [[ "${Q_CI_PREFLIGHT_ONLY:-0}" == "1" ]]; then
+    echo "==> Q_CI_PREFLIGHT_ONLY set; skipping validation stages."
+    return 0
   fi
+
+  echo "==> Checking vendored contracts (make contracts-check)..."
+  make contracts-check
+
+  echo "==> Applying database migrations (alembic upgrade head)..."
+  uv run alembic upgrade head
+
+  echo "==> Running linter (ruff check .)..."
+  uv run ruff check .
+
+  echo "==> Checking code formatting (black --check .)..."
+  uv run black --check .
+
+  CPUS="$(nproc 2>/dev/null || echo 2)"
+  DEFAULT_WORKERS=$(( CPUS / 2 ))
+  (( DEFAULT_WORKERS > 12 )) && DEFAULT_WORKERS=12
+  (( DEFAULT_WORKERS < 1 )) && DEFAULT_WORKERS=1
+  PYTEST_WORKERS="${PYTEST_WORKERS:-$DEFAULT_WORKERS}"
+  for var in OMP_NUM_THREADS OPENBLAS_NUM_THREADS MKL_NUM_THREADS NUMEXPR_NUM_THREADS NUMBA_NUM_THREADS; do
+    export "$var=${!var:-1}"
+  done
+  NICE=()
+  if ! _ci_hosted_mode && command -v nice >/dev/null 2>&1; then
+    NICE=(nice -n 10)
+    command -v ionice >/dev/null 2>&1 && NICE=(ionice -c 3 "${NICE[@]}")
+  fi
+
+  echo "==> Running unit tests (pytest, ${PYTEST_WORKERS} workers)..."
+  "${NICE[@]}" uv run pytest -n "$PYTEST_WORKERS" --dist loadfile -m "not integration"
+
+  echo "==> Running integration tests (pytest, serial)..."
+  "${NICE[@]}" uv run pytest -m integration
+
+  echo "=========================================="
+  echo " All q_backend CI checks passed successfully! "
+  echo "=========================================="
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  run_ci_pipeline "$@"
 fi
-
-# 2. Vendored contract drift
-# Runs here rather than only in the GitHub workflow, so that a pre-push hook
-# catches drift instead of leaving it for CI to find. Needs to reach the
-# contracts repository; point CONTRACTS_REPO at a local clone when offline.
-echo "==> Checking vendored contracts (make contracts-check)..."
-make contracts-check
-
-# 3. Database Migrations
-echo "==> Applying database migrations (alembic upgrade head)..."
-uv run alembic upgrade head
-
-# 4. Linting
-echo "==> Running linter (ruff check .)..."
-uv run ruff check .
-
-# 5. Code Formatting Check
-echo "==> Checking code formatting (black --check .)..."
-uv run black --check .
-
-# 6. Automated Tests
-# Unit tests run in parallel under pytest-xdist; integration tests share the live
-# Postgres/Redis (they flushdb/flushall), so they run serially afterwards.
-# Default to half the logical CPUs (capped at 12) so the desktop stays responsive;
-# override with PYTEST_WORKERS=N. Numeric libraries get one thread per worker —
-# parallelism comes from the xdist processes, not BLAS/OpenMP/numba threads.
-CPUS="$(nproc 2>/dev/null || echo 2)"
-DEFAULT_WORKERS=$(( CPUS / 2 ))
-(( DEFAULT_WORKERS > 12 )) && DEFAULT_WORKERS=12
-(( DEFAULT_WORKERS < 1 )) && DEFAULT_WORKERS=1
-PYTEST_WORKERS="${PYTEST_WORKERS:-$DEFAULT_WORKERS}"
-for var in OMP_NUM_THREADS OPENBLAS_NUM_THREADS MKL_NUM_THREADS NUMEXPR_NUM_THREADS NUMBA_NUM_THREADS; do
-  export "$var=${!var:-1}"
-done
-# Lower CPU/IO priority locally so tests yield to interactive work.
-NICE=()
-if [ -z "${CI:-}" ] && command -v nice >/dev/null 2>&1; then
-  NICE=(nice -n 10)
-  command -v ionice >/dev/null 2>&1 && NICE=(ionice -c 3 "${NICE[@]}")
-fi
-
-echo "==> Running unit tests (pytest, ${PYTEST_WORKERS} workers)..."
-"${NICE[@]}" uv run pytest -n "$PYTEST_WORKERS" --dist loadfile -m "not integration"
-
-echo "==> Running integration tests (pytest, serial)..."
-"${NICE[@]}" uv run pytest -m integration
-
-echo "=========================================="
-echo " All q_backend CI checks passed successfully! "
-echo "=========================================="
