@@ -5,12 +5,14 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
 from sqlalchemy.orm import Session
 
 from q_backend.backtesting.strategy_registry import get_registered_strategy
+from q_backend.execution.catalog import CatalogUnavailableError, compile_catalog_selection
 from q_backend.execution.domain import BrokerMode, StrategyIdentity
 from q_backend.market_data.exogenous_context import _TF_MINUTES
 from q_backend.storage.db.repositories import get_backtest_run
@@ -19,6 +21,7 @@ _SUPPORTED_TIMEFRAMES = frozenset(_TF_MINUTES)
 _MIN_TIMEFRAME_MINUTES = 15
 _MAX_DAILY_LOSS = Decimal("10000000")
 _MAX_NOTIONAL = Decimal("1000000000")
+_PAPER_COST_FIELDS = ("point_value", "slippage_points", "cost_per_contract", "cost_bps")
 
 
 class ExecutionValidationError(ValueError):
@@ -49,6 +52,53 @@ def validate_timeframe(timeframe: str) -> str:
     if _TF_MINUTES[key] < _MIN_TIMEFRAME_MINUTES:
         raise ExecutionValidationError(f"timeframe '{timeframe}' is below the M15 minimum for forward execution")
     return key
+
+
+def validate_symbol_known(symbol: str, market_data_service: Optional[Any]) -> str:
+    if not symbol:
+        raise ExecutionValidationError("symbol is required")
+    if market_data_service is None:
+        return symbol
+    try:
+        info = market_data_service.get_symbol_info(symbol)
+    except Exception as exc:  # noqa: BLE001 - provider failures are not "unknown symbol"
+        raise ExecutionValidationError(f"could not verify symbol '{symbol}': {exc}") from exc
+    if info is None:
+        raise ExecutionValidationError(f"unknown symbol '{symbol}'")
+    return symbol
+
+
+def validate_paper_cost_config(paper_cost_config: Optional[dict[str, Any]]) -> dict[str, str]:
+    raw = paper_cost_config or {}
+    validated: dict[str, str] = {}
+    for field_name in _PAPER_COST_FIELDS:
+        value = raw.get(field_name, 0)
+        try:
+            amount = Decimal(str(value))
+        except (InvalidOperation, TypeError) as exc:
+            raise ExecutionValidationError(f"paper_cost_config.{field_name} must be a decimal") from exc
+        if amount < 0:
+            raise ExecutionValidationError(f"paper_cost_config.{field_name} must be nonnegative")
+        if field_name == "point_value" and amount == 0:
+            raise ExecutionValidationError("paper_cost_config.point_value must be positive")
+        validated[field_name] = str(amount)
+    return validated
+
+
+def _prove_buildable(compiled_config: dict[str, Any], *, symbol: str) -> None:
+    # Imported lazily: strategy_build -> api.schemas.backtest -> api.__init__ would
+    # otherwise cycle back through api.services.execution -> execution.validation.
+    from q_backend.execution.strategy_build import (
+        UnsupportedForwardStrategyError,
+        build_strategy_from_compiled,
+    )
+
+    try:
+        build_strategy_from_compiled(compiled_config, symbol=symbol)
+    except UnsupportedForwardStrategyError as exc:
+        raise ExecutionValidationError(str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - any build failure means "not buildable"
+        raise ExecutionValidationError(f"compiled_config is not worker-buildable: {exc}") from exc
 
 
 def validate_risk_config(risk_config: Optional[dict[str, Any]]) -> dict[str, Any]:
@@ -109,13 +159,13 @@ def validate_strategy_identity(
     timeframe: str,
     sizing_config: dict[str, Any],
     risk_config: Optional[dict[str, Any]] = None,
+    market_data_service: Optional[Any] = None,
 ) -> StrategyIdentity:
     if not strategy_name:
         raise ExecutionValidationError("strategy_name is required")
     if strategy_version < 1:
         raise ExecutionValidationError("strategy_version must be >= 1")
-    if not symbol:
-        raise ExecutionValidationError("symbol is required")
+    validate_symbol_known(symbol, market_data_service)
     if not config_hash:
         raise ExecutionValidationError("config_hash is required")
     expected_hash = compute_config_hash(compiled_config)
@@ -134,6 +184,7 @@ def validate_strategy_identity(
         raise ExecutionValidationError("symbol must match compiled_config.symbol")
     if cfg_tf and cfg_tf.upper() != normalized_tf:
         raise ExecutionValidationError("timeframe must match compiled_config.timeframe")
+    _prove_buildable(compiled_config, symbol=symbol)
     return StrategyIdentity(
         strategy_name=strategy_name,
         strategy_version=strategy_version,
@@ -154,6 +205,7 @@ def identity_from_saved_backtest(
     timeframe: Optional[str] = None,
     sizing_config: Optional[dict[str, Any]] = None,
     risk_config: Optional[dict[str, Any]] = None,
+    market_data_service: Optional[Any] = None,
 ) -> StrategyIdentity:
     run = get_backtest_run(session, source_backtest_run_id)
     if run is None:
@@ -187,4 +239,66 @@ def identity_from_saved_backtest(
         timeframe=compiled_config["timeframe"],
         sizing_config=default_sizing,
         risk_config=risk_config,
+        market_data_service=market_data_service,
+    )
+
+
+@dataclass(frozen=True)
+class ResolvedCatalogConfiguration:
+    """Server-validated catalog selection ready to persist as identity + provenance."""
+
+    identity: StrategyIdentity
+    source_kind: str
+    source_strategy_name: Optional[str]
+    paper_cost_config: dict[str, str]
+
+
+def resolve_catalog_configuration(
+    *,
+    strategy_name: str,
+    strategy_params: Optional[dict[str, Any]],
+    exit_params: Optional[dict[str, Any]],
+    symbol: str,
+    timeframe: str,
+    sizing_config: dict[str, Any],
+    risk_config: Optional[dict[str, Any]],
+    paper_cost_config: Optional[dict[str, Any]],
+    market_data_service: Optional[Any] = None,
+) -> ResolvedCatalogConfiguration:
+    """Validate and compile a ``CatalogDeploymentInput``/PATCH configuration body.
+
+    Resolves defaults from registry metadata, validates every supplied
+    parameter, proves the compiled configuration is worker-buildable, and
+    validates symbol/timeframe/sizing/risk/paper-cost bounds. Never accepts a
+    client-supplied ``compiled_config`` or ``config_hash``.
+    """
+    normalized_tf = validate_timeframe(timeframe)
+    validate_symbol_known(symbol, market_data_service)
+    try:
+        compiled = compile_catalog_selection(
+            catalog_name=strategy_name,
+            strategy_params=strategy_params,
+            exit_params=exit_params,
+            symbol=symbol,
+            timeframe=normalized_tf,
+        )
+    except CatalogUnavailableError as exc:
+        raise ExecutionValidationError(str(exc)) from exc
+    _prove_buildable(compiled.compiled_config, symbol=symbol)
+    config_hash = compute_config_hash(compiled.compiled_config)
+    identity = StrategyIdentity(
+        strategy_name=compiled.base_strategy_name,
+        strategy_version=1,
+        compiled_config=compiled.compiled_config,
+        config_hash=config_hash,
+        symbol=symbol,
+        timeframe=normalized_tf,
+        sizing_config=validate_sizing_config(sizing_config),
+        risk_config=validate_risk_config(risk_config),
+    )
+    return ResolvedCatalogConfiguration(
+        identity=identity,
+        source_kind=compiled.source_kind,
+        source_strategy_name=compiled.source_strategy_name,
+        paper_cost_config=validate_paper_cost_config(paper_cost_config),
     )
