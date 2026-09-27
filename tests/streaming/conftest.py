@@ -11,6 +11,36 @@ from q_backend.storage.db.outbox_models import INITIAL_EPOCH
 SEEDED_EPOCH = INITIAL_EPOCH
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _isolate_streaming_relay_service():
+    """Pause background q-outbox-relay systemd service during streaming tests to prevent race conditions."""
+    import shutil
+    import subprocess
+
+    if not shutil.which("systemctl"):
+        yield
+        return
+
+    was_active = False
+    try:
+        res = subprocess.run(
+            ["systemctl", "--user", "is-active", "--quiet", "q-outbox-relay.service"],
+            check=False,
+        )
+        was_active = res.returncode == 0
+    except OSError:
+        pass
+
+    if was_active:
+        subprocess.run(["systemctl", "--user", "stop", "q-outbox-relay.service"], check=False)
+
+    try:
+        yield
+    finally:
+        if was_active:
+            subprocess.run(["systemctl", "--user", "start", "q-outbox-relay.service"], check=False)
+
+
 @pytest.fixture
 def db_engine():
     engine = create_engine(

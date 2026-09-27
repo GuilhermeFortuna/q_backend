@@ -91,6 +91,27 @@ if [ -z "${CI:-}" ]; then
   else
     echo "Local services are reachable."
   fi
+
+  # Pause interfering background systemd services during CI so they do not race
+  # with migrations, schema downgrades, advisory locks, or stream relay integration
+  # tests against the shared database and Redis. Restore them on exit.
+  if command -v systemctl >/dev/null 2>&1 && systemctl --user status >/dev/null 2>&1; then
+    RESTORE_UNITS=()
+    for unit in q-outbox-relay.service q-execution-worker.service q-market-publisher.service q-api.service; do
+      if systemctl --user is-active --quiet "$unit" 2>/dev/null; then
+        RESTORE_UNITS+=("$unit")
+      fi
+    done
+    if [ ${#RESTORE_UNITS[@]} -gt 0 ]; then
+      echo "==> Pausing background systemd units during CI (${RESTORE_UNITS[*]})..."
+      systemctl --user stop "${RESTORE_UNITS[@]}"
+      cleanup_units() {
+        echo "==> Restoring background systemd units (${RESTORE_UNITS[*]})..."
+        systemctl --user start "${RESTORE_UNITS[@]}" || true
+      }
+      trap cleanup_units EXIT INT TERM
+    fi
+  fi
 fi
 
 # 2. Vendored contract drift
