@@ -1063,10 +1063,26 @@ State changes in the execution engine write versioned Q-039 events to the transa
 ## ✅ Validation and Git Hooks
 
 `./scripts/ci.sh` runs the full pipeline — vendored contract drift, migrations,
-lint, format, tests — and is exactly what CI runs. Locally it enters the host
-user `ci.slice` when available (and CI Docker services use `ci-docker.slice`);
-do not wrap it in `systemd-run`. The contract stage reaches the `q_contracts`
-repository; when working offline, point it at a local clone:
+lint, format, tests — and is exactly what GitHub Actions runs. **Local runs do
+not use `./dev` Postgres or Redis:** each invocation starts disposable
+Postgres/Redis containers under a unique Docker Compose project with dynamically
+assigned localhost ports, exports verified `Q_DATABASE_URL` / `Q_REDIS_URL`,
+and temporary lake, market-data, tick-cache, and runtime-config paths before
+migrations or tests. Cleanup removes only that Compose project and temp
+directories (including after failures or Ctrl+C). Docker must be installed and
+the daemon reachable; `ci-docker.slice` is applied to those containers when the
+host slice exists. Locally the script enters the host user `ci.slice` when
+available — do not wrap it in `systemd-run`. CI never starts, stops, or reuses
+`q-dev`, `q-research`, or `q-*` user services.
+
+Hosted CI (`GITHUB_ACTIONS`) uses the workflow job services and explicit URLs
+only — ambient `CI=true` on a developer machine still provisions isolated local
+containers. Direct `pytest -m integration` against development default endpoints
+is refused unless `Q_CI_ISOLATED=1` is set with non-development URLs (as
+`./scripts/ci.sh` does).
+
+The contract stage reaches the `q_contracts` repository; when working offline,
+point it at a local clone:
 
 ```bash
 CONTRACTS_REPO=/path/to/q_contracts ./scripts/ci.sh
