@@ -9,6 +9,7 @@ from typing import Optional
 
 from fastapi import HTTPException
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from q_backend.api.schemas.execution import (
@@ -21,6 +22,7 @@ from q_backend.api.schemas.execution import (
     DeploymentConfigurationUpdateRequest,
     DeploymentCreateRequest,
     DeploymentDetailResponse,
+    DeploymentPerformanceResponse,
     DeploymentHealthResponse,
     DeploymentListResponse,
     DeploymentSummaryResponse,
@@ -37,6 +39,8 @@ from q_backend.api.schemas.execution import (
     OrderResolutionRequest,
     OrderResolutionResponse,
     OrderResponse,
+    PerformanceMarkListResponse,
+    PerformanceMarkResponse,
     PaperAccountCreateRequest,
     PendingReconciliationListResponse,
     PaperAccountListResponse,
@@ -74,7 +78,7 @@ from q_backend.execution.validation import (
     validate_risk_config,
     validate_strategy_identity,
 )
-from q_backend.storage.db.execution_models import ExecutionDeployment
+from q_backend.storage.db.execution_models import ExecutionDeployment, ExecutionLedgerEntry, ExecutionPaperMark
 from q_backend.storage.db.execution_repositories import (
     ConfigurationEditRejected,
     StaleRevisionError,
@@ -144,6 +148,12 @@ def _decision_response(decision) -> DecisionResponse:
     return DecisionResponse.model_validate(decision)
 
 
+def _order_response(order) -> OrderResponse:
+    response = OrderResponse.model_validate(order)
+    revision = order.decision.config_revision if order.decision is not None else None
+    return response.model_copy(update={"config_revision": revision})
+
+
 def _deployment_summary(deployment: ExecutionDeployment) -> DeploymentSummaryResponse:
     return DeploymentSummaryResponse.model_validate(deployment)
 
@@ -196,6 +206,8 @@ def create_deployment(
     market_data_service: Optional[Any] = None,
 ) -> DeploymentDetailResponse:
     settings = get_settings()
+    if settings.execution_paper_only and (body.broker_mode == "mt5_live" or body.live_activation_enabled):
+        raise HTTPException(status_code=403, detail="execution profile is paper-only; live_locked")
     account = get_paper_account(session, body.paper_account_id)
     if account is None:
         raise HTTPException(status_code=404, detail="paper account not found")
@@ -314,6 +326,82 @@ def get_deployment_detail(session: Session, deployment_id: uuid.UUID) -> Deploym
     )
 
 
+def deployment_performance(session: Session, deployment_id: uuid.UUID) -> DeploymentPerformanceResponse:
+    deployment = get_execution_deployment(session, deployment_id)
+    if deployment is None:
+        raise HTTPException(status_code=404, detail="deployment not found")
+    entries = list(
+        session.execute(
+            select(ExecutionLedgerEntry).where(ExecutionLedgerEntry.deployment_id == deployment_id)
+        ).scalars()
+    )
+    realized = sum((e.amount for e in entries if e.entry_type == "realized_pnl"), Decimal("0"))
+    fees = -sum((e.amount for e in entries if e.entry_type == "fee"), Decimal("0"))
+    per_fill: dict[uuid.UUID, list[Decimal]] = {}
+    for entry in entries:
+        if entry.fill_id is not None:
+            values = per_fill.setdefault(entry.fill_id, [Decimal("0"), Decimal("0")])
+            if entry.entry_type == "realized_pnl":
+                values[0] += entry.amount
+            elif entry.entry_type == "fee":
+                values[1] += entry.amount
+    closed = [values for values in per_fill.values() if values[0] != 0]
+    wins = sum(1 for pnl, fee in closed if pnl + fee > 0)
+    latest = session.execute(
+        select(ExecutionPaperMark)
+        .where(ExecutionPaperMark.deployment_id == deployment_id)
+        .order_by(ExecutionPaperMark.bar_close_time.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    unrealized = latest.unrealized_pnl if latest and latest.mark_status == "marked" else None
+    net = realized - fees + unrealized if unrealized is not None else None
+    return DeploymentPerformanceResponse(
+        deployment_id=deployment_id,
+        realized_pnl=realized,
+        unrealized_pnl=unrealized,
+        fees=fees,
+        net_pnl=net,
+        closed_trade_count=len(closed),
+        win_count=wins,
+        win_rate=Decimal(wins) / Decimal(len(closed)) if closed else None,
+        mark_status=latest.mark_status if latest else "unavailable",
+        marked_at=latest.bar_close_time if latest else None,
+        config_revision=deployment.config_revision,
+    )
+
+
+def deployment_performance_marks(
+    session: Session, deployment_id: uuid.UUID, *, limit: int, offset: int
+) -> PerformanceMarkListResponse:
+    if get_execution_deployment(session, deployment_id) is None:
+        raise HTTPException(status_code=404, detail="deployment not found")
+    stmt = select(ExecutionPaperMark).where(ExecutionPaperMark.deployment_id == deployment_id)
+    total = session.execute(select(func.count()).select_from(stmt.subquery())).scalar_one()
+    rows = session.execute(
+        stmt.order_by(ExecutionPaperMark.bar_close_time.desc()).limit(limit).offset(offset)
+    ).scalars()
+    items = []
+    for row in rows:
+        delta = row.realized_pnl - row.fees + row.unrealized_pnl if row.unrealized_pnl is not None else None
+        items.append(
+            PerformanceMarkResponse(
+                bar_close_time=row.bar_close_time,
+                config_revision=row.config_revision,
+                mark_status=row.mark_status,
+                quote_bid=row.quote_bid,
+                quote_ask=row.quote_ask,
+                quote_timestamp=row.quote_timestamp,
+                quote_source=row.quote_source,
+                mark_price=row.mark_price,
+                realized_pnl=row.realized_pnl,
+                fees=row.fees,
+                unrealized_pnl=row.unrealized_pnl,
+                equity_delta=delta,
+            )
+        )
+    return PerformanceMarkListResponse(items=items, total=total, limit=limit, offset=offset)
+
+
 def get_strategy_catalog():
     from q_backend.execution.catalog import CatalogResponse, build_catalog
 
@@ -386,6 +474,9 @@ def apply_deployment_action(
     deployment = get_execution_deployment(session, deployment_id)
     if deployment is None:
         raise HTTPException(status_code=404, detail="deployment not found")
+    settings = get_settings()
+    if settings.execution_paper_only and body.action == "start" and deployment.broker_mode == "mt5_live":
+        raise HTTPException(status_code=403, detail="execution profile is paper-only; live_locked")
     if body.action == "flatten" and not body.confirm:
         raise HTTPException(
             status_code=400,
@@ -479,7 +570,7 @@ def list_orders(
         offset=offset,
     )
     return OrderListResponse(
-        items=[OrderResponse.model_validate(item) for item in items],
+        items=[_order_response(item) for item in items],
         total=total,
         limit=limit,
         offset=offset,
@@ -502,7 +593,7 @@ def list_pending_reconciliation(
         offset=offset,
     )
     return PendingReconciliationListResponse(
-        items=[OrderResponse.model_validate(item) for item in items],
+        items=[_order_response(item) for item in items],
         total=total,
         limit=limit,
         offset=offset,
@@ -522,7 +613,10 @@ def resolve_order(
         raise HTTPException(status_code=404, detail="deployment not found")
 
     settings = get_settings()
-    point_value = Decimal(str(settings.execution_default_point_value))
+    configured_point_value = (deployment.paper_cost_config or {}).get("point_value")
+    if configured_point_value is None and deployment.config_revision > 1:
+        raise HTTPException(status_code=409, detail="deployment revision has no paper cost config")
+    point_value = Decimal(str(configured_point_value or settings.execution_default_point_value))
     ledger = ExecutionLedger()
 
     fill: Optional[FillRecord] = None
@@ -566,7 +660,7 @@ def resolve_order(
         session.refresh(order)
         return OrderResolutionResponse(
             accepted=True,
-            order=OrderResponse.model_validate(order),
+            order=_order_response(order),
             resolution=outcome.resolution.value,
             message=outcome.message,
         )
@@ -596,7 +690,19 @@ def list_fills(
         offset=offset,
     )
     return FillListResponse(
-        items=[FillResponse.model_validate(item) for item in items],
+        items=[
+            FillResponse.model_validate(item).model_copy(
+                update={
+                    "decision_id": item.order.decision_id if item.order is not None else None,
+                    "config_revision": (
+                        item.order.decision.config_revision
+                        if item.order is not None and item.order.decision is not None
+                        else None
+                    ),
+                }
+            )
+            for item in items
+        ],
         total=total,
         limit=limit,
         offset=offset,

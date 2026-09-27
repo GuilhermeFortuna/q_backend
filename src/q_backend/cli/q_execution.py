@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 import uuid
 from contextlib import contextmanager
@@ -45,6 +46,7 @@ _CRASH_CHECKPOINTS = frozenset(
     {
         "before_intent_commit",
         "after_intent_commit",
+        "after_dispatch_attempt_commit",
         "after_broker_response",
         "before_fill_commit",
     }
@@ -302,6 +304,7 @@ def cmd_flatten(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Q forward execution worker")
+    parser.add_argument("--paper-only", action="store_true", help="Force paper-only execution")
     parser.add_argument(
         "--log-level",
         default="INFO",
@@ -340,6 +343,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
+    if argv is None:
+        argv = sys.argv[1:]
+    if "--paper-only" in argv:
+        os.environ["Q_EXECUTION_PAPER_ONLY"] = "true"
     init_sentry(get_settings(), component="cli")
     sentry_sdk.set_tag("cli_command", "q_execution")
     parser = build_parser()

@@ -221,6 +221,7 @@ class ExecutionOrder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     external_order_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     rejection_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     intent_committed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    dispatch_attempted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     # Reconciliation bookkeeping for orders that entered UNKNOWN/PENDING.
@@ -284,6 +285,30 @@ class ExecutionFill(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         Index("ix_execution_fills_deployment", "deployment_id"),
         Index("ix_execution_fills_order", "order_id"),
+    )
+
+
+class ExecutionPaperMark(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "execution_paper_marks"
+
+    deployment_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("execution_deployments.id", ondelete="CASCADE"), nullable=False
+    )
+    bar_close_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    config_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    mark_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    quote_bid: Mapped[Optional[Decimal]] = mapped_column(PriceNumeric, nullable=True)
+    quote_ask: Mapped[Optional[Decimal]] = mapped_column(PriceNumeric, nullable=True)
+    quote_timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    quote_source: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    mark_price: Mapped[Optional[Decimal]] = mapped_column(PriceNumeric, nullable=True)
+    realized_pnl: Mapped[Decimal] = mapped_column(MoneyNumeric, nullable=False)
+    fees: Mapped[Decimal] = mapped_column(MoneyNumeric, nullable=False)
+    unrealized_pnl: Mapped[Optional[Decimal]] = mapped_column(MoneyNumeric, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("deployment_id", "bar_close_time", name="uq_execution_paper_marks_deployment_bar"),
+        Index("ix_execution_paper_marks_deployment_time", "deployment_id", "bar_close_time"),
     )
 
 

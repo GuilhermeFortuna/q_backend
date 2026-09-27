@@ -434,6 +434,23 @@ def transition_execution_order(
     return order
 
 
+def mark_execution_dispatch_attempt(
+    session: Session, order_id: uuid.UUID, *, attempted_at: datetime, producer: str
+) -> ExecutionOrder:
+    """Persist the at-most-once dispatch boundary before calling a broker."""
+    order = session.get(ExecutionOrder, order_id)
+    if order is None:
+        raise ValueError(f"ExecutionOrder {order_id} not found")
+    if order.dispatch_attempted_at is not None:
+        raise ValueError(f"ExecutionOrder {order_id} dispatch was already attempted")
+    if order.status != ExecutionOrderStatus.INTENT.value:
+        raise ValueError(f"ExecutionOrder {order_id} is not awaiting dispatch")
+    order.dispatch_attempted_at = attempted_at
+    session.flush()
+    execution_events.emit(session, "orders", execution_events.order_state(order), producer_id=producer)
+    return order
+
+
 # --- Fills ---
 
 
@@ -1354,6 +1371,7 @@ __all__ = [
     "create_execution_deployment",
     "create_execution_fill",
     "create_execution_order_intent",
+    "mark_execution_dispatch_attempt",
     "create_paper_account",
     "get_decision_for_bar",
     "get_execution_control_state",

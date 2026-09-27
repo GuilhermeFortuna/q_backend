@@ -204,6 +204,7 @@ def order_state(row: ExecutionOrder) -> dict[str, Any]:
         "external_order_id": row.external_order_id,
         "rejection_reason": row.rejection_reason,
         "intent_committed_at": _dt(row.intent_committed_at),
+        "dispatch_attempted_at": _dt(row.dispatch_attempted_at),
         "submitted_at": _dt(row.submitted_at),
         "completed_at": _dt(row.completed_at),
         "reconciliation_attempted_at": _dt(row.reconciliation_attempted_at),

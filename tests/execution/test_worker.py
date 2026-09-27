@@ -172,9 +172,18 @@ def test_worker_poll_once_processes_new_bar(db_engine, db_session):
     worker.poll_once()
     with factory() as session:
         from q_backend.storage.db.execution_repositories import list_orders_for_deployment
+        from q_backend.storage.db.execution_models import ExecutionPaperMark
+        from sqlalchemy import select
 
         orders = list_orders_for_deployment(session, deployment.id)
         assert len(orders) <= 1
+        marks = (
+            session.execute(select(ExecutionPaperMark).where(ExecutionPaperMark.deployment_id == deployment.id))
+            .scalars()
+            .all()
+        )
+        assert marks
+        assert len({mark.bar_close_time for mark in marks}) == len(marks)
 
 
 def test_worker_reconciles_pending_unknown_before_new_decisions(db_engine, db_session):
@@ -502,6 +511,12 @@ def test_refresh_deployments_rebuilds_runtime_on_revision_change(db_engine, db_s
         dep = get_execution_deployment(session, deployment.id)
         dep.config_revision = 2
         dep.activation_cutoff_at = clock.now()
+        dep.paper_cost_config = {
+            "point_value": "0.3",
+            "slippage_points": "0",
+            "cost_per_contract": "0",
+            "cost_bps": "0",
+        }
         session.commit()
 
     worker.poll_once()

@@ -27,10 +27,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the Q API production server.")
     parser.add_argument("--host", type=str, default=None, help="Host to bind (default: 0.0.0.0 or $HOST)")
     parser.add_argument("--port", type=int, default=None, help="Port to bind (default: 8000 or $PORT)")
+    parser.add_argument("--paper-only", action="store_true", help="Force paper-only execution profile")
 
     if argv is None:
         argv = sys.argv[1:]
     args = parser.parse_args(argv)
+    if args.paper_only:
+        os.environ["Q_EXECUTION_PAPER_ONLY"] = "true"
 
     engine = get_engine()
     ini_path = alembic_ini_path()

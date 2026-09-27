@@ -218,6 +218,26 @@ def test_reconcile_not_found_fails_order_and_unblocks(db_session):
     assert not deployment_has_unknown_orders(list_orders_for_deployment(db_session, deployment.id))
 
 
+def test_paper_only_reconciliation_never_routes_existing_live_order(db_session):
+    _, deployment = _seed_running_deployment(db_session, "paper-only-live")
+    deployment.broker_mode = BrokerMode.MT5_LIVE.value
+    _, order = _pending_unknown_order(db_session, deployment)
+    broker = FakeReconciliationBroker(broker_mode=BrokerMode.MT5_LIVE)
+    reconciler = OrderReconciler(
+        broker=broker,
+        ledger=ExecutionLedger(),
+        point_value=Decimal("0.2"),
+        paper_only=True,
+    )
+
+    result = reconciler.reconcile_deployment(db_session, deployment)
+
+    assert broker.lookups == []
+    assert result[0].message.startswith("live_locked")
+    db_session.refresh(order)
+    assert order.reconciliation_error.startswith("live_locked")
+
+
 def test_reconcile_unavailable_stays_pending_and_blocks(db_session, paper_cost_config):
     clock = _clock()
     quotes = _quotes(clock)
