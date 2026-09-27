@@ -45,6 +45,8 @@ class DeploymentRuntime:
     identity: StrategyIdentity
     evaluator: StrategyEvaluator
     lease_token: str
+    config_revision: int = 1
+    activation_cutoff_at: Optional[datetime] = None
 
 
 def open_trade_for_deployment(
@@ -66,6 +68,19 @@ def open_trade_for_deployment(
         opened_at=position.opened_at,
         point_value=point_value,
     )
+
+
+def _utc_aware(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _effective_watermark(deployment: ExecutionDeployment) -> Optional[datetime]:
+    candidates = [
+        _utc_aware(t) for t in (deployment.last_bar_close_time, deployment.activation_cutoff_at) if t is not None
+    ]
+    return max(candidates) if candidates else None
 
 
 def _identity_from_deployment(deployment: ExecutionDeployment) -> StrategyIdentity:
@@ -147,19 +162,24 @@ class ExecutionRecovery:
     ) -> DeploymentRuntime:
         identity = _identity_from_deployment(deployment)
         trade = open_trade_for_deployment(session, deployment, point_value=point_value)
+        # The evaluator's watermark is the later of the last real decision and the
+        # persisted activation cutoff, so a resume/edit after a pause (or the very
+        # first activation) never treats bars closed before "now" as tradable —
+        # only genuinely new bars closing after activation produce a decision.
+        watermark = _effective_watermark(deployment)
         evaluator = StrategyEvaluator(
             deployment_id=str(deployment.id),
             identity=identity,
             initial_capital=initial_capital,
             point_value=point_value,
             open_trade=trade,
-            last_evaluated_close=deployment.last_bar_close_time,
+            last_evaluated_close=watermark,
         )
         consumer = DeploymentBarConsumer(
             str(deployment.id),
             deployment.symbol,
             deployment.timeframe,
-            last_evaluated_close=deployment.last_bar_close_time,
+            last_evaluated_close=watermark,
         )
         batches = self._coordinator.poll(
             [consumer],
@@ -168,11 +188,8 @@ class ExecutionRecovery:
         key = BarStreamKey(consumer.symbol, consumer.timeframe.upper())
         batch = batches.get(key)
         if batch is not None and not batch.frame.empty:
-            if deployment.last_bar_close_time is not None:
-                evaluator.replay_recovery(
-                    batch.frame,
-                    end_close=deployment.last_bar_close_time,
-                )
+            if watermark is not None:
+                evaluator.replay_recovery(batch.frame, end_close=watermark)
             else:
                 evaluator.seed_window(batch.frame)
 
@@ -181,4 +198,6 @@ class ExecutionRecovery:
             identity=identity,
             evaluator=evaluator,
             lease_token=lease_token,
+            config_revision=deployment.config_revision,
+            activation_cutoff_at=deployment.activation_cutoff_at,
         )

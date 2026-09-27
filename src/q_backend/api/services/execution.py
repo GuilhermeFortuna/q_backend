@@ -18,6 +18,7 @@ from q_backend.api.schemas.execution import (
     DecisionResponse,
     DeploymentActionRequest,
     DeploymentActionResponse,
+    DeploymentConfigurationUpdateRequest,
     DeploymentCreateRequest,
     DeploymentDetailResponse,
     DeploymentHealthResponse,
@@ -68,12 +69,16 @@ from q_backend.execution.reconciliation import (
 from q_backend.execution.validation import (
     ExecutionValidationError,
     identity_from_saved_backtest,
+    resolve_catalog_configuration,
     validate_broker_mode,
     validate_risk_config,
     validate_strategy_identity,
 )
 from q_backend.storage.db.execution_models import ExecutionDeployment
 from q_backend.storage.db.execution_repositories import (
+    ConfigurationEditRejected,
+    StaleRevisionError,
+    apply_deployment_configuration_edit,
     clear_pending_deployment_action,
     count_unknown_orders,
     create_execution_deployment,
@@ -184,7 +189,12 @@ def get_account(session: Session, account_id: uuid.UUID) -> PaperAccountResponse
     return PaperAccountResponse.model_validate(account)
 
 
-def create_deployment(session: Session, body: DeploymentCreateRequest) -> DeploymentDetailResponse:
+def create_deployment(
+    session: Session,
+    body: DeploymentCreateRequest,
+    *,
+    market_data_service: Optional[Any] = None,
+) -> DeploymentDetailResponse:
     settings = get_settings()
     account = get_paper_account(session, body.paper_account_id)
     if account is None:
@@ -195,13 +205,34 @@ def create_deployment(session: Session, body: DeploymentCreateRequest) -> Deploy
             live_capability_locked=settings.execution_live_capability_locked,
             live_activation_enabled=body.live_activation_enabled,
         )
+        source_kind = "explicit"
+        source_strategy_name: Optional[str] = None
+        paper_cost_config: dict[str, Any] = {}
         if body.source_backtest_run_id is not None:
             identity = identity_from_saved_backtest(
                 session,
                 source_backtest_run_id=body.source_backtest_run_id,
                 risk_config=body.identity.risk_config if body.identity else None,
                 sizing_config=body.identity.sizing_config if body.identity else None,
+                market_data_service=market_data_service,
             )
+            source_kind = "saved_backtest"
+        elif body.catalog is not None:
+            resolved = resolve_catalog_configuration(
+                strategy_name=body.catalog.strategy_name,
+                strategy_params=body.catalog.strategy_params,
+                exit_params=body.catalog.exit_params,
+                symbol=body.catalog.symbol,
+                timeframe=body.catalog.timeframe,
+                sizing_config=body.catalog.sizing_config,
+                risk_config=body.catalog.risk_config,
+                paper_cost_config=body.catalog.paper_cost_config.model_dump(),
+                market_data_service=market_data_service,
+            )
+            identity = resolved.identity
+            source_kind = resolved.source_kind
+            source_strategy_name = resolved.source_strategy_name
+            paper_cost_config = resolved.paper_cost_config
         elif body.identity is not None:
             identity = validate_strategy_identity(
                 strategy_name=body.identity.strategy_name,
@@ -212,9 +243,10 @@ def create_deployment(session: Session, body: DeploymentCreateRequest) -> Deploy
                 timeframe=body.identity.timeframe,
                 sizing_config=body.identity.sizing_config,
                 risk_config=body.identity.risk_config,
+                market_data_service=market_data_service,
             )
         else:
-            raise ExecutionValidationError("either source_backtest_run_id or identity is required")
+            raise ExecutionValidationError("one of source_backtest_run_id, identity, or catalog is required")
         deployment = create_execution_deployment(
             session,
             paper_account_id=body.paper_account_id,
@@ -223,6 +255,9 @@ def create_deployment(session: Session, body: DeploymentCreateRequest) -> Deploy
             broker_mode=broker_mode,
             lifecycle=DeploymentLifecycle.DRAFT,
             live_activation_enabled=body.live_activation_enabled,
+            source_kind=source_kind,
+            source_strategy_name=source_strategy_name,
+            paper_cost_config=paper_cost_config,
         )
         session.flush()
         return get_deployment_detail(session, deployment.id)
@@ -271,11 +306,76 @@ def get_deployment_detail(session: Session, deployment_id: uuid.UUID) -> Deploym
         compiled_config=deployment.compiled_config,
         sizing_config=deployment.sizing_config,
         risk_config=deployment.risk_config,
+        paper_cost_config=deployment.paper_cost_config,
         open_position=PositionResponse.model_validate(position) if position is not None else None,
         worker_lease=_lease_response(lease, now=now) if lease is not None else None,
         latest_decision=_decision_response(latest) if latest is not None else None,
         unknown_order_count=count_unknown_orders(session, deployment_id=deployment_id),
     )
+
+
+def get_strategy_catalog():
+    from q_backend.execution.catalog import CatalogResponse, build_catalog
+
+    return CatalogResponse(strategies=build_catalog())
+
+
+def patch_deployment_configuration(
+    session: Session,
+    deployment_id: uuid.UUID,
+    body: DeploymentConfigurationUpdateRequest,
+    *,
+    market_data_service: Optional[Any] = None,
+) -> DeploymentDetailResponse:
+    deployment = get_execution_deployment(session, deployment_id)
+    if deployment is None:
+        raise HTTPException(status_code=404, detail="deployment not found")
+    catalog_name = deployment.source_strategy_name or deployment.strategy_name
+    if deployment.source_kind not in {"builtin", "custom"}:
+        raise HTTPException(
+            status_code=400,
+            detail="configuration edits require a catalog-created deployment",
+        )
+    try:
+        resolved = resolve_catalog_configuration(
+            strategy_name=catalog_name,
+            strategy_params=body.strategy_params,
+            exit_params=body.exit_params,
+            symbol=deployment.symbol,
+            timeframe=deployment.timeframe,
+            sizing_config=body.sizing_config,
+            risk_config=body.risk_config,
+            paper_cost_config=body.paper_cost_config.model_dump(),
+            market_data_service=market_data_service,
+        )
+        deployment = apply_deployment_configuration_edit(
+            session,
+            deployment_id,
+            expected_revision=body.expected_revision,
+            identity=resolved.identity,
+            source_kind=resolved.source_kind,
+            source_strategy_name=resolved.source_strategy_name,
+            paper_cost_config=resolved.paper_cost_config,
+            actor=body.actor,
+        )
+        record_audit_event(
+            session,
+            event_type="deployment_configuration_revised",
+            actor=body.actor,
+            deployment_id=deployment_id,
+            message=f"configuration revised to revision {deployment.config_revision}",
+            payload={"config_revision": deployment.config_revision},
+        )
+        session.flush()
+        return get_deployment_detail(session, deployment_id)
+    except ExecutionValidationError as exc:
+        raise _http_from_validation(exc) from exc
+    except StaleRevisionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ConfigurationEditRejected as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        raise _http_from_db(exc) from exc
 
 
 def apply_deployment_action(

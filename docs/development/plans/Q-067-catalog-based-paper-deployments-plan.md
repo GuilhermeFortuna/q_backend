@@ -59,27 +59,29 @@ and sizing-only changes.
 
 ## Ordered implementation
 
-- [ ] 1. On the Q-067 task branch, pin and vendor Q-066; run
+- [x] 1. On the Q-067 task branch, pin and vendor Q-066; run
   `make contracts-check`. Add failing catalog eligibility/default tests in
   `tests/api/test_execution_api.py`, including custom-wrapper mutation after
   creation.
-- [ ] 2. Add focused catalog compilation and parameter validation in
+- [x] 2. Add focused catalog compilation and parameter validation in
   `execution/validation.py` and `execution/strategy_build.py`; expose the
   catalog route. Prove rejected inputs write no deployment or outbox event.
-- [ ] 3. Add migration and model/repository support for current revision,
+- [x] 3. Add migration and model/repository support for current revision,
   immutable revision rows, costs and activation cutoff. Test row locking,
   revision uniqueness, immutable history, rollback and event emission in
   `tests/storage/test_execution_repositories.py`.
-- [ ] 4. Extend create and add the idempotent PATCH route in the execution
+- [x] 4. Extend create and add the idempotent PATCH route in the execution
   router/service. Test draft, paused-flat, running, open position, pending
   unknown, stale revision and same-key retry in `tests/api/`.
-- [ ] 5. Update decision snapshots and worker activation/recovery logic.
+- [x] 5. Update decision snapshots and worker activation/recovery logic.
   Test no catch-up orders across pause, edit, resume and restart; test the
   first new decision carries the new revision and costs.
-- [ ] 6. Recapture backend OpenAPI in `q_contracts` through its normal capture
+- [x] 6. Recapture backend OpenAPI in `q_contracts` through its normal capture
   workflow, verify the catalog/edit routes and `Idempotency-Key`, run
   `make contracts-check` and `./scripts/ci.sh`, then commit focused changes
   on the task branch. Coordinate the contract capture with the Q-066 pin.
+  (OpenAPI recapture itself lands as a separate `q_contracts` commit outside
+  this repo/worktree's authorization — see review notes below.)
 
 ## Review focus
 

@@ -355,6 +355,7 @@ def test_execution_migration_revision_chain() -> None:
         "20260915_0019",
         "20260918_0020",
         "20260918_0021",
+        "20260927_0022",
     ]
 
     assert script.get_current_head() == expected_chain[-1]
@@ -405,3 +406,162 @@ def test_worker_heartbeat_upsert_and_stopped_marker(db_session: Session):
     record_worker_heartbeat(db_session, worker_id="w1", started_at=t1, version="1", edge=edge, now=t1)
     assert get_worker_heartbeat(db_session, "w1").stopped_at is None
     record_worker_stopped(db_session, worker_id="absent", now=t1)
+
+
+# --- Q-067: deployment configuration revisions ---------------------------------
+
+
+def _revised_identity(**overrides) -> StrategyIdentity:
+    base = dict(
+        strategy_name="demo_strategy",
+        strategy_version=3,
+        compiled_config={"entry": "rsi_cross", "strategy_params": {"period": 14}},
+        config_hash="rev-hash-1",
+        symbol="WIN$",
+        timeframe="H1",
+        sizing_config={"mode": "fixed", "quantity": "2"},
+        risk_config={"max_daily_loss": "500"},
+    )
+    base.update(overrides)
+    return StrategyIdentity(**base)
+
+
+def test_create_execution_deployment_writes_first_revision(db_session: Session):
+    from q_backend.storage.db.execution_models import ExecutionDeploymentRevision
+
+    account, deployment = _seed_account_and_deployment(db_session)
+    assert deployment.config_revision == 1
+    revisions = (
+        db_session.query(ExecutionDeploymentRevision)
+        .filter(ExecutionDeploymentRevision.deployment_id == deployment.id)
+        .all()
+    )
+    assert len(revisions) == 1
+    assert revisions[0].revision == 1
+    assert revisions[0].compiled_config == deployment.compiled_config
+
+
+def test_apply_deployment_configuration_edit_creates_new_revision(db_session: Session):
+    from q_backend.storage.db.execution_models import ExecutionDeploymentRevision
+    from q_backend.storage.db.execution_repositories import apply_deployment_configuration_edit
+
+    account, deployment = _seed_account_and_deployment(db_session)
+    db_session.commit()
+
+    updated = apply_deployment_configuration_edit(
+        db_session,
+        deployment.id,
+        expected_revision=1,
+        identity=_revised_identity(config_hash="rev-hash-2"),
+        source_kind="builtin",
+        source_strategy_name=None,
+        paper_cost_config={"point_value": "1", "slippage_points": "0", "cost_per_contract": "0", "cost_bps": "0"},
+        actor="operator-1",
+    )
+    assert updated.config_revision == 2
+    assert updated.config_hash == "rev-hash-2"
+
+    revisions = (
+        db_session.query(ExecutionDeploymentRevision)
+        .filter(ExecutionDeploymentRevision.deployment_id == deployment.id)
+        .order_by(ExecutionDeploymentRevision.revision)
+        .all()
+    )
+    assert [r.revision for r in revisions] == [1, 2]
+    # The first revision's snapshot is untouched by the edit (immutable history).
+    assert revisions[0].config_hash != revisions[1].config_hash
+
+
+def test_apply_deployment_configuration_edit_rejects_stale_revision(db_session: Session):
+    from q_backend.storage.db.execution_repositories import (
+        StaleRevisionError,
+        apply_deployment_configuration_edit,
+    )
+
+    account, deployment = _seed_account_and_deployment(db_session)
+    db_session.commit()
+
+    with pytest.raises(StaleRevisionError):
+        apply_deployment_configuration_edit(
+            db_session,
+            deployment.id,
+            expected_revision=99,
+            identity=_revised_identity(),
+            source_kind="builtin",
+            source_strategy_name=None,
+            paper_cost_config={},
+            actor="operator-1",
+        )
+    # No partial write: revision unchanged.
+    db_session.refresh(deployment)
+    assert deployment.config_revision == 1
+
+
+def test_apply_deployment_configuration_edit_rejects_running_lifecycle(db_session: Session):
+    from q_backend.storage.db.execution_repositories import (
+        ConfigurationEditRejected,
+        apply_deployment_configuration_edit,
+    )
+
+    account, deployment = _seed_account_and_deployment(db_session)
+    transition_deployment_lifecycle(db_session, deployment.id, DeploymentLifecycle.RUNNING)
+    db_session.commit()
+
+    with pytest.raises(ConfigurationEditRejected):
+        apply_deployment_configuration_edit(
+            db_session,
+            deployment.id,
+            expected_revision=1,
+            identity=_revised_identity(),
+            source_kind="builtin",
+            source_strategy_name=None,
+            paper_cost_config={},
+            actor="operator-1",
+        )
+
+
+def test_apply_deployment_configuration_edit_rejects_open_position_while_paused(db_session: Session):
+    from q_backend.storage.db.execution_repositories import (
+        ConfigurationEditRejected,
+        apply_deployment_configuration_edit,
+    )
+
+    account, deployment = _seed_account_and_deployment(db_session)
+    transition_deployment_lifecycle(db_session, deployment.id, DeploymentLifecycle.RUNNING)
+    transition_deployment_lifecycle(db_session, deployment.id, DeploymentLifecycle.PAUSED)
+    upsert_open_net_position(
+        db_session,
+        deployment_id=deployment.id,
+        side=PositionSide.LONG,
+        quantity=Decimal("1"),
+        average_entry_price=Decimal("100"),
+        opened_at=datetime.now(timezone.utc),
+    )
+    db_session.commit()
+
+    with pytest.raises(ConfigurationEditRejected):
+        apply_deployment_configuration_edit(
+            db_session,
+            deployment.id,
+            expected_revision=1,
+            identity=_revised_identity(),
+            source_kind="builtin",
+            source_strategy_name=None,
+            paper_cost_config={},
+            actor="operator-1",
+        )
+
+
+def test_transition_to_running_sets_activation_cutoff(db_session: Session):
+    account, deployment = _seed_account_and_deployment(db_session)
+    assert deployment.activation_cutoff_at is None
+
+    now = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+    transition_deployment_lifecycle(db_session, deployment.id, DeploymentLifecycle.RUNNING, at=now)
+    assert deployment.activation_cutoff_at == now
+
+    later = now + timedelta(hours=5)
+    transition_deployment_lifecycle(db_session, deployment.id, DeploymentLifecycle.PAUSED, at=later)
+    resumed = later + timedelta(hours=1)
+    transition_deployment_lifecycle(db_session, deployment.id, DeploymentLifecycle.RUNNING, at=resumed)
+    assert deployment.activation_cutoff_at == resumed

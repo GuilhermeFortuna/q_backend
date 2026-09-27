@@ -199,6 +199,8 @@ class ExecutionService:
             requested_quantity=requested_qty,
             reason=eval_result.reason,
             context={"timing": eval_result.timing.model_dump()},
+            config_revision=deployment.config_revision,
+            paper_cost_config=deployment.paper_cost_config,
             producer=worker_id,
         )
 

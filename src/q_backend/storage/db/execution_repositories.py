@@ -36,6 +36,7 @@ from q_backend.storage.db.execution_models import (
     ExecutionControlState,
     ExecutionDecision,
     ExecutionDeployment,
+    ExecutionDeploymentRevision,
     ExecutionFill,
     ExecutionLedgerEntry,
     ExecutionNetPosition,
@@ -50,6 +51,14 @@ from q_backend.streaming import execution_events
 
 class LeaseConflictError(ValueError):
     """Raised when another worker holds the active deployment lease."""
+
+
+class ConfigurationEditRejected(ValueError):
+    """Raised when a deployment cannot accept a configuration edit right now."""
+
+
+class StaleRevisionError(ConfigurationEditRejected):
+    """Raised when ``expected_revision`` no longer matches the current revision."""
 
 
 def _utcnow() -> datetime:
@@ -120,8 +129,12 @@ def create_execution_deployment(
     broker_mode: BrokerMode = BrokerMode.PAPER,
     lifecycle: DeploymentLifecycle = DeploymentLifecycle.DRAFT,
     live_activation_enabled: bool = False,
+    source_kind: str = "explicit",
+    source_strategy_name: Optional[str] = None,
+    paper_cost_config: Optional[dict[str, Any]] = None,
     producer: str = "api",
 ) -> ExecutionDeployment:
+    cost_config = paper_cost_config or {}
     deployment = ExecutionDeployment(
         paper_account_id=paper_account_id,
         name=name,
@@ -136,8 +149,31 @@ def create_execution_deployment(
         sizing_config=identity.sizing_config,
         risk_config=identity.risk_config,
         live_activation_enabled=live_activation_enabled,
+        config_revision=1,
+        paper_cost_config=cost_config,
+        source_kind=source_kind,
+        source_strategy_name=source_strategy_name,
     )
     session.add(deployment)
+    session.flush()
+    session.add(
+        ExecutionDeploymentRevision(
+            deployment_id=deployment.id,
+            revision=1,
+            strategy_name=identity.strategy_name,
+            strategy_version=identity.strategy_version,
+            compiled_config=identity.compiled_config,
+            config_hash=identity.config_hash,
+            symbol=identity.symbol,
+            timeframe=identity.timeframe,
+            sizing_config=identity.sizing_config,
+            risk_config=identity.risk_config,
+            paper_cost_config=cost_config,
+            source_kind=source_kind,
+            source_strategy_name=source_strategy_name,
+            actor=None,
+        )
+    )
     session.flush()
     execution_events.emit(
         session,
@@ -150,6 +186,80 @@ def create_execution_deployment(
 
 def get_execution_deployment(session: Session, deployment_id: uuid.UUID) -> Optional[ExecutionDeployment]:
     return session.get(ExecutionDeployment, deployment_id)
+
+
+def apply_deployment_configuration_edit(
+    session: Session,
+    deployment_id: uuid.UUID,
+    *,
+    expected_revision: int,
+    identity: StrategyIdentity,
+    source_kind: str,
+    source_strategy_name: Optional[str],
+    paper_cost_config: dict[str, Any],
+    actor: Optional[str],
+    producer: str = "api",
+) -> ExecutionDeployment:
+    """Validate and apply a complete configuration replacement as a new revision.
+
+    Locks the deployment row so concurrent edits serialize; a stale
+    ``expected_revision`` or a disallowed lifecycle/position/order state raises
+    without writing a partial update.
+    """
+    deployment = session.execute(
+        select(ExecutionDeployment).where(ExecutionDeployment.id == deployment_id).with_for_update()
+    ).scalar_one_or_none()
+    if deployment is None:
+        raise ValueError(f"ExecutionDeployment {deployment_id} not found")
+    if deployment.config_revision != expected_revision:
+        raise StaleRevisionError(
+            f"expected_revision {expected_revision} does not match current revision {deployment.config_revision}"
+        )
+    lifecycle = DeploymentLifecycle(deployment.lifecycle)
+    if lifecycle not in (DeploymentLifecycle.DRAFT, DeploymentLifecycle.PAUSED):
+        raise ConfigurationEditRejected(f"deployment lifecycle '{lifecycle.value}' does not accept configuration edits")
+    if lifecycle == DeploymentLifecycle.PAUSED:
+        position = get_open_net_position(session, deployment_id)
+        if position is not None and position.is_open:
+            raise ConfigurationEditRejected("deployment has an open position; flatten before editing")
+        if deployment.pending_action is not None:
+            raise ConfigurationEditRejected("deployment has a pending action; resolve it before editing")
+        if list_pending_reconciliation_orders(session, deployment_id=deployment_id):
+            raise ConfigurationEditRejected("deployment has an order awaiting reconciliation")
+
+    new_revision = deployment.config_revision + 1
+    session.add(
+        ExecutionDeploymentRevision(
+            deployment_id=deployment_id,
+            revision=new_revision,
+            strategy_name=identity.strategy_name,
+            strategy_version=identity.strategy_version,
+            compiled_config=identity.compiled_config,
+            config_hash=identity.config_hash,
+            symbol=identity.symbol,
+            timeframe=identity.timeframe,
+            sizing_config=identity.sizing_config,
+            risk_config=identity.risk_config,
+            paper_cost_config=paper_cost_config,
+            source_kind=source_kind,
+            source_strategy_name=source_strategy_name,
+            actor=actor,
+        )
+    )
+    deployment.compiled_config = identity.compiled_config
+    deployment.config_hash = identity.config_hash
+    deployment.sizing_config = identity.sizing_config
+    deployment.risk_config = identity.risk_config
+    deployment.paper_cost_config = paper_cost_config
+    deployment.config_revision = new_revision
+    session.flush()
+    execution_events.emit(
+        session,
+        "deployments",
+        execution_events.deployment_state(deployment),
+        producer_id=producer,
+    )
+    return deployment
 
 
 def transition_deployment_lifecycle(
@@ -167,8 +277,12 @@ def transition_deployment_lifecycle(
     validate_deployment_transition(current, target)
     deployment.lifecycle = target.value
     now = at or _utcnow()
-    if target == DeploymentLifecycle.RUNNING and deployment.started_at is None:
-        deployment.started_at = now
+    if target == DeploymentLifecycle.RUNNING:
+        if deployment.started_at is None:
+            deployment.started_at = now
+        # Every start/resume moves the activation cutoff forward so the worker
+        # never dispatches orders for bars that closed while stopped/paused.
+        deployment.activation_cutoff_at = now
     if target in {DeploymentLifecycle.STOPPED, DeploymentLifecycle.ERROR}:
         deployment.stopped_at = now
     session.flush()
@@ -195,6 +309,8 @@ def create_execution_decision(
     requested_quantity: Optional[Decimal] = None,
     reason: Optional[str] = None,
     context: Optional[dict[str, Any]] = None,
+    config_revision: int = 1,
+    paper_cost_config: Optional[dict[str, Any]] = None,
     producer: str = "api",
 ) -> ExecutionDecision:
     decision = ExecutionDecision(
@@ -213,6 +329,8 @@ def create_execution_decision(
         requested_quantity=requested_quantity,
         reason=reason,
         context=context or {},
+        config_revision=config_revision,
+        paper_cost_config=paper_cost_config or {},
     )
     session.add(decision)
     session.flush()

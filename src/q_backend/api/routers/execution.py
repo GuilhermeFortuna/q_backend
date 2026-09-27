@@ -20,6 +20,7 @@ from q_backend.api.schemas.execution import (
     DeploymentActionRequest,
     DeploymentActionResponse,
     DeploymentChartResponse,
+    DeploymentConfigurationUpdateRequest,
     DeploymentCreateRequest,
     DeploymentDetailResponse,
     DeploymentListResponse,
@@ -40,6 +41,7 @@ from q_backend.api.schemas.execution import (
     RiskEventListResponse,
 )
 from q_backend.api.services import execution as execution_service
+from q_backend.execution.catalog import CatalogResponse
 from q_backend.market_data.service import MarketDataService
 
 router = APIRouter(tags=["execution"], route_class=IdempotentRoute)
@@ -105,13 +107,39 @@ def get_execution_account(
     return execution_service.get_account(session, account_id)
 
 
+@router.get("/api/v1/execution/strategy-catalog", response_model=CatalogResponse)
+def get_execution_strategy_catalog():
+    return execution_service.get_strategy_catalog()
+
+
 @router.post("/api/v1/execution/deployments", response_model=DeploymentDetailResponse)
 def create_execution_deployment(
     body: DeploymentCreateRequest,
     session: Session = Depends(_session_or_503),
+    mds: MarketDataService = Depends(get_market_data_service),
     command: IdempotentCommand = Depends(_idempotency_dependency),
 ):
-    return command.execute(session, lambda: execution_service.create_deployment(session, body))
+    return command.execute(
+        session,
+        lambda: execution_service.create_deployment(session, body, market_data_service=mds),
+    )
+
+
+@router.patch(
+    "/api/v1/execution/deployments/{deployment_id}/configuration",
+    response_model=DeploymentDetailResponse,
+)
+def patch_deployment_configuration(
+    deployment_id: uuid.UUID,
+    body: DeploymentConfigurationUpdateRequest,
+    session: Session = Depends(_session_or_503),
+    mds: MarketDataService = Depends(get_market_data_service),
+    command: IdempotentCommand = Depends(_idempotency_dependency),
+):
+    return command.execute(
+        session,
+        lambda: execution_service.patch_deployment_configuration(session, deployment_id, body, market_data_service=mds),
+    )
 
 
 @router.get("/api/v1/execution/deployments", response_model=DeploymentListResponse)
