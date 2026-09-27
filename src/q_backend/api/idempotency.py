@@ -29,6 +29,7 @@ IDEMPOTENT_OPERATION_NAMES = {
     "create_execution_account",
     "create_execution_deployment",
     "deployment_action",
+    "patch_deployment_configuration",
     "resolve_execution_order",
     "update_kill_switch",
 }

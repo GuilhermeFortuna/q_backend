@@ -58,6 +58,33 @@ class DeploymentIdentityInput(BaseModel):
     risk_config: dict[str, Any] = Field(default_factory=dict)
 
 
+class PaperCostConfigInput(BaseModel):
+    point_value: DecimalStr = Decimal("1")
+    slippage_points: DecimalStr = Decimal("0")
+    cost_per_contract: DecimalStr = Decimal("0")
+    cost_bps: DecimalStr = Decimal("0")
+
+
+class PaperCostConfigResponse(BaseModel):
+    point_value: DecimalStr
+    slippage_points: DecimalStr
+    cost_per_contract: DecimalStr
+    cost_bps: DecimalStr
+
+
+class CatalogDeploymentInput(BaseModel):
+    """Server-validated catalog strategy selection for a new paper deployment."""
+
+    strategy_name: str = Field(..., min_length=1)
+    strategy_params: dict[str, Any] = Field(default_factory=dict)
+    exit_params: dict[str, Any] = Field(default_factory=dict)
+    symbol: str = Field(..., min_length=1)
+    timeframe: str = Field(..., min_length=1)
+    sizing_config: dict[str, Any]
+    risk_config: dict[str, Any] = Field(default_factory=dict)
+    paper_cost_config: PaperCostConfigInput = Field(default_factory=PaperCostConfigInput)
+
+
 class DeploymentCreateRequest(BaseModel):
     paper_account_id: UUID
     name: str = Field(..., min_length=1, max_length=255)
@@ -65,6 +92,30 @@ class DeploymentCreateRequest(BaseModel):
     live_activation_enabled: bool = False
     source_backtest_run_id: Optional[UUID] = None
     identity: Optional[DeploymentIdentityInput] = None
+    catalog: Optional[CatalogDeploymentInput] = None
+
+    @model_validator(mode="after")
+    def _one_source(self) -> "DeploymentCreateRequest":
+        provided = [
+            self.source_backtest_run_id is not None,
+            self.identity is not None,
+            self.catalog is not None,
+        ]
+        if sum(provided) != 1:
+            raise ValueError("exactly one of source_backtest_run_id, identity, or catalog is required")
+        return self
+
+
+class DeploymentConfigurationUpdateRequest(BaseModel):
+    """Complete replacement of a draft/paused-flat deployment's mutable configuration."""
+
+    expected_revision: int = Field(..., ge=1)
+    actor: str = Field(..., min_length=1, max_length=128)
+    strategy_params: dict[str, Any] = Field(default_factory=dict)
+    exit_params: dict[str, Any] = Field(default_factory=dict)
+    sizing_config: dict[str, Any]
+    risk_config: dict[str, Any] = Field(default_factory=dict)
+    paper_cost_config: PaperCostConfigInput = Field(default_factory=PaperCostConfigInput)
 
 
 class DeploymentSummaryResponse(BaseModel):
@@ -78,12 +129,16 @@ class DeploymentSummaryResponse(BaseModel):
     strategy_name: str
     strategy_version: int
     config_hash: str
+    config_revision: int
+    source_kind: str
+    source_strategy_name: Optional[str] = None
     symbol: str
     timeframe: str
     live_activation_enabled: bool
     pending_action: Optional[str] = None
     pending_action_requested_at: Optional[datetime] = None
     last_bar_close_time: Optional[datetime] = None
+    activation_cutoff_at: Optional[datetime] = None
     started_at: Optional[datetime] = None
     stopped_at: Optional[datetime] = None
     created_at: datetime
@@ -94,6 +149,7 @@ class DeploymentDetailResponse(DeploymentSummaryResponse):
     compiled_config: dict[str, Any]
     sizing_config: dict[str, Any]
     risk_config: dict[str, Any]
+    paper_cost_config: dict[str, Any]
     open_position: Optional["PositionResponse"] = None
     worker_lease: Optional["WorkerLeaseResponse"] = None
     latest_decision: Optional["DecisionResponse"] = None
@@ -127,6 +183,8 @@ class DecisionResponse(BaseModel):
     strategy_name: str
     strategy_version: int
     config_hash: str
+    config_revision: int
+    paper_cost_config: dict[str, Any]
     symbol: str
     timeframe: str
     signal_action: str

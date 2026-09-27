@@ -14,7 +14,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from q_backend.api.schemas.execution import (
+    CatalogDeploymentInput,
     DeploymentActionRequest,
+    DeploymentConfigurationUpdateRequest,
     DeploymentCreateRequest,
     DeploymentIdentityInput,
     KillSwitchUpdateRequest,
@@ -579,3 +581,284 @@ def test_openapi_includes_execution_paths():
     assert "/api/v1/execution/kill-switch" in paths
     assert "/api/v1/execution/deployments/{deployment_id}/reconciliation" in paths
     assert "/api/v1/execution/orders/{order_id}/resolve" in paths
+    assert "/api/v1/execution/strategy-catalog" in paths
+    assert "/api/v1/execution/deployments/{deployment_id}/configuration" in paths
+
+
+# --- Q-067: catalog-based paper deployments -----------------------------------
+
+
+@pytest.fixture
+def custom_strategy_file(tmp_path, monkeypatch):
+    mock_file = tmp_path / "custom_strategies.json"
+    monkeypatch.setattr("q_backend.backtesting.custom_strategy_store.custom_strategies_path", lambda: mock_file)
+    from q_backend.backtesting.custom_strategy_store import save_custom_strategies
+
+    save_custom_strategies([])
+    yield mock_file
+    save_custom_strategies([])
+
+
+def _catalog_account(session: Session, name: str = "catalog-desk"):
+    return execution_service.create_account(
+        session,
+        PaperAccountCreateRequest(name=name, initial_balance=Decimal("100000")),
+    )
+
+
+def _catalog_create_request(account_id, **overrides) -> DeploymentCreateRequest:
+    catalog_kwargs = dict(
+        strategy_name="MACrossover",
+        strategy_params={"short_period": 10, "long_period": 40},
+        symbol="WIN$",
+        timeframe="H1",
+        sizing_config={"type": "fixed_quantity", "quantity": 1.0},
+    )
+    catalog_kwargs.update(overrides)
+    return DeploymentCreateRequest(
+        paper_account_id=account_id,
+        name="catalog-dep",
+        catalog=CatalogDeploymentInput(**catalog_kwargs),
+    )
+
+
+def test_strategy_catalog_excludes_tick_and_genome():
+    catalog = execution_service.get_strategy_catalog()
+    names = {entry.name for entry in catalog.strategies}
+    assert "MACrossover" in names
+    assert "CompositeStrategy" not in names
+    assert "TickMaBreakout" not in names
+    for entry in catalog.strategies:
+        assert entry.source_kind == "builtin"
+
+
+def test_catalog_create_deployment_compiles_and_validates(api_db_session: Session):
+    account = _catalog_account(api_db_session)
+    detail = execution_service.create_deployment(api_db_session, _catalog_create_request(account.id))
+
+    assert detail.lifecycle == DeploymentLifecycle.DRAFT.value
+    assert detail.strategy_name == "MACrossover"
+    assert detail.source_kind == "builtin"
+    assert detail.source_strategy_name is None
+    assert detail.config_revision == 1
+    assert detail.compiled_config["strategy_params"]["short_period"] == 10
+    assert detail.compiled_config["strategy_params"]["long_period"] == 40
+    from q_backend.execution.validation import compute_config_hash as _hash
+
+    assert detail.config_hash == _hash(detail.compiled_config)
+
+
+def test_catalog_create_rejects_unknown_parameter(api_db_session: Session):
+    account = _catalog_account(api_db_session)
+    before = execution_service.list_deployments(
+        api_db_session, paper_account_id=account.id, lifecycle=None, symbol=None, limit=50, offset=0
+    ).total
+    with pytest.raises(HTTPException) as exc:
+        execution_service.create_deployment(
+            api_db_session,
+            _catalog_create_request(account.id, strategy_params={"not_a_real_param": 1}),
+        )
+    assert exc.value.status_code == 400
+    after = execution_service.list_deployments(
+        api_db_session, paper_account_id=account.id, lifecycle=None, symbol=None, limit=50, offset=0
+    ).total
+    assert after == before
+
+
+def test_catalog_create_rejects_out_of_range_parameter(api_db_session: Session):
+    account = _catalog_account(api_db_session)
+    with pytest.raises(HTTPException) as exc:
+        execution_service.create_deployment(
+            api_db_session,
+            _catalog_create_request(account.id, strategy_params={"short_period": 999}),
+        )
+    assert exc.value.status_code == 400
+
+
+def test_catalog_create_rejects_sub_m15_timeframe(api_db_session: Session):
+    account = _catalog_account(api_db_session)
+    with pytest.raises(HTTPException) as exc:
+        execution_service.create_deployment(
+            api_db_session,
+            _catalog_create_request(account.id, timeframe="M1"),
+        )
+    assert exc.value.status_code == 400
+
+
+def test_catalog_create_rejects_tick_and_genome_strategy(api_db_session: Session):
+    account = _catalog_account(api_db_session)
+    for name in ("TickMaBreakout", "CompositeStrategy"):
+        with pytest.raises(HTTPException) as exc:
+            execution_service.create_deployment(
+                api_db_session,
+                _catalog_create_request(account.id, strategy_name=name, strategy_params={}),
+            )
+        assert exc.value.status_code == 400
+
+
+def test_catalog_custom_wrapper_survives_mutation_after_deployment(api_db_session: Session, custom_strategy_file):
+    from q_backend.backtesting.custom_strategy_store import save_custom_strategies
+
+    save_custom_strategies(
+        [
+            {
+                "name": "MyMACross",
+                "base_strategy": "MACrossover",
+                "description": "wrapper",
+                "parameters": {"short_period": 15, "long_period": 60},
+            }
+        ]
+    )
+    account = _catalog_account(api_db_session)
+    detail = execution_service.create_deployment(
+        api_db_session,
+        _catalog_create_request(account.id, strategy_name="MyMACross", strategy_params={}),
+    )
+    assert detail.strategy_name == "MACrossover"
+    assert detail.source_kind == "custom"
+    assert detail.source_strategy_name == "MyMACross"
+    assert detail.compiled_config["strategy_params"]["short_period"] == 15
+    assert detail.compiled_config["strategy_params"]["long_period"] == 60
+
+    # Mutate the wrapper's defaults, then delete it entirely.
+    save_custom_strategies([{"name": "MyMACross", "base_strategy": "MACrossover", "parameters": {"short_period": 1}}])
+    save_custom_strategies([])
+
+    after = execution_service.get_deployment_detail(api_db_session, detail.id)
+    assert after.strategy_name == "MACrossover"
+    assert after.source_strategy_name == "MyMACross"
+    assert after.compiled_config["strategy_params"]["short_period"] == 15
+
+
+def test_patch_configuration_on_draft_creates_new_revision(api_db_session: Session):
+    account = _catalog_account(api_db_session)
+    detail = execution_service.create_deployment(api_db_session, _catalog_create_request(account.id))
+    assert detail.config_revision == 1
+
+    updated = execution_service.patch_deployment_configuration(
+        api_db_session,
+        detail.id,
+        DeploymentConfigurationUpdateRequest(
+            expected_revision=1,
+            actor="operator-1",
+            strategy_params={"short_period": 20, "long_period": 80},
+            sizing_config={"type": "fixed_quantity", "quantity": 2.0},
+        ),
+    )
+    assert updated.config_revision == 2
+    assert updated.compiled_config["strategy_params"]["short_period"] == 20
+    assert updated.sizing_config["quantity"] == 2.0
+    # strategy/symbol/timeframe are fixed across an edit.
+    assert updated.strategy_name == "MACrossover"
+    assert updated.symbol == "WIN$"
+    assert updated.timeframe == "H1"
+
+
+def test_patch_configuration_stale_revision_conflicts(api_db_session: Session):
+    account = _catalog_account(api_db_session)
+    detail = execution_service.create_deployment(api_db_session, _catalog_create_request(account.id))
+
+    execution_service.patch_deployment_configuration(
+        api_db_session,
+        detail.id,
+        DeploymentConfigurationUpdateRequest(
+            expected_revision=1,
+            actor="operator-1",
+            strategy_params={"short_period": 20, "long_period": 80},
+            sizing_config={"type": "fixed_quantity", "quantity": 2.0},
+        ),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        execution_service.patch_deployment_configuration(
+            api_db_session,
+            detail.id,
+            DeploymentConfigurationUpdateRequest(
+                expected_revision=1,
+                actor="operator-1",
+                strategy_params={"short_period": 25},
+                sizing_config={"type": "fixed_quantity", "quantity": 3.0},
+            ),
+        )
+    assert exc.value.status_code == 409
+
+
+def test_patch_configuration_rejected_when_running(api_db_session: Session):
+    account = _catalog_account(api_db_session)
+    detail = execution_service.create_deployment(api_db_session, _catalog_create_request(account.id))
+    execution_service.apply_deployment_action(
+        api_db_session, detail.id, DeploymentActionRequest(action="start", actor="op")
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        execution_service.patch_deployment_configuration(
+            api_db_session,
+            detail.id,
+            DeploymentConfigurationUpdateRequest(
+                expected_revision=1,
+                actor="operator-1",
+                strategy_params={"short_period": 20},
+                sizing_config={"type": "fixed_quantity", "quantity": 2.0},
+            ),
+        )
+    assert exc.value.status_code == 409
+
+
+def test_patch_configuration_paused_flat_allowed(api_db_session: Session):
+    account = _catalog_account(api_db_session)
+    detail = execution_service.create_deployment(api_db_session, _catalog_create_request(account.id))
+    execution_service.apply_deployment_action(
+        api_db_session, detail.id, DeploymentActionRequest(action="start", actor="op")
+    )
+    execution_service.apply_deployment_action(
+        api_db_session, detail.id, DeploymentActionRequest(action="pause", actor="op")
+    )
+
+    updated = execution_service.patch_deployment_configuration(
+        api_db_session,
+        detail.id,
+        DeploymentConfigurationUpdateRequest(
+            expected_revision=1,
+            actor="operator-1",
+            strategy_params={"short_period": 30},
+            sizing_config={"type": "fixed_quantity", "quantity": 2.0},
+        ),
+    )
+    assert updated.config_revision == 2
+    assert updated.lifecycle == DeploymentLifecycle.PAUSED.value
+
+
+def test_patch_configuration_rejected_with_open_position(api_db_session: Session):
+    from q_backend.execution.domain import PositionSide
+    from q_backend.storage.db.execution_repositories import upsert_open_net_position
+
+    account = _catalog_account(api_db_session)
+    detail = execution_service.create_deployment(api_db_session, _catalog_create_request(account.id))
+    execution_service.apply_deployment_action(
+        api_db_session, detail.id, DeploymentActionRequest(action="start", actor="op")
+    )
+    execution_service.apply_deployment_action(
+        api_db_session, detail.id, DeploymentActionRequest(action="pause", actor="op")
+    )
+    upsert_open_net_position(
+        api_db_session,
+        deployment_id=detail.id,
+        side=PositionSide.LONG,
+        quantity=Decimal("1"),
+        average_entry_price=Decimal("100"),
+        opened_at=datetime.now(timezone.utc),
+    )
+    api_db_session.flush()
+
+    with pytest.raises(HTTPException) as exc:
+        execution_service.patch_deployment_configuration(
+            api_db_session,
+            detail.id,
+            DeploymentConfigurationUpdateRequest(
+                expected_revision=1,
+                actor="operator-1",
+                strategy_params={"short_period": 30},
+                sizing_config={"type": "fixed_quantity", "quantity": 2.0},
+            ),
+        )
+    assert exc.value.status_code == 409

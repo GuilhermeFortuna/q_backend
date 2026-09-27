@@ -50,6 +50,17 @@ def _dec_str(value: Decimal | float | int | str | None) -> str | None:
     return str(value)
 
 
+def _paper_cost_config(raw: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not raw:
+        return None
+    return {
+        "point_value": _dec_str(raw.get("point_value")) or "0",
+        "slippage_points": _dec_str(raw.get("slippage_points")) or "0",
+        "cost_per_contract": _dec_str(raw.get("cost_per_contract")) or "0",
+        "cost_bps": _dec_str(raw.get("cost_bps")) or "0",
+    }
+
+
 def _resolve_account_id(row: Any) -> str:
     if hasattr(row, "paper_account_id") and getattr(row, "paper_account_id") is not None:
         return str(row.paper_account_id)
@@ -111,7 +122,7 @@ def account_state(row: PaperAccount) -> dict[str, Any]:
 
 def deployment_state(row: ExecutionDeployment) -> dict[str, Any]:
     acc_id = _resolve_account_id(row)
-    return {
+    state: dict[str, Any] = {
         "entity": "deployment",
         "id": str(row.id),
         "deployment_id": str(row.id),
@@ -124,6 +135,7 @@ def deployment_state(row: ExecutionDeployment) -> dict[str, Any]:
         "strategy_version": int(row.strategy_version),
         "compiled_config": row.compiled_config or {},
         "config_hash": row.config_hash,
+        "config_revision": int(row.config_revision),
         "symbol": row.symbol,
         "timeframe": row.timeframe,
         "sizing_config": row.sizing_config or {},
@@ -137,11 +149,15 @@ def deployment_state(row: ExecutionDeployment) -> dict[str, Any]:
         "created_at": _dt(row.created_at),
         "updated_at": _dt(row.updated_at) or _dt(row.created_at) or _dt(_utcnow()),
     }
+    cost_config = _paper_cost_config(row.paper_cost_config)
+    if cost_config is not None:
+        state["paper_cost_config"] = cost_config
+    return state
 
 
 def decision_state(row: ExecutionDecision) -> dict[str, Any]:
     acc_id = _resolve_account_id(row)
-    return {
+    state: dict[str, Any] = {
         "entity": "decision",
         "id": str(row.id),
         "deployment_id": str(row.deployment_id),
@@ -150,6 +166,7 @@ def decision_state(row: ExecutionDecision) -> dict[str, Any]:
         "strategy_name": row.strategy_name,
         "strategy_version": int(row.strategy_version),
         "config_hash": row.config_hash,
+        "config_revision": int(row.config_revision),
         "symbol": row.symbol,
         "timeframe": row.timeframe,
         "signal_action": str(row.signal_action),
@@ -163,6 +180,10 @@ def decision_state(row: ExecutionDecision) -> dict[str, Any]:
         "created_at": _dt(row.created_at),
         "updated_at": _dt(row.updated_at) or _dt(row.created_at) or _dt(_utcnow()),
     }
+    cost_config = _paper_cost_config(row.paper_cost_config)
+    if cost_config is not None:
+        state["paper_cost_config"] = cost_config
+    return state
 
 
 def order_state(row: ExecutionOrder) -> dict[str, Any]:
