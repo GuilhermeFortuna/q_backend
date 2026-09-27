@@ -79,9 +79,18 @@ class ExecutionDeployment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     stopped_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     pending_action: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     pending_action_requested_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    config_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    paper_cost_config: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
+    activation_cutoff_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    source_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="builtin", server_default="builtin")
+    source_strategy_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     paper_account: Mapped["PaperAccount"] = relationship(back_populates="deployments")
     decisions: Mapped[list["ExecutionDecision"]] = relationship(
+        back_populates="deployment",
+        cascade="all, delete-orphan",
+    )
+    revisions: Mapped[list["ExecutionDeploymentRevision"]] = relationship(
         back_populates="deployment",
         cascade="all, delete-orphan",
     )
@@ -117,6 +126,41 @@ class ExecutionDeployment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
 
+class ExecutionDeploymentRevision(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Immutable snapshot of a deployment's configuration at a given revision."""
+
+    __tablename__ = "execution_deployment_revisions"
+
+    deployment_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("execution_deployments.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    strategy_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    strategy_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    compiled_config: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
+    config_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(64), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(16), nullable=False)
+    sizing_config: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
+    risk_config: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
+    paper_cost_config: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
+    source_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="builtin")
+    source_strategy_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    actor: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+
+    deployment: Mapped["ExecutionDeployment"] = relationship(back_populates="revisions")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "deployment_id",
+            "revision",
+            name="uq_execution_deployment_revisions_deployment_revision",
+        ),
+        Index("ix_execution_deployment_revisions_deployment", "deployment_id"),
+    )
+
+
 class ExecutionDecision(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "execution_decisions"
 
@@ -138,6 +182,8 @@ class ExecutionDecision(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     requested_quantity: Mapped[Optional[Decimal]] = mapped_column(QuantityNumeric, nullable=True)
     reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     context: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
+    config_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    paper_cost_config: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
 
     deployment: Mapped["ExecutionDeployment"] = relationship(back_populates="decisions")
     orders: Mapped[list["ExecutionOrder"]] = relationship(back_populates="decision")

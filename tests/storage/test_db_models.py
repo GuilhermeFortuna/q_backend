@@ -24,6 +24,7 @@ EXPECTED_TABLES = {
     "paper_accounts",
     "execution_control_state",
     "execution_deployments",
+    "execution_deployment_revisions",
     "execution_decisions",
     "execution_orders",
     "execution_fills",
