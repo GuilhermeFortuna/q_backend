@@ -14,10 +14,12 @@ from decimal import Decimal
 from typing import Callable, Optional
 
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import func, select
 
 from q_backend.execution.bar_coordinator import BarCoordinator, DeploymentBarConsumer
 from q_backend.execution.brokers.base import ExecutionBroker, PaperCostConfig, QuoteSource
-from q_backend.execution.domain import DeploymentLifecycle
+from q_backend.execution.domain import DeploymentLifecycle, LedgerEntryType, PositionSide
+from q_backend.execution.ledger import mark_price_for_position, unrealized_pnl
 from q_backend.execution.ledger import ExecutionLedger
 from q_backend.execution.reconciliation import OrderReconciler
 from q_backend.execution.recovery import DeploymentRuntime, ExecutionRecovery, open_trade_for_deployment
@@ -28,12 +30,15 @@ from q_backend.storage.db.execution_repositories import (
     acquire_worker_lease,
     get_execution_deployment,
     get_paper_account,
+    get_open_net_position,
     heartbeat_worker_lease,
     list_deployments,
     record_worker_heartbeat,
     record_worker_stopped,
     release_worker_lease,
+    transition_deployment_lifecycle,
 )
+from q_backend.storage.db.execution_models import ExecutionLedgerEntry, ExecutionPaperMark
 from q_backend.storage.settings import Settings, get_settings
 
 logger = logging.getLogger(__name__)
@@ -102,6 +107,7 @@ class ExecutionWorker:
                 point_value=Decimal(str(self.settings.execution_default_point_value)),
                 clock=self.clock,
                 worker_id=self.settings.execution_worker_id,
+                paper_only=self.settings.execution_paper_only,
             )
         return self._reconciler
 
@@ -221,9 +227,12 @@ class ExecutionWorker:
             reconciler = self._order_reconciler()
             for runtime in list(self._runtimes.values()):
                 reconciler.reconcile_deployment(session, runtime.deployment)
-            point_value_float = float(self.settings.execution_default_point_value)
             for runtime in list(self._runtimes.values()):
-                self._sync_open_trade(session, runtime, point_value=point_value_float)
+                self._sync_open_trade(
+                    session,
+                    runtime,
+                    point_value=float(self._cost_config(runtime.deployment).point_value),
+                )
             consumers = [
                 DeploymentBarConsumer(
                     str(runtime.deployment.id),
@@ -246,14 +255,13 @@ class ExecutionWorker:
             )
             bar_detection_ms = (time.perf_counter() - bar_started) * 1000.0
 
-            cost_config = self._cost_config()
-            point_value = Decimal(str(self.settings.execution_default_point_value))
-
             for runtime in list(self._runtimes.values()):
                 deployment = get_execution_deployment(session, runtime.deployment.id)
                 if deployment is None:
                     continue
                 runtime.deployment = deployment
+                cost_config = self._cost_config(deployment)
+                point_value = cost_config.point_value
                 if deployment.pending_action == "flatten":
                     lease_token = self._lease_tokens.get(deployment.id)
                     if lease_token is not None:
@@ -282,6 +290,8 @@ class ExecutionWorker:
                 if deployment is None:
                     continue
                 runtime.deployment = deployment
+                cost_config = self._cost_config(deployment)
+                point_value = cost_config.point_value
                 key_symbol = deployment.symbol
                 key_tf = deployment.timeframe.upper()
                 from q_backend.execution.bar_coordinator import BarStreamKey
@@ -314,6 +324,13 @@ class ExecutionWorker:
                         point_value=point_value,
                     )
                     self._sync_open_trade(session, runtime, point_value=float(point_value))
+                    self._record_paper_mark(
+                        session,
+                        deployment=deployment,
+                        bar_close_time=eval_result.bar_close_time,
+                        point_value=point_value,
+                        cost_config=cost_config,
+                    )
                     timing_log = process_result.timing.model_copy(update={"bar_detection_ms": bar_detection_ms})
                     if process_result.timing.total_ms > 0:
                         logger.info(
@@ -331,6 +348,68 @@ class ExecutionWorker:
         trade = open_trade_for_deployment(session, runtime.deployment, point_value=point_value)
         runtime.evaluator.set_open_trade(trade)
 
+    def _record_paper_mark(self, session, *, deployment, bar_close_time, point_value, cost_config) -> None:
+        exists = session.execute(
+            select(ExecutionPaperMark.id).where(
+                ExecutionPaperMark.deployment_id == deployment.id,
+                ExecutionPaperMark.bar_close_time == bar_close_time,
+            )
+        ).scalar_one_or_none()
+        if exists is not None:
+            return
+        realized = session.execute(
+            select(func.coalesce(func.sum(ExecutionLedgerEntry.amount), 0)).where(
+                ExecutionLedgerEntry.deployment_id == deployment.id,
+                ExecutionLedgerEntry.entry_type == LedgerEntryType.REALIZED_PNL.value,
+            )
+        ).scalar_one()
+        fees = session.execute(
+            select(func.coalesce(-func.sum(ExecutionLedgerEntry.amount), 0)).where(
+                ExecutionLedgerEntry.deployment_id == deployment.id,
+                ExecutionLedgerEntry.entry_type == LedgerEntryType.FEE.value,
+            )
+        ).scalar_one()
+        position = get_open_net_position(session, deployment.id)
+        quote = self.quote_source.get_quote(deployment.symbol)
+        now = self.clock()
+        valid = (
+            quote is not None
+            and quote.bid > 0
+            and quote.ask >= quote.bid
+            and 0 <= (now - quote.timestamp).total_seconds() <= cost_config.max_quote_age_seconds
+        )
+        mark_price = unrealized = None
+        status = "marked" if valid else "unavailable"
+        if valid:
+            unrealized = Decimal("0")
+        if valid and position is not None and position.is_open:
+            side = PositionSide(position.side)
+            mark_price = mark_price_for_position(side, quote)
+            unrealized = unrealized_pnl(
+                side=side,
+                quantity=position.quantity,
+                average_entry_price=position.average_entry_price or Decimal("0"),
+                mark_price=mark_price,
+                point_value=point_value,
+            )
+        session.add(
+            ExecutionPaperMark(
+                deployment_id=deployment.id,
+                bar_close_time=bar_close_time,
+                config_revision=deployment.config_revision,
+                mark_status=status,
+                quote_bid=quote.bid if valid else None,
+                quote_ask=quote.ask if valid else None,
+                quote_timestamp=quote.timestamp if valid else None,
+                quote_source=quote.source if valid else None,
+                mark_price=mark_price,
+                realized_pnl=Decimal(str(realized)),
+                fees=Decimal(str(fees)),
+                unrealized_pnl=unrealized,
+            )
+        )
+        session.flush()
+
     def _refresh_deployments(self, session: Session, *, now: datetime) -> None:
         active_ids: set[uuid.UUID] = set()
         for deployment in list_deployments(
@@ -341,6 +420,12 @@ class ExecutionWorker:
             ],
         ):
             active_ids.add(deployment.id)
+            if self.settings.execution_paper_only and deployment.broker_mode != "paper":
+                if deployment.lifecycle != DeploymentLifecycle.ERROR.value:
+                    logger.error("deployment %s refused: live_locked by paper-only profile", deployment.id)
+                    transition_deployment_lifecycle(session, deployment.id, DeploymentLifecycle.ERROR)
+                self._release_deployment(session, deployment.id)
+                continue
             lifecycle = DeploymentLifecycle(deployment.lifecycle)
             if lifecycle == DeploymentLifecycle.PAUSED:
                 if deployment.id in self._runtimes:
@@ -371,7 +456,7 @@ class ExecutionWorker:
                     deployment,
                     worker_id=self.settings.execution_worker_id,
                     lease_token=token,
-                    point_value=float(self.settings.execution_default_point_value),
+                    point_value=float(self._cost_config(deployment).point_value),
                     initial_capital=initial_capital,
                 )
                 self._runtimes[deployment.id] = runtime
@@ -394,7 +479,7 @@ class ExecutionWorker:
                         deployment,
                         worker_id=self.settings.execution_worker_id,
                         lease_token=token,
-                        point_value=float(self.settings.execution_default_point_value),
+                        point_value=float(self._cost_config(deployment).point_value),
                         initial_capital=initial_capital,
                     )
 
@@ -442,7 +527,20 @@ class ExecutionWorker:
         except Exception:  # noqa: BLE001 - shutdown must finish
             logger.exception("could not record clean worker shutdown")
 
-    def _cost_config(self) -> PaperCostConfig:
+    def _cost_config(self, deployment=None) -> PaperCostConfig:
+        configured = deployment.paper_cost_config if deployment is not None else None
+        if configured is not None and configured.get("point_value"):
+            return PaperCostConfig(
+                point_value=Decimal(str(configured["point_value"])),
+                slippage_points=Decimal(str(configured.get("slippage_points", "0"))),
+                cost_per_contract=Decimal(str(configured.get("cost_per_contract", "0"))),
+                cost_bps=Decimal(str(configured.get("cost_bps", "0"))),
+                max_quote_age_seconds=self.settings.execution_max_quote_age_seconds,
+            )
+        if deployment is not None and deployment.config_revision > 1:
+            raise ValueError(
+                f"deployment {deployment.id} revision {deployment.config_revision} has no paper cost config"
+            )
         return PaperCostConfig(
             point_value=Decimal(str(self.settings.execution_default_point_value)),
             slippage_points=Decimal(str(self.settings.execution_paper_slippage_points)),

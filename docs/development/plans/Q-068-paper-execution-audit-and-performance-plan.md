@@ -58,14 +58,14 @@ fill/ledger history; do not maintain a second mutable trade total.
 
 ## Ordered implementation
 
-- [ ] 1. On the Q-068 task branch, pin Q-066 contracts and run
+- [x] 1. On the Q-068 task branch, pin Q-066 contracts and run
   `make contracts-check`. Add failing tests for forced paper-only API and
   worker behavior with every live gate enabled and an existing live row.
-- [ ] 2. Add the forced dev profile in the backend-owned dev API/worker unit
+- [x] 2. Add the forced dev profile in the backend-owned dev API/worker unit
   templates, API gate and
   worker pre-routing gate. Use a fake edge counter to prove zero submit calls
   while quote and health reads continue.
-- [ ] 3. Add migration/repository support for `dispatch_attempted_at` and
+- [x] 3. Add migration/repository support for `dispatch_attempted_at` and
   marks. Test the intent → attempt → result sequence, rollback and crash
   windows with the existing execution service/reconciliation fixtures.
 - [ ] 4. Route per-deployment cost and point value through worker, service,

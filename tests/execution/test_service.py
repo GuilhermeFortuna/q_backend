@@ -95,6 +95,12 @@ def test_e2e_completed_bar_produces_one_durable_fill(db_session, seeded_deployme
     assert result.outcome == DecisionOutcome.ORDER_FILLED
     assert result.duplicate is False
     assert fill_row_count(db_session) == 1
+    from q_backend.storage.db.execution_repositories import get_execution_order
+
+    audited_order = get_execution_order(db_session, result.order_id)
+    assert audited_order is not None
+    assert audited_order.intent_committed_at is not None
+    assert audited_order.dispatch_attempted_at is not None
     position = get_open_net_position(db_session, deployment.id)
     assert position is not None
     assert position.is_open
@@ -139,6 +145,7 @@ def test_duplicate_bar_processing_is_idempotent(db_session, seeded_deployment, p
     [
         ("before_intent_commit", None),
         ("after_intent_commit", ExecutionOrderStatus.UNKNOWN),
+        ("after_dispatch_attempt_commit", ExecutionOrderStatus.UNKNOWN),
         ("after_broker_response", ExecutionOrderStatus.UNKNOWN),
         ("before_fill_commit", ExecutionOrderStatus.UNKNOWN),
     ],
@@ -211,6 +218,8 @@ def test_crash_windows_leave_expected_recovery_state(
         if orders[0].status == ExecutionOrderStatus.UNKNOWN.value:
             return
         assert orders[0].status == ExecutionOrderStatus.INTENT.value
+        if checkpoint == "after_dispatch_attempt_commit":
+            assert orders[0].dispatch_attempted_at is not None
         mark_incomplete_orders_unknown(manual_session, deployment.id)
         manual_session.commit()
         manual_session.expire_all()

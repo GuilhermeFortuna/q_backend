@@ -36,6 +36,7 @@ from q_backend.storage.db.execution_models import ExecutionDecision, ExecutionDe
 from q_backend.storage.db.execution_repositories import (
     create_execution_decision,
     create_execution_order_intent,
+    mark_execution_dispatch_attempt,
     get_decision_for_bar,
     get_execution_control_state,
     get_open_net_position,
@@ -355,13 +356,21 @@ class ExecutionService:
             broker_mode=BrokerMode(deployment.broker_mode),
             side=side,
             quantity=quantity,
-            metadata={"flatten": flatten, "bar_close_time": eval_result.bar_close_time.isoformat()},
+            metadata={
+                "flatten": flatten,
+                "bar_close_time": eval_result.bar_close_time.isoformat(),
+                "config_revision": deployment.config_revision,
+            },
             producer=worker_id,
         )
         session.flush()
         self._crash.maybe_raise("before_intent_commit")
         self._commit(session)
         self._crash.maybe_raise("after_intent_commit")
+
+        mark_execution_dispatch_attempt(session, order.id, attempted_at=self._clock(), producer=worker_id)
+        self._commit(session)
+        self._crash.maybe_raise("after_dispatch_attempt_commit")
 
         broker_mode = BrokerMode(deployment.broker_mode)
         broker_started = time.perf_counter()

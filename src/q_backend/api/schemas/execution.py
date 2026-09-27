@@ -204,6 +204,7 @@ class OrderResponse(BaseModel):
     id: UUID
     deployment_id: UUID
     decision_id: Optional[UUID] = None
+    config_revision: Optional[int] = None
     broker_mode: str
     side: str
     order_type: str
@@ -212,6 +213,7 @@ class OrderResponse(BaseModel):
     reconciliation_state: str
     rejection_reason: Optional[str] = None
     intent_committed_at: Optional[datetime] = None
+    dispatch_attempted_at: Optional[datetime] = None
     submitted_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     reconciliation_attempted_at: Optional[datetime] = None
@@ -263,6 +265,8 @@ class FillResponse(BaseModel):
     id: UUID
     deployment_id: UUID
     order_id: UUID
+    decision_id: Optional[UUID] = None
+    config_revision: Optional[int] = None
     broker_mode: str
     external_fill_id: str
     side: str
@@ -270,12 +274,48 @@ class FillResponse(BaseModel):
     price: DecimalStr
     fee: DecimalStr
     slippage: DecimalStr
+    quote_bid: Optional[DecimalStr] = None
+    quote_ask: Optional[DecimalStr] = None
+    quote_timestamp: Optional[datetime] = None
     filled_at: datetime
     created_at: datetime
 
 
 class FillListResponse(PaginatedResponse):
     items: list[FillResponse]
+
+
+class DeploymentPerformanceResponse(BaseModel):
+    deployment_id: UUID
+    realized_pnl: DecimalStr
+    unrealized_pnl: Optional[DecimalStr] = None
+    fees: DecimalStr
+    net_pnl: Optional[DecimalStr] = None
+    closed_trade_count: int
+    win_count: int
+    win_rate: Optional[DecimalStr] = None
+    mark_status: str
+    marked_at: Optional[datetime] = None
+    config_revision: int
+
+
+class PerformanceMarkResponse(BaseModel):
+    bar_close_time: datetime
+    config_revision: int
+    mark_status: str
+    quote_bid: Optional[DecimalStr] = None
+    quote_ask: Optional[DecimalStr] = None
+    quote_timestamp: Optional[datetime] = None
+    quote_source: Optional[str] = None
+    mark_price: Optional[DecimalStr] = None
+    realized_pnl: DecimalStr
+    fees: DecimalStr
+    unrealized_pnl: Optional[DecimalStr] = None
+    equity_delta: Optional[DecimalStr] = None
+
+
+class PerformanceMarkListResponse(PaginatedResponse):
+    items: list[PerformanceMarkResponse]
 
 
 class PositionResponse(BaseModel):

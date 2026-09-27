@@ -23,6 +23,7 @@ from q_backend.api.schemas.execution import (
     DeploymentConfigurationUpdateRequest,
     DeploymentCreateRequest,
     DeploymentDetailResponse,
+    DeploymentPerformanceResponse,
     DeploymentListResponse,
     ExecutionHealthResponse,
     FillListResponse,
@@ -36,6 +37,7 @@ from q_backend.api.schemas.execution import (
     PaperAccountCreateRequest,
     PaperAccountListResponse,
     PaperAccountResponse,
+    PerformanceMarkListResponse,
     PendingReconciliationListResponse,
     PositionListResponse,
     RiskEventListResponse,
@@ -170,6 +172,30 @@ def get_execution_deployment(
     session: Session = Depends(_session_or_503),
 ):
     return execution_service.get_deployment_detail(session, deployment_id)
+
+
+@router.get(
+    "/api/v1/execution/deployments/{deployment_id}/performance",
+    response_model=DeploymentPerformanceResponse,
+)
+def get_deployment_performance(
+    deployment_id: uuid.UUID,
+    session: Session = Depends(_session_or_503),
+):
+    return execution_service.deployment_performance(session, deployment_id)
+
+
+@router.get(
+    "/api/v1/execution/deployments/{deployment_id}/performance/marks",
+    response_model=PerformanceMarkListResponse,
+)
+def get_deployment_performance_marks(
+    deployment_id: uuid.UUID,
+    session: Session = Depends(_session_or_503),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    return execution_service.deployment_performance_marks(session, deployment_id, limit=limit, offset=offset)
 
 
 @router.post(

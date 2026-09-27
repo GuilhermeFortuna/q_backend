@@ -28,6 +28,7 @@ EXPECTED_TABLES = {
     "execution_decisions",
     "execution_orders",
     "execution_fills",
+    "execution_paper_marks",
     "execution_net_positions",
     "execution_ledger_entries",
     "execution_risk_events",

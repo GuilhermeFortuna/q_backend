@@ -39,6 +39,7 @@ from q_backend.execution.domain import (
     ExecutionSide,
     FillRecord,
     ReconciliationState,
+    DeploymentLifecycle,
 )
 from q_backend.execution.ledger import ExecutionLedger
 from q_backend.storage.db.execution_models import ExecutionDeployment, ExecutionOrder
@@ -48,6 +49,7 @@ from q_backend.storage.db.execution_repositories import (
     list_pending_reconciliation_orders,
     record_reconciliation_attempt,
     transition_execution_order,
+    transition_deployment_lifecycle,
     update_execution_decision_outcome,
 )
 
@@ -231,12 +233,14 @@ class OrderReconciler:
         point_value: Decimal,
         clock: Optional[Callable[[], datetime]] = None,
         worker_id: str = AUTO_ACTOR,
+        paper_only: bool = False,
     ) -> None:
         self._broker = broker
         self._ledger = ledger
         self._point_value = point_value
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._worker_id = worker_id
+        self._paper_only = paper_only
 
     def reconcile_deployment(self, session: Session, deployment: ExecutionDeployment) -> list[ReconciliationOutcome]:
         outcomes = []
@@ -263,6 +267,25 @@ class OrderReconciler:
         order: ExecutionOrder,
         deployment: ExecutionDeployment,
     ) -> ReconciliationOutcome:
+        if self._paper_only and deployment.broker_mode == BrokerMode.MT5_LIVE.value:
+            record_reconciliation_attempt(
+                session,
+                order.id,
+                at=self._clock(),
+                error="live_locked: paper-only execution profile",
+                producer=self._worker_id,
+            )
+            if deployment.lifecycle in {DeploymentLifecycle.RUNNING.value, DeploymentLifecycle.PAUSED.value}:
+                transition_deployment_lifecycle(session, deployment.id, DeploymentLifecycle.ERROR)
+            return ReconciliationOutcome(
+                order_id=order.id,
+                deployment_id=deployment.id,
+                resolution=ReconciliationResolution.UNAVAILABLE,
+                message="live_locked: paper-only execution profile",
+            )
+        configured_point_value = (deployment.paper_cost_config or {}).get("point_value")
+        if configured_point_value is not None:
+            self._point_value = Decimal(str(configured_point_value))
         now = self._clock()
         state = self._broker.lookup_order(lookup_request_for_order(order, deployment))
 
