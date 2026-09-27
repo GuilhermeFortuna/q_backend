@@ -59,6 +59,11 @@
       "type": "integer",
       "description": "Strategy code version."
     },
+    "config_revision": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Configuration edit revision sequence number."
+    },
     "compiled_config": {
       "type": "object",
       "description": "Compiled strategy configuration parameters."
@@ -66,6 +71,10 @@
     "config_hash": {
       "type": "string",
       "description": "Hex digest hash of compiled strategy configuration."
+    },
+    "paper_cost_config": {
+      "$ref": "execution-common.schema.json#/$defs/PaperCostConfig",
+      "description": "Paper cost model configuration snapshot."
     },
     "symbol": {
       "type": "string",

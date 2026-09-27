@@ -83,8 +83,10 @@ class ExecutionDecisionState:
     timeframe: str
     updated_at: str
     compiled_config: dict[str, Any] | None = None
+    config_revision: int | None = None
     context: dict[str, Any] | None = None
     created_at: str | None = None
+    paper_cost_config: PaperCostConfig | None = None
     reason: str | None = None
     requested_quantity: Decimal | None = None
     risk_config: dict[str, Any] | None = None
@@ -108,9 +110,11 @@ class ExecutionDeploymentState:
     timeframe: str
     updated_at: str
     compiled_config: dict[str, Any] | None = None
+    config_revision: int | None = None
     created_at: str | None = None
     last_bar_close_time: str | None = None
     paper_account_id: UUID | None = None
+    paper_cost_config: PaperCostConfig | None = None
     pending_action: str | None = None
     pending_action_requested_at: str | None = None
     risk_config: dict[str, Any] | None = None
@@ -178,6 +182,7 @@ class ExecutionOrderState:
     created_at: str | None = None
     decision_id: UUID | None = None
     details: dict[str, Any] | None = None
+    dispatch_attempted_at: str | None = None
     external_order_id: str | None = None
     intent_committed_at: str | None = None
     reconciled_at: str | None = None
@@ -297,6 +302,14 @@ class LatestValuesResponse:
 LedgerEntryType = Literal[
     "initial_balance", "fill_cash", "realized_pnl", "fee", "adjustment"
 ]
+
+
+@dataclass(frozen=True)
+class PaperCostConfig:
+    cost_bps: Decimal
+    cost_per_contract: Decimal
+    point_value: Decimal
+    slippage_points: Decimal
 
 
 PositionSide = Literal["long", "short", "flat"]

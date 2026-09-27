@@ -91,6 +91,14 @@
       "format": "date-time",
       "description": "Timestamp when intent was committed in transactional ledger."
     },
+    "dispatch_attempted_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Timestamp when order dispatch to broker edge was attempted."
+    },
     "submitted_at": {
       "type": [
         "string",

@@ -273,6 +273,40 @@
         }
       },
       "additionalProperties": false
+    },
+    "PaperCostConfig": {
+      "type": "object",
+      "title": "PaperCostConfig",
+      "description": "Paper execution cost configuration snapshot.",
+      "required": [
+        "point_value",
+        "slippage_points",
+        "cost_per_contract",
+        "cost_bps"
+      ],
+      "properties": {
+        "point_value": {
+          "$ref": "#/$defs/Decimal",
+          "pattern": "^(?!^0+(\\.0+)?$)\\d+(\\.\\d+)?$",
+          "description": "Instrument point value in quote currency units (strictly positive)."
+        },
+        "slippage_points": {
+          "$ref": "#/$defs/Decimal",
+          "pattern": "^\\d+(\\.\\d+)?$",
+          "description": "Simulated slippage in points per trade (nonnegative)."
+        },
+        "cost_per_contract": {
+          "$ref": "#/$defs/Decimal",
+          "pattern": "^\\d+(\\.\\d+)?$",
+          "description": "Fixed cost per contract in quote currency units (nonnegative)."
+        },
+        "cost_bps": {
+          "$ref": "#/$defs/Decimal",
+          "pattern": "^\\d+(\\.\\d+)?$",
+          "description": "Variable cost in basis points of trade notional value (nonnegative)."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

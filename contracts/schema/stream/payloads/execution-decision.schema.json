@@ -49,9 +49,18 @@
       "type": "integer",
       "description": "Strategy version."
     },
+    "config_revision": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Configuration edit revision sequence number at decision time."
+    },
     "config_hash": {
       "type": "string",
       "description": "Config hash."
+    },
+    "paper_cost_config": {
+      "$ref": "execution-common.schema.json#/$defs/PaperCostConfig",
+      "description": "Paper cost model configuration snapshot at decision time."
     },
     "symbol": {
       "type": "string",
