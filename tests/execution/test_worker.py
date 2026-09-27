@@ -376,3 +376,135 @@ def test_full_path_benchmark_p95_under_budget(symbol: str, timeframe: str, freq:
         p95 = statistics.quantiles(totals, n=20)[-1]
         print(f"BENCHMARK full_path {symbol} {timeframe} p95_ms={p95:.2f} samples={len(totals)}")
         assert p95 < 500.0
+
+
+# --- Q-067: activation cutoff prevents catch-up dispatch after pause/edit -----
+
+
+def _recovery_for(provider: StaticOhlcvProvider, clock: FixedClock) -> ExecutionRecovery:
+    coordinator = BarCoordinator(provider=provider, clock=clock.now)
+    quotes = FakeQuoteSource(quotes={"WIN$": (Decimal("130000"), Decimal("130010"))}, timestamp=clock.now())
+    return ExecutionRecovery(
+        coordinator=coordinator,
+        quote_source=quotes,
+        ledger=ExecutionLedger(),
+        point_value=Decimal("0.2"),
+        initial_window_bars=80,
+    )
+
+
+def test_build_runtime_watermark_is_activation_cutoff_not_stale_last_close(db_session):
+    """A resume after a long pause must not replay paused-window bars as live."""
+    account = create_paper_account(db_session, name="cutoff-account", initial_balance=Decimal("100000"))
+    frame = _synthetic_ohlcv(80)
+    # The deployment last produced a real decision long before the pause ended.
+    stale_last_close = (frame.index[10] + pd.Timedelta(hours=1)).to_pydatetime()
+    resume_cutoff = (frame.index[60] + pd.Timedelta(hours=1)).to_pydatetime()
+    deployment = create_execution_deployment(
+        db_session,
+        paper_account_id=account.id,
+        name="cutoff-dep",
+        identity=strategy_identity(),
+        lifecycle=DeploymentLifecycle.RUNNING,
+    )
+    deployment.last_bar_close_time = stale_last_close
+    deployment.activation_cutoff_at = resume_cutoff
+    db_session.flush()
+    db_session.commit()
+
+    clock = FixedClock(frame.index[-1].to_pydatetime())
+    provider = StaticOhlcvProvider(frame, symbol="WIN$", timeframe="H1")
+    recovery = _recovery_for(provider, clock)
+
+    runtime = recovery.build_runtime(
+        db_session,
+        deployment,
+        worker_id="worker-a",
+        lease_token="token-a",
+        point_value=0.2,
+        initial_capital=100_000.0,
+    )
+
+    watermark = runtime.evaluator.last_evaluated_close
+    assert watermark is not None
+    assert watermark >= resume_cutoff.replace(tzinfo=timezone.utc)
+
+    # Bars that closed between the stale cursor and the new cutoff (i.e. during
+    # the pause) must not be treated as new/live on the next poll.
+    consumer = DeploymentBarConsumer(str(deployment.id), "WIN$", "H1", last_evaluated_close=watermark)
+    coordinator = BarCoordinator(provider=provider, clock=clock.now)
+    batches = coordinator.poll([consumer], initial_window_bars=80)
+    key = next(iter(batches))
+    new_bars = coordinator.new_bars_for_consumer(batches[key], consumer)
+    paused_window_closes = [
+        (idx + pd.Timedelta(hours=1)).to_pydatetime().replace(tzinfo=timezone.utc) for idx in frame.index[11:60]
+    ]
+    for close_time in new_bars.index:
+        close = (close_time + pd.Timedelta(hours=1)).to_pydatetime()
+        if close.tzinfo is None:
+            close = close.replace(tzinfo=timezone.utc)
+        assert close not in paused_window_closes
+
+
+def test_refresh_deployments_rebuilds_runtime_on_revision_change(db_engine, db_session):
+    account = create_paper_account(db_session, name="revision-account", initial_balance=Decimal("100000"))
+    deployment = create_execution_deployment(
+        db_session,
+        paper_account_id=account.id,
+        name="revision-dep",
+        identity=strategy_identity(),
+        lifecycle=DeploymentLifecycle.RUNNING,
+    )
+    db_session.commit()
+
+    frame = _synthetic_ohlcv(80)
+    clock = FixedClock(frame.index[-1].to_pydatetime())
+    quotes = FakeQuoteSource(quotes={"WIN$": (Decimal("130000"), Decimal("130010"))}, timestamp=clock.now())
+    provider = StaticOhlcvProvider(frame, symbol="WIN$", timeframe="H1")
+    coordinator = BarCoordinator(provider=provider, clock=clock.now)
+    broker = PaperBroker(quote_source=quotes, clock=clock)
+    ledger = ExecutionLedger()
+    service = ExecutionService(broker=broker, quote_source=quotes, ledger=ledger, max_bar_age_seconds=7200.0)
+    recovery = ExecutionRecovery(
+        coordinator=coordinator,
+        quote_source=quotes,
+        ledger=ledger,
+        point_value=Decimal("0.2"),
+        initial_window_bars=80,
+    )
+    settings = Settings(
+        execution_worker_id="worker-a",
+        execution_lease_ttl_seconds=60,
+        execution_poll_interval_seconds=0.01,
+        execution_initial_window_bars=80,
+        execution_default_point_value=0.2,
+    )
+    factory = sessionmaker(bind=db_engine, expire_on_commit=False)
+    worker = ExecutionWorker(
+        session_factory=factory,
+        coordinator=coordinator,
+        quote_source=quotes,
+        broker=broker,
+        ledger=ledger,
+        service=service,
+        recovery=recovery,
+        settings=settings,
+        clock=clock.now,
+        poll_interval_seconds=0.01,
+    )
+    worker.poll_once()
+    first_runtime = worker._runtimes[deployment.id]
+    assert first_runtime.config_revision == 1
+
+    with factory() as session:
+        from q_backend.storage.db.execution_repositories import get_execution_deployment
+
+        dep = get_execution_deployment(session, deployment.id)
+        dep.config_revision = 2
+        dep.activation_cutoff_at = clock.now()
+        session.commit()
+
+    worker.poll_once()
+    second_runtime = worker._runtimes[deployment.id]
+    assert second_runtime.config_revision == 2
+    assert second_runtime is not first_runtime

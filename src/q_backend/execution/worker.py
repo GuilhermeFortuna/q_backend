@@ -378,7 +378,25 @@ class ExecutionWorker:
                 self._lease_tokens[deployment.id] = token
             else:
                 self._heartbeat_lease(session, deployment.id, now=now)
-                self._runtimes[deployment.id].deployment = deployment
+                runtime = self._runtimes[deployment.id]
+                runtime.deployment = deployment
+                # A revision edit (while paused) or a fresh start/resume moves the
+                # activation cutoff and/or compiled config; rebuild the evaluator
+                # so it never dispatches a decision for a bar closed beforehand.
+                stale_revision = runtime.config_revision != deployment.config_revision
+                stale_cutoff = runtime.activation_cutoff_at != deployment.activation_cutoff_at
+                if stale_revision or stale_cutoff:
+                    token = self._lease_tokens[deployment.id]
+                    account = get_paper_account(session, deployment.paper_account_id)
+                    initial_capital = float(account.initial_balance) if account is not None else 100_000.0
+                    self._runtimes[deployment.id] = self.recovery.build_runtime(
+                        session,
+                        deployment,
+                        worker_id=self.settings.execution_worker_id,
+                        lease_token=token,
+                        point_value=float(self.settings.execution_default_point_value),
+                        initial_capital=initial_capital,
+                    )
 
         for deployment_id in list(self._runtimes):
             if deployment_id not in active_ids:
