@@ -1,0 +1,7 @@
+# Optional override: place CI disposable containers under ci-docker.slice when present.
+
+services:
+  postgres:
+    cgroup_parent: ci-docker.slice
+  redis:
+    cgroup_parent: ci-docker.slice

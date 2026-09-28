@@ -1,17 +1,24 @@
 import asyncio
 import json
+import os
 import time
 from typing import Any
+from urllib.parse import urlparse, urlunparse
 
 import redis.asyncio
 
 from q_backend.streaming.keys import stream_key
 
-TEST_REDIS_URL = "redis://127.0.0.1:6380/15"
+
+def ws_test_redis_url() -> str:
+    """Integration Redis for WebSocket tests — DB 15 on the CI-exported instance."""
+    base = os.environ.get("Q_REDIS_URL", "redis://127.0.0.1:6380/0")
+    parsed = urlparse(base)
+    return urlunparse(parsed._replace(path="/15"))
 
 
 def async_redis() -> redis.asyncio.Redis:
-    return redis.asyncio.Redis.from_url(TEST_REDIS_URL, decode_responses=False)
+    return redis.asyncio.Redis.from_url(ws_test_redis_url(), decode_responses=False)
 
 
 def envelope_fields(

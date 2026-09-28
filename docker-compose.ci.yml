@@ -1,9 +1,32 @@
-# CI-only override: place Postgres/Redis under the host ci-docker.slice.
-# Used solely by scripts/ci.sh when starting Docker as a services fallback.
-# Do not use for ordinary development (`docker compose up`) or Research.
+# Disposable Postgres/Redis for local ./scripts/ci.sh only.
+# Always use a unique COMPOSE_PROJECT_NAME; never share with ./dev or Research.
 
 services:
   postgres:
-    cgroup_parent: ci-docker.slice
+    image: docker.io/library/postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: q_storage
+    ports:
+      - "127.0.0.1::5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d q_storage"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
   redis:
-    cgroup_parent: ci-docker.slice
+    image: docker.io/library/redis:7-alpine
+    ports:
+      - "127.0.0.1::6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+volumes:
+  postgres_data:

@@ -1,6 +1,6 @@
 # Q-072: Isolate local backend CI services
 
-**Status:** plan pending approval on the Q project board  
+**Status:** implemented (Q-072 task branch)  
 **Implementation plan:** [`../plans/Q-072-isolate-local-backend-ci-plan.md`](../plans/Q-072-isolate-local-backend-ci-plan.md)
 
 ## Problem

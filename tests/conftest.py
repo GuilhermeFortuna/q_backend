@@ -16,9 +16,38 @@ terminal state is persisted — assert via ``get_status_payload`` / ``results_pa
 
 from __future__ import annotations
 
+import os
+
 import numpy as np
 import pandas as pd
 import pytest
+
+_DEV_DATABASE_URL = "postgresql+psycopg://q:q@localhost:5434/q"
+_DEV_REDIS_URL = "redis://localhost:6380/0"
+
+
+def _require_isolated_integration_env() -> None:
+    """Refuse destructive integration tests against ./dev default endpoints."""
+    if os.environ.get("Q_CI_ISOLATED") == "1":
+        return
+    from q_backend.storage.settings import get_settings
+
+    settings = get_settings()
+    if settings.database_url == _DEV_DATABASE_URL and settings.redis_url == _DEV_REDIS_URL:
+        pytest.fail(
+            "Integration tests require isolated CI Postgres/Redis. "
+            "Run ./scripts/ci.sh or export Q_CI_ISOLATED=1 with non-development URLs."
+        )
+
+
+@pytest.fixture(autouse=True)
+def _guard_destructive_integration_env(request):
+    if request.node.get_closest_marker("integration") is None:
+        yield
+        return
+    _require_isolated_integration_env()
+    yield
+
 
 try:  # fakeredis is a dev dependency; only needed by the harness
     import fakeredis

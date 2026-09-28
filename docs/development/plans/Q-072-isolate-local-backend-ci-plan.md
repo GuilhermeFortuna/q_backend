@@ -43,11 +43,11 @@
 
 **Interface:** local `./scripts/ci.sh` exports `Q_DATABASE_URL`, `Q_REDIS_URL`, `Q_DATA_LAKE_ROOT`, `Q_MARKET_DATA_ROOT`, `Q_TICK_CACHE_DIR`, and `Q_RUNTIME_CONFIG_PATH` before `alembic upgrade head`.
 
-- [ ] Add focused launcher tests with mocked commands for unique Compose project/ports, ambient URL and `CI` overrides, existing dev ports, startup and health failures, concurrent runs, and success/failure/signal cleanup. Assert no call to `systemctl --user start|stop` and no operation on `q-dev` or `q-research`.
-- [ ] Run only the focused launcher tests; confirm they fail against the current shared-service path.
-- [ ] Define CI-only Postgres/Redis Compose services with dynamically published localhost ports and a project-scoped Postgres volume. Keep `ci-docker.slice` in an optional override selected when available.
-- [ ] Replace local port probing and systemd unit management in `scripts/ci.sh` with unique-project startup, health verification, resolved-port URL export, temporary file roots, and cleanup traps. Refuse to continue if any preflight fails.
-- [ ] Run the focused launcher tests and confirm all cases pass.
+- [x] Add focused launcher tests with mocked commands for unique Compose project/ports, ambient URL and `CI` overrides, existing dev ports, startup and health failures, concurrent runs, and success/failure/signal cleanup. Assert no call to `systemctl --user start|stop` and no operation on `q-dev` or `q-research`.
+- [x] Run only the focused launcher tests; confirm they fail against the current shared-service path.
+- [x] Define CI-only Postgres/Redis Compose services with dynamically published localhost ports and a project-scoped Postgres volume. Keep `ci-docker.slice` in an optional override selected when available.
+- [x] Replace local port probing and systemd unit management in `scripts/ci.sh` with unique-project startup, health verification, resolved-port URL export, temporary file roots, and cleanup traps. Refuse to continue if any preflight fails.
+- [x] Run the focused launcher tests and confirm all cases pass.
 
 ### Task 2: Keep test clients and hosted CI on the selected services
 
@@ -55,10 +55,10 @@
 
 **Interface:** the WebSocket integration Redis URL is derived from `Q_REDIS_URL` with database 15; GitHub Actions explicitly identifies its hosted service path and uses its job-scoped Postgres/Redis URLs.
 
-- [ ] Add focused tests proving WebSocket integration fixtures follow `Q_REDIS_URL` rather than port 6380, direct destructive tests reject development endpoints, and missing hosted services fail before migration.
-- [ ] Run the focused tests and confirm the new assertions fail.
-- [ ] Update the fixture, hosted workflow, and launcher hosted preflight. Document local Docker requirements, ephemeral project cleanup, and the lack of dependency on `./dev`.
-- [ ] Run the focused tests and a workflow/Compose configuration check that does not start containers. Review `git diff --check` and commit the task changes.
+- [x] Add focused tests proving WebSocket integration fixtures follow `Q_REDIS_URL` rather than port 6380, direct destructive tests reject development endpoints, and missing hosted services fail before migration.
+- [x] Run the focused tests and confirm the new assertions fail.
+- [x] Update the fixture, hosted workflow, and launcher hosted preflight. Document local Docker requirements, ephemeral project cleanup, and the lack of dependency on `./dev`.
+- [x] Run the focused tests and a workflow/Compose configuration check that does not start containers. Review `git diff --check` and commit the task changes.
 
 ## Handoff
 
