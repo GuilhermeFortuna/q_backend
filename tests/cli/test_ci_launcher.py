@@ -7,6 +7,7 @@ import signal
 import stat
 import subprocess
 import textwrap
+import time
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,8 @@ CI_SCRIPT = REPO_ROOT / "scripts" / "ci.sh"
 
 DEV_DATABASE_URL = "postgresql+psycopg://q:q@localhost:5434/q"
 DEV_REDIS_URL = "redis://localhost:6380/0"
+HOSTED_DATABASE_URL = "postgresql+psycopg://postgres:password@localhost:5434/q_storage"
+HOSTED_REDIS_URL = "redis://localhost:6380/0"
 
 
 def _write_executable(path: Path, content: str) -> None:
@@ -71,13 +74,21 @@ def mock_bin(tmp_path: Path):
               exit 1
             fi
             echo "${{COMPOSE_PROJECT_NAME:-}}" >> "$state/projects"
+            echo "$$" > "$state/up_pid"
             pg="${{Q_CI_MOCK_PG_PORT:-54321}}"
             redis="${{Q_CI_MOCK_REDIS_PORT:-54322}}"
             echo "$pg" > "$state/pg_port"
             echo "$redis" > "$state/redis_port"
+            if [[ "${{Q_CI_MOCK_COMPOSE_UP_BLOCK:-0}}" == "1" ]]; then
+              while true; do sleep 1; done
+            fi
             exit 0
             ;;
           port)
+            if [[ "${{Q_CI_MOCK_COMPOSE_PORT_FAIL:-0}}" == "1" ]]; then
+              echo "compose port failed" >&2
+              exit 1
+            fi
             service=""
             for ((i=0; i<${{#args[@]}}; i++)); do
               if [[ "${{args[i]}}" == "postgres" ]]; then
@@ -176,6 +187,8 @@ def _run_ci(
     env["Q_CI_PREFLIGHT_ONLY"] = "1"
     env["PATH"] = f"{mock_bin.path}{os.pathsep}{env.get('PATH', '')}"
     env.pop("GITHUB_ACTIONS", None)
+    env.pop("Q_DATABASE_URL", None)
+    env.pop("Q_REDIS_URL", None)
     if extra_env:
         env.update(extra_env)
     return subprocess.run(
@@ -227,6 +240,13 @@ def test_ambient_ci_true_still_provisions_local_compose(mock_bin) -> None:
     assert "Hosted CI service endpoints verified" not in result.stdout
 
 
+def test_github_actions_marker_without_run_metadata_still_uses_local_compose(mock_bin) -> None:
+    result = _run_ci(mock_bin, extra_env={"CI": "true", "GITHUB_ACTIONS": "true"})
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert _projects(mock_bin.state_dir)
+    assert "Hosted CI service endpoints verified" not in result.stdout
+
+
 def test_ambient_dev_urls_rejected(mock_bin) -> None:
     result = _run_ci(
         mock_bin,
@@ -253,7 +273,10 @@ def test_docker_unavailable_skips_alembic(mock_bin) -> None:
 
 def test_hosted_missing_services_fail_before_migration(mock_bin) -> None:
     env = {
+        "CI": "true",
         "GITHUB_ACTIONS": "true",
+        "GITHUB_RUN_ID": "12345",
+        "GITHUB_WORKFLOW": "CI",
         "Q_DATABASE_URL": "postgresql+psycopg://postgres:password@127.0.0.1:9/q_storage",
         "Q_REDIS_URL": "redis://127.0.0.1:9/0",
     }
@@ -261,6 +284,47 @@ def test_hosted_missing_services_fail_before_migration(mock_bin) -> None:
     assert result.returncode != 0
     assert not mock_bin.uv_log.exists() or "alembic" not in mock_bin.uv_log.read_text()
     assert not _projects(mock_bin.state_dir)
+
+
+def test_hosted_ci_accepts_only_job_service_urls(mock_bin) -> None:
+    env = os.environ.copy()
+    env.update(
+        {
+            "CI_RESOURCE_CONTROLLED": "1",
+            "Q_CI_PREFLIGHT_ONLY": "1",
+            "CI": "true",
+            "GITHUB_ACTIONS": "true",
+            "GITHUB_RUN_ID": "12345",
+            "GITHUB_WORKFLOW": "CI",
+            "Q_DATABASE_URL": HOSTED_DATABASE_URL,
+            "Q_REDIS_URL": HOSTED_REDIS_URL,
+            "PATH": f"{mock_bin.path}{os.pathsep}{env.get('PATH', '')}",
+        }
+    )
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f"source '{CI_SCRIPT}'; _ci_tcp_open() {{ return 0; }}; run_ci_pipeline",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=30.0,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "Hosted CI service endpoints verified" in result.stdout
+    assert not _projects(mock_bin.state_dir)
+
+
+def test_port_lookup_failure_cleans_up_started_compose_project(mock_bin) -> None:
+    result = _run_ci(mock_bin, extra_env={"Q_CI_MOCK_COMPOSE_PORT_FAIL": "1"})
+    assert result.returncode != 0
+    projects = _projects(mock_bin.state_dir)
+    assert projects
+    assert _down_projects(mock_bin.state_dir) == projects
 
 
 def test_compose_slice_override_selected_when_available(mock_bin) -> None:
@@ -273,20 +337,30 @@ def test_compose_slice_override_selected_when_available(mock_bin) -> None:
 def test_signal_triggers_compose_down(mock_bin) -> None:
     env = os.environ.copy()
     env["CI_RESOURCE_CONTROLLED"] = "1"
-    env["Q_CI_PREFLIGHT_ONLY"] = "1"
+    env["Q_CI_MOCK_COMPOSE_UP_BLOCK"] = "1"
     env["PATH"] = f"{mock_bin.path}{os.pathsep}{env.get('PATH', '')}"
     env.pop("GITHUB_ACTIONS", None)
+    env.pop("Q_DATABASE_URL", None)
+    env.pop("Q_REDIS_URL", None)
     proc = subprocess.Popen(
-        ["bash", "-c", f"source '{CI_SCRIPT}'; run_ci_pipeline"],
+        ["bash", str(CI_SCRIPT)],
         cwd=REPO_ROOT,
         env=env,
         text=True,
+        start_new_session=True,
     )
     try:
+        up_pid_file = mock_bin.state_dir / "up_pid"
+        deadline = time.monotonic() + 10
+        while not up_pid_file.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert up_pid_file.exists(), "Compose startup did not begin"
+        os.killpg(proc.pid, signal.SIGTERM)
         proc.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        os.kill(proc.pid, signal.SIGINT)
-        proc.wait(timeout=10)
+    finally:
+        if proc.poll() is None:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait(timeout=10)
     assert _down_projects(mock_bin.state_dir)
 
 

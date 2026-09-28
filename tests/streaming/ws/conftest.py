@@ -17,6 +17,9 @@ def ws_test_redis_url() -> str:
     return urlunparse(parsed._replace(path="/15"))
 
 
+TEST_REDIS_URL = ws_test_redis_url()
+
+
 def async_redis() -> redis.asyncio.Redis:
     return redis.asyncio.Redis.from_url(ws_test_redis_url(), decode_responses=False)
 

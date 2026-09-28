@@ -37,9 +37,12 @@ cd "$REPO_ROOT"
 
 DEV_DATABASE_URL="postgresql+psycopg://q:q@localhost:5434/q"
 DEV_REDIS_URL="redis://localhost:6380/0"
+HOSTED_DATABASE_URL="postgresql+psycopg://postgres:password@localhost:5434/q_storage"
+HOSTED_REDIS_URL="redis://localhost:6380/0"
 
 _ci_hosted_mode() {
-  [[ -n "${GITHUB_ACTIONS:-}" ]]
+  [[ "${GITHUB_ACTIONS:-}" == "true" && "${CI:-}" == "true" &&
+     -n "${GITHUB_RUN_ID:-}" && -n "${GITHUB_WORKFLOW:-}" ]]
 }
 
 _ci_tcp_open() {
@@ -82,15 +85,6 @@ _ci_verify_service_url() {
   fi
 }
 
-_ci_reject_dev_defaults() {
-  local db_url="${Q_DATABASE_URL:-}"
-  local redis_url="${Q_REDIS_URL:-}"
-  if [[ "$db_url" == "$DEV_DATABASE_URL" || "$redis_url" == "$DEV_REDIS_URL" ]]; then
-    echo "ERROR: Refusing to run against development default Postgres/Redis endpoints." >&2
-    return 1
-  fi
-}
-
 CI_COMPOSE_PROJECT=""
 CI_TMP_ROOT=""
 CI_COMPOSE_FILES=()
@@ -108,6 +102,7 @@ _ci_cleanup_local_services() {
   if [[ -n "${CI_TMP_ROOT:-}" && -d "${CI_TMP_ROOT}" ]]; then
     rm -rf "${CI_TMP_ROOT}"
   fi
+  CI_COMPOSE_PROJECT=""
 }
 
 _ci_start_local_services() {
@@ -121,11 +116,17 @@ _ci_start_local_services() {
   fi
 
   CI_COMPOSE_PROJECT="q-backend-ci-$$-${RANDOM}"
-  CI_TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/q-backend-ci.XXXXXX")"
   CI_COMPOSE_FILES=(-f docker-compose.ci.yml)
   if systemctl status ci-docker.slice >/dev/null 2>&1; then
     CI_COMPOSE_FILES+=(-f docker-compose.ci-slice.yml)
   fi
+
+  # Install cleanup before the first command that can create Compose resources.
+  # Signals and unexpected command failures during startup must clean this project.
+  trap _ci_cleanup_local_services EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  CI_TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/q-backend-ci.XXXXXX")"
 
   export Q_DATA_LAKE_ROOT="${CI_TMP_ROOT}/lake"
   export Q_MARKET_DATA_ROOT="${CI_TMP_ROOT}/market"
@@ -177,7 +178,9 @@ _ci_preflight_hosted() {
     echo "ERROR: Hosted CI requires explicit Q_DATABASE_URL and Q_REDIS_URL." >&2
     return 1
   fi
-  if ! _ci_reject_dev_defaults; then
+  if [[ "${Q_DATABASE_URL}" != "${HOSTED_DATABASE_URL}" ||
+        "${Q_REDIS_URL}" != "${HOSTED_REDIS_URL}" ]]; then
+    echo "ERROR: Hosted CI must use its job-scoped Postgres/Redis service URLs." >&2
     return 1
   fi
   export Q_CI_ISOLATED=1
