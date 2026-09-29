@@ -64,6 +64,7 @@ from q_backend.execution.domain import (
     ExecutionSide,
     FillRecord,
     IllegalLifecycleTransition,
+    LedgerEntryType,
 )
 from q_backend.execution.ledger import ExecutionLedger
 from q_backend.execution.reconciliation import (
@@ -82,6 +83,7 @@ from q_backend.storage.db.execution_models import ExecutionDeployment, Execution
 from q_backend.storage.db.execution_repositories import (
     ConfigurationEditRejected,
     StaleRevisionError,
+    append_ledger_entry,
     apply_deployment_configuration_edit,
     clear_pending_deployment_action,
     count_unknown_orders,
@@ -172,6 +174,16 @@ def create_account(session: Session, body: PaperAccountCreateRequest) -> PaperAc
             risk_config=validate_risk_config(body.risk_config),
         )
         session.flush()
+        append_ledger_entry(
+            session,
+            paper_account_id=account.id,
+            deployment_id=None,
+            entry_type=LedgerEntryType.INITIAL_BALANCE,
+            amount=account.initial_balance,
+            balance_after=account.cash_balance,
+            description="Opening paper balance",
+            account=account,
+        )
         return PaperAccountResponse.model_validate(account)
     except ExecutionValidationError as exc:
         raise _http_from_validation(exc) from exc

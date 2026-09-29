@@ -349,9 +349,9 @@ class ExecutionLedgerEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("paper_accounts.id", ondelete="CASCADE"),
         nullable=False,
     )
-    deployment_id: Mapped[uuid.UUID] = mapped_column(
+    deployment_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("execution_deployments.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
     )
     fill_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("execution_fills.id", ondelete="SET NULL"),
@@ -363,7 +363,7 @@ class ExecutionLedgerEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     paper_account: Mapped["PaperAccount"] = relationship(back_populates="ledger_entries")
-    deployment: Mapped["ExecutionDeployment"] = relationship(
+    deployment: Mapped[Optional["ExecutionDeployment"]] = relationship(
         back_populates="ledger_entries",
     )
     fill: Mapped[Optional["ExecutionFill"]] = relationship(back_populates="ledger_entries")

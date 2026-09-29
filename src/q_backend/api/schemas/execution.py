@@ -341,7 +341,7 @@ class LedgerEntryResponse(BaseModel):
 
     id: UUID
     paper_account_id: UUID
-    deployment_id: UUID
+    deployment_id: Optional[UUID] = None
     fill_id: Optional[UUID] = None
     entry_type: str
     amount: DecimalStr

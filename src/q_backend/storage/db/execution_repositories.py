@@ -590,7 +590,7 @@ def append_ledger_entry(
     session: Session,
     *,
     paper_account_id: uuid.UUID,
-    deployment_id: uuid.UUID,
+    deployment_id: Optional[uuid.UUID],
     entry_type: LedgerEntryType,
     amount: Decimal,
     balance_after: Decimal,

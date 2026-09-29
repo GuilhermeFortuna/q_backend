@@ -715,7 +715,7 @@ Run benchmarks: `uv run pytest tests/execution/test_evaluator_benchmark.py tests
 
 **Execution API contracts (WO171 → WO173/WO174):** control-plane routes under `/api/v1/execution/*` never submit broker orders. Key bodies:
 
-- `POST /api/v1/execution/accounts` — `{"name":"desk-main","initial_balance":"100000.00","currency":"BRL"}`
+- `POST /api/v1/execution/accounts` — `{"name":"desk-main","initial_balance":"100000.00","currency":"BRL"}`. Creation commits an account-level `initial_balance` ledger entry and event, so connected terminals see the new account without reconnecting.
 - `POST /api/v1/execution/deployments` — paper account id + immutable `identity` (or `source_backtest_run_id` from a saved run); `broker_mode` is `paper` (default) or `mt5_live`
 - `POST /api/v1/execution/deployments/{id}/actions` — `{"action":"start|pause|stop|flatten","confirm":true}`
 - `GET /api/v1/execution/health` — separate `api_status`, `worker_status`, `market_data_status`, `live_capability_locked`
