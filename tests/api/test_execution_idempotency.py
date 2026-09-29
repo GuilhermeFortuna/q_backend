@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
+from sqlalchemy.sql.dml import Insert
 
 from q_backend.api.idempotency import IdempotentCommand, canonical_body_hash, prune_idempotency
 from q_backend.api.main import app
@@ -68,6 +69,40 @@ def test_first_result_is_stored_and_replayed(idempotency_session: Session):
     assert replay.status_code == 200
     assert json.loads(replay.body) == {"accepted": True}
     assert replay.headers["Idempotency-Replayed"] == "true"
+    assert calls == [1]
+
+
+def test_new_claim_does_not_depend_on_driver_rowcount(
+    idempotency_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    class UnknownRowcount:
+        def __init__(self, result):
+            self._result = result
+
+        @property
+        def rowcount(self):
+            return -1
+
+        def scalar_one_or_none(self):
+            return self._result.scalar_one_or_none()
+
+    original_execute = idempotency_session.execute
+
+    def execute_with_unknown_insert_rowcount(statement, *args, **kwargs):
+        result = original_execute(statement, *args, **kwargs)
+        if isinstance(statement, Insert) and statement.table.name == "command_idempotency":
+            return UnknownRowcount(result)
+        return result
+
+    monkeypatch.setattr(idempotency_session, "execute", execute_with_unknown_insert_rowcount)
+    calls: list[int] = []
+    response = _command(uuid.uuid4()).execute(
+        idempotency_session,
+        lambda: calls.append(1) or {"accepted": True},
+    )
+
+    assert response == {"accepted": True}
     assert calls == [1]
 
 

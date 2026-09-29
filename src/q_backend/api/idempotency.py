@@ -110,10 +110,13 @@ class IdempotentCommand:
         if dialect == "postgresql":
             from sqlalchemy.dialects.postgresql import insert as dialect_insert
 
+            # psycopg can report rowcount=-1 for this insert; RETURNING tells us
+            # reliably whether this request claimed the key.
             statement = (
                 dialect_insert(CommandIdempotency)
                 .values(**values)
                 .on_conflict_do_nothing(index_elements=[CommandIdempotency.key])
+                .returning(CommandIdempotency.key)
             )
         elif dialect == "sqlite":
             from sqlalchemy.dialects.sqlite import insert as dialect_insert
@@ -122,13 +125,17 @@ class IdempotentCommand:
                 dialect_insert(CommandIdempotency)
                 .values(**values)
                 .on_conflict_do_nothing(index_elements=[CommandIdempotency.key])
+                .returning(CommandIdempotency.key)
             )
         else:  # pragma: no cover - PostgreSQL and SQLite cover production/tests.
             statement = insert(CommandIdempotency).values(**values)
 
         result = session.execute(statement)
         session.flush()
-        if result.rowcount == 1:
+        inserted_key = result.scalar_one_or_none() if dialect in {"postgresql", "sqlite"} else None
+        if inserted_key is not None or (
+            dialect not in {"postgresql", "sqlite"} and result.rowcount == 1
+        ):
             self.claimed = True
             return None
 
