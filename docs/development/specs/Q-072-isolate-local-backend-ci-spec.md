@@ -38,8 +38,9 @@ The GitHub Actions workflow already provisions job-scoped Postgres and Redis.
 5. Retain host `ci.slice` and container `ci-docker.slice` resource controls
    when available, without making systemd a prerequisite for local CI.
 6. Preserve the hosted GitHub Actions job's own service containers and run the
-   same validation stages against their explicit URLs. The hosted path must
-   never fall back to local development defaults if a service is unavailable.
+   same validation stages against their explicit URLs via `./scripts/ci.sh --hosted`.
+   The hosted path must never fall back to local development defaults if a service is
+   unavailable.
 7. Document the local CI lifecycle, Docker prerequisite, and isolation
    guarantees in the backend README. Normal `./dev` and `./research` behavior
    remains unchanged.

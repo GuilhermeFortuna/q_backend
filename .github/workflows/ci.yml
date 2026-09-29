@@ -74,4 +74,4 @@ jobs:
         run: uv sync --frozen
 
       - name: Run CI Pipeline
-        run: ./scripts/ci.sh
+        run: ./scripts/ci.sh --hosted

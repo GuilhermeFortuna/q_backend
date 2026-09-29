@@ -176,23 +176,30 @@ def mock_bin(tmp_path: Path):
     return fixture
 
 
-def _run_ci(
-    mock_bin,
-    *,
-    extra_env: dict[str, str] | None = None,
-    timeout: float = 30.0,
-) -> subprocess.CompletedProcess[str]:
-    env = os.environ.copy()
+def _controlled_env(mock_bin, extra_env: dict[str, str] | None = None) -> dict[str, str]:
+    keep = ("PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "TERM", "LANG", "LC_ALL")
+    env = {k: os.environ[k] for k in keep if k in os.environ}
     env["CI_RESOURCE_CONTROLLED"] = "1"
     env["Q_CI_PREFLIGHT_ONLY"] = "1"
     env["PATH"] = f"{mock_bin.path}{os.pathsep}{env.get('PATH', '')}"
-    env.pop("GITHUB_ACTIONS", None)
-    env.pop("Q_DATABASE_URL", None)
-    env.pop("Q_REDIS_URL", None)
     if extra_env:
         env.update(extra_env)
+    return env
+
+
+def _run_ci(
+    mock_bin,
+    *,
+    args: list[str] | None = None,
+    extra_env: dict[str, str] | None = None,
+    timeout: float = 30.0,
+) -> subprocess.CompletedProcess[str]:
+    env = _controlled_env(mock_bin, extra_env=extra_env)
+    cmd = ["bash", str(CI_SCRIPT)]
+    if args:
+        cmd.extend(args)
     return subprocess.run(
-        ["bash", str(CI_SCRIPT)],
+        cmd,
         cwd=REPO_ROOT,
         env=env,
         text=True,
@@ -240,8 +247,31 @@ def test_ambient_ci_true_still_provisions_local_compose(mock_bin) -> None:
     assert "Hosted CI service endpoints verified" not in result.stdout
 
 
-def test_github_actions_marker_without_run_metadata_still_uses_local_compose(mock_bin) -> None:
-    result = _run_ci(mock_bin, extra_env={"CI": "true", "GITHUB_ACTIONS": "true"})
+def test_ambient_github_actions_and_runner_vars_still_provision_local_compose(mock_bin) -> None:
+    result = _run_ci(
+        mock_bin,
+        extra_env={
+            "CI": "true",
+            "GITHUB_ACTIONS": "true",
+            "GITHUB_RUN_ID": "12345",
+            "GITHUB_WORKFLOW": "CI",
+        },
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert _projects(mock_bin.state_dir)
+    assert "Hosted CI service endpoints verified" not in result.stdout
+
+
+def test_parent_github_runner_env_does_not_affect_launcher_subprocess(mock_bin, monkeypatch) -> None:
+    monkeypatch.setenv("CI", "true")
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_RUN_ID", "99999")
+    monkeypatch.setenv("GITHUB_WORKFLOW", "CI")
+    monkeypatch.setenv("RUNNER_OS", "Linux")
+    monkeypatch.setenv("Q_DATABASE_URL", HOSTED_DATABASE_URL)
+    monkeypatch.setenv("Q_REDIS_URL", HOSTED_REDIS_URL)
+
+    result = _run_ci(mock_bin)
     assert result.returncode == 0, result.stderr + result.stdout
     assert _projects(mock_bin.state_dir)
     assert "Hosted CI service endpoints verified" not in result.stdout
@@ -273,39 +303,35 @@ def test_docker_unavailable_skips_alembic(mock_bin) -> None:
 
 def test_hosted_missing_services_fail_before_migration(mock_bin) -> None:
     env = {
-        "CI": "true",
-        "GITHUB_ACTIONS": "true",
-        "GITHUB_RUN_ID": "12345",
-        "GITHUB_WORKFLOW": "CI",
         "Q_DATABASE_URL": "postgresql+psycopg://postgres:password@127.0.0.1:9/q_storage",
         "Q_REDIS_URL": "redis://127.0.0.1:9/0",
     }
-    result = _run_ci(mock_bin, extra_env=env)
+    result = _run_ci(mock_bin, args=["--hosted"], extra_env=env)
     assert result.returncode != 0
     assert not mock_bin.uv_log.exists() or "alembic" not in mock_bin.uv_log.read_text()
     assert not _projects(mock_bin.state_dir)
 
 
+def test_hosted_mode_without_urls_fails_immediately(mock_bin) -> None:
+    result = _run_ci(mock_bin, args=["--hosted"])
+    assert result.returncode != 0
+    assert "Hosted CI requires explicit Q_DATABASE_URL and Q_REDIS_URL" in result.stderr
+    assert not _projects(mock_bin.state_dir)
+
+
 def test_hosted_ci_accepts_only_job_service_urls(mock_bin) -> None:
-    env = os.environ.copy()
-    env.update(
-        {
-            "CI_RESOURCE_CONTROLLED": "1",
-            "Q_CI_PREFLIGHT_ONLY": "1",
-            "CI": "true",
-            "GITHUB_ACTIONS": "true",
-            "GITHUB_RUN_ID": "12345",
-            "GITHUB_WORKFLOW": "CI",
+    env = _controlled_env(
+        mock_bin,
+        extra_env={
             "Q_DATABASE_URL": HOSTED_DATABASE_URL,
             "Q_REDIS_URL": HOSTED_REDIS_URL,
-            "PATH": f"{mock_bin.path}{os.pathsep}{env.get('PATH', '')}",
-        }
+        },
     )
     result = subprocess.run(
         [
             "bash",
             "-c",
-            f"source '{CI_SCRIPT}'; _ci_tcp_open() {{ return 0; }}; run_ci_pipeline",
+            f"source '{CI_SCRIPT}'; _ci_tcp_open() {{ return 0; }}; run_ci_pipeline --hosted",
         ],
         cwd=REPO_ROOT,
         env=env,
@@ -335,13 +361,7 @@ def test_compose_slice_override_selected_when_available(mock_bin) -> None:
 
 
 def test_signal_triggers_compose_down(mock_bin) -> None:
-    env = os.environ.copy()
-    env["CI_RESOURCE_CONTROLLED"] = "1"
-    env["Q_CI_MOCK_COMPOSE_UP_BLOCK"] = "1"
-    env["PATH"] = f"{mock_bin.path}{os.pathsep}{env.get('PATH', '')}"
-    env.pop("GITHUB_ACTIONS", None)
-    env.pop("Q_DATABASE_URL", None)
-    env.pop("Q_REDIS_URL", None)
+    env = _controlled_env(mock_bin, extra_env={"Q_CI_MOCK_COMPOSE_UP_BLOCK": "1"})
     proc = subprocess.Popen(
         ["bash", str(CI_SCRIPT)],
         cwd=REPO_ROOT,

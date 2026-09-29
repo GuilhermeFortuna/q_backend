@@ -4,7 +4,7 @@
 
 **Goal:** Make local backend CI use disposable Postgres and Redis services and isolated file paths for every invocation.
 
-**Architecture:** `scripts/ci.sh` owns a unique Compose project and resolves its published localhost ports before exporting test settings. A separate hosted path uses only the GitHub Actions service endpoints. Both paths run the existing validation stages after a fail-closed preflight.
+**Architecture:** `scripts/ci.sh` owns a unique Compose project and resolves its published localhost ports before exporting test settings. A separate hosted path invoked via `--hosted` uses only the GitHub Actions service endpoints. Both paths run the existing validation stages after a fail-closed preflight.
 
 **Tech Stack:** Bash, Docker Compose, GitHub Actions, Python/pytest.
 
@@ -53,7 +53,7 @@
 
 **Files:** `tests/streaming/ws/conftest.py`, `tests/conftest.py`, `.github/workflows/ci.yml`, `tests/cli/test_ci_launcher.py`, `README.md`
 
-**Interface:** the WebSocket integration Redis URL is derived from `Q_REDIS_URL` with database 15; GitHub Actions explicitly identifies its hosted service path and uses its job-scoped Postgres/Redis URLs.
+**Interface:** the WebSocket integration Redis URL is derived from `Q_REDIS_URL` with database 15; GitHub Actions explicitly invokes `./scripts/ci.sh --hosted` and uses its job-scoped Postgres/Redis URLs.
 
 - [x] Add focused tests proving WebSocket integration fixtures follow `Q_REDIS_URL` rather than port 6380, direct destructive tests reject development endpoints, and missing hosted services fail before migration.
 - [x] Run the focused tests and confirm the new assertions fail.

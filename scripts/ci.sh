@@ -40,10 +40,6 @@ DEV_REDIS_URL="redis://localhost:6380/0"
 HOSTED_DATABASE_URL="postgresql+psycopg://postgres:password@localhost:5434/q_storage"
 HOSTED_REDIS_URL="redis://localhost:6380/0"
 
-_ci_hosted_mode() {
-  [[ "${GITHUB_ACTIONS:-}" == "true" && "${CI:-}" == "true" &&
-     -n "${GITHUB_RUN_ID:-}" && -n "${GITHUB_WORKFLOW:-}" ]]
-}
 
 _ci_tcp_open() {
   local host="$1"
@@ -207,11 +203,32 @@ _ci_preflight_local() {
 }
 
 run_ci_pipeline() {
+  local hosted=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --hosted)
+        hosted=1
+        shift
+        ;;
+      -h|--help)
+        echo "Usage: $0 [--hosted]"
+        echo "  --hosted  Run against explicit hosted CI services (e.g. GitHub Actions)"
+        echo "  (default) Run against disposable local Docker Compose services"
+        return 0
+        ;;
+      *)
+        echo "ERROR: Unknown option: $1" >&2
+        echo "Usage: $0 [--hosted]" >&2
+        return 1
+        ;;
+    esac
+  done
+
   echo "=========================================="
   echo " Starting q_backend CI Pipeline"
   echo "=========================================="
 
-  if _ci_hosted_mode; then
+  if [[ "$hosted" -eq 1 ]]; then
     _ci_preflight_hosted
   else
     _ci_preflight_local
@@ -243,7 +260,7 @@ run_ci_pipeline() {
     export "$var=${!var:-1}"
   done
   NICE=()
-  if ! _ci_hosted_mode && command -v nice >/dev/null 2>&1; then
+  if [[ "$hosted" -ne 1 ]] && command -v nice >/dev/null 2>&1; then
     NICE=(nice -n 10)
     command -v ionice >/dev/null 2>&1 && NICE=(ionice -c 3 "${NICE[@]}")
   fi
