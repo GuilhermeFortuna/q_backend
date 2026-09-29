@@ -133,9 +133,7 @@ class IdempotentCommand:
         result = session.execute(statement)
         session.flush()
         inserted_key = result.scalar_one_or_none() if dialect in {"postgresql", "sqlite"} else None
-        if inserted_key is not None or (
-            dialect not in {"postgresql", "sqlite"} and result.rowcount == 1
-        ):
+        if inserted_key is not None or (dialect not in {"postgresql", "sqlite"} and result.rowcount == 1):
             self.claimed = True
             return None
 
