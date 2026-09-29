@@ -701,6 +701,7 @@ uv run q-execution flatten <deployment-uuid>
 | **Pause** | Stop evaluating new bars; retain open position |
 | **Stop** | Terminate evaluation; retain position unless flatten requested |
 | **Flatten** | Market close at current executable quote |
+| **Archive** | Hide a non-running, flat deployment from active lists while retaining execution and audit records; outstanding actions and orders must be resolved first |
 | **Kill switch** | Block all new entries; flatten still allowed |
 
 **Measured phase timings** (synthetic local benchmark, M15/H1 MACrossover fixtures):
@@ -717,7 +718,7 @@ Run benchmarks: `uv run pytest tests/execution/test_evaluator_benchmark.py tests
 
 - `POST /api/v1/execution/accounts` — `{"name":"desk-main","initial_balance":"100000.00","currency":"BRL"}`. Creation commits an account-level `initial_balance` ledger entry and event, so connected terminals see the new account without reconnecting.
 - `POST /api/v1/execution/deployments` — paper account id + immutable `identity` (or `source_backtest_run_id` from a saved run); `broker_mode` is `paper` (default) or `mt5_live`
-- `POST /api/v1/execution/deployments/{id}/actions` — `{"action":"start|pause|stop|flatten","confirm":true}`
+- `POST /api/v1/execution/deployments/{id}/actions` — `{"action":"start|pause|stop|flatten|archive","confirm":true}`. Archive is confirmed and rejected for running deployments, open positions, pending actions, or unsettled orders; it retains the deployment's audit history.
 - `GET /api/v1/execution/health` — separate `api_status`, `worker_status`, `market_data_status`, `live_capability_locked`
 - `PUT /api/v1/execution/kill-switch` — `{"enabled":true,"confirm":true,"reason":"…","updated_by":"operator"}`
 - `GET /api/v1/execution/deployments/{id}/chart?bars=200` (WO175) — read-only live chart payload: the same bounded OHLCV window the forward evaluator consumes plus the strategy's own indicator series, computed through the identical `execution.indicator_frame.augment_indicator_frame` path the worker uses (never a re-implementation). `bars` is the display count (default 200, max 1000); the endpoint fetches `bars + compute_window_bound_bars(compiled_config)` completed bars (forming bar excluded), computes indicators, then trims to the last `bars` so warm-up NaNs never reach the display window. Read-only (no worker/evaluator state, no persistence). Payload is cached in-process on `(deployment_id, bars, last completed bar open time)` so 5-second polling recomputes only when a new bar lands. Degrades honestly: unknown deployment → 404; market data unavailable (MT5 offline in `mt5` mode, empty local store in `local` mode) → 503; strategy window that cannot be bounded → 422.

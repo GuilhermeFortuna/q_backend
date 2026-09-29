@@ -57,6 +57,7 @@ def _deployment_payload(deployment_id: str) -> dict:
         "symbol": "WIN$",
         "timeframe": "M1",
         "live_activation_enabled": False,
+        "archived": False,
         "updated_at": "2026-09-18T14:30:00Z",
     }
 

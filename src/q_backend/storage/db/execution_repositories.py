@@ -211,6 +211,8 @@ def apply_deployment_configuration_edit(
     ).scalar_one_or_none()
     if deployment is None:
         raise ValueError(f"ExecutionDeployment {deployment_id} not found")
+    if deployment.archived:
+        raise ConfigurationEditRejected("archived deployment cannot be edited")
     if deployment.config_revision != expected_revision:
         raise StaleRevisionError(
             f"expected_revision {expected_revision} does not match current revision {deployment.config_revision}"
@@ -270,9 +272,13 @@ def transition_deployment_lifecycle(
     at: Optional[datetime] = None,
     producer: str = "api",
 ) -> ExecutionDeployment:
-    deployment = session.get(ExecutionDeployment, deployment_id)
+    deployment = session.execute(
+        select(ExecutionDeployment).where(ExecutionDeployment.id == deployment_id).with_for_update()
+    ).scalar_one_or_none()
     if deployment is None:
         raise ValueError(f"ExecutionDeployment {deployment_id} not found")
+    if deployment.archived and target == DeploymentLifecycle.RUNNING:
+        raise IllegalLifecycleTransition("archived deployment cannot be started")
     current = DeploymentLifecycle(deployment.lifecycle)
     validate_deployment_transition(current, target)
     deployment.lifecycle = target.value
@@ -830,7 +836,11 @@ def list_deployments(
     *,
     lifecycles: Optional[list[str]] = None,
 ) -> list[ExecutionDeployment]:
-    stmt = select(ExecutionDeployment).order_by(ExecutionDeployment.created_at)
+    stmt = (
+        select(ExecutionDeployment)
+        .where(ExecutionDeployment.archived.is_(False))
+        .order_by(ExecutionDeployment.created_at)
+    )
     if lifecycles is not None:
         stmt = stmt.where(ExecutionDeployment.lifecycle.in_(lifecycles))
     return list(session.execute(stmt).scalars().all())
@@ -843,9 +853,16 @@ def update_deployment_last_bar_close(
     *,
     producer: str = "api",
 ) -> ExecutionDeployment:
-    deployment = session.get(ExecutionDeployment, deployment_id)
+    deployment = session.execute(
+        select(ExecutionDeployment)
+        .where(ExecutionDeployment.id == deployment_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
     if deployment is None:
         raise ValueError(f"ExecutionDeployment {deployment_id} not found")
+    if deployment.archived:
+        return deployment
     deployment.last_bar_close_time = bar_close_time
     session.flush()
     execution_events.emit(
@@ -1088,7 +1105,7 @@ def list_deployments_page(
 ) -> tuple[list[ExecutionDeployment], int]:
     from sqlalchemy import func
 
-    stmt = select(ExecutionDeployment)
+    stmt = select(ExecutionDeployment).where(ExecutionDeployment.archived.is_(False))
     if paper_account_id is not None:
         stmt = stmt.where(ExecutionDeployment.paper_account_id == paper_account_id)
     if lifecycle is not None:
@@ -1321,9 +1338,16 @@ def set_pending_deployment_action(
     at: Optional[datetime] = None,
     producer: str = "api",
 ) -> ExecutionDeployment:
-    deployment = session.get(ExecutionDeployment, deployment_id)
+    deployment = session.execute(
+        select(ExecutionDeployment)
+        .where(ExecutionDeployment.id == deployment_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
     if deployment is None:
         raise ValueError(f"ExecutionDeployment {deployment_id} not found")
+    if deployment.archived:
+        raise ValueError("archived deployment cannot accept actions")
     deployment.pending_action = action
     deployment.pending_action_requested_at = at or _utcnow()
     session.flush()
@@ -1342,9 +1366,16 @@ def clear_pending_deployment_action(
     *,
     producer: str = "api",
 ) -> ExecutionDeployment:
-    deployment = session.get(ExecutionDeployment, deployment_id)
+    deployment = session.execute(
+        select(ExecutionDeployment)
+        .where(ExecutionDeployment.id == deployment_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
     if deployment is None:
         raise ValueError(f"ExecutionDeployment {deployment_id} not found")
+    if deployment.archived:
+        return deployment
     deployment.pending_action = None
     deployment.pending_action_requested_at = None
     session.flush()

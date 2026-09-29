@@ -96,6 +96,11 @@
       "type": "boolean",
       "description": "Whether live order routing is enabled."
     },
+    "archived": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether the deployment is archived and omitted from active deployment lists. Its audit history is retained."
+    },
     "pending_action": {
       "type": [
         "string",

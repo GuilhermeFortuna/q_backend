@@ -141,6 +141,7 @@ def deployment_state(row: ExecutionDeployment) -> dict[str, Any]:
         "sizing_config": row.sizing_config or {},
         "risk_config": row.risk_config or {},
         "live_activation_enabled": bool(row.live_activation_enabled),
+        "archived": bool(row.archived),
         "pending_action": row.pending_action,
         "pending_action_requested_at": _dt(row.pending_action_requested_at),
         "last_bar_close_time": _dt(row.last_bar_close_time),

@@ -79,7 +79,12 @@ from q_backend.execution.validation import (
     validate_risk_config,
     validate_strategy_identity,
 )
-from q_backend.storage.db.execution_models import ExecutionDeployment, ExecutionLedgerEntry, ExecutionPaperMark
+from q_backend.storage.db.execution_models import (
+    ExecutionDeployment,
+    ExecutionLedgerEntry,
+    ExecutionOrder,
+    ExecutionPaperMark,
+)
 from q_backend.storage.db.execution_repositories import (
     ConfigurationEditRejected,
     StaleRevisionError,
@@ -113,6 +118,7 @@ from q_backend.storage.db.execution_repositories import (
     set_pending_deployment_action,
 )
 from q_backend.storage.settings import get_settings
+from q_backend.streaming import execution_events
 
 
 def _utcnow() -> datetime:
@@ -483,8 +489,12 @@ def apply_deployment_action(
     deployment_id: uuid.UUID,
     body: DeploymentActionRequest,
 ) -> DeploymentActionResponse:
-    deployment = get_execution_deployment(session, deployment_id)
+    deployment = session.execute(
+        select(ExecutionDeployment).where(ExecutionDeployment.id == deployment_id).with_for_update()
+    ).scalar_one_or_none()
     if deployment is None:
+        raise HTTPException(status_code=404, detail="deployment not found")
+    if deployment.archived:
         raise HTTPException(status_code=404, detail="deployment not found")
     settings = get_settings()
     if settings.execution_paper_only and body.action == "start" and deployment.broker_mode == "mt5_live":
@@ -494,6 +504,8 @@ def apply_deployment_action(
             status_code=400,
             detail="flatten requires confirm=true",
         )
+    if body.action == "archive" and not body.confirm:
+        raise HTTPException(status_code=400, detail="archive requires confirm=true")
     try:
         if body.action == "start":
             deployment = start_deployment(session, deployment_id)
@@ -507,13 +519,41 @@ def apply_deployment_action(
             deployment = stop_deployment(session, deployment_id)
             message = "stop accepted"
             pending = None
+        elif body.action == "archive":
+            if deployment.lifecycle == "running":
+                raise HTTPException(status_code=409, detail="stop the deployment before archiving it")
+            if deployment.pending_action is not None:
+                raise HTTPException(status_code=409, detail="deployment has a pending action")
+            position = get_open_net_position(session, deployment_id)
+            if position is not None and position.is_open:
+                raise HTTPException(status_code=409, detail="flatten the open position before archiving")
+            unsettled_orders = session.execute(
+                select(func.count())
+                .select_from(ExecutionOrder)
+                .where(
+                    ExecutionOrder.deployment_id == deployment_id,
+                    ExecutionOrder.status.in_(["intent", "submitted", "unknown"]),
+                )
+            ).scalar_one()
+            if unsettled_orders:
+                raise HTTPException(status_code=409, detail="resolve outstanding orders before archiving")
+            deployment.archived = True
+            session.flush()
+            execution_events.emit(
+                session,
+                "deployments",
+                execution_events.deployment_state(deployment),
+                producer_id="api",
+            )
+            message = "deployment archived"
+            pending = None
         else:
             deployment = set_pending_deployment_action(session, deployment_id, action="flatten")
             message = "flatten queued for worker"
             pending = deployment.pending_action
         record_audit_event(
             session,
-            event_type=f"deployment_{body.action}",
+            event_type=f"deployment_{'archived' if body.action == 'archive' else body.action}",
             actor=body.actor,
             deployment_id=deployment_id,
             message=message,

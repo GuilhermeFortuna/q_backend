@@ -403,6 +403,7 @@ def _read_execution_snapshot_session(
 
     deployments_stmt = (
         sa.select(ExecutionDeployment)
+        .where(ExecutionDeployment.archived.is_(False))
         .order_by(
             sa.case(
                 {

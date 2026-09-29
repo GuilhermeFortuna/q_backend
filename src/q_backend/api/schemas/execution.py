@@ -161,7 +161,7 @@ class DeploymentListResponse(PaginatedResponse):
 
 
 class DeploymentActionRequest(BaseModel):
-    action: Literal["start", "pause", "stop", "flatten"]
+    action: Literal["start", "pause", "stop", "flatten", "archive"]
     confirm: bool = False
     actor: Optional[str] = None
 

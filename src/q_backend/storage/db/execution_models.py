@@ -84,6 +84,7 @@ class ExecutionDeployment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     activation_cutoff_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     source_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="builtin", server_default="builtin")
     source_strategy_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
     paper_account: Mapped["PaperAccount"] = relationship(back_populates="deployments")
     decisions: Mapped[list["ExecutionDecision"]] = relationship(

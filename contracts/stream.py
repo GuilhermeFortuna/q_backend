@@ -109,6 +109,7 @@ class ExecutionDeploymentState:
     symbol: str
     timeframe: str
     updated_at: str
+    archived: bool | None = None
     compiled_config: dict[str, Any] | None = None
     config_revision: int | None = None
     created_at: str | None = None
