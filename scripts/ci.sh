@@ -242,6 +242,12 @@ run_ci_pipeline() {
   echo "==> Checking vendored contracts (make contracts-check)..."
   make contracts-check
 
+  # q_contracts is force-included in the built wheel, but it lives outside the
+  # editable source tree. Rebuild the project after the contract check so tests
+  # import the checked-in generated contracts instead of a stale site-packages copy.
+  echo "==> Refreshing the q-backend install (uv sync --reinstall-package q-backend)..."
+  uv sync --reinstall-package q-backend
+
   echo "==> Applying database migrations (alembic upgrade head)..."
   uv run alembic upgrade head
 
