@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stream/replay/trade-history-headers",
+  "title": "TradeHistoryPageHeaders",
+  "description": "Required HTTP response headers for immutable Arrow IPC history pages. Generated fields use snake_case and map to the wire names through http_header.",
+  "type": "object",
+  "required": ["snapshot_id", "source_generation", "symbol", "volume_field", "volume_unit", "page_count", "frozen_epoch", "frozen_seq", "next_cursor"],
+  "properties": {
+    "snapshot_id": {"type": "string", "http_header": "X-Q-Trade-Snapshot-Id"},
+    "source_generation": {"type": "string", "http_header": "X-Q-Trade-Source-Generation"},
+    "symbol": {"type": "string", "http_header": "X-Q-Trade-Symbol"},
+    "volume_field": {"type": "string", "enum": ["volume", "volume_real"], "http_header": "X-Q-Trade-Volume-Field"},
+    "volume_unit": {"type": "string", "http_header": "X-Q-Trade-Volume-Unit"},
+    "page_count": {"type": "integer", "minimum": 0, "http_header": "X-Q-Trade-Page-Count"},
+    "frozen_epoch": {"type": "string", "http_header": "X-Q-Trade-Frozen-Epoch"},
+    "frozen_seq": {"type": "integer", "minimum": 0, "http_header": "X-Q-Trade-Frozen-Seq"},
+    "next_cursor": {"type": ["string", "null"], "http_header": "X-Q-Trade-Next-Cursor"}
+  },
+  "additionalProperties": false
+}

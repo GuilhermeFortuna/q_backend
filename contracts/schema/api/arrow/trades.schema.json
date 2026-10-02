@@ -1,0 +1,13 @@
+{
+  "name": "trades",
+  "description": "Eligible source trade records. Identity is (provider_id, symbol, source_generation, time_msc, occurrence); equal rows remain distinct.",
+  "context": {"provider_id": "Stable provider identifier.", "symbol": "Instrument symbol.", "source_generation": "Changes whenever source prefix/order is corrected or publisher restarts.", "exchange_timezone": "IANA timezone used to interpret session boundaries.", "session_key": "Provider-local trading session identifier.", "volume_unit": "Stable unit for volume in this delivery."},
+  "fields": [
+    {"name": "time_msc", "type": "timestamp[ms]", "nullable": false, "tz": "UTC", "doc": "UTC source event timestamp in milliseconds."},
+    {"name": "price", "type": "float64", "nullable": false},
+    {"name": "volume", "type": "float64", "nullable": false, "doc": "Raw provider tick volume."},
+    {"name": "volume_real", "type": "float64", "nullable": true, "doc": "Optional provider real volume; null when unavailable."},
+    {"name": "raw_flags", "type": "int32", "nullable": false, "doc": "Unmodified provider update and aggressor flags."},
+    {"name": "occurrence", "type": "int64", "nullable": false, "doc": "Zero-based source position among eligible trades at this millisecond."}
+  ]
+}

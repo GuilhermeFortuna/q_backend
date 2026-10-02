@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stream/replay/trade-history-page",
+  "title": "TradeHistoryPage",
+  "description": "An immutable Arrow IPC page selected by snapshot_id and cursor. Defaults to 10000 rows and is capped at 50000.",
+  "type": "object",
+  "required": ["snapshot_id", "cursor", "limit"],
+  "properties": {
+    "snapshot_id": {"type": "string", "minLength": 1}, "cursor": {"type": ["string", "null"]},
+    "limit": {"type": "integer", "default": 10000, "minimum": 1, "maximum": 50000},
+    "response_content_type": {"const": "application/vnd.apache.arrow.stream"},
+    "response_headers_schema": {"const": "stream/replay/trade-history-headers"}
+  },
+  "additionalProperties": false
+}

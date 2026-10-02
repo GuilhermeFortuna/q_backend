@@ -1,4 +1,4 @@
-# GENERATED FILE - DO NOT EDIT. Source schemas: schema/stream/control/cursor-expired.schema.json, schema/stream/control/epoch-changed.schema.json, schema/stream/control/lagging.schema.json, schema/stream/control/rejected.schema.json, schema/stream/control/subscribe.schema.json, schema/stream/control/subscribed.schema.json, schema/stream/envelope.schema.json, schema/stream/payloads/execution-common.schema.json, schema/stream/payloads/execution-decision.schema.json, schema/stream/payloads/execution-deployment.schema.json, schema/stream/payloads/execution-fill.schema.json, schema/stream/payloads/execution-ledger.schema.json, schema/stream/payloads/execution-order.schema.json, schema/stream/payloads/execution-risk.schema.json, schema/stream/payloads/job-progress.schema.json, schema/stream/payloads/job-terminal.schema.json, schema/stream/replay/execution-snapshot.schema.json, schema/stream/replay/history-expired.schema.json, schema/stream/replay/history-page.schema.json, schema/stream/replay/latest.schema.json, schema/stream/replay/watermark.schema.json
+# GENERATED FILE - DO NOT EDIT. Source schemas: schema/stream/control/cursor-expired.schema.json, schema/stream/control/epoch-changed.schema.json, schema/stream/control/lagging.schema.json, schema/stream/control/rejected.schema.json, schema/stream/control/subscribe.schema.json, schema/stream/control/subscribed.schema.json, schema/stream/envelope.schema.json, schema/stream/payloads/execution-common.schema.json, schema/stream/payloads/execution-decision.schema.json, schema/stream/payloads/execution-deployment.schema.json, schema/stream/payloads/execution-fill.schema.json, schema/stream/payloads/execution-ledger.schema.json, schema/stream/payloads/execution-order.schema.json, schema/stream/payloads/execution-risk.schema.json, schema/stream/payloads/job-progress.schema.json, schema/stream/payloads/job-terminal.schema.json, schema/stream/payloads/trade-delivery-context.schema.json, schema/stream/payloads/trade-source-status.schema.json, schema/stream/replay/execution-snapshot.schema.json, schema/stream/replay/history-expired.schema.json, schema/stream/replay/history-page.schema.json, schema/stream/replay/latest.schema.json, schema/stream/replay/trade-history-headers.schema.json, schema/stream/replay/trade-history-page.schema.json, schema/stream/replay/trade-history-pending.schema.json, schema/stream/replay/trade-snapshot.schema.json, schema/stream/replay/trade-watermark.schema.json, schema/stream/replay/watermark.schema.json
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -380,6 +380,8 @@ class StreamEnvelope:
         "orders",
         "quotes",
         "risk",
+        "trades",
+        "trades.status",
     ]
     key: dict[str, Any] | None = None
 
@@ -394,6 +396,88 @@ class SubscribeFrame:
 class SubscribedFrame:
     topics: dict[str, Any]
     type: Literal["subscribed"]
+
+
+@dataclass(frozen=True)
+class TradeDeliveryContext:
+    exchange_timezone: str
+    provider_id: str
+    session_key: str
+    source_generation: str
+    symbol: str
+    volume_field: Literal["volume", "volume_real"]
+    volume_unit: str
+
+
+@dataclass(frozen=True)
+class TradeHistoryPage:
+    cursor: str | None
+    limit: int
+    snapshot_id: str
+    response_content_type: Literal["application/vnd.apache.arrow.stream"] | None = None
+    response_headers_schema: Literal["stream/replay/trade-history-headers"] | None = (
+        None
+    )
+
+
+@dataclass(frozen=True)
+class TradeHistoryPageHeaders:
+    frozen_epoch: str
+    frozen_seq: int
+    next_cursor: str | None
+    page_count: int
+    snapshot_id: str
+    source_generation: str
+    symbol: str
+    volume_field: Literal["volume", "volume_real"]
+    volume_unit: str
+
+
+@dataclass(frozen=True)
+class TradeHistoryPending:
+    status: Literal["backfill_pending"]
+    status_token: str
+
+
+@dataclass(frozen=True)
+class TradeSnapshotResponse:
+    coverage: TradeSourceStatus
+    exchange_timezone: str
+    expires_at: str
+    first_page_url: str
+    frozen_watermark: TradeWatermark
+    invalid_trade_count: int
+    provider_id: str
+    session_from: str | None
+    session_key: str
+    session_to: str | None
+    snapshot_id: str
+    source_generation: str
+    symbol: str
+    trade_count: int
+    volume_field: Literal["volume", "volume_real"]
+    volume_unit: str
+
+
+@dataclass(frozen=True)
+class TradeSourceStatus:
+    classification_coverage: Literal["complete", "partial", "unavailable"]
+    coverage_reason: str | None
+    coverage_state: Literal["complete", "partial", "unavailable"]
+    covered_from: str | None
+    covered_to: str | None
+    last_trade_watermark: TradeWatermark
+    provider_id: str
+    source_generation: str
+    symbol: str
+    volume_field: Literal["volume", "volume_real"]
+    volume_unit: str
+
+
+@dataclass(frozen=True)
+class TradeWatermark:
+    epoch: str
+    seq: int
 
 
 UUID = str
