@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stream/payloads/trade-delivery-context",
+  "title": "TradeDeliveryContext",
+  "description": "Context accompanying every trades Arrow batch and bound to all rows in that delivery.",
+  "type": "object",
+  "required": ["provider_id", "symbol", "source_generation", "exchange_timezone", "session_key", "volume_field", "volume_unit"],
+  "properties": {
+    "provider_id": {"type": "string", "minLength": 1},
+    "symbol": {"type": "string", "minLength": 1},
+    "source_generation": {"type": "string", "minLength": 1},
+    "exchange_timezone": {"type": "string", "minLength": 1, "description": "IANA timezone used to interpret session boundaries."},
+    "session_key": {"type": "string", "minLength": 1},
+    "volume_field": {"type": "string", "enum": ["volume", "volume_real"], "description": "Stable field selected for volume analysis throughout this source generation."},
+    "volume_unit": {"type": "string", "minLength": 1, "description": "Unit of the selected volume_field throughout this source generation."}
+  },
+  "additionalProperties": false
+}

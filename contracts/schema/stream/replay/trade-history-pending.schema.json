@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stream/replay/trade-history-pending",
+  "title": "TradeHistoryPending",
+  "description": "In-progress source backfill response; never represent pending history as an empty complete snapshot.",
+  "type": "object",
+  "required": ["status", "status_token"],
+  "properties": {"status": {"const": "backfill_pending"}, "status_token": {"type": "string", "minLength": 1}},
+  "additionalProperties": false
+}

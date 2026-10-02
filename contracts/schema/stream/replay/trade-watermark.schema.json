@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stream/replay/trade-watermark",
+  "title": "TradeWatermark",
+  "type": "object",
+  "required": ["epoch", "seq"],
+  "properties": {"epoch": {"type": "string", "minLength": 1}, "seq": {"type": "integer", "minimum": 0}},
+  "additionalProperties": false
+}

@@ -30,6 +30,7 @@ Endpoint                                                  Method  Response
 ``/v1/ohlcv/recent?symbol=&timeframe=&count=``             GET     recent bars as ``.npz``
 ``/v1/ohlcv?symbol=&timeframe=&start=&end=``              GET     ``.npz`` (application/octet-stream)
 ``/v1/ticks?symbol=&start=&end=&flags=``                  GET     ``.npz`` (application/octet-stream)
+``/v1/trades?symbol=&start_utc=&end_utc=``                GET     eligible trades as ``.npz`` (application/octet-stream)
 ========================================================  ======  ==========================================================
 
 Wire contract
@@ -47,6 +48,18 @@ Wire contract
   milliseconds), ``bid`` / ``ask`` / ``last`` / ``volume`` float64, ``flags`` int32. The
   ``flags`` query param is ``all`` (default) or ``trade``, mapped to
   ``mt5.COPY_TICKS_ALL`` / ``mt5.COPY_TICKS_TRADE``.
+- ``/v1/trades`` is additive and the only endpoint that takes **timezone-aware UTC**
+  inputs: ``start_utc`` (inclusive) and ``end_utc`` (exclusive) are ISO-8601 strings with
+  an explicit offset; naive values are rejected with 400 ``invalid_datetime``. It requests
+  ``COPY_TICKS_ALL`` and keeps records carrying a LAST, VOLUME, BUY or SELL flag whose
+  price and selected volume are finite and positive; quote-only updates are dropped even
+  when ``last``/``volume`` are carried forward. The ``.npz`` holds ``time_msc`` (int64 UTC
+  epoch ms), ``price``, ``volume`` and, when the terminal provides it, ``volume_real``
+  (float64), ``raw_flags`` (int32) and ``occurrence`` (int64, zero-based position among
+  eligible trades of the same millisecond, in terminal order), plus a ``metadata`` entry
+  holding a JSON object (see ``GatewayApp.trades``). Records with a trade flag but an
+  unusable price or volume are counted in ``invalid_trade_count`` and make the range
+  incomplete. ``/v1/ticks`` semantics are unchanged.
 - Bulk serialization is ``np.savez_compressed`` into an in-memory buffer, served as
   ``application/octet-stream``. JSON is only used for ``/v1/health``,
   ``/v1/symbol_info``, ``/v1/symbols/search``, ``/v1/available_range`` and for errors
@@ -84,6 +97,7 @@ import logging
 import os
 import signal
 import threading
+import uuid
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -105,6 +119,8 @@ _MAX_OHLCV_BARS = 50_000
 _MAX_RECENT_OHLCV_BARS = 5_000
 _MAX_TICKS = 50_000_000
 _TICK_RANGE_FETCH_DAYS = 7
+# A /v1/trades response above this many eligible rows is reported as truncated, never cut.
+_MAX_TRADE_ROWS = 500_000
 _HISTORY_ANCHOR = datetime(1990, 1, 1)
 
 # Mirrors MetaTraderClient.TIMEFRAME_NAMES.
@@ -131,6 +147,15 @@ TIMEFRAME_NAMES = (
     "W1",
     "MN1",
 )
+
+# MetaTrader5 TICK_FLAG_* values (stable across terminal builds).
+_TICK_FLAG_LAST = 8
+_TICK_FLAG_VOLUME = 16
+_TICK_FLAG_BUY = 32
+_TICK_FLAG_SELL = 64
+_TRADE_FLAG_MASK = _TICK_FLAG_LAST | _TICK_FLAG_VOLUME | _TICK_FLAG_BUY | _TICK_FLAG_SELL
+# Unit labels bound to the selected volume field for one source generation.
+_TRADE_VOLUME_UNITS = {"volume_real": "contracts", "volume": "provider-lots"}
 
 COLUMNAR_TICK_KEYS = ("time_msc", "bid", "ask", "last", "volume", "flags")
 
@@ -215,6 +240,87 @@ def _ticks_structured_to_columnar(ticks: np.ndarray) -> dict[str, np.ndarray]:
         "volume": volume,
         "flags": flags,
     }
+
+
+def _parse_utc(value: str, name: str) -> datetime:
+    """Parse a timezone-aware ISO-8601 instant and normalize it to UTC."""
+    text = value[:-1] + "+00:00" if value.endswith(("Z", "z")) else value
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError as exc:
+        raise GatewayError(400, "invalid_datetime", f"Invalid ISO-8601 datetime for '{name}': {value!r}.") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise GatewayError(400, "invalid_datetime", f"'{name}' must carry an explicit UTC offset: {value!r}.")
+    return parsed.astimezone(timezone.utc)
+
+
+def _empty_trade_arrays(with_volume_real: bool) -> dict[str, np.ndarray]:
+    arrays = {
+        "time_msc": np.array([], dtype=np.int64),
+        "price": np.array([], dtype=np.float64),
+        "volume": np.array([], dtype=np.float64),
+        "raw_flags": np.array([], dtype=np.int32),
+        "occurrence": np.array([], dtype=np.int64),
+    }
+    if with_volume_real:
+        arrays["volume_real"] = np.array([], dtype=np.float64)
+    return arrays
+
+
+def _occurrences(time_msc: np.ndarray) -> np.ndarray:
+    """Zero-based position of every row within its run of equal milliseconds."""
+    count = len(time_msc)
+    if count == 0:
+        return np.array([], dtype=np.int64)
+    starts = np.flatnonzero(np.r_[True, time_msc[1:] != time_msc[:-1]])
+    group_start = np.repeat(starts, np.diff(np.r_[starts, count]))
+    return np.arange(count, dtype=np.int64) - group_start
+
+
+def _select_trades(ticks: np.ndarray, start_ms: int, end_ms: int) -> tuple[dict[str, np.ndarray], dict]:
+    """Filter terminal ticks down to eligible trades for ``[start_ms, end_ms)``.
+
+    Returns the response arrays and the selection facts (volume field, invalid count).
+    """
+    names = ticks.dtype.names or ()
+    has_real = "volume_real" in names
+    count = len(ticks)
+    time_msc = (
+        ticks["time_msc"].astype(np.int64, copy=False)
+        if "time_msc" in names
+        else ticks["time"].astype(np.int64, copy=False) * 1000
+    )
+    flags = ticks["flags"].astype(np.int32, copy=False) if "flags" in names else np.zeros(count, dtype=np.int32)
+    last = ticks["last"].astype(np.float64, copy=False) if "last" in names else np.zeros(count, dtype=np.float64)
+    volume = ticks["volume"].astype(np.float64, copy=False) if "volume" in names else np.zeros(count, dtype=np.float64)
+    real = ticks["volume_real"].astype(np.float64, copy=False) if has_real else None
+
+    # The terminal range is inclusive and ordered; the contract range is half-open.
+    in_range = (time_msc >= start_ms) & (time_msc < end_ms)
+    candidate = in_range & ((flags & _TRADE_FLAG_MASK) != 0)
+
+    def usable(values: np.ndarray) -> np.ndarray:
+        return np.isfinite(values) & (values > 0)
+
+    # One field per response: real volume only when the source actually provides it.
+    field = "volume_real" if real is not None and bool(np.any(candidate & usable(real))) else "volume"
+    selected = real if field == "volume_real" else volume
+    valid = candidate & usable(last) & usable(selected)
+    invalid = int(np.count_nonzero(candidate & ~valid))
+
+    rows = np.flatnonzero(valid)
+    if len(rows) > 1 and bool(np.any(np.diff(time_msc[rows]) < 0)):
+        rows = rows[np.argsort(time_msc[rows], kind="stable")]
+    arrays = {
+        "time_msc": time_msc[rows],
+        "price": last[rows],
+        "volume": volume[rows],
+        "raw_flags": flags[rows],
+        "occurrence": _occurrences(time_msc[rows]),
+    }
+    if real is not None:
+        arrays["volume_real"] = real[rows]
+    return arrays, {"volume_field": field, "invalid_trade_count": invalid}
 
 
 def _resolve_timeframe(timeframe: str) -> int:
@@ -427,6 +533,9 @@ class GatewayApp:
         self.token = (token or "").strip() or None
         self._lock = threading.Lock()
         self._initialized = False
+        self.provider_id = os.environ.get("MT5_GATEWAY_PROVIDER_ID", "").strip() or "mt5"
+        # Identifies this gateway process; the publisher owns session source generations.
+        self.process_generation = f"gateway-{uuid.uuid4().hex[:12]}"
 
     # -- connection management (call under lock, except try_initialize) -----
     def _ensure_initialized(self) -> bool:
@@ -555,6 +664,57 @@ class GatewayApp:
                 raise GatewayError(404, "symbol_not_found", f"Symbol '{symbol}' is not selectable.")
             columnar = _fetch_ticks_chunked(symbol, start, end, flags)
         return _savez_bytes(columnar)
+
+    def trades(self, symbol: str, start_utc: datetime, end_utc: datetime) -> bytes:
+        """Eligible trades for the half-open UTC range ``[start_utc, end_utc)``.
+
+        The ``metadata`` JSON entry carries ``provider_id``, ``symbol``,
+        ``source_generation``, ``volume_field``/``volume_unit`` (the field and unit chosen
+        for this response), ``availability`` (``available``/``unavailable``),
+        ``range_complete``, ``covered_from_utc``/``covered_to_utc``, ``coverage_reason``,
+        ``invalid_trade_count`` and ``truncated``. A truncated or unavailable range carries
+        no rows, so a caller can never mistake a cut range for a complete one.
+        """
+        start_ms = int(start_utc.timestamp() * 1000)
+        end_ms = int(end_utc.timestamp() * 1000)
+        with self._lock:
+            self._require_ready()
+            if not mt5.symbol_select(symbol, True):
+                raise GatewayError(404, "symbol_not_found", f"Symbol '{symbol}' is not selectable.")
+            ticks = mt5.copy_ticks_range(symbol, start_utc, end_utc, mt5.COPY_TICKS_ALL)
+        meta = {
+            "provider_id": self.provider_id,
+            "symbol": symbol,
+            "source_generation": self.process_generation,
+            "volume_field": "volume",
+            "volume_unit": _TRADE_VOLUME_UNITS["volume"],
+            "availability": "available",
+            "range_complete": True,
+            "covered_from_utc": start_utc.isoformat(),
+            "covered_to_utc": end_utc.isoformat(),
+            "coverage_reason": None,
+            "invalid_trade_count": 0,
+            "truncated": False,
+        }
+        if ticks is None:
+            meta.update(availability="unavailable", range_complete=False, coverage_reason="source_error")
+            meta.update(covered_from_utc=None, covered_to_utc=None)
+            return _savez_trades(_empty_trade_arrays(False), meta)
+        arrays, facts = _select_trades(ticks, start_ms, end_ms)
+        meta["volume_field"] = facts["volume_field"]
+        meta["volume_unit"] = _TRADE_VOLUME_UNITS[facts["volume_field"]]
+        meta["invalid_trade_count"] = facts["invalid_trade_count"]
+        if len(arrays["time_msc"]) > _MAX_TRADE_ROWS:
+            meta.update(truncated=True, range_complete=False, coverage_reason="range_truncated")
+            meta.update(covered_from_utc=None, covered_to_utc=None)
+            arrays = _empty_trade_arrays("volume_real" in arrays)
+        elif facts["invalid_trade_count"]:
+            meta.update(range_complete=False, coverage_reason="invalid_trade_records")
+        return _savez_trades(arrays, meta)
+
+
+def _savez_trades(arrays: dict[str, np.ndarray], meta: dict) -> bytes:
+    return _savez_bytes({**arrays, "metadata": np.array(json.dumps(meta))})
 
 
 def _safe_last_error() -> tuple[int, str]:
@@ -712,6 +872,14 @@ class _GatewayHandler(BaseHTTPRequestHandler):
         flags = _resolve_tick_flags(_optional_param(params, "flags"))
         self._send_npz(self.app.ticks(symbol, start, end, flags))
 
+    def _route_trades(self, params) -> None:
+        symbol = _require_param(params, "symbol")
+        start = _parse_utc(_require_param(params, "start_utc"), "start_utc")
+        end = _parse_utc(_require_param(params, "end_utc"), "end_utc")
+        if end <= start:
+            raise GatewayError(400, "invalid_range", "'end_utc' must be after 'start_utc'.")
+        self._send_npz(self.app.trades(symbol, start, end))
+
     _ROUTES = {
         "/v1/health": _route_health,
         "/v1/symbol_info": _route_symbol_info,
@@ -720,6 +888,7 @@ class _GatewayHandler(BaseHTTPRequestHandler):
         "/v1/ohlcv/recent": _route_recent_ohlcv,
         "/v1/ohlcv": _route_ohlcv,
         "/v1/ticks": _route_ticks,
+        "/v1/trades": _route_trades,
     }
 
     # -- helpers ------------------------------------------------------------

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stream/replay/trade-snapshot",
+  "title": "TradeSnapshotResponse",
+  "description": "Immutable snapshot descriptor. The publisher atomically freezes the session prefix and live watermark; the current millisecond group is excluded until closed. provider_id, symbol, source_generation, volume_field, and volume_unit must equal the corresponding coverage fields.",
+  "type": "object",
+  "required": ["snapshot_id", "symbol", "provider_id", "source_generation", "exchange_timezone", "session_key", "volume_field", "volume_unit", "session_from", "session_to", "frozen_watermark", "coverage", "trade_count", "invalid_trade_count", "first_page_url", "expires_at"],
+  "properties": {
+    "snapshot_id": {"type": "string", "minLength": 1}, "symbol": {"type": "string", "minLength": 1}, "provider_id": {"type": "string", "minLength": 1}, "source_generation": {"type": "string", "minLength": 1},
+    "exchange_timezone": {"type": "string", "minLength": 1}, "session_key": {"type": "string", "minLength": 1}, "volume_field": {"type": "string", "enum": ["volume", "volume_real"]}, "volume_unit": {"type": "string", "minLength": 1},
+    "session_from": {"type": ["string", "null"], "format": "date-time"}, "session_to": {"type": ["string", "null"], "format": "date-time"},
+    "frozen_watermark": {"$ref": "trade-watermark.schema.json"}, "coverage": {"$ref": "../payloads/trade-source-status.schema.json"},
+    "trade_count": {"type": "integer", "minimum": 0}, "invalid_trade_count": {"type": "integer", "minimum": 0},
+    "first_page_url": {"type": "string", "format": "uri-reference"}, "expires_at": {"type": "string", "format": "date-time", "description": "Snapshot token expires ten minutes after issue; expired token returns HTTP 410."}
+  },
+  "additionalProperties": false
+}

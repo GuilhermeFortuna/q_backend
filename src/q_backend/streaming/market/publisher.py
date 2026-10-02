@@ -14,6 +14,7 @@ from q_backend.market_data.clients.shared import _time_msc_to_naive_local
 from q_backend.market_data.timezone import unix_seconds_to_brasilia_naive
 from q_backend.streaming.market.arrow import bars_to_ipc, ticks_to_ipc
 from q_backend.streaming.market.cursor import BarState, TickCursor, bar_transitions, new_ticks
+from q_backend.streaming.market.trade_history import TradeService
 from q_backend.streaming.publisher import EphemeralPublishError, EphemeralPublisher
 
 logger = logging.getLogger(__name__)
@@ -40,10 +41,15 @@ class MarketDataPublisher:
     clock: Callable[[], datetime] = datetime.now
     tick_cursors: dict[str, TickCursor] = field(default_factory=dict)
     bar_states: dict[tuple[str, str], BarState] = field(default_factory=dict)
+    # Session trade tape (Q-080): ingestion and snapshot requests share this loop but
+    # fail independently of quotes and bars.
+    trades: TradeService | None = None
 
     def __post_init__(self) -> None:
         if not self.config.symbols:
             raise ValueError("no symbols configured")
+        self._trades_retry_at = 0.0
+        self._trades_backoff = self.config.tick_poll_interval_s
 
     def poll_ticks_once(self) -> int:
         published = 0
@@ -105,12 +111,25 @@ class MarketDataPublisher:
                 self.bar_states[key] = state
         return published
 
+    def step_trades(self) -> None:
+        """One trade-service pass; a trade failure never pauses quotes and bars."""
+        if self.trades is None or time.monotonic() < self._trades_retry_at:
+            return
+        try:
+            self.trades.step()
+            self._trades_backoff = self.config.tick_poll_interval_s
+        except Exception:  # noqa: BLE001 - isolated: quotes and bars keep publishing
+            logger.exception("trade service step failed; retrying")
+            self._trades_retry_at = time.monotonic() + self._trades_backoff
+            self._trades_backoff = min(self.config.max_backoff_s, self._trades_backoff * 2)
+
     def run_forever(self, stop: threading.Event) -> None:
         backoff = self.config.tick_poll_interval_s
         next_tick = next_bar = time.monotonic()
         unavailable: str | None = None
         while not stop.is_set():
             try:
+                self.step_trades()
                 now = time.monotonic()
                 if now >= next_tick:
                     self.poll_ticks_once()

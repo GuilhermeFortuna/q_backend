@@ -29,7 +29,9 @@
         "ledger",
         "orders",
         "quotes",
-        "risk"
+        "risk",
+        "trades",
+        "trades.status"
       ],
       "description": "Stream topic name. Must be a declared topic in schema/stream/topics.yaml."
     },

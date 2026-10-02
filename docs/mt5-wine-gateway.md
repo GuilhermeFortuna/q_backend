@@ -197,6 +197,16 @@ curl -s http://127.0.0.1:18812/v1/health
 # 3. backend on data_source=auto now serves fresh WIN$/WDO$ bars via the gateway.
 ```
 
+## Session trades (`/v1/trades`)
+
+`GET /v1/trades?symbol=&start_utc=&end_utc=` is additive and read-only. It is the only endpoint
+that takes timezone-aware UTC instants (`end_utc` exclusive; naive values are a 400) and returns
+eligible trades as `.npz` plus a JSON `metadata` entry: volume field and unit, coverage,
+invalid-record count and truncation. `/v1/ticks` is unchanged. `q-market-publisher` uses it to
+build the session tape (`docs/operations/session-trade-tape.md`); redeploy the gateway file
+after updating so the endpoint exists. `MT5_GATEWAY_PROVIDER_ID` (default `mt5`) names the provider in
+that metadata.
+
 ## Troubleshooting
 
 | Symptom                                              | Likely cause / fix                                                                                                                                                 |

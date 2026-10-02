@@ -24,21 +24,30 @@ def _schema(name: str) -> pa.Schema:
         "timestamp[ms]": pa.timestamp("ms"),
         "timestamp[us]": pa.timestamp("us"),
     }
+
+    def arrow_type(field: dict) -> pa.DataType:
+        arrow = type_map[field["type"]]
+        # Only an IANA/UTC zone is an Arrow time zone; "naive-wallclock-*" stays naive.
+        return pa.timestamp(arrow.unit, tz="UTC") if field.get("tz") == "UTC" else arrow
+
     return pa.schema(
-        [
-            pa.field(field["name"], type_map[field["type"]], nullable=field["nullable"])
-            for field in declaration["fields"]
-        ]
+        [pa.field(field["name"], arrow_type(field), nullable=field["nullable"]) for field in declaration["fields"]]
     )
 
 
 TICKS_SCHEMA = _schema("ticks")
 BARS_SCHEMA = _schema("bars")
+TRADES_SCHEMA = _schema("trades")
+
+
+def _record_batch(columns: Mapping[str, np.ndarray], schema: pa.Schema) -> pa.RecordBatch:
+    # NaN stands for null only in nullable columns (the optional provider real volume).
+    arrays = [pa.array(columns[field.name], type=field.type, from_pandas=field.nullable) for field in schema]
+    return pa.record_batch(arrays, schema=schema)
 
 
 def _to_ipc(columns: Mapping[str, np.ndarray], schema: pa.Schema) -> bytes:
-    arrays = [pa.array(columns[field.name], type=field.type) for field in schema]
-    batch = pa.record_batch(arrays, schema=schema)
+    batch = _record_batch(columns, schema)
     sink = pa.BufferOutputStream()
     with pa.ipc.new_stream(sink, schema) as writer:
         writer.write_batch(batch)
@@ -51,3 +60,17 @@ def ticks_to_ipc(columns: Mapping[str, np.ndarray]) -> bytes:
 
 def bars_to_ipc(columns: Mapping[str, np.ndarray]) -> bytes:
     return _to_ipc(columns, BARS_SCHEMA)
+
+
+def trades_schema(context: Mapping[str, str]) -> pa.Schema:
+    """The trades schema with a delivery's context bound in its metadata."""
+    return TRADES_SCHEMA.with_metadata({name.encode(): str(value).encode() for name, value in context.items()})
+
+
+def trades_to_ipc(columns: Mapping[str, np.ndarray], context: Mapping[str, str]) -> bytes:
+    """One trades delivery: rows plus the TradeDeliveryContext carried in schema metadata."""
+    return _to_ipc(columns, trades_schema(context))
+
+
+def trades_record_batch(columns: Mapping[str, np.ndarray], context: Mapping[str, str]) -> pa.RecordBatch:
+    return _record_batch(columns, trades_schema(context))

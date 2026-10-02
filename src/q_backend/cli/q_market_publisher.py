@@ -14,6 +14,8 @@ from q_backend.market_data.clients.remote import RemoteMt5Client
 from q_backend.observability.systemd import EX_CONFIG, notify_ready
 from q_backend.storage.settings import get_settings
 from q_backend.streaming.market.publisher import MarketDataPublisher, MarketPublisherConfig
+from q_backend.streaming.market.trade_history import TradeService, cache_from_settings
+from q_backend.streaming.market.trades import TradeSessionCoordinator, TradeStreamSink
 from q_backend.streaming.publisher import EphemeralPublisher
 from q_backend.streaming.redis_binary import get_binary_redis
 
@@ -29,6 +31,32 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--symbols")
     parser.add_argument("--timeframes")
     return parser
+
+
+def build_trade_service(
+    client: redis.Redis, remote: RemoteMt5Client, symbols: tuple[str, ...], settings
+) -> TradeService:
+    """One session coordinator per symbol, all feeding the shared trades topics."""
+    sink = TradeStreamSink(
+        EphemeralPublisher(client, "trades", producer_id="market-publisher"),
+        EphemeralPublisher(client, "trades.status", producer_id="market-publisher"),
+    )
+    coordinators = {
+        symbol: TradeSessionCoordinator(
+            remote,
+            symbol,
+            sink,
+            settle_ms=settings.trade_group_settle_ms,
+            poll_interval_s=settings.trade_poll_interval_s,
+        )
+        for symbol in symbols
+    }
+    return TradeService(
+        client,
+        cache_from_settings(settings),
+        coordinators,
+        max_backfills=settings.trade_cache_max_backfills,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -62,8 +90,9 @@ def main(argv: list[str] | None = None) -> int:
     if stop.is_set():
         return 0
 
+    remote = RemoteMt5Client()
     publisher = MarketDataPublisher(
-        RemoteMt5Client(),
+        remote,
         {
             "quotes": EphemeralPublisher(client, "quotes", producer_id="market-publisher"),
             "bars.forming": EphemeralPublisher(client, "bars.forming", producer_id="market-publisher"),
@@ -75,6 +104,7 @@ def main(argv: list[str] | None = None) -> int:
             tick_poll_interval_s=settings.stream_tick_poll_interval_s,
             bar_poll_interval_s=settings.stream_bar_poll_interval_s,
         ),
+        trades=build_trade_service(client, remote, symbols, settings),
     )
     publisher.run_forever(stop)
     return 0

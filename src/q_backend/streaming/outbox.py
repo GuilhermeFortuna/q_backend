@@ -22,6 +22,7 @@ from q_contracts.stream import (
     JobTerminalPayload,
     RiskRejectionCode,
     StreamEnvelope,
+    TradeSourceStatus,
 )
 from q_contracts.topics import TOPICS
 
@@ -81,6 +82,7 @@ PAYLOAD_MODELS: dict[str, type] = {
     "schema/stream/payloads/execution-ledger.schema.json": ExecutionLedgerEvent,
     "schema/stream/payloads/execution-order.schema.json": ExecutionOrderState,
     "schema/stream/payloads/execution-risk.schema.json": ExecutionRiskPayload,
+    "schema/stream/payloads/trade-source-status.schema.json": TradeSourceStatus,
 }
 
 

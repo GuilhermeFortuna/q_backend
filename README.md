@@ -1034,7 +1034,7 @@ See [`docs/design/feature-intelligence.md`](https://github.com/GuilhermeFortuna/
 
 ### Stream Protocol & Execution State Streaming
 * **`WS /api/v1/stream`**
-  * *Description:* Real-time bidirectional WebSocket stream providing multiplexed topic subscriptions (`quotes`, `bars.forming`, `bars.completed`, `jobs.progress`, `jobs.terminal`, `deployments`, `decisions`, `orders`, `fills`, `risk`, `ledger`).
+  * *Description:* Real-time bidirectional WebSocket stream providing multiplexed topic subscriptions (`quotes`, `bars.forming`, `bars.completed`, `trades`, `trades.status`, `jobs.progress`, `jobs.terminal`, `deployments`, `decisions`, `orders`, `fills`, `risk`, `ledger`).
 * **`GET /api/v1/stream/execution/snapshot`**
   * *Description:* Consistent point-in-time snapshot of the execution domain across registered deployments, trading accounts, active positions, open/recent orders, recent decisions, fills, risk events, control state (kill switch), and outbox sequence watermarks. Read in a single repeatable-read transaction. Returns `503` if the database is unavailable.
   * *Parameters:* Optional query limits `deployments_limit` (1-500, default 50), `decisions_limit`, `orders_limit`, `fills_limit`, `risk_limit`, `ledger_limit` (1-2000, default 500).
@@ -1045,6 +1045,8 @@ See [`docs/design/feature-intelligence.md`](https://github.com/GuilhermeFortuna/
   * *Description:* Current latest value for ephemeral topics (`quotes`, `bars.forming`, `bars.completed`, `jobs.progress`).
 * **`GET /api/v1/stream/jobs/snapshot`**
   * *Description:* Snapshot of running and recently terminal background jobs with terminal watermarks.
+* **`GET /api/v1/market/trades/snapshot?symbol=`** and **`GET /api/v1/market/trades/history`**
+  * *Description:* The current B3 session's trade tape. The snapshot freezes the confirmed session prefix and the live `trades` watermark with `q-market-publisher` and returns an opaque ten-minute token (`202` while the backfill runs); history pages are immutable Arrow IPC (default 10000 rows, maximum 50000). Subscribe and buffer `trades` first, then discard buffered entries at or below the watermark. See [`docs/operations/session-trade-tape.md`](docs/operations/session-trade-tape.md).
 
 #### Execution Topics on the Stream
 State changes in the execution engine write versioned Q-039 events to the transactional outbox inside the business transaction:

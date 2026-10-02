@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import io
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 
@@ -231,3 +231,217 @@ def test_symbol_info_and_search(gateway, fake_mt5):
     assert json.loads(info_body)["name"] == "WIN$"
     assert search_status == 200
     assert "WIN$" in [row["name"] for row in json.loads(search_body)]
+
+
+# -- /v1/trades -------------------------------------------------------------------------
+
+_TRADE_DTYPE = _TICK_DTYPE + [("volume_real", "f8")]
+_QUOTE = 2 | 4  # TICK_FLAG_BID | TICK_FLAG_ASK
+_LAST = 8
+_VOLUME = 16
+_BUY = 32
+_SELL = 64
+_T0 = datetime(2026, 10, 1, 12, 0, 0, tzinfo=timezone.utc)
+_T0_MSC = int(_T0.timestamp() * 1000)
+
+
+def _trade_ticks(rows, dtype=_TRADE_DTYPE):
+    """rows: (offset_ms, last, volume, volume_real, flags); volume_real is dropped for the legacy dtype."""
+    records = []
+    for offset, last, volume, volume_real, flags in rows:
+        msc = _T0_MSC + offset
+        record = (msc // 1000, 1.0, 2.0, last, volume, msc, flags)
+        records.append(record + (volume_real,) if dtype is _TRADE_DTYPE else record)
+    return np.array(records, dtype=dtype)
+
+
+def _get_trades(base, start=_T0, end=None, **extra):
+    end = end or _T0.replace(minute=5)
+    return http_get(
+        base,
+        "/v1/trades",
+        {"symbol": "WIN$", "start_utc": start.isoformat(), "end_utc": end.isoformat(), **extra},
+    )
+
+
+def _load(body):
+    with np.load(io.BytesIO(body)) as npz:
+        arrays = {name: npz[name] for name in npz.files if name != "metadata"}
+        return arrays, json.loads(str(npz["metadata"]))
+
+
+def test_trades_keep_same_millisecond_records_and_assign_occurrence(gateway, fake_mt5):
+    fake_mt5._state["ticks_source"] = _trade_ticks(
+        [
+            (0, 100.0, 2.0, 2.0, _LAST | _VOLUME),
+            (0, 100.0, 2.0, 2.0, _LAST | _VOLUME),
+            (0, 101.0, 1.0, 1.0, _BUY | _LAST),
+            (7, 100.5, 3.0, 3.0, _SELL | _LAST),
+        ]
+    )
+    with running_gateway_server(gateway) as base:
+        status, _headers, body = _get_trades(base)
+
+    assert status == 200
+    arrays, meta = _load(body)
+    assert list(arrays["time_msc"]) == [_T0_MSC] * 3 + [_T0_MSC + 7]
+    assert list(arrays["occurrence"]) == [0, 1, 2, 0]
+    assert list(arrays["price"]) == [100.0, 100.0, 101.0, 100.5]
+    assert list(arrays["raw_flags"]) == [_LAST | _VOLUME, _LAST | _VOLUME, _BUY | _LAST, _SELL | _LAST]
+    assert fake_mt5._state["last_flags"] == fake_mt5.COPY_TICKS_ALL
+    assert meta["range_complete"] is True
+    assert meta["availability"] == "available"
+    assert meta["invalid_trade_count"] == 0
+    assert meta["truncated"] is False
+    assert meta["covered_from_utc"] == "2026-10-01T12:00:00+00:00"
+    assert meta["covered_to_utc"] == "2026-10-01T12:05:00+00:00"
+
+
+def test_trades_exclude_quote_only_updates_even_with_carried_last_and_volume(gateway, fake_mt5):
+    fake_mt5._state["ticks_source"] = _trade_ticks(
+        [
+            (0, 100.0, 2.0, 2.0, _QUOTE),
+            (1, 100.0, 2.0, 2.0, _LAST | _VOLUME),
+            (2, 100.0, 2.0, 2.0, _QUOTE),
+        ]
+    )
+    with running_gateway_server(gateway) as base:
+        _status, _headers, body = _get_trades(base)
+
+    arrays, meta = _load(body)
+    assert list(arrays["time_msc"]) == [_T0_MSC + 1]
+    assert meta["invalid_trade_count"] == 0
+    assert meta["range_complete"] is True
+
+
+def test_trades_treat_both_or_neither_aggressor_flags_as_eligible(gateway, fake_mt5):
+    fake_mt5._state["ticks_source"] = _trade_ticks(
+        [(0, 100.0, 1.0, 1.0, _BUY | _SELL | _LAST), (1, 100.0, 1.0, 1.0, _LAST)]
+    )
+    with running_gateway_server(gateway) as base:
+        _status, _headers, body = _get_trades(base)
+
+    arrays, _meta = _load(body)
+    assert list(arrays["raw_flags"]) == [_BUY | _SELL | _LAST, _LAST]
+
+
+def test_trades_prefer_positive_volume_real_and_report_field_and_unit(gateway, fake_mt5):
+    fake_mt5._state["ticks_source"] = _trade_ticks([(0, 100.0, 5.0, 3.0, _LAST), (1, 100.0, 7.0, 4.0, _LAST)])
+    with running_gateway_server(gateway) as base:
+        _status, _headers, body = _get_trades(base)
+
+    arrays, meta = _load(body)
+    assert meta["volume_field"] == "volume_real"
+    assert meta["volume_unit"] == "contracts"
+    # Both raw fields travel unchanged; the metadata selects the analysis field.
+    assert list(arrays["volume"]) == [5.0, 7.0]
+    assert list(arrays["volume_real"]) == [3.0, 4.0]
+
+
+def test_trades_fall_back_to_raw_volume_when_volume_real_is_absent_or_unusable(gateway, fake_mt5):
+    with running_gateway_server(gateway) as base:
+        fake_mt5._state["ticks_source"] = _trade_ticks([(0, 100.0, 5.0, 0.0, _LAST)], dtype=_TICK_DTYPE)
+        _status, _headers, body = _get_trades(base)
+        absent, absent_meta = _load(body)
+
+        fake_mt5._state["ticks_source"] = _trade_ticks([(0, 100.0, 5.0, 0.0, _LAST)])
+        _status, _headers, body = _get_trades(base)
+        zero, zero_meta = _load(body)
+
+    assert "volume_real" not in absent
+    assert absent_meta["volume_field"] == "volume"
+    assert absent_meta["volume_unit"] == "provider-lots"
+    assert zero_meta["volume_field"] == "volume"
+    assert list(zero["volume"]) == [5.0]
+
+
+def test_trades_count_invalid_trade_records_and_mark_range_incomplete(gateway, fake_mt5):
+    fake_mt5._state["ticks_source"] = _trade_ticks(
+        [
+            (0, 100.0, 2.0, 2.0, _LAST),
+            (1, 0.0, 2.0, 2.0, _LAST),
+            (2, float("nan"), 2.0, 2.0, _LAST),
+            (3, 100.0, 0.0, 0.0, _VOLUME),
+        ]
+    )
+    with running_gateway_server(gateway) as base:
+        _status, _headers, body = _get_trades(base)
+
+    arrays, meta = _load(body)
+    assert list(arrays["time_msc"]) == [_T0_MSC]
+    assert meta["invalid_trade_count"] == 3
+    assert meta["range_complete"] is False
+    assert meta["coverage_reason"] == "invalid_trade_records"
+
+
+def test_trades_range_is_half_open_in_utc(gateway, fake_mt5):
+    fake_mt5._state["ticks_source"] = _trade_ticks(
+        [
+            (-1, 99.0, 1.0, 1.0, _LAST),
+            (0, 100.0, 1.0, 1.0, _LAST),
+            (299_999, 101.0, 1.0, 1.0, _LAST),
+            (300_000, 102.0, 1.0, 1.0, _LAST),
+        ]
+    )
+    with running_gateway_server(gateway) as base:
+        # The same instant expressed with a non-UTC offset must select the same rows.
+        offset = timezone(timedelta(hours=-3))
+        _status, _headers, body = _get_trades(base, start=_T0.astimezone(offset))
+
+    arrays, _meta = _load(body)
+    assert list(arrays["price"]) == [100.0, 101.0]
+    start, end, _flags = fake_mt5._state["tick_range_calls"][0]
+    assert start.utcoffset().total_seconds() == 0 and end.utcoffset().total_seconds() == 0
+
+
+def test_trades_report_truncation_instead_of_a_partial_page(gateway, fake_mt5, monkeypatch):
+    monkeypatch.setattr(gateway, "_MAX_TRADE_ROWS", 2)
+    fake_mt5._state["ticks_source"] = _trade_ticks([(i, 100.0, 1.0, 1.0, _LAST) for i in range(3)])
+    with running_gateway_server(gateway) as base:
+        _status, _headers, body = _get_trades(base)
+
+    arrays, meta = _load(body)
+    assert len(arrays["time_msc"]) == 0
+    assert meta["truncated"] is True
+    assert meta["range_complete"] is False
+    assert meta["coverage_reason"] == "range_truncated"
+
+
+def test_trades_report_source_outage_when_the_terminal_returns_none(gateway, fake_mt5):
+    fake_mt5._state["ticks_queue"] = [None]
+    with running_gateway_server(gateway) as base:
+        status, _headers, body = _get_trades(base)
+
+    assert status == 200
+    _arrays, meta = _load(body)
+    assert meta["availability"] == "unavailable"
+    assert meta["range_complete"] is False
+    assert meta["coverage_reason"] == "source_error"
+    assert meta["covered_from_utc"] is None
+
+
+def test_trades_reject_naive_or_inverted_ranges(gateway, fake_mt5):
+    with running_gateway_server(gateway) as base:
+        naive, _h, naive_body = http_get(
+            base,
+            "/v1/trades",
+            {"symbol": "WIN$", "start_utc": "2026-10-01T12:00:00", "end_utc": "2026-10-01T12:05:00Z"},
+        )
+        inverted, _h, _b = _get_trades(base, start=_T0.replace(minute=5), end=_T0)
+
+    assert naive == 400
+    assert json.loads(naive_body)["code"] == "invalid_datetime"
+    assert inverted == 400
+
+
+def test_trades_leave_ticks_endpoint_behavior_unchanged(gateway, fake_mt5):
+    fake_mt5._state["ticks_queue"] = [_trade_ticks([(0, 100.0, 1.0, 1.0, _QUOTE)], dtype=_TICK_DTYPE)]
+    with running_gateway_server(gateway) as base:
+        status, _headers, body = http_get(
+            base, "/v1/ticks", {"symbol": "WIN$", "start": "2026-10-01T12:00:00", "end": "2026-10-01T12:05:00"}
+        )
+
+    assert status == 200
+    with np.load(io.BytesIO(body)) as npz:
+        assert sorted(npz.files) == sorted(["time_msc", "bid", "ask", "last", "volume", "flags"])
+        assert len(npz["time_msc"]) == 1
