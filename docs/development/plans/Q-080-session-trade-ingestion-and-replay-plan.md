@@ -19,12 +19,12 @@
 
 ## Ordered implementation
 
-- [ ] 1. Add fake-source fixtures and tests/gateway/test_mt5_gateway.py cases for /v1/trades UTC ranges, trade eligibility, volume context and same-millisecond multiplicity. Add remote-client decoding assertions.
-- [ ] 2. Vendor Q-079 and implement the additive gateway and remote trade path. Register the generated trades.status control model in publisher validation and serialization.
-- [ ] 3. Build TradeSessionCoordinator with bounded chunk fetching, complete-group occurrence assignment, serialized overlap validation and failed-publish cursor retention. Add tests/streaming/test_trade_ingestion.py for boundary/retry/correction cases.
-- [ ] 4. Implement the immutable cache and Redis request/result service in trade_history.py. Add tests/streaming/test_trade_snapshot.py for generation, frozen watermark, resource limits, expiry and concurrent readers.
-- [ ] 5. Add generated API schemas/routes and publisher CLI wiring. Exercise subscribe → buffered live → paged history → watermark discard → replay with tests/api/test_trade_history.py and tests/streaming/test_trade_join.py.
-- [ ] 6. Document the session-day policy, cache settings, source completeness and restart runbook. Run focused suites, make contracts-check and ./scripts/ci.sh; commit and hand off contract pin plus scripted sequence evidence.
+- [x] 1. Add fake-source fixtures and tests/gateway/test_mt5_gateway.py cases for /v1/trades UTC ranges, trade eligibility, volume context and same-millisecond multiplicity. Add remote-client decoding assertions.
+- [x] 2. Vendor Q-079 and implement the additive gateway and remote trade path. Register the generated trades.status control model in publisher validation and serialization.
+- [x] 3. Build TradeSessionCoordinator with bounded chunk fetching, complete-group occurrence assignment, serialized overlap validation and failed-publish cursor retention. Add tests/streaming/test_trade_ingestion.py for boundary/retry/correction cases.
+- [x] 4. Implement the immutable cache and Redis request/result service in trade_history.py. Add tests/streaming/test_trade_snapshot.py for generation, frozen watermark, resource limits, expiry and concurrent readers.
+- [x] 5. Add generated API schemas/routes and publisher CLI wiring. Exercise subscribe → buffered live → paged history → watermark discard → replay with tests/api/test_trade_history.py and tests/streaming/test_trade_join.py.
+- [x] 6. Document the session-day policy, cache settings, source completeness and restart runbook. Run focused suites, make contracts-check and ./scripts/ci.sh; commit and hand off contract pin plus scripted sequence evidence.
 
 ## Review focus
 
