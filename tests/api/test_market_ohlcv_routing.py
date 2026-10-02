@@ -6,6 +6,7 @@ from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 
 from q_backend.api.dependencies import market_data_service
 from q_backend.api.routers.market import get_market_ohlcv_available_range
@@ -217,3 +218,29 @@ def test_ohlcv_remote_falls_back_to_local_when_remote_returns_none(market_root):
     assert rows is local_bars
     remote.get_recent_ohlcv.assert_called_once_with("WIN$", "M5", 100)
     local_client.get_ohlcv.assert_called_once_with("WIN$", "M5", local_available.start, local_available.end)
+
+
+def test_ohlcv_count_query_reports_unreachable_gateway_as_retryable(market_root):
+    remote = market_data_service._remote_client
+    with (
+        patch.object(market_data_service, "mt5_available", return_value=False),
+        patch.object(remote, "is_supported", return_value=True),
+        patch.object(remote, "is_available", return_value=False),
+    ):
+        with pytest.raises(HTTPException) as excinfo:
+            market_service.fetch_ohlcv_rows(market_data_service, "CCMX26", "M5", count=500, start=None, end=None)
+
+    assert excinfo.value.status_code == 503
+
+
+def test_ohlcv_count_query_without_any_provider_is_not_found(market_root):
+    remote = market_data_service._remote_client
+    with (
+        patch.object(market_data_service, "mt5_available", return_value=False),
+        patch.object(remote, "is_supported", return_value=False),
+        patch.object(remote, "is_available", return_value=False),
+    ):
+        with pytest.raises(HTTPException) as excinfo:
+            market_service.fetch_ohlcv_rows(market_data_service, "CCMX26", "M5", count=500, start=None, end=None)
+
+    assert excinfo.value.status_code == 404

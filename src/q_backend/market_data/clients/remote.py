@@ -88,6 +88,7 @@ class RemoteMt5Client:
         timeout: float = 30.0,
         health_timeout: float = 1.0,
         health_cache_seconds: float = 30.0,
+        health_failure_cache_seconds: float = 2.0,
     ):
         resolved_url = base_url if base_url is not None else get_remote_gateway_url()
         self._base_url = resolved_url.rstrip("/") if resolved_url else None
@@ -95,6 +96,8 @@ class RemoteMt5Client:
         self._timeout = timeout
         self._health_timeout = health_timeout
         self._health_cache_seconds = health_cache_seconds
+        # A missed probe is retried soon, so one slow answer does not hide the gateway.
+        self._health_failure_cache_seconds = health_failure_cache_seconds
         self._lock = threading.Lock()
         # (monotonic_deadline, available) or None when unknown.
         self._health_cache: tuple[float, bool] | None = None
@@ -105,7 +108,7 @@ class RemoteMt5Client:
         return self._base_url is not None
 
     def is_available(self) -> bool:
-        """Health probe with a 30s monotonic cache; never raises."""
+        """Health probe with a monotonic cache (30s healthy, 2s failed); never raises."""
         with self._lock:
             now = time.monotonic()
             if self._health_cache is not None:
@@ -113,7 +116,7 @@ class RemoteMt5Client:
                 if now < deadline:
                     return available
             available = self._probe_health()
-            self._health_cache = (now + self._health_cache_seconds, available)
+            self._health_cache = (now + self._cache_seconds(available), available)
             return available
 
     def connect(self) -> bool:
@@ -121,10 +124,13 @@ class RemoteMt5Client:
         with self._lock:
             available = self._probe_health()
             self._health_cache = (
-                time.monotonic() + self._health_cache_seconds,
+                time.monotonic() + self._cache_seconds(available),
                 available,
             )
             return available
+
+    def _cache_seconds(self, available: bool) -> float:
+        return self._health_cache_seconds if available else self._health_failure_cache_seconds
 
     def disconnect(self) -> None:
         """Drop the cached health state."""

@@ -6,18 +6,35 @@ without touching live execution. Background/design: `q_frontend/docs/design/mt5-
 
 The gateway is **read-only market data only**. Live trading stays native-MT5-on-Windows.
 
-## Chart and trade capture isolation
+## Process isolation
 
-The gateway runs trade history downloads in a separate spawned Windows Python process
-with its own MT5 IPC connection. One trade request runs at a time; concurrent requests
-receive a retryable `503 trades_busy`. A native trade call that exceeds 120 seconds
-stops its worker and reports `503 trades_timeout`; the next request starts a new worker.
-Quotes, candle history and symbol lookup use the main process independently. Health
-probes return the last established connection state while that process is busy.
+The `MetaTrader5` module holds the Python interpreter lock for the whole duration of a
+native call, and a call can block for a minute or more while the terminal downloads
+history from the broker (for example the first tick request for a symbol it has not
+synchronized). A single such call in the HTTP process would freeze every endpoint,
+including `/v1/health`, so the HTTP process never calls MT5. It forwards each request
+to one of three spawned Windows Python processes, each with its own MT5 IPC connection:
+
+| Lane     | Endpoints                                                            | When occupied            |
+| -------- | -------------------------------------------------------------------- | ------------------------ |
+| `chart`  | `symbol_info`, `symbols/search`, `available_range`, `ohlcv`, `ohlcv/recent` | queue up to 15 s  |
+| `ticks`  | `ticks`                                                              | queue up to 15 s         |
+| `trades` | `trades`                                                             | fail immediately         |
+
+A lane runs one native call at a time. A request that cannot enter its lane receives a
+retryable `503 <lane>_busy`. A native call that exceeds 120 seconds stops its worker and
+reports `503 <lane>_timeout`; the next request starts a new worker. `/v1/health` asks
+the `chart` lane for the connection state and returns the last known state while that
+lane is occupied, so it always answers immediately.
 
 The market publisher runs trade capture on a dedicated thread, while its main loop
 publishes quotes and candles. Trade failures retain the existing explicit coverage and
 retry behavior; they do not pause chart updates.
+
+The backend treats a configured gateway that misses its health probe as an outage:
+`/api/v1/market/ohlcv/{symbol}` answers `503` (retryable) rather than `404`, and the
+failed probe is retried after 2 seconds instead of the 30 seconds a healthy result is
+cached for.
 
 ## Pinned versions
 

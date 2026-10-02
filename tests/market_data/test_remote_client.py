@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import logging
 import threading
+import time
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
@@ -283,6 +284,19 @@ def test_health_caching_avoids_repeat_requests():
         assert client.is_available() is True
         assert client.is_available() is True
         assert state.health_count == 1  # second call served from cache
+
+
+def test_failed_health_probe_is_retried_after_a_short_cache():
+    state = _FakeState()
+    state.health = {**state.health, "schema_version": "2.0"}
+    with _fake_gateway(state) as (base_url, _state):
+        client = RemoteMt5Client(base_url=base_url, health_failure_cache_seconds=0.05)
+        assert client.is_available() is False
+        assert client.is_available() is False
+        assert state.health_count == 1  # failure cached briefly
+        state.health = {**state.health, "schema_version": "1.0"}
+        time.sleep(0.06)
+        assert client.is_available() is True
 
 
 def test_unreachable_gateway_fast_fails():

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import io
 import json
+import multiprocessing
+import threading
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
@@ -445,3 +448,121 @@ def test_trades_leave_ticks_endpoint_behavior_unchanged(gateway, fake_mt5):
     with np.load(io.BytesIO(body)) as npz:
         assert sorted(npz.files) == sorted(["time_msc", "bid", "ask", "last", "volume", "flags"])
         assert len(npz["time_msc"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Worker lanes: the HTTP process forwards every MT5 call to a per-lane worker.
+# ---------------------------------------------------------------------------
+class _ThreadProcess:
+    """Stands in for a spawned worker process; the worker loop runs on a thread."""
+
+    def __init__(self, gateway, child):
+        self._child = child
+        self._thread = threading.Thread(target=gateway._worker_main, args=(child,), daemon=True)
+        self._thread.start()
+        self.terminated = False
+
+    def is_alive(self) -> bool:
+        return not self.terminated and self._thread.is_alive()
+
+    def terminate(self) -> None:
+        self.terminated = True
+
+    def join(self, timeout=None) -> None:
+        pass
+
+
+@contextmanager
+def _running_lane_server(gateway, timeout_s: float = 5.0):
+    spawned: list[_ThreadProcess] = []
+
+    def spawn():
+        connection, child = multiprocessing.Pipe()
+        spawned.append(_ThreadProcess(gateway, child))
+        return spawned[-1], connection
+
+    server = gateway.build_server("127.0.0.1", 0)
+    server.app.lanes = {
+        lane: gateway.Mt5Worker(lane, wait_s, timeout_s=timeout_s, spawn=spawn)
+        for lane, wait_s in {"chart": 0.2, "ticks": 0.2, "trades": 0.0}.items()
+    }
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address[:2]
+        yield f"http://{host}:{port}", spawned
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+        for worker in server.app.lanes.values():
+            worker.close()
+
+
+def _block_recent_bars(fake_mt5, monkeypatch) -> tuple[threading.Event, threading.Event]:
+    entered, release = threading.Event(), threading.Event()
+
+    def blocked(*_args):
+        entered.set()
+        release.wait(10)
+        return None
+
+    monkeypatch.setattr(fake_mt5, "copy_rates_from_pos", blocked)
+    return entered, release
+
+
+_RECENT = {"symbol": "WIN$", "timeframe": "M5", "count": "10"}
+_TICKS = {"symbol": "WIN$", "start": "2026-01-05T09:00:00", "end": "2026-01-05T09:00:05"}
+
+
+def test_lanes_serve_requests_through_worker_processes(gateway, fake_mt5):
+    with _running_lane_server(gateway) as (base, _spawned):
+        health_status, _h, health_body = http_get(base, "/v1/health")
+        info_status, _h2, info_body = http_get(base, "/v1/symbol_info", {"symbol": "WIN$"})
+        missing_status, _h3, missing_body = http_get(base, "/v1/symbol_info", {"symbol": "NOPE"})
+
+    assert health_status == 200
+    assert json.loads(health_body)["mt5_connected"] is True
+    assert json.loads(health_body)["terminal_build"] == 4200
+    assert info_status == 200
+    assert json.loads(info_body)["name"] == "WIN$"
+    assert missing_status == 404
+    assert json.loads(missing_body)["code"] == "symbol_not_found"
+
+
+def test_blocked_chart_call_leaves_health_and_other_lanes_responsive(gateway, fake_mt5, monkeypatch):
+    entered, release = _block_recent_bars(fake_mt5, monkeypatch)
+    with _running_lane_server(gateway) as (base, _spawned):
+        http_get(base, "/v1/health")
+        blocked = threading.Thread(target=http_get, args=(base, "/v1/ohlcv/recent", _RECENT), daemon=True)
+        blocked.start()
+        assert entered.wait(5)
+        try:
+            health_status, _h, health_body = http_get(base, "/v1/health")
+            ticks_status, _h2, _b2 = http_get(base, "/v1/ticks", _TICKS)
+            busy_status, _h3, busy_body = http_get(base, "/v1/symbol_info", {"symbol": "WIN$"})
+        finally:
+            release.set()
+            blocked.join(timeout=5)
+
+    assert health_status == 200
+    assert json.loads(health_body)["mt5_connected"] is True
+    assert ticks_status == 200
+    assert busy_status == 503
+    assert json.loads(busy_body)["code"] == "chart_busy"
+
+
+def test_native_call_timeout_restarts_the_lane_worker(gateway, fake_mt5, monkeypatch):
+    _entered, release = _block_recent_bars(fake_mt5, monkeypatch)
+    with _running_lane_server(gateway, timeout_s=0.2) as (base, spawned):
+        try:
+            timeout_status, _h, timeout_body = http_get(base, "/v1/ohlcv/recent", _RECENT)
+            retry_status, _h2, _b2 = http_get(base, "/v1/symbol_info", {"symbol": "WIN$"})
+        finally:
+            release.set()
+
+    assert timeout_status == 503
+    assert json.loads(timeout_body)["code"] == "chart_timeout"
+    assert retry_status == 200
+    assert spawned[0].terminated is True
+    assert len(spawned) == 4

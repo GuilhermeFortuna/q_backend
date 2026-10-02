@@ -71,6 +71,18 @@ Errors
 - Symbol not selectable / unknown -> 404 ``symbol_not_found``
 - MT5 not initialized             -> 503 ``mt5_unavailable`` (``/v1/health`` still 200,
                                      with ``mt5_connected: false``)
+- Worker lane occupied            -> 503 ``<lane>_busy`` (retryable)
+- Native MT5 call never returned  -> 503 ``<lane>_timeout`` (the lane's worker restarts)
+- Worker process lost             -> 503 ``<lane>_unavailable`` (retryable)
+
+Process model
+=============
+The ``MetaTrader5`` module holds the interpreter lock for the whole duration of a native
+call, and a call may block for a minute or more while the terminal downloads history
+from the broker. When launched through ``main()`` the HTTP process therefore never
+calls MT5: each request is forwarded to one of three spawned worker processes
+(``chart``, ``ticks``, ``trades``), each with its own MT5 IPC connection, so a slow
+download in one lane cannot freeze ``/v1/health`` or the other lanes.
 - Missing token (when configured) -> 401 ``unauthorized``
 
 Launch command (WO186 installs this via a systemd user unit)
@@ -91,6 +103,7 @@ Config can also come from the environment: ``MT5_GATEWAY_HOST``, ``MT5_GATEWAY_P
 from __future__ import annotations
 
 import argparse
+import functools
 import io
 import json
 import logging
@@ -123,6 +136,16 @@ _TICK_RANGE_FETCH_DAYS = 7
 # A /v1/trades response above this many eligible rows is reported as truncated, never cut.
 _MAX_TRADE_ROWS = 500_000
 _HISTORY_ANCHOR = datetime(1990, 1, 1)
+
+# Worker lanes (see "Process model"). A lane runs one native call at a time.
+_CHART_LANE = "chart"
+_TICKS_LANE = "ticks"
+_TRADES_LANE = "trades"
+# How long a request queues for an occupied lane before a retryable 503. Trade capture
+# fails fast so downloads never accumulate behind an already timed-out request.
+_LANE_WAIT_S = {_CHART_LANE: 15.0, _TICKS_LANE: 15.0, _TRADES_LANE: 0.0}
+# MT5 may download broker history before returning; bound it even if IPC never returns.
+_NATIVE_CALL_TIMEOUT_S = 120.0
 
 # Mirrors MetaTraderClient.TIMEFRAME_NAMES.
 TIMEFRAME_NAMES = (
@@ -520,12 +543,32 @@ def _to_plain_dict(obj) -> dict:
     return dict(vars(obj))
 
 
+def _in_lane(lane: str):
+    """Forward the call to the lane's worker process when the app has one."""
+
+    def decorate(method):
+        @functools.wraps(method)
+        def wrapper(self, *args):
+            worker = self.lanes.get(lane)
+            if worker is None:
+                return method(self, *args)
+            return worker.call(method.__name__, *args)
+
+        return wrapper
+
+    return decorate
+
+
 class GatewayApp:
     """Holds MT5 connection state and serializes every ``mt5.*`` call.
 
     The MT5 IPC is not thread-safe, so all terminal access happens under a single
     lock. ``mt5.initialize()`` is best-effort at startup and retried lazily per
     request if it previously failed.
+
+    With ``lanes`` installed (the HTTP process started by ``main()``) the endpoint
+    methods forward to worker processes and this instance never calls MT5; without
+    them (inside a worker, and in tests) they run in-process.
     """
 
     def __init__(self, token: str | None = None):
@@ -534,13 +577,14 @@ class GatewayApp:
         self.token = (token or "").strip() or None
         self._lock = threading.Lock()
         self._initialized = False
+        self._cached_connected = False
         self._cached_terminal_build: int | None = None
-        self.trade_worker: TradeWorker | None = None
+        self.lanes: dict[str, Mt5Worker] = {}
         self.provider_id = os.environ.get("MT5_GATEWAY_PROVIDER_ID", "").strip() or "mt5"
         # Identifies this gateway process; the publisher owns session source generations.
         self.process_generation = f"gateway-{uuid.uuid4().hex[:12]}"
 
-    # -- connection management (call under lock, except try_initialize) -----
+    # -- connection management (call under lock) ----------------------------
     def _ensure_initialized(self) -> bool:
         if self._initialized:
             return True
@@ -560,10 +604,6 @@ class GatewayApp:
                 "MetaTrader 5 terminal is not initialized.",
             )
 
-    def try_initialize(self) -> bool:
-        with self._lock:
-            return self._ensure_initialized()
-
     def shutdown_mt5(self) -> None:
         with self._lock:
             if self._initialized:
@@ -572,25 +612,36 @@ class GatewayApp:
                 logger.info("MetaTrader5 shut down.")
 
     # -- endpoints ----------------------------------------------------------
+    def connection_state(self) -> tuple[bool, int | None] | None:
+        """``(connected, terminal_build)``, or ``None`` while MT5 is busy with a call."""
+        worker = self.lanes.get(_CHART_LANE)
+        if worker is not None:
+            try:
+                return worker.call("connection_state", wait_s=0.0)
+            except GatewayError:
+                return None
+        if not self._lock.acquire(blocking=False):
+            return None
+        try:
+            connected = self._ensure_initialized()
+            return connected, (_terminal_build() if connected else None)
+        finally:
+            self._lock.release()
+
     def health(self) -> dict:
         # A history download must not make the health probe wait behind MT5 IPC.
         # When busy, report the last established connection state and terminal build.
-        connected = self._initialized
-        build = self._cached_terminal_build
-        if self._lock.acquire(blocking=False):
-            try:
-                connected = self._ensure_initialized()
-                build = _terminal_build() if connected else None
-                self._cached_terminal_build = build
-            finally:
-                self._lock.release()
+        state = self.connection_state()
+        if state is not None:
+            self._cached_connected, self._cached_terminal_build = state
         return {
             "status": "ok",
             "schema_version": SCHEMA_VERSION,
-            "mt5_connected": connected,
-            "terminal_build": build,
+            "mt5_connected": self._cached_connected,
+            "terminal_build": self._cached_terminal_build,
         }
 
+    @_in_lane(_CHART_LANE)
     def symbol_info(self, symbol: str) -> dict:
         with self._lock:
             self._require_ready()
@@ -601,6 +652,7 @@ class GatewayApp:
                 raise GatewayError(404, "symbol_not_found", f"No symbol_info for '{symbol}'.")
             return _to_plain_dict(info)
 
+    @_in_lane(_CHART_LANE)
     def search_symbols(self, query: str) -> list[dict]:
         with self._lock:
             self._require_ready()
@@ -618,6 +670,7 @@ class GatewayApp:
                 for s in symbols
             ]
 
+    @_in_lane(_CHART_LANE)
     def available_range(self, symbol: str, timeframe: str) -> dict:
         mt5_timeframe = _resolve_timeframe(timeframe)
         with self._lock:
@@ -643,6 +696,7 @@ class GatewayApp:
             "bar_count": bar_count,
         }
 
+    @_in_lane(_CHART_LANE)
     def ohlcv(self, symbol: str, timeframe: str, start: datetime, end: datetime) -> bytes:
         mt5_timeframe = _resolve_timeframe(timeframe)
         with self._lock:
@@ -652,6 +706,7 @@ class GatewayApp:
             rates = _fetch_ohlcv_chunked(symbol, mt5_timeframe, start, end)
         return _ohlcv_to_npz_bytes(rates)
 
+    @_in_lane(_CHART_LANE)
     def recent_ohlcv(self, symbol: str, timeframe: str, count: int) -> bytes:
         """Fetch a bounded number of newest bars without probing the full history range."""
         mt5_timeframe = _resolve_timeframe(timeframe)
@@ -668,6 +723,7 @@ class GatewayApp:
             )
         return _ohlcv_to_npz_bytes(rates[-count:])
 
+    @_in_lane(_TICKS_LANE)
     def ticks(self, symbol: str, start: datetime, end: datetime, flags: int) -> bytes:
         with self._lock:
             self._require_ready()
@@ -676,6 +732,7 @@ class GatewayApp:
             columnar = _fetch_ticks_chunked(symbol, start, end, flags)
         return _savez_bytes(columnar)
 
+    @_in_lane(_TRADES_LANE)
     def trades(self, symbol: str, start_utc: datetime, end_utc: datetime) -> bytes:
         """Eligible trades for the half-open UTC range ``[start_utc, end_utc)``.
 
@@ -686,8 +743,6 @@ class GatewayApp:
         ``invalid_trade_count`` and ``truncated``. A truncated or unavailable range carries
         no rows, so a caller can never mistake a cut range for a complete one.
         """
-        if self.trade_worker is not None:
-            return self.trade_worker.fetch(symbol, start_utc, end_utc)
         start_ms = int(start_utc.timestamp() * 1000)
         end_ms = int(end_utc.timestamp() * 1000)
         with self._lock:
@@ -726,52 +781,53 @@ class GatewayApp:
         return _savez_trades(arrays, meta)
 
 
-class TradeWorker:
-    """Serialize long trade downloads in their own MT5 IPC process.
+class Mt5Worker:
+    """Run one lane's MT5 calls in a spawned process with its own MT5 IPC connection.
 
-    At most one request enters the worker. Busy callers get a retryable 503 rather
-    than accumulating downloads behind an already timed-out HTTP request.
+    One call runs at a time. A caller queues up to ``wait_s`` for the lane and then
+    gets a retryable 503; a native call that never returns stops the process, and the
+    next call starts a new one.
     """
 
-    def __init__(self):
+    def __init__(self, lane: str, wait_s: float, timeout_s: float = _NATIVE_CALL_TIMEOUT_S, spawn=None):
+        self._lane = lane
+        self._wait_s = wait_s
+        self._timeout_s = timeout_s
+        self._spawn = spawn or _spawn_worker
         self._lock = threading.Lock()
         self._stopping = False
-        self._start()
+        self._process, self._connection = self._spawn()
 
-    def _start(self) -> None:
-        context = multiprocessing.get_context("spawn")
-        self._connection, child = context.Pipe()
-        self._process = context.Process(target=_trade_worker_main, args=(child,), daemon=True)
-        self._process.start()
-        child.close()
-
-    def fetch(self, symbol: str, start: datetime, end: datetime) -> bytes:
-        if not self._lock.acquire(blocking=False):
-            raise GatewayError(503, "trades_busy", "Trade capture is busy; retry this range.")
+    def call(self, method: str, *args, wait_s: float | None = None):
+        wait_s = self._wait_s if wait_s is None else wait_s
+        acquired = self._lock.acquire(timeout=wait_s) if wait_s > 0 else self._lock.acquire(blocking=False)
+        if not acquired:
+            raise self._error("busy", "is busy; retry this request.")
         try:
             if self._stopping:
-                raise GatewayError(503, "trades_unavailable", "Trade capture is shutting down.")
+                raise self._error("unavailable", "is shutting down.")
             if not self._process.is_alive():
                 self._stop_process()
-                self._start()
-            self._connection.send((symbol, start, end))
-            # MT5 may download broker history before returning. Keep this wait out
-            # of the chart process and bound it even if native IPC never returns.
-            if not self._connection.poll(120):
+                self._process, self._connection = self._spawn()
+            self._connection.send((method, args))
+            if not self._connection.poll(self._timeout_s):
                 self._stop_process()
-                raise GatewayError(503, "trades_timeout", "Trade capture timed out.")
+                raise self._error("timeout", "timed out waiting for MetaTrader 5.")
             status, code, result = self._connection.recv()
             if status != 200:
                 raise GatewayError(status, code, result)
             return result
         except (EOFError, BrokenPipeError, OSError) as exc:
-            raise GatewayError(503, "trades_unavailable", "Trade capture process disconnected.") from exc
+            raise self._error("unavailable", "process disconnected.") from exc
         finally:
             self._lock.release()
 
     def close(self) -> None:
         self._stopping = True
         self._stop_process()
+
+    def _error(self, kind: str, detail: str) -> GatewayError:
+        return GatewayError(503, f"{self._lane}_{kind}", f"MT5 {self._lane} worker {detail}")
 
     def _stop_process(self) -> None:
         if self._process.is_alive():
@@ -780,19 +836,28 @@ class TradeWorker:
         self._connection.close()
 
 
-def _trade_worker_main(connection) -> None:
-    # Spawn gives this process its own MetaTrader5 module and IPC connection.
+def _spawn_worker():
+    # Spawn gives the process its own MetaTrader5 module and IPC connection.
+    context = multiprocessing.get_context("spawn")
+    connection, child = context.Pipe()
+    process = context.Process(target=_worker_main, args=(child,), daemon=True)
+    process.start()
+    child.close()
+    return process, connection
+
+
+def _worker_main(connection) -> None:
     app = GatewayApp()
     try:
         while True:
-            symbol, start, end = connection.recv()
+            method, args = connection.recv()
             try:
-                result = app.trades(symbol, start, end)
-                connection.send((200, "", result))
+                connection.send((200, "", getattr(app, method)(*args)))
             except GatewayError as exc:
                 connection.send((exc.status, exc.code, exc.message))
-            except Exception as exc:  # noqa: BLE001 - surface a failed range, never invent coverage
-                connection.send((503, "trades_unavailable", str(exc)))
+            except Exception as exc:  # noqa: BLE001 - report the failed call, keep serving
+                logger.exception("unhandled error in %s", method)
+                connection.send((500, "internal_error", str(exc)))
     except (EOFError, BrokenPipeError, OSError):
         pass
     finally:
@@ -1041,6 +1106,18 @@ def build_server(host: str, port: int, token: str | None = None) -> GatewayServe
     return GatewayServer((host, port), GatewayApp(token=token))
 
 
+def _log_startup_connection(app: GatewayApp) -> None:
+    # Connecting can wait on a busy terminal; never delay listening for it.
+    threading.Thread(target=_log_startup_connection, args=(app,), daemon=True).start()
+
+
+def _log_startup_connection(app: GatewayApp) -> None:
+    if app.health()["mt5_connected"]:
+        logger.info("Connected to MT5 terminal at startup.")
+    else:
+        logger.warning("MT5 not initialized at startup; will retry lazily per request.")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="MT5 remote market-data gateway.")
     parser.add_argument(
@@ -1068,12 +1145,10 @@ def main(argv: list[str] | None = None) -> None:
 
     server = build_server(args.host, args.port, token=args.token)
     app: GatewayApp = server.app
-    app.trade_worker = TradeWorker()
+    app.lanes = {lane: Mt5Worker(lane, wait_s) for lane, wait_s in _LANE_WAIT_S.items()}
 
-    if app.try_initialize():
-        logger.info("Connected to MT5 terminal at startup.")
-    else:
-        logger.warning("MT5 not initialized at startup; will retry lazily per request.")
+    # Connecting can wait on a busy terminal; never delay listening for it.
+    threading.Thread(target=_log_startup_connection, args=(app,), daemon=True).start()
 
     def _handle_signal(signum, _frame) -> None:
         logger.info("Received signal %s; shutting down.", signum)
@@ -1093,8 +1168,8 @@ def main(argv: list[str] | None = None) -> None:
         server.serve_forever()
     finally:
         server.server_close()
-        app.trade_worker.close()
-        app.shutdown_mt5()
+        for worker in app.lanes.values():
+            worker.close()
 
 
 if __name__ == "__main__":

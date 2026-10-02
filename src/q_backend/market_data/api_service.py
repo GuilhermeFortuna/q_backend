@@ -382,6 +382,10 @@ def fetch_ohlcv_rows(
     if not service.mt5_available():
         if get_data_source() == "mt5":
             raise HTTPException(status_code=503, detail="MetaTrader 5 terminal is offline.")
+        if service._remote_client.is_supported():
+            # A configured gateway that misses its health probe is an outage, not a
+            # missing symbol: report it as retryable instead of "no data".
+            raise HTTPException(status_code=503, detail="MT5 gateway is unreachable; retry shortly.")
         raise HTTPException(
             status_code=404,
             detail=f"No OHLCV data found for symbol '{symbol}' (local data provider).",
