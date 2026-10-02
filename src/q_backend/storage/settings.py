@@ -76,6 +76,15 @@ class Settings(BaseSettings):
     stream_bar_timeframes: str = "M1"
     stream_tick_poll_interval_s: float = 0.25
     stream_bar_poll_interval_s: float = 1.0
+    # Session trade tape (Q-080). The cache directory defaults to a folder under
+    # market_data_root; snapshot tokens live ``trade_snapshot_ttl_s`` seconds.
+    trade_cache_dir: str = ""
+    trade_cache_max_bytes: int = 1_073_741_824
+    trade_cache_max_backfills: int = 2
+    trade_snapshot_ttl_s: int = 600
+    trade_request_timeout_s: float = 5.0
+    trade_group_settle_ms: int = 2000
+    trade_poll_interval_s: float = 0.25
     catalog_tombstone_grace_s: int = 604_800
 
 
