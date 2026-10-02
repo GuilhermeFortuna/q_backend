@@ -41,8 +41,8 @@ class MarketDataPublisher:
     clock: Callable[[], datetime] = datetime.now
     tick_cursors: dict[str, TickCursor] = field(default_factory=dict)
     bar_states: dict[tuple[str, str], BarState] = field(default_factory=dict)
-    # Session trade tape (Q-080): ingestion and snapshot requests share this loop but
-    # fail independently of quotes and bars.
+    # Session trade tape (Q-080): one dedicated thread owns ingestion and snapshot
+    # requests, so slow history capture cannot stall quote and bar publication.
     trades: TradeService | None = None
 
     def __post_init__(self) -> None:
@@ -123,13 +123,33 @@ class MarketDataPublisher:
             self._trades_retry_at = time.monotonic() + self._trades_backoff
             self._trades_backoff = min(self.config.max_backoff_s, self._trades_backoff * 2)
 
+    def _run_trade_capture(self, stop: threading.Event) -> None:
+        while not stop.is_set():
+            self.step_trades()
+            stop.wait(self.config.tick_poll_interval_s)
+
     def run_forever(self, stop: threading.Event) -> None:
+        trade_thread = None
+        if self.trades is not None:
+            trade_thread = threading.Thread(
+                target=self._run_trade_capture, args=(stop,), name="trade-capture", daemon=True
+            )
+            trade_thread.start()
+        try:
+            self._run_quotes_and_bars(stop)
+        finally:
+            stop.set()
+            if trade_thread is not None:
+                trade_thread.join(timeout=5)
+                if trade_thread.is_alive():
+                    logger.warning("trade capture is still finishing a request during shutdown")
+
+    def _run_quotes_and_bars(self, stop: threading.Event) -> None:
         backoff = self.config.tick_poll_interval_s
         next_tick = next_bar = time.monotonic()
         unavailable: str | None = None
         while not stop.is_set():
             try:
-                self.step_trades()
                 now = time.monotonic()
                 if now >= next_tick:
                     self.poll_ticks_once()

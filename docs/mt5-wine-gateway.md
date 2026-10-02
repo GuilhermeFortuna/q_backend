@@ -6,6 +6,19 @@ without touching live execution. Background/design: `q_frontend/docs/design/mt5-
 
 The gateway is **read-only market data only**. Live trading stays native-MT5-on-Windows.
 
+## Chart and trade capture isolation
+
+The gateway runs trade history downloads in a separate spawned Windows Python process
+with its own MT5 IPC connection. One trade request runs at a time; concurrent requests
+receive a retryable `503 trades_busy`. A native trade call that exceeds 120 seconds
+stops its worker and reports `503 trades_timeout`; the next request starts a new worker.
+Quotes, candle history and symbol lookup use the main process independently. Health
+probes return the last established connection state while that process is busy.
+
+The market publisher runs trade capture on a dedicated thread, while its main loop
+publishes quotes and candles. Trade failures retain the existing explicit coverage and
+retry behavior; they do not pause chart updates.
+
 ## Pinned versions
 
 Everything is pinned; upgrades are a deliberate operator action (edit the pin, re-run

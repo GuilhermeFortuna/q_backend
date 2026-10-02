@@ -94,6 +94,7 @@ import argparse
 import io
 import json
 import logging
+import multiprocessing
 import os
 import signal
 import threading
@@ -533,6 +534,8 @@ class GatewayApp:
         self.token = (token or "").strip() or None
         self._lock = threading.Lock()
         self._initialized = False
+        self._cached_terminal_build: int | None = None
+        self.trade_worker: TradeWorker | None = None
         self.provider_id = os.environ.get("MT5_GATEWAY_PROVIDER_ID", "").strip() or "mt5"
         # Identifies this gateway process; the publisher owns session source generations.
         self.process_generation = f"gateway-{uuid.uuid4().hex[:12]}"
@@ -570,9 +573,17 @@ class GatewayApp:
 
     # -- endpoints ----------------------------------------------------------
     def health(self) -> dict:
-        with self._lock:
-            connected = self._ensure_initialized()
-            build = _terminal_build() if connected else None
+        # A history download must not make the health probe wait behind MT5 IPC.
+        # When busy, report the last established connection state and terminal build.
+        connected = self._initialized
+        build = self._cached_terminal_build
+        if self._lock.acquire(blocking=False):
+            try:
+                connected = self._ensure_initialized()
+                build = _terminal_build() if connected else None
+                self._cached_terminal_build = build
+            finally:
+                self._lock.release()
         return {
             "status": "ok",
             "schema_version": SCHEMA_VERSION,
@@ -675,6 +686,8 @@ class GatewayApp:
         ``invalid_trade_count`` and ``truncated``. A truncated or unavailable range carries
         no rows, so a caller can never mistake a cut range for a complete one.
         """
+        if self.trade_worker is not None:
+            return self.trade_worker.fetch(symbol, start_utc, end_utc)
         start_ms = int(start_utc.timestamp() * 1000)
         end_ms = int(end_utc.timestamp() * 1000)
         with self._lock:
@@ -711,6 +724,80 @@ class GatewayApp:
         elif facts["invalid_trade_count"]:
             meta.update(range_complete=False, coverage_reason="invalid_trade_records")
         return _savez_trades(arrays, meta)
+
+
+class TradeWorker:
+    """Serialize long trade downloads in their own MT5 IPC process.
+
+    At most one request enters the worker. Busy callers get a retryable 503 rather
+    than accumulating downloads behind an already timed-out HTTP request.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._stopping = False
+        self._start()
+
+    def _start(self) -> None:
+        context = multiprocessing.get_context("spawn")
+        self._connection, child = context.Pipe()
+        self._process = context.Process(target=_trade_worker_main, args=(child,), daemon=True)
+        self._process.start()
+        child.close()
+
+    def fetch(self, symbol: str, start: datetime, end: datetime) -> bytes:
+        if not self._lock.acquire(blocking=False):
+            raise GatewayError(503, "trades_busy", "Trade capture is busy; retry this range.")
+        try:
+            if self._stopping:
+                raise GatewayError(503, "trades_unavailable", "Trade capture is shutting down.")
+            if not self._process.is_alive():
+                self._stop_process()
+                self._start()
+            self._connection.send((symbol, start, end))
+            # MT5 may download broker history before returning. Keep this wait out
+            # of the chart process and bound it even if native IPC never returns.
+            if not self._connection.poll(120):
+                self._stop_process()
+                raise GatewayError(503, "trades_timeout", "Trade capture timed out.")
+            status, code, result = self._connection.recv()
+            if status != 200:
+                raise GatewayError(status, code, result)
+            return result
+        except (EOFError, BrokenPipeError, OSError) as exc:
+            raise GatewayError(503, "trades_unavailable", "Trade capture process disconnected.") from exc
+        finally:
+            self._lock.release()
+
+    def close(self) -> None:
+        self._stopping = True
+        self._stop_process()
+
+    def _stop_process(self) -> None:
+        if self._process.is_alive():
+            self._process.terminate()
+        self._process.join(timeout=5)
+        self._connection.close()
+
+
+def _trade_worker_main(connection) -> None:
+    # Spawn gives this process its own MetaTrader5 module and IPC connection.
+    app = GatewayApp()
+    try:
+        while True:
+            symbol, start, end = connection.recv()
+            try:
+                result = app.trades(symbol, start, end)
+                connection.send((200, "", result))
+            except GatewayError as exc:
+                connection.send((exc.status, exc.code, exc.message))
+            except Exception as exc:  # noqa: BLE001 - surface a failed range, never invent coverage
+                connection.send((503, "trades_unavailable", str(exc)))
+    except (EOFError, BrokenPipeError, OSError):
+        pass
+    finally:
+        connection.close()
+        app.shutdown_mt5()
 
 
 def _savez_trades(arrays: dict[str, np.ndarray], meta: dict) -> bytes:
@@ -981,6 +1068,7 @@ def main(argv: list[str] | None = None) -> None:
 
     server = build_server(args.host, args.port, token=args.token)
     app: GatewayApp = server.app
+    app.trade_worker = TradeWorker()
 
     if app.try_initialize():
         logger.info("Connected to MT5 terminal at startup.")
@@ -1005,6 +1093,7 @@ def main(argv: list[str] | None = None) -> None:
         server.serve_forever()
     finally:
         server.server_close()
+        app.trade_worker.close()
         app.shutdown_mt5()
 
 
