@@ -107,7 +107,7 @@ Follow journal logs for a service:
 ```bash
 journalctl --user -u q-api.service -f
 journalctl --user -u q-outbox-relay.service -f
-journalctl --user -u q-market-publisher.service -f
+journalctl --user -u q-market-publisher.service -f   # also logs session trade backfills
 journalctl --user -u q-research-worker.service -f
 ```
 

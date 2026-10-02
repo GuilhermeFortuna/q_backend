@@ -70,6 +70,10 @@ _PROVIDER = "remote"
 class _GatewayNotFound(Exception):
     """Internal signal for an HTTP 404 from the gateway (never leaks to callers)."""
 
+    def __init__(self, message: str, code: str | None = None):
+        super().__init__(message)
+        self.code = code
+
 
 class RemoteMt5Client:
     """MarketDataProvider backed by a remote MT5 HTTP gateway."""
@@ -285,7 +289,10 @@ class RemoteMt5Client:
         }
         try:
             content = self._get_npz("/v1/trades", params)
-        except _GatewayNotFound:
+        except _GatewayNotFound as exc:
+            if exc.code != "symbol_not_found":
+                # An older gateway has no /v1/trades: that is an outage, not an unknown symbol.
+                raise ConnectionError("Remote MT5 gateway does not serve /v1/trades; redeploy the gateway.") from exc
             return _unavailable_trades(symbol, "symbol_not_found")
         try:
             with np.load(io.BytesIO(content)) as npz:
@@ -364,7 +371,7 @@ class RemoteMt5Client:
         code, message = _error_detail(resp)
         status = resp.status_code
         if status == 404:
-            raise _GatewayNotFound(message or f"{path} not found")
+            raise _GatewayNotFound(message or f"{path} not found", code)
         if status == 400:
             raise ValueError(message or f"Bad request to {path}.")
         if status == 503 or code == "mt5_unavailable":

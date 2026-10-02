@@ -94,3 +94,10 @@ def test_remote_trades_require_timezone_aware_ranges():
     client = RemoteMt5Client(base_url="http://127.0.0.1:9")
     with pytest.raises(ValueError):
         client.get_trades("WIN$", datetime(2026, 10, 1, 12, 0), _START)
+
+
+def test_remote_trades_treat_a_gateway_without_the_endpoint_as_an_outage(gateway, fake_mt5, monkeypatch):
+    monkeypatch.delitem(gateway._GatewayHandler._ROUTES, "/v1/trades")
+    with running_gateway_server(gateway) as base:
+        with pytest.raises(ConnectionError, match="redeploy"):
+            RemoteMt5Client(base_url=base).get_trades("WIN$", _START, _START + timedelta(seconds=1))
