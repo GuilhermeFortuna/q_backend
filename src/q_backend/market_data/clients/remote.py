@@ -29,10 +29,11 @@ Exception mapping (gateway response -> raised):
 from __future__ import annotations
 
 import io
+import json
 import logging
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 import httpx
@@ -42,6 +43,8 @@ from q_backend.market_data.clients.shared import (
     COPY_TICKS_ALL,
     COPY_TICKS_TRADE,
     OhlcvAvailableRange,
+    TRADE_COLUMNS,
+    TradeRange,
     _RECENT_TICKS_WINDOWS,
     _empty_ticks_columnar,
 )
@@ -264,6 +267,32 @@ class RemoteMt5Client:
             store_tick_cache(cache_key, result)
         return result
 
+    # -- trades ---------------------------------------------------------------
+    def get_trades(self, symbol: str, start_utc: datetime, end_utc: datetime) -> TradeRange:
+        """Eligible trades in the half-open UTC range ``[start_utc, end_utc)``.
+
+        Unlike the tick methods this takes timezone-aware UTC instants and returns raw
+        UTC epoch milliseconds untouched. An unknown symbol yields an ``unavailable``
+        range; an unreachable gateway raises ``ConnectionError``.
+        """
+        for name, value in (("start_utc", start_utc), ("end_utc", end_utc)):
+            if value.tzinfo is None or value.utcoffset() is None:
+                raise ValueError(f"{name} must be timezone-aware")
+        params = {
+            "symbol": symbol,
+            "start_utc": start_utc.astimezone(timezone.utc).isoformat(),
+            "end_utc": end_utc.astimezone(timezone.utc).isoformat(),
+        }
+        try:
+            content = self._get_npz("/v1/trades", params)
+        except _GatewayNotFound:
+            return _unavailable_trades(symbol, "symbol_not_found")
+        try:
+            with np.load(io.BytesIO(content)) as npz:
+                return _npz_to_trade_range(npz)
+        except (KeyError, ValueError, OSError) as exc:
+            raise ConnectionError(f"Remote MT5 gateway /v1/trades returned an unreadable body: {exc}") from exc
+
     def get_ticks(
         self,
         symbol: str,
@@ -426,3 +455,64 @@ def _npz_to_ohlcv_columnar(npz) -> dict[str, np.ndarray]:
             else np.zeros(count, dtype=np.int64)
         ),
     }
+
+
+def _unavailable_trades(symbol: str, reason: str) -> TradeRange:
+    return TradeRange(
+        columns=_trade_columns({}),
+        provider_id="",
+        symbol=symbol,
+        source_generation="",
+        volume_field="volume",
+        volume_unit="",
+        availability="unavailable",
+        range_complete=False,
+        covered_from_utc=None,
+        covered_to_utc=None,
+        coverage_reason=reason,
+        invalid_trade_count=0,
+        truncated=False,
+    )
+
+
+def _trade_columns(source) -> dict[str, np.ndarray]:
+    count = len(source["time_msc"]) if "time_msc" in source else 0
+    dtypes = {
+        "time_msc": np.int64,
+        "price": np.float64,
+        "volume": np.float64,
+        "raw_flags": np.int32,
+        "occurrence": np.int64,
+    }
+    columns = {
+        name: np.asarray(source[name], dtype=dtype) if name in source else np.zeros(0, dtype=dtype)
+        for name, dtype in dtypes.items()
+    }
+    columns["volume_real"] = (
+        np.asarray(source["volume_real"], dtype=np.float64) if "volume_real" in source else np.full(count, np.nan)
+    )
+    return {name: columns[name] for name in TRADE_COLUMNS}
+
+
+def _optional_utc(value: str | None) -> datetime | None:
+    return datetime.fromisoformat(value).astimezone(timezone.utc) if value else None
+
+
+def _npz_to_trade_range(npz) -> TradeRange:
+    meta = json.loads(str(npz["metadata"]))
+    arrays = {name: npz[name] for name in npz.files if name != "metadata"}
+    return TradeRange(
+        columns=_trade_columns(arrays),
+        provider_id=str(meta["provider_id"]),
+        symbol=str(meta["symbol"]),
+        source_generation=str(meta["source_generation"]),
+        volume_field=str(meta["volume_field"]),
+        volume_unit=str(meta["volume_unit"]),
+        availability=str(meta["availability"]),
+        range_complete=bool(meta["range_complete"]),
+        covered_from_utc=_optional_utc(meta["covered_from_utc"]),
+        covered_to_utc=_optional_utc(meta["covered_to_utc"]),
+        coverage_reason=meta["coverage_reason"],
+        invalid_trade_count=int(meta["invalid_trade_count"]),
+        truncated=bool(meta["truncated"]),
+    )

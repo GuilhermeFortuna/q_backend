@@ -180,6 +180,8 @@ def make_fake_mt5() -> types.ModuleType:
         "rates_from": None,
         "ticks_queue": [],
         "ticks_default": np.empty(0, dtype=_TICK_DTYPE),
+        "ticks_source": None,
+        "tick_range_calls": [],
         "last_flags": None,
         "build": 4200,
         "terminal_trade_allowed": True,
@@ -314,8 +316,15 @@ def make_fake_mt5() -> types.ModuleType:
 
     def copy_ticks_range(_symbol, _date_from, _date_to, flags):
         state["last_flags"] = flags
+        state["tick_range_calls"].append((_date_from, _date_to, flags))
         if state["ticks_queue"]:
             return state["ticks_queue"].pop(0)
+        source = state["ticks_source"]
+        if source is not None:
+            # Inclusive on both ends, like the real terminal; times are epoch milliseconds.
+            start_ms = int(_date_from.timestamp() * 1000)
+            end_ms = int(_date_to.timestamp() * 1000)
+            return source[(source["time_msc"] >= start_ms) & (source["time_msc"] <= end_ms)]
         return state["ticks_default"]
 
     m.initialize = initialize

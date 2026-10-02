@@ -6,6 +6,7 @@ must be importable in a process that never loads the terminal package.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -26,6 +27,37 @@ class OhlcvAvailableRange:
     start: datetime
     end: datetime
     bar_count: int
+
+
+TRADE_COLUMNS = ("time_msc", "price", "volume", "volume_real", "raw_flags", "occurrence")
+
+
+@dataclass(frozen=True)
+class TradeRange:
+    """Eligible trades for one half-open UTC range, with the gateway's coverage facts.
+
+    ``columns`` holds the arrays named in ``TRADE_COLUMNS``; ``volume_real`` is NaN where
+    the provider offers none. ``volume_field``/``volume_unit`` say which raw volume
+    column carries analysis volume for this response. A range that is not
+    ``range_complete`` is never presented as complete: ``coverage_reason`` says why.
+    """
+
+    columns: Mapping[str, np.ndarray]
+    provider_id: str
+    symbol: str
+    source_generation: str
+    volume_field: str
+    volume_unit: str
+    availability: str
+    range_complete: bool
+    covered_from_utc: datetime | None
+    covered_to_utc: datetime | None
+    coverage_reason: str | None
+    invalid_trade_count: int
+    truncated: bool
+
+    def __len__(self) -> int:
+        return len(self.columns["time_msc"])
 
 
 _RECENT_TICKS_WINDOWS = (
