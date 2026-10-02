@@ -163,3 +163,35 @@ def test_run_forever_survives_stream_and_gateway_errors(caplog):
     assert not worker.is_alive()
     assert redis.xlen("q:stream:quotes") == 1
     assert client.bar_calls >= 2
+
+
+def test_trade_service_failures_never_pause_quotes_and_bars():
+    redis = fakeredis.FakeRedis()
+    client = _Client()
+
+    class _Broken:
+        calls = 0
+
+        def step(self):
+            self.calls += 1
+            raise RuntimeError("trade cache unavailable")
+
+    broken = _Broken()
+    publisher = MarketDataPublisher(
+        client,
+        _publishers(redis),
+        MarketPublisherConfig(symbols=("WINZ25",), tick_poll_interval_s=0.001, bar_poll_interval_s=0.001),
+        clock=lambda: datetime(2026, 5, 4, 12, 0),
+        trades=broken,
+    )
+    stop = threading.Event()
+    worker = threading.Thread(target=publisher.run_forever, args=(stop,), daemon=True)
+    worker.start()
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and not (broken.calls and client.tick_calls):
+        time.sleep(0.01)
+    stop.set()
+    worker.join(timeout=5)
+
+    assert broken.calls >= 1 and client.tick_calls >= 1 and client.bar_calls >= 1
+    assert redis.xlen("q:stream:quotes") >= 1

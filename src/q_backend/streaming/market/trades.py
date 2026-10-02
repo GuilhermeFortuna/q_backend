@@ -215,6 +215,7 @@ class TradeSessionCoordinator:
     batch_limit: int = BATCH_ROW_LIMIT
     max_retries: int = MAX_CHUNK_RETRIES
     retry_backoff_s: float = 1.0
+    poll_interval_s: float = 0.0
     monotonic: Callable[[], float] = time.monotonic
     token_factory: Callable[[], str] = lambda: secrets.token_hex(6)
     diagnostics: Diagnostics = field(default_factory=Diagnostics)
@@ -240,6 +241,7 @@ class TradeSessionCoordinator:
         self._backfill_started = 0.0
         self._failures = 0
         self._retry_at = 0.0
+        self._next_poll_at = 0.0
         self._recapture_reason: str | None = None
         self._announced: tuple | None = None
         self._frozen_end_ms = 0
@@ -287,6 +289,9 @@ class TradeSessionCoordinator:
                 return self._backfill(budget_s)
             if self.phase == "unavailable":
                 raise _Recapture("retry_unavailable")
+            if now < self._next_poll_at:
+                return False
+            self._next_poll_at = now + self.poll_interval_s
             return self._poll()
         except _Recapture as exc:
             self._begin_generation(exc.reason)
@@ -425,7 +430,9 @@ class TradeSessionCoordinator:
         elif len(self._held["time_msc"]):
             from_ms = int(self._held["time_msc"][0])
         else:
-            from_ms = self._scanned_to_ms
+            # Nothing published or held yet: still re-read the settle window, because a
+            # print may be reported a moment after its own millisecond.
+            from_ms = max(_ms(self._session_start), self._scanned_to_ms - self.settle_ms)
         if observed_end <= from_ms:
             if now >= self._session_end:
                 raise _Recapture("session_rollover")

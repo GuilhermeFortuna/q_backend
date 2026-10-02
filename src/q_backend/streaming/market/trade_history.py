@@ -94,6 +94,27 @@ class InvalidCursor(ValueError):
     pass
 
 
+def cache_root(settings: Any) -> Path:
+    """The shared snapshot directory: ``trade_cache_dir`` or a folder under the market data root."""
+    configured = str(settings.trade_cache_dir).strip()
+    return Path(configured) if configured else Path(settings.market_data_root) / "trade_session_cache"
+
+
+def cache_from_settings(settings: Any) -> TradeSnapshotCache:
+    return TradeSnapshotCache(
+        cache_root(settings),
+        max_bytes=int(settings.trade_cache_max_bytes),
+        ttl=timedelta(seconds=int(settings.trade_snapshot_ttl_s)),
+    )
+
+
+def expire_orphaned_tokens(cache: "TradeSnapshotCache", client: redis.Redis) -> int:
+    """API startup: drop tokens no live publisher instance owns."""
+    raw = client.get(TRADE_INSTANCE_KEY)
+    owner = (raw.decode() if isinstance(raw, bytes) else raw) if raw is not None else None
+    return cache.expire_all(keep_instance=owner)
+
+
 def valid_symbol(symbol: str) -> bool:
     return bool(_SYMBOL.match(symbol))
 
@@ -555,6 +576,9 @@ __all__ = [
     "TradeService",
     "TradeSnapshotCache",
     "TradeSnapshotClient",
+    "cache_from_settings",
+    "cache_root",
+    "expire_orphaned_tokens",
     "public_descriptor",
     "valid_symbol",
 ]

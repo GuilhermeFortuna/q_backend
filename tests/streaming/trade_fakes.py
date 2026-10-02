@@ -145,3 +145,72 @@ class FakeSink:
 
 def identities(columns) -> list[tuple[int, int]]:
     return list(zip(columns["time_msc"].tolist(), columns["occurrence"].tolist()))
+
+
+class World:
+    """Publisher and API sides wired through fakeredis and a shared cache directory."""
+
+    def __init__(self, tmp_path, source=None, *, symbol="WINZ26", settle_ms=100, **coordinator_kwargs):
+        import fakeredis
+
+        from q_backend.streaming.market.trade_history import (
+            TradeHistoryReader,
+            TradeService,
+            TradeSnapshotCache,
+            TradeSnapshotClient,
+        )
+        from q_backend.streaming.market.trades import TradeSessionCoordinator, TradeStreamSink
+        from q_backend.streaming.publisher import EphemeralPublisher
+
+        self.symbol = symbol
+        self.source = source or FakeTradeSource()
+        self.clock = FakeClock()
+        server = fakeredis.FakeServer()
+        self.redis = fakeredis.FakeRedis(server=server)
+        self.api_redis = fakeredis.FakeRedis(server=server)
+        self.sink = TradeStreamSink(
+            EphemeralPublisher(self.redis, "trades", producer_id="test-market"),
+            EphemeralPublisher(self.redis, "trades.status", producer_id="test-market"),
+        )
+        coordinator_kwargs.setdefault("chunk_ms", 3_600_000)
+        self.coordinator = TradeSessionCoordinator(
+            self.source,
+            symbol,
+            self.sink,
+            clock=self.clock,
+            settle_ms=settle_ms,
+            monotonic=Mono(),
+            retry_backoff_s=0.0,
+            **coordinator_kwargs,
+        )
+        self.service = TradeService(self.redis, TradeSnapshotCache(tmp_path / "shared"), {symbol: self.coordinator})
+        self.client = TradeSnapshotClient(self.api_redis, timeout_s=5)
+        self.reader = TradeHistoryReader(TradeSnapshotCache(tmp_path / "shared"), self.api_redis)
+
+    def backfill(self):
+        self.service.start()
+        while self.coordinator.backfilling:
+            self.coordinator.step(budget_s=60)
+        self.service.step()
+
+    def live(self, *rows, advance_s=1):
+        self.source.rows += list(rows)
+        self.clock.advance(seconds=advance_s)
+        self.coordinator.step()
+
+    def stream_entries(self, topic="trades", after="0-0"):
+        """What a subscriber buffers: decoded (seq, epoch, rows) from the topic, oldest first."""
+        import pyarrow as pa
+
+        from q_backend.streaming.codec import decode_entry
+        from q_backend.streaming.keys import stream_key
+
+        entries = []
+        for _id, fields in self.redis.xrange(stream_key(topic), min=after):
+            envelope, raw = decode_entry(fields)
+            if topic == "trades":
+                table = pa.ipc.open_stream(raw).read_all()
+                entries.append((envelope.seq, envelope.epoch, table.to_pylist(), table.schema.metadata))
+            else:
+                entries.append((envelope.seq, envelope.epoch, envelope.payload, None))
+        return entries

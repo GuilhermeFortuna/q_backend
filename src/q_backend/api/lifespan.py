@@ -21,6 +21,19 @@ from q_backend.storage.settings import get_settings
 logger = logging.getLogger(__name__)
 
 
+def _expire_orphaned_trade_tokens() -> None:
+    """Old trade snapshot tokens never survive an API start; Redis being down is not fatal."""
+    try:
+        from q_backend.streaming.market.trade_history import cache_from_settings, cache_root, expire_orphaned_tokens
+        from q_backend.streaming.redis_binary import get_binary_redis
+
+        settings = get_settings()
+        if cache_root(settings).is_dir():
+            expire_orphaned_tokens(cache_from_settings(settings), get_binary_redis())
+    except Exception:  # noqa: BLE001 - best effort; the publisher validates tokens on every read
+        logger.warning("Could not expire orphaned trade snapshot tokens on startup.", exc_info=True)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Production trigger: API process startup, before any fallible startup work.
@@ -60,6 +73,7 @@ async def lifespan(app: FastAPI):
         logger.info("Neural model registry synced to DB on startup.")
     except Exception:
         logger.exception("Neural model registry sync failed on startup.")
+    _expire_orphaned_trade_tokens()
     yield
     # Shutdown: Disconnect from MetaTrader 5
     logger.info("Shutting down API, disconnecting from MetaTrader 5...")
