@@ -59,7 +59,11 @@ def ticks_to_ipc(columns: Mapping[str, np.ndarray]) -> bytes:
 
 
 def bars_to_ipc(columns: Mapping[str, np.ndarray]) -> bytes:
-    return _to_ipc(columns, BARS_SCHEMA)
+    # The MT5 gateway carries bar opens as epoch seconds. The Arrow contract declares
+    # timestamp[us], so convert the physical integer values before assigning that type.
+    normalized = dict(columns)
+    normalized["time"] = np.asarray(columns["time"], dtype=np.int64) * np.int64(1_000_000)
+    return _to_ipc(normalized, BARS_SCHEMA)
 
 
 def trades_schema(context: Mapping[str, str]) -> pa.Schema:
