@@ -639,8 +639,8 @@ class TradeSessionCoordinator:
             "source_generation": self.generation,
             "volume_field": context.volume_field,
             "volume_unit": context.volume_unit,
-            "covered_from": _iso(self._session_start),
-            "covered_to": _iso(self._covered_to),
+            "covered_from": iso_utc(self._session_start),
+            "covered_to": iso_utc(self._covered_to),
             "coverage_state": self._coverage_state,
             "classification_coverage": "partial" if self._coverage_state != "unavailable" else "unavailable",
             "coverage_reason": self._coverage_reason,
@@ -648,7 +648,7 @@ class TradeSessionCoordinator:
         }
 
 
-def _iso(moment: datetime | None) -> str | None:
+def iso_utc(moment: datetime | None) -> str | None:
     return moment.astimezone(timezone.utc).isoformat().replace("+00:00", "Z") if moment else None
 
 
@@ -714,5 +714,6 @@ __all__ = [
     "assign_occurrence",
     "concat_columns",
     "empty_columns",
+    "iso_utc",
     "session_bounds",
 ]

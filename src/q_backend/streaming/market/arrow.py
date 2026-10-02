@@ -40,10 +40,14 @@ BARS_SCHEMA = _schema("bars")
 TRADES_SCHEMA = _schema("trades")
 
 
-def _to_ipc(columns: Mapping[str, np.ndarray], schema: pa.Schema) -> bytes:
+def _record_batch(columns: Mapping[str, np.ndarray], schema: pa.Schema) -> pa.RecordBatch:
     # NaN stands for null only in nullable columns (the optional provider real volume).
     arrays = [pa.array(columns[field.name], type=field.type, from_pandas=field.nullable) for field in schema]
-    batch = pa.record_batch(arrays, schema=schema)
+    return pa.record_batch(arrays, schema=schema)
+
+
+def _to_ipc(columns: Mapping[str, np.ndarray], schema: pa.Schema) -> bytes:
+    batch = _record_batch(columns, schema)
     sink = pa.BufferOutputStream()
     with pa.ipc.new_stream(sink, schema) as writer:
         writer.write_batch(batch)
@@ -66,3 +70,7 @@ def trades_schema(context: Mapping[str, str]) -> pa.Schema:
 def trades_to_ipc(columns: Mapping[str, np.ndarray], context: Mapping[str, str]) -> bytes:
     """One trades delivery: rows plus the TradeDeliveryContext carried in schema metadata."""
     return _to_ipc(columns, trades_schema(context))
+
+
+def trades_record_batch(columns: Mapping[str, np.ndarray], context: Mapping[str, str]) -> pa.RecordBatch:
+    return _record_batch(columns, trades_schema(context))
