@@ -13,7 +13,7 @@ from typing import Any
 
 import pandas as pd
 
-from q_backend.ml_filters.adapters import EntryClassifier, SklearnEntryClassifier
+from q_backend.ml_filters.adapters import EntryClassifier, FittedEntryModel, SklearnEntryClassifier
 from q_backend.ml_filters.config import MLFilterDataset
 from q_backend.storage.lake.artifacts import lake_root
 
@@ -179,6 +179,80 @@ def _library_versions() -> dict[str, str]:
     return versions
 
 
+def write_ml_filter_result(job_id: str, payload: dict[str, Any]) -> str:
+    if re.fullmatch(r"[0-9a-f-]{32,36}", job_id) is None:
+        raise ValueError("job_id is malformed")
+    relative = Path("ml_filters") / "jobs" / job_id / "result.json"
+    target = lake_root() / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_json(target, payload)
+    return relative.as_posix()
+
+
+def read_ml_filter_result(relative_path: str) -> dict[str, Any]:
+    root = (lake_root() / "ml_filters" / "jobs").resolve()
+    path = (lake_root() / relative_path).resolve()
+    if root not in path.parents or path.name != "result.json" or not path.is_file():
+        raise FileNotFoundError("ML filter result artifact is unavailable")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def write_ml_filter_partition_artifacts(
+    job_id: str,
+    key: str,
+    trades: list[dict[str, Any]],
+    *,
+    initial_capital: float,
+    start: str,
+    end: str,
+) -> dict[str, str]:
+    """Atomically persist engine trade and equity outputs as lake artifacts."""
+    if re.fullmatch(r"[0-9a-f-]{32,36}", job_id) is None or re.fullmatch(r"[0-9a-z_-]{1,100}", key) is None:
+        raise ValueError("ML filter partition artifact key is malformed")
+    parent = lake_root() / "ml_filters" / "jobs" / job_id / "artifacts"
+    parent.mkdir(parents=True, exist_ok=True)
+    target = parent / key
+    if (target / "equity.parquet").is_file() and (target / "trades.parquet").is_file():
+        return {
+            "equity": f"ml_filters/jobs/{job_id}/artifacts/{key}/equity.parquet",
+            "trades": f"ml_filters/jobs/{job_id}/artifacts/{key}/trades.parquet",
+        }
+    if target.exists():
+        shutil.rmtree(target)
+    temp_dir = Path(tempfile.mkdtemp(prefix=f".{key}.", dir=parent))
+    try:
+        trade_frame = pd.DataFrame(trades)
+        trade_frame.to_parquet(temp_dir / "trades.parquet", index=False)
+        start_time = pd.Timestamp(start)
+        end_time = pd.Timestamp(end)
+        points = [(start_time, float(initial_capital))]
+        equity = float(initial_capital)
+        for trade in sorted(trades, key=lambda row: row.get("exit_time") or row.get("entry_time", "")):
+            exit_time = trade.get("exit_time")
+            if exit_time is None:
+                continue
+            stamp = pd.Timestamp(exit_time)
+            if stamp.tzinfo is None:
+                stamp = stamp.tz_localize("America/Sao_Paulo")
+            stamp = stamp.tz_convert("UTC")
+            equity += float(trade.get("pnl") or 0.0)
+            points.append((stamp, equity))
+        points.append((end_time, equity))
+        equity_frame = pd.DataFrame(
+            {"time": [stamp.isoformat() for stamp, _value in points], "equity": [value for _stamp, value in points]}
+        )
+        equity_frame.to_parquet(temp_dir / "equity.parquet", index=False)
+        _commit_directory(temp_dir, target)
+    except Exception:
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir)
+        raise
+    return {
+        "equity": f"ml_filters/jobs/{job_id}/artifacts/{key}/equity.parquet",
+        "trades": f"ml_filters/jobs/{job_id}/artifacts/{key}/trades.parquet",
+    }
+
+
 def save_model_artifact(
     dataset_id: str,
     classifier: EntryClassifier,
@@ -258,7 +332,7 @@ def save_model_artifact(
     return {"model_version_id": model_content_id, "artifact_path": str(target.relative_to(lake_root()))}
 
 
-def load_model_version(model_version_id: str) -> SklearnEntryClassifier:
+def load_model_version(model_version_id: str) -> FittedEntryModel:
     """Load one published model by its immutable content ID after checksum checks."""
     if re.fullmatch(r"[0-9a-f]{64}", model_version_id) is None:
         raise ValueError("model_version_id must be a 64-character lowercase SHA-256 id")
@@ -289,7 +363,11 @@ def load_model_version(model_version_id: str) -> SklearnEntryClassifier:
         raise ValueError("Fitted model and manifest metadata disagree")
     if manifest.model_version_id != model_version_id or manifest.model_content_id != model_version_id:
         raise ValueError("Model manifest identity does not match the requested version")
-    return classifier
+    return FittedEntryModel(
+        model_version_id=model_version_id,
+        dataset_id=manifest.dataset_id,
+        classifier=classifier,
+    )
 
 
 def _read_model_payload(model_version_id: str) -> tuple[dict[str, Any], bytes]:

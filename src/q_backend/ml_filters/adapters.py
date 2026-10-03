@@ -38,6 +38,11 @@ _DEFAULTS = {
 
 
 class EntryClassifier(Protocol):
+    algorithm: Algorithm
+    feature_names: tuple[str, ...]
+    hyperparameters: dict[str, Any]
+    seed: int
+
     def fit(self, X: pd.DataFrame, y: pd.Series | np.ndarray) -> "EntryClassifier": ...
 
     def predict_good_entry_probability(self, X: pd.DataFrame) -> np.ndarray: ...
@@ -46,6 +51,24 @@ class EntryClassifier(Protocol):
 
     @classmethod
     def load(cls, payload: bytes) -> "EntryClassifier": ...
+
+
+@dataclass(frozen=True)
+class FittedEntryModel:
+    model_version_id: str
+    dataset_id: str
+    classifier: EntryClassifier
+
+    @property
+    def algorithm(self) -> Algorithm:
+        return self.classifier.algorithm
+
+    @property
+    def feature_names(self) -> tuple[str, ...]:
+        return tuple(self.classifier.feature_names)
+
+    def predict_good_entry_probability(self, X: pd.DataFrame) -> np.ndarray:
+        return self.classifier.predict_good_entry_probability(X)
 
 
 @dataclass
