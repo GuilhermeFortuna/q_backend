@@ -34,7 +34,13 @@ def _source():
 
 def test_dataset_rejects_duplicate_or_nonmonotonic_frozen_bars():
     bars = pd.DataFrame(
-        {"time": ["2026-01-02T12:00:00Z", "2026-01-02T12:00:00Z"], "open": [1, 2], "high": [1, 2], "low": [1, 2], "close": [1, 2]}
+        {
+            "time": ["2026-01-02T12:00:00Z", "2026-01-02T12:00:00Z"],
+            "open": [1, 2],
+            "high": [1, 2],
+            "low": [1, 2],
+            "close": [1, 2],
+        }
     )
     with pytest.raises(ValueError, match="unique, strictly increasing"):
         build_dataset_from_frames("run", _config(), bars, pd.DataFrame(), _source())
@@ -78,6 +84,19 @@ def test_dataset_uses_previous_bar_and_partitions_by_real_utc_timestamps():
                 "pnl": 1.0 if i % 3 else -1.0,
             }
         )
+    # This malformed candidate belongs to validation because its preceding
+    # signal bar is in that partition, even though it never becomes a sample.
+    bars.loc[303, "close"] = float("nan")
+    bars.loc[303, "e0__delta"] = 1.0
+    bars.loc[303, "e0__prev_delta"] = 0.0
+    trades.append(
+        {
+            "entry_time": times[304],
+            "exit_time": times[305],
+            "action": "BUY",
+            "pnl": 1.0,
+        }
+    )
     config = EntryFeatureConfig(
         train_end=datetime(2026, 1, 2, tzinfo=timezone.utc),
         validation_end=datetime(2026, 1, 3, tzinfo=timezone.utc),
@@ -93,3 +112,4 @@ def test_dataset_uses_previous_bar_and_partitions_by_real_utc_timestamps():
     assert X.iloc[0]["close"] != bars.iloc[1]["close"]
     assert len(y) == 24
     assert {sample.partition for sample in dataset.samples} == {"train", "validation", "lockbox"}
+    assert dataset.rejections["validation"]["nonfinite_feature"] == 1

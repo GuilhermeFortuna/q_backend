@@ -116,9 +116,7 @@ def build_dataset_from_frames(
         raise ValueError("Selected feature 'real_volume' is unavailable or all zero in the frozen source")
 
     position_by_time = {stamp: pos for pos, stamp in enumerate(times)}
-    rejection_counts: dict[str, dict[str, int]] = {
-        name: {} for name in ("train", "validation", "lockbox")
-    }
+    rejection_counts: dict[str, dict[str, int]] = {name: {} for name in ("train", "validation", "lockbox")}
     partition_samples: dict[str, list[EntrySample]] = {name: [] for name in rejection_counts}
 
     def reject(partition: str, reason: str) -> None:
@@ -128,48 +126,65 @@ def build_dataset_from_frames(
     for trade in trades.to_dict(orient="records"):
         try:
             entry_time = _utc(trade["entry_time"])
-            exit_value = trade.get("exit_time")
-            pnl = float(trade["pnl"])
-            action = str(trade.get("action", trade.get("side", ""))).upper()
         except (KeyError, TypeError, ValueError):
             # The time cutoffs cannot be inferred for malformed legacy rows.
             reject("train", "malformed_or_unclosed_trade")
             continue
-        side = 1 if action in {"BUY", "LONG", "1"} else -1 if action in {"SELL", "SHORT", "-1"} else 0
-        if exit_value is None or pd.isna(exit_value) or not pd.notna(pnl) or side == 0:
-            reject("train", "malformed_or_unclosed_trade")
-            continue
-        exit_time = _utc(exit_value)
-        signal_position = position_by_time.get(entry_time)
-        if signal_position is None or signal_position < 1:
+        entry_position = position_by_time.get(entry_time)
+        if entry_position is None or entry_position < 1:
             reject("train", "entry_time_not_in_frozen_bars")
             continue
-        signal_position -= 1
+        signal_position = entry_position - 1
         signal_time = times[signal_position].to_pydatetime()
+        if signal_time < config.train_end.astimezone(timezone.utc):
+            partition = "train"
+        elif signal_time < config.validation_end.astimezone(timezone.utc):
+            partition = "validation"
+        else:
+            partition = "lockbox"
+
+        try:
+            exit_value = trade.get("exit_time")
+            pnl = float(trade["pnl"])
+            action = str(trade.get("action", trade.get("side", ""))).upper()
+        except (KeyError, TypeError, ValueError):
+            reject(partition, "malformed_or_unclosed_trade")
+            continue
+        side = 1 if action in {"BUY", "LONG", "1"} else -1 if action in {"SELL", "SHORT", "-1"} else 0
+        if exit_value is None or pd.isna(exit_value) or not pd.notna(pnl) or side == 0:
+            reject(partition, "malformed_or_unclosed_trade")
+            continue
+        try:
+            exit_time = _utc(exit_value)
+        except (TypeError, ValueError):
+            reject(partition, "malformed_or_unclosed_trade")
+            continue
         if _signal_matches(market.iloc[signal_position], side, float(params["threshold"])) is False:
-            reject("train", "signal_side_mismatch")
+            reject(partition, "signal_side_mismatch")
             continue
         feature_frame = market.iloc[[signal_position]]
         try:
             features = build_entry_features(feature_frame, [side], selected)
         except ValueError as exc:
-            reject("train", f"missing_feature:{str(exc).split(chr(39))[1] if chr(39) in str(exc) else 'invalid'}")
+            reject(partition, f"missing_feature:{str(exc).split(chr(39))[1] if chr(39) in str(exc) else 'invalid'}")
             continue
         if not features.apply(pd.to_numeric, errors="coerce").notna().all(axis=None):
-            reject("train", "nonfinite_feature")
+            reject(partition, "nonfinite_feature")
             continue
         label = int(pnl > 0.0)
-        if signal_time < config.train_end.astimezone(timezone.utc):
+        if partition == "train":
             if exit_time >= config.train_end.astimezone(timezone.utc):
-                reject("train", "trade_crosses_train_end")
+                reject(partition, "trade_crosses_train_end")
             else:
                 sample = EntrySample("train", signal_position, signal_time, entry_time, exit_time, side, label, pnl)
                 partition_samples["train"].append(sample)
-        elif signal_time < config.validation_end.astimezone(timezone.utc):
+        elif partition == "validation":
             if exit_time >= config.validation_end.astimezone(timezone.utc):
-                reject("validation", "trade_crosses_validation_end")
+                reject(partition, "trade_crosses_validation_end")
             else:
-                sample = EntrySample("validation", signal_position, signal_time, entry_time, exit_time, side, label, pnl)
+                sample = EntrySample(
+                    "validation", signal_position, signal_time, entry_time, exit_time, side, label, pnl
+                )
                 partition_samples["validation"].append(sample)
         else:
             if exit_time > times[-1].to_pydatetime():
@@ -195,9 +210,21 @@ def build_dataset_from_frames(
         {
             key: source_config.get(key)
             for key in (
-                "symbol", "timeframe", "strategy", "strategy_params", "entries", "entry_manager",
-                "exit_params", "day_trade", "day_trade_start_time", "day_trade_end_time",
-                "day_trade_close_time", "costs", "point_value", "position_sizing", "initial_capital",
+                "symbol",
+                "timeframe",
+                "strategy",
+                "strategy_params",
+                "entries",
+                "entry_manager",
+                "exit_params",
+                "day_trade",
+                "day_trade_start_time",
+                "day_trade_end_time",
+                "day_trade_close_time",
+                "costs",
+                "point_value",
+                "position_sizing",
+                "initial_capital",
             )
         }
     )
