@@ -6,7 +6,7 @@
 **Architecture:** Worker-backed causal datasets and saved classifier pipelines feed a post-combination entry gate using existing q_core execution.
 **Tech stack:** Python, pandas, sklearn, LightGBM, SQLAlchemy/Postgres, Dramatiq, Parquet and q_core.
 **Spec:** [Specification](../specs/Q-086-ml-filter-training-and-comparison-spec.md)
-**Status:** implementation complete; awaiting review and environment-backed CI.
+**Status:** implementation and canonical CI complete; awaiting human review.
 
 ## Global constraints
 
@@ -48,7 +48,7 @@
 
 ### 3. Implement reusable gate and actual validation reruns
 
-**Files:** Create ml_filters/filter.py and evaluation.py; tests/ml_filters/test_filter.py and test_evaluation.py. Reuse CompositeEntryStrategy and BacktestEngine/q_core signal arrays.
+**Files:** Create ml_filters/filter.py and evaluation.py; tests/ml_filters/test_filter.py and test_ml_filter_evaluation.py. Reuse CompositeEntryStrategy and BacktestEngine/q_core signal arrays.
 **Interfaces:** EntryFilteredStrategy(base_strategy, fitted_model, threshold); compare_filters(request, job_id); evaluate_filter(request, job_id). Wrapper preserves exits/strength and only masks final entry columns.
 
 - [x] Add focused gate tests for entry masking, preserved exits/strength, readiness, threshold validation, and partition windows.
@@ -79,14 +79,14 @@
 ## Verification and handoff
 
 - [x] Review spec coverage and all five review-focus conditions against the implementation and focused tests.
-- [x] Run `make contracts-check`; generated modules and schemas match the pinned contract revision. `./scripts/ci.sh` stopped at preflight because Docker is unavailable.
-- [x] Update task documentation with actual checks/results and the environment limitation; do not claim unrun checks passed.
-- [ ] Commit final docs/code and use `./work board set Q-086 in-review -m "<changes; checks/results; follow-ups>"`. Human review/finish owns integration and publication.
+- [x] Run `make contracts-check` and `./scripts/ci.sh` after the final changes; both pass.
+- [x] Update task documentation with actual check results; do not claim unrun checks passed.
+- [x] Commit final docs/code on the task branch with focused messages.
+- [ ] Use `./work board set Q-086 in-review -m "<changes; checks/results; follow-ups>"`. Human review/finish owns integration and publication.
 
 ## Implementation verification record
 
-- Focused suite: `uv run --no-sync pytest tests/ml_filters tests/api/test_ml_filters.py tests/backtesting/test_candle_kernel_bridge.py` — 34 passed.
-- Static checks: Ruff passed across `src` and `tests`; Black passed individually for every changed Python file; `git diff --check` passed.
+- Focused suite: `uv run --no-sync pytest tests/storage/test_execution_repositories.py::test_execution_migration_revision_chain tests/features/test_feature_store_db.py::test_feature_store_migration_revision_chain tests/neural/test_model_registry_db.py::test_neural_model_migration_revision_chain tests/streaming/test_status_mapping.py::test_status_mapping_covers_all_job_manager_literals tests/storage/test_db_models.py tests/ml_filters tests/api/test_ml_filters.py tests/backtesting/test_candle_kernel_bridge.py` — 40 passed.
+- Canonical CI: contracts, Postgres migrations, Ruff, and Black passed; unit suite 2,194 passed and 15 skipped; integration suite 56 passed.
+- Static checks: Ruff passed across the repository; Black passed across all 702 Python files; `git diff --check` passed.
 - Contract check: `PATH="$PWD/.venv/bin:$PATH" CONTRACTS_REPO=/home/gui/projects/q/q_contracts make contracts-check` — passed. The host `python3` lacks PyYAML, so the worktree's installed Python was placed first on `PATH` to use its already installed PyYAML instead of attempting a network download.
-- Canonical CI: `./scripts/ci.sh` stopped at preflight because Docker is unavailable. A broader non-integration test run reached 91% with failures and stalled without a summary; it was interrupted and is not counted as passing.
-- Migration: a SQLite migration attempt is unsupported by the PostgreSQL-specific baseline migration (`JSONB`); the canonical Postgres migration stage could not run without Docker.

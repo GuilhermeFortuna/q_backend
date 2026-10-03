@@ -1,6 +1,6 @@
 # Q-086: ML filter training and comparison
 
-**Status:** implementation complete and awaiting review; status of record is the [Q project board](https://github.com/users/GuilhermeFortuna/projects/2).
+**Status:** implementation and canonical CI complete; awaiting review. Status of record is the [Q project board](https://github.com/users/GuilhermeFortuna/projects/2).
 **Batch:** 14 — ML entry filters for research
 **Depends on:** Q-085, Q-028
 **Implementation plan:** [Plan](../plans/Q-086-ml-filter-training-and-comparison-plan.md)

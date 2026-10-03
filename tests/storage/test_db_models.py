@@ -41,6 +41,9 @@ EXPECTED_TABLES = {
     "lake_datasets",
     "lake_dataset_files",
     "command_idempotency",
+    "ml_filter_runs",
+    "ml_filter_model_versions",
+    "ml_filter_evaluations",
 }
 
 FORBIDDEN_TABLE_NAMES = {"ohlcv", "ticks", "bars", "features", "tick", "candles"}

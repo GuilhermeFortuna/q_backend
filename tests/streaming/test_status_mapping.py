@@ -49,7 +49,7 @@ def test_status_mapping_covers_all_job_manager_literals():
 
     repo_root = Path(__file__).parents[2]
     job_files = sorted((repo_root / "src" / "q_backend" / "api").glob("*_jobs.py"))
-    assert len(job_files) == 9, f"Expected 9 job manager files, found {len(job_files)}"
+    assert len(job_files) == 10, f"Expected 10 job manager files, found {len(job_files)}"
 
     literals = scan_status_literals(job_files)
     assert literals, "Scan found no status literals"
