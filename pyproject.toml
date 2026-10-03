@@ -31,6 +31,7 @@ dependencies = [
     "sentry-sdk>=2.64.0",
     "duckdb>=1.5.5",
     "q-core",
+    "lightgbm==4.6.0",
 ]
 
 [project.scripts]
