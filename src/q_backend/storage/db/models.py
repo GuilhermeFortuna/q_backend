@@ -139,6 +139,65 @@ class BacktestRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
 
+class MLFilterRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "ml_filter_runs"
+
+    run_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="queued")
+    stage: Mapped[Optional[str]] = mapped_column(String(24), nullable=True)
+    source_run_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    dataset_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    request: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
+    progress: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
+    result_summary: Mapped[Optional[dict[str, Any]]] = mapped_column(PortableJSON, nullable=True)
+    lake_paths: Mapped[Optional[dict[str, Any]]] = mapped_column(PortableJSON, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_ml_filter_runs_status", "status"),
+        Index("ix_ml_filter_runs_type_created", "run_type", "created_at"),
+        Index("ix_ml_filter_runs_dataset", "dataset_id"),
+    )
+
+
+class MLFilterModelVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "ml_filter_model_versions"
+
+    model_version_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    dataset_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_run_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    algorithm: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="ready")
+    manifest_path: Mapped[str] = mapped_column(Text, nullable=False)
+    artifact_path: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "dataset_id", "algorithm", "model_version_id", name="uq_ml_filter_model_dataset_algorithm_version"
+        ),
+        Index("ix_ml_filter_model_dataset", "dataset_id"),
+        Index("ix_ml_filter_model_algorithm", "algorithm"),
+    )
+
+
+class MLFilterEvaluation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "ml_filter_evaluations"
+
+    dataset_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    model_version_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    threshold: Mapped[float] = mapped_column(nullable=False)
+    selection: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("ml_filter_runs.id", ondelete="CASCADE"), unique=True, nullable=False
+    )
+
+    run: Mapped["MLFilterRun"] = relationship()
+    __table_args__ = (Index("ix_ml_filter_evaluations_model", "model_version_id"),)
+
+
 class OptimizationStudy(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "optimization_studies"
 
