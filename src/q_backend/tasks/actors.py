@@ -108,6 +108,13 @@ def run_backtest(run_id: str, request_json: str) -> None:
     backtest_jobs.run_backtest_job(run_id, request_json)
 
 
+@dramatiq.actor(**_ACTOR_OPTS)
+def run_ml_filter_job(job_id: str, request_json: str, run_type: str) -> None:
+    from q_backend.ml_filters.service import run_ml_filter_job as execute_ml_filter_job
+
+    execute_ml_filter_job(job_id, request_json, run_type)
+
+
 # --- neural training (WO147) ----------------------------------------------------
 
 

@@ -1023,6 +1023,18 @@ Worker count is resolved by `q_backend.optimization.parallel.resolve_worker_coun
 
 See [`docs/design/feature-intelligence.md`](https://github.com/GuilhermeFortuna/q_frontend/blob/81ceb04a1c90704b2bcdfe0695ddd0aab14aac82/docs/design/feature-intelligence.md) for PIT/leakage contracts, target definitions, and scoring weights.
 
+### ML entry filters
+
+The research-only ML filter workflow trains LightGBM, Random Forest, and logistic regression from completed candle MACrossover runs. It reads frozen backtest lake artifacts and queues fitting and evaluation through Dramatiq; it does not fetch market data again. Signal features come from the bar before each executed next-open entry. Training uses chronological `train_end` and `validation_end` cutoffs, requires at least 20 complete training trades with two examples from each class, and at least one complete validation trade. Final evaluation reserves a dataset's lockbox for one model and threshold tuple.
+
+Defaults are seed `42`, threshold `0.50`, and all allowlisted features except `real_volume` when the source omits it or contains only zero values. LightGBM defaults to 100 estimators, learning rate `0.1`, and 31 leaves; Random Forest defaults to 200 estimators; logistic regression defaults to `C=1` and 1000 iterations. Each algorithm accepts only its documented bounded hyperparameters in the typed request. Models and job results are persisted in the lake and Postgres.
+
+* **`GET /api/v1/ml-filters/sources`** and **`GET /api/v1/ml-filters/sources/{run_id}`** — list eligible frozen sources and inspect feature readiness and suggested 60/20/20 date cutoffs.
+* **`POST /api/v1/ml-filters/training`** — queue training for selected features and algorithms; returns `202` with a job id. **`GET /api/v1/ml-filters/training/{job_id}`** reports progress, rejections, model versions, and errors.
+* **`GET /api/v1/ml-filters/models`** and **`GET /api/v1/ml-filters/models/{model_version_id}`** — list ready versions and inspect model provenance, compatibility, and validation metrics. Serialized pipelines are never included in API responses.
+* **`POST /api/v1/ml-filters/comparisons`** — queue a same-dataset validation comparison at the requested threshold (default `0.50`); **`GET /api/v1/ml-filters/comparisons/{job_id}`** returns classification and actual engine rerun metrics.
+* **`POST /api/v1/ml-filters/evaluations`** — reserve and queue one final lockbox evaluation for a dataset/model/threshold tuple; a conflicting tuple returns `409`. **`GET /api/v1/ml-filters/evaluations/{job_id}`** returns the durable result.
+
 ### Local market storage
 * **`GET /api/v1/storage/inventory`**
   * *Description:* List OHLCV/tick series in the local Parquet store with row counts and byte sizes.
