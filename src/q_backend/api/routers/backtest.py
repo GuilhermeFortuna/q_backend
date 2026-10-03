@@ -1,6 +1,6 @@
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
 from q_backend.api import backtest_jobs
@@ -130,3 +130,34 @@ def get_backtest_equity_artifact(run_id: str):
 def get_backtest_trades_artifact(run_id: str):
     """Return the persisted closed trades for a backtest run."""
     return backtest_run_service.read_trades_artifact(run_id)
+
+
+_CSV_RESPONSES = {200: {"content": {"text/csv": {"schema": {"type": "string"}}}}}
+
+
+def _csv_response(body: str, filename: str) -> Response:
+    return Response(
+        content=body,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get(
+    "/api/v1/backtests/{run_id}/export/market-data",
+    response_class=Response,
+    responses=_CSV_RESPONSES,
+)
+def export_backtest_market_data(run_id: str):
+    """Return the bars and every computed indicator column of a backtest run as CSV."""
+    return _csv_response(backtest_run_service.export_market_data_csv(run_id), "market_data.csv")
+
+
+@router.get(
+    "/api/v1/backtests/{run_id}/export/trades",
+    response_class=Response,
+    responses=_CSV_RESPONSES,
+)
+def export_backtest_trades(run_id: str):
+    """Return the closed trades of a backtest run as CSV."""
+    return _csv_response(backtest_run_service.export_trades_csv(run_id), "trades.csv")

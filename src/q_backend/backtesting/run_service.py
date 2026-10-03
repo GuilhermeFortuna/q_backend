@@ -240,3 +240,43 @@ def read_trades_artifact(run_id: str) -> Dict[str, Any]:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     return {"run_id": run_id, "trades": serialize_trades_artifact(df)}
+
+
+TRADES_CSV_COLUMNS: Dict[str, str] = {
+    "id": "trade_id",
+    "symbol": "symbol",
+    "action": "side",
+    "entry_time": "entry_time",
+    "entry_price": "entry_price",
+    "exit_time": "exit_time",
+    "exit_price": "exit_price",
+    "pnl": "pnl",
+    "quantity": "quantity",
+    "commission": "commission",
+    "point_value": "point_value",
+    "exit_reason": "exit_reason",
+}
+
+
+def _read_export_artifact(run_id: str, kind: Literal["trades", "market_data"]) -> pd.DataFrame:
+    try:
+        uuid.UUID(run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.") from exc
+
+    try:
+        return read_backtest_artifact(run_id, kind)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+def export_market_data_csv(run_id: str) -> str:
+    """Return the bars and every computed indicator column of a run as CSV."""
+    return _read_export_artifact(run_id, "market_data").to_csv(index=False)
+
+
+def export_trades_csv(run_id: str) -> str:
+    """Return the closed trades of a run as CSV."""
+    records = serialize_trades_artifact(_read_export_artifact(run_id, "trades"))
+    frame = pd.DataFrame(records, columns=list(TRADES_CSV_COLUMNS)).rename(columns=TRADES_CSV_COLUMNS)
+    return frame.to_csv(index=False)
