@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+import pandas as pd
 
 from q_backend.backtesting.tick.kernel import bars, resolve_bar_ms, sample_at_bar_ends
 from q_backend.backtesting.tick.strategy import TickArrays, TickStrategy
@@ -93,14 +94,11 @@ def _sample_indicator_at_bars(
     return [None if np.isnan(val) else float(val) for val in sampled]
 
 
-def serialize_tick_chart_data(
+def _resample_with_indicators(
     ticks: TickArrays,
     strategy: TickStrategy,
-    display_timeframe: str = "M1",
-) -> Dict[str, Any]:
-    """
-    Resample ticks to display OHLCV bars and align indicator series to bar closes.
-    """
+    display_timeframe: str,
+) -> Tuple[List[Dict[str, Any]], List[Tuple[int, int]], Dict[str, np.ndarray]]:
     span_msc = int(ticks.time_msc[-1] - ticks.time_msc[0]) if len(ticks.time_msc) else 0
     bar_ms = _resolve_bar_ms(display_timeframe, span_msc)
     bars_out, bar_ranges = _resample_ticks_to_bars(ticks, bar_ms)
@@ -109,7 +107,15 @@ def serialize_tick_chart_data(
     compute_series = getattr(strategy, "compute_indicator_series", None)
     if compute_series is not None:
         indicator_series = compute_series(ticks)
+    return bars_out, bar_ranges, indicator_series
 
+
+def _chart_payload(
+    strategy: TickStrategy,
+    bars_out: List[Dict[str, Any]],
+    bar_ranges: List[Tuple[int, int]],
+    indicator_series: Dict[str, np.ndarray],
+) -> Dict[str, Any]:
     indicators: List[Dict[str, Any]] = []
     for spec in strategy.get_chart_indicators():
         series = indicator_series.get(spec.key)
@@ -126,3 +132,33 @@ def serialize_tick_chart_data(
         )
 
     return {"bars": bars_out, "indicators": indicators}
+
+
+def serialize_tick_chart_data(
+    ticks: TickArrays,
+    strategy: TickStrategy,
+    display_timeframe: str = "M1",
+) -> Dict[str, Any]:
+    """
+    Resample ticks to display OHLCV bars and align indicator series to bar closes.
+    """
+    return _chart_payload(strategy, *_resample_with_indicators(ticks, strategy, display_timeframe))
+
+
+def serialize_tick_backtest_data(
+    ticks: TickArrays,
+    strategy: TickStrategy,
+    display_timeframe: str = "M1",
+) -> Tuple[Dict[str, Any], pd.DataFrame]:
+    """
+    Return the chart payload and the matching market-data export table.
+
+    The table holds the display bars plus every series the strategy computed,
+    each sampled at bar closes, with a leading ISO-8601 UTC ``time`` column.
+    """
+    bars_out, bar_ranges, indicator_series = _resample_with_indicators(ticks, strategy, display_timeframe)
+    columns = ["timestamp", "open", "high", "low", "close", "volume"]
+    frame = pd.DataFrame(bars_out, columns=columns).rename(columns={"timestamp": "time"})
+    for key, series in indicator_series.items():
+        frame[key] = _sample_indicator_at_bars(series, bar_ranges)
+    return _chart_payload(strategy, bars_out, bar_ranges, indicator_series), frame

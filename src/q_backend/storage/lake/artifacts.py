@@ -14,7 +14,7 @@ from q_backend.storage.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
-ArtifactKind = Literal["trades", "equity"]
+ArtifactKind = Literal["trades", "equity", "market_data"]
 WalkForwardArtifactKind = Literal["oos_equity", "oos_trades", "windows"]
 StrategySearchCandidateArtifactKind = Literal["oos_equity", "oos_trades"]
 
@@ -37,8 +37,7 @@ def _run_dir(run_id: str) -> Path:
 
 
 def _artifact_relative_path(run_id: str, kind: ArtifactKind) -> str:
-    filename = "trades.parquet" if kind == "trades" else "equity.parquet"
-    return f"backtests/{run_id}/{filename}"
+    return f"backtests/{run_id}/{kind}.parquet"
 
 
 def _artifact_absolute_path(run_id: str, kind: ArtifactKind) -> Path:
@@ -49,6 +48,7 @@ def write_backtest_artifacts(
     run_id: str,
     trades: pd.DataFrame,
     equity_curve: pd.DataFrame,
+    market_data: pd.DataFrame | None = None,
 ) -> dict[str, str]:
     run_dir = _run_dir(run_id)
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -56,10 +56,14 @@ def write_backtest_artifacts(
     trades.to_parquet(run_dir / "trades.parquet", index=False)
     equity_curve.to_parquet(run_dir / "equity.parquet", index=False)
 
-    return {
+    paths = {
         "trades": _artifact_relative_path(run_id, "trades"),
         "equity": _artifact_relative_path(run_id, "equity"),
     }
+    if market_data is not None:
+        market_data.to_parquet(run_dir / "market_data.parquet", index=False)
+        paths["market_data"] = _artifact_relative_path(run_id, "market_data")
+    return paths
 
 
 def read_backtest_artifact(run_id: str, kind: ArtifactKind) -> pd.DataFrame:

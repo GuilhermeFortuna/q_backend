@@ -174,13 +174,13 @@ def test_legacy_equivalence_between_strategy_params_and_entries_shape(
     )
 
     mock_service = mock_worker_market_service(ohlcv=sample_ohlcv)
-    legacy_payload, _, _ = _execute_candle(
+    legacy_payload, _, _, _ = _execute_candle(
         legacy_request,
         legacy_request.start,
         legacy_request.end,
         mock_service,
     )
-    entries_payload, _, _ = _execute_candle(
+    entries_payload, _, _, _ = _execute_candle(
         entries_request,
         entries_request.start,
         entries_request.end,

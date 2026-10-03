@@ -88,3 +88,21 @@ def test_delete_backtest_artifacts_removes_run_directory(lake_root_path):
     delete_backtest_artifacts(run_id)
 
     assert not (lake_root() / "backtests" / run_id).exists()
+
+
+def test_write_backtest_artifacts_persists_market_data(lake_root_path):
+    run_id = "33333333-3333-3333-3333-333333333333"
+    trades = pd.DataFrame([{"id": "t1", "pnl": 1.0}])
+    equity = pd.DataFrame({"time": [datetime(2024, 1, 1)], "equity": [1.0]})
+    market_data = pd.DataFrame(
+        {
+            "time": ["2024-01-01T13:00:00Z", "2024-01-02T13:00:00Z"],
+            "close": [100.0, 101.0],
+            "atr_14": [None, 1.5],
+        }
+    )
+
+    paths = write_backtest_artifacts(run_id, trades, equity, market_data)
+
+    assert paths["market_data"] == f"backtests/{run_id}/market_data.parquet"
+    pd.testing.assert_frame_equal(read_backtest_artifact(run_id, "market_data"), market_data)

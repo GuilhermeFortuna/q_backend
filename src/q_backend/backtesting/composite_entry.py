@@ -6,13 +6,21 @@ import numpy as np
 import pandas as pd
 
 from q_backend.backtesting.exit_strategy import ExitStrategy
-from q_backend.backtesting.signal_columns import SIGNAL_ENTRY, write_signal_columns
+from q_backend.backtesting.signal_columns import (
+    BAR_INDEX,
+    SIGNAL_COLUMNS,
+    SIGNAL_ENTRY,
+    write_signal_columns,
+)
 from q_backend.backtesting.signal_managers.base import SignalManager, Stance
 from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy
 from q_backend.backtesting.strategy_registry import (
     get_registered_strategy,
     merge_strategy_params,
 )
+
+# Sub-strategy columns that are not indicators and must not be copied per slot.
+_SUB_STRATEGY_INTERNAL_COLUMNS = frozenset({*SIGNAL_COLUMNS, BAR_INDEX, "buy_signal", "sell_signal"})
 
 
 def derive_stance(buy: pd.Series, sell: pd.Series) -> pd.Series:
@@ -66,9 +74,9 @@ class CompositeEntryStrategy(TradingStrategy):
             sub_df, buy, sell = self._instance_edge_columns(sub, data)
             df[f"{slot_id}__stance"] = derive_stance(buy, sell)
 
-            for spec in sub.get_chart_indicators():
-                if spec.key in sub_df.columns:
-                    df[f"{slot_id}__{spec.key}"] = sub_df[spec.key]
+            for column in sub_df.columns:
+                if column not in data.columns and column not in _SUB_STRATEGY_INTERNAL_COLUMNS:
+                    df[f"{slot_id}__{column}"] = sub_df[column]
 
             stance_columns.append(f"{slot_id}__stance")
 

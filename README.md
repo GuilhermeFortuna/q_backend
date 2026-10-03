@@ -229,9 +229,10 @@ Postgres stores **metadata and lake pointers** (`lake_path`, `lake_paths`, `resu
 ```
 {data_lake_root}/backtests/{run_id}/trades.parquet
 {data_lake_root}/backtests/{run_id}/equity.parquet
+{data_lake_root}/backtests/{run_id}/market_data.parquet
 ```
 
-Completed runs from `POST /api/v1/backtest/run` write both files and store relative paths in `BacktestRun.lake_paths`.
+Completed runs from `POST /api/v1/backtest/run` write these files and store relative paths in `BacktestRun.lake_paths`. `market_data.parquet` holds the bars the run used plus every indicator column the strategy and its exit rules computed (for the tick engine: the display bars with each indicator series sampled at bar closes).
 
 **Walk-forward artifact layout:**
 
@@ -919,6 +920,12 @@ To run it:
   * *Description:* Closed trades for a completed run, read from the Parquet lake. Trade objects match the shape returned by `POST /api/v1/backtest/run`.
   * *Response:* `{"run_id": "<uuid>", "trades": [<trade>, ...]}`
   * *Errors:* `404` when the run id is invalid or artifacts were never written (e.g. runs predating lake support).
+* **`GET /api/v1/backtests/{run_id}/export/market-data`**
+  * *Description:* The run's market data as `text/csv`: a leading `time` column (ISO 8601 UTC), the bars, and every indicator column the strategy and its exit rules computed, including ones not drawn on the chart. Internal signal-contract columns (`q_signal_*`, `bar_index`) are omitted.
+  * *Errors:* `404` when the run id is invalid or the run predates the `market_data` artifact.
+* **`GET /api/v1/backtests/{run_id}/export/trades`**
+  * *Description:* The run's closed trades as `text/csv` with columns `trade_id,symbol,side,entry_time,entry_price,exit_time,exit_price,pnl,quantity,commission,point_value,exit_reason`.
+  * *Errors:* `404` when the run id is invalid or artifacts were never written.
 
 ### Optuna Parameter Optimization
 * **`POST /api/v1/optimize`**

@@ -27,6 +27,8 @@ BACKTEST_ROUTES: list[tuple[str, str]] = [
     ("DELETE", "/api/v1/backtests/{run_id}"),
     ("GET", "/api/v1/backtests/{run_id}/artifacts/equity"),
     ("GET", "/api/v1/backtests/{run_id}/artifacts/trades"),
+    ("GET", "/api/v1/backtests/{run_id}/export/market-data"),
+    ("GET", "/api/v1/backtests/{run_id}/export/trades"),
 ]
 
 BACKTEST_OPENAPI_PATHS: list[str] = [
@@ -38,6 +40,8 @@ BACKTEST_OPENAPI_PATHS: list[str] = [
     "/api/v1/backtests/{run_id}",
     "/api/v1/backtests/{run_id}/artifacts/equity",
     "/api/v1/backtests/{run_id}/artifacts/trades",
+    "/api/v1/backtests/{run_id}/export/market-data",
+    "/api/v1/backtests/{run_id}/export/trades",
 ]
 
 

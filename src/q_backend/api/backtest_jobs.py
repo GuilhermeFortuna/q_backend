@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional
 import pandas as pd
 
 from q_backend.api.schemas.backtest import BacktestRequest
-from q_backend.backtesting.chart_data import serialize_chart_data
+from q_backend.backtesting.chart_data import market_data_frame, serialize_chart_data
 from q_backend.backtesting.costs import TransactionCostConfig
 from q_backend.backtesting.engine import BacktestEngine, ParallelMode
 from q_backend.backtesting.entry_config import (
@@ -28,7 +28,8 @@ from q_backend.backtesting.position_sizing import (
     PositionSizingConfig,
     build_position_sizer,
 )
-from q_backend.backtesting.tick.chart_data import serialize_tick_chart_data
+from q_backend.backtesting.indicator_frame import augment_indicator_frame
+from q_backend.backtesting.tick.chart_data import serialize_tick_backtest_data
 from q_backend.backtesting.tick.engine import TickBacktestEngine
 from q_backend.backtesting.tick.factory import build_tick_strategy
 from q_backend.backtesting.tick.strategy import TickArrays
@@ -147,7 +148,7 @@ def _resolve_range(request: BacktestJobRequest) -> tuple[datetime, datetime]:
 
 def _execute_candle(
     request: BacktestJobRequest, start: datetime, end: datetime, market_data_service
-) -> tuple[dict[str, Any], list, pd.DataFrame]:
+) -> tuple[dict[str, Any], list, pd.DataFrame, pd.DataFrame]:
     ohlcv_data = market_data_service.get_ohlcv(request.symbol, request.timeframe, start, end)
     if not ohlcv_data:
         raise ValueError("No market data found for the given parameters.")
@@ -164,7 +165,9 @@ def _execute_candle(
         exit_params,
         request.symbol,
     )
-    chart_data = serialize_chart_data(strategy.compute_indicators(df.copy()), strategy)
+    augmented = augment_indicator_frame(strategy, df)
+    chart_data = serialize_chart_data(augmented, strategy)
+    market_data = market_data_frame(augmented)
 
     sizer = build_position_sizer(request.position_sizing, point_value=request.point_value)
     engine = BacktestEngine(
@@ -192,12 +195,12 @@ def _execute_candle(
         "bars": chart_data["bars"],
         "indicators": chart_data["indicators"],
     }
-    return payload, closed_trade_objects, equity_df
+    return payload, closed_trade_objects, equity_df, market_data
 
 
 def _execute_tick(
     request: BacktestJobRequest, start: datetime, end: datetime, market_data_service
-) -> tuple[dict[str, Any], list, pd.DataFrame]:
+) -> tuple[dict[str, Any], list, pd.DataFrame, pd.DataFrame]:
     from q_backend.optimization.tick_backtest_runner import resolve_tick_flags
 
     arrays = market_data_service.get_ticks_columnar(
@@ -214,7 +217,7 @@ def _execute_tick(
         volume=arrays["volume"],
     )
     strategy = build_tick_strategy(request.strategy, request.strategy_params, request.symbol)
-    chart_data = serialize_tick_chart_data(ticks, strategy, display_timeframe=request.display_timeframe)
+    chart_data, market_data = serialize_tick_backtest_data(ticks, strategy, display_timeframe=request.display_timeframe)
     sizing_config = request.position_sizing or FixedQuantityPositionSizing()
     engine = TickBacktestEngine(
         strategy=strategy,
@@ -237,7 +240,7 @@ def _execute_tick(
         "bars": chart_data["bars"],
         "indicators": chart_data["indicators"],
     }
-    return payload, closed_trade_objects, equity_df
+    return payload, closed_trade_objects, equity_df, market_data
 
 
 def run_backtest_job(run_id: str, request_json: str) -> None:
@@ -249,15 +252,15 @@ def run_backtest_job(run_id: str, request_json: str) -> None:
     try:
         start, end = _resolve_range(request)
         if request.engine == "tick":
-            payload, trades_objects, equity_df = _execute_tick(request, start, end, market_data_service)
+            payload, trades_objects, equity_df, market_data = _execute_tick(request, start, end, market_data_service)
         else:
-            payload, trades_objects, equity_df = _execute_candle(request, start, end, market_data_service)
+            payload, trades_objects, equity_df, market_data = _execute_candle(request, start, end, market_data_service)
         payload["run_id"] = run_id
 
         lake_paths = None
         try:
             trades_df = pd.DataFrame([t.model_dump() for t in trades_objects])
-            lake_paths = write_backtest_artifacts(run_id, trades_df, equity_df)
+            lake_paths = write_backtest_artifacts(run_id, trades_df, equity_df, market_data)
             lake_paths["result"] = write_backtest_result(run_id, payload)
         except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
             logger.warning("Failed to write backtest lake artifacts for %s", run_id, exc_info=True)

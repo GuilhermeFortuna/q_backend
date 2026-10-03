@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
+from q_backend.backtesting.signal_columns import BAR_INDEX, SIGNAL_COLUMNS
 from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy
 from q_backend.market_data.timezone import mt5_datetime_to_utc_iso
 
@@ -62,3 +63,17 @@ def serialize_chart_data(
         )
 
     return {"bars": bars, "indicators": indicators}
+
+
+def market_data_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Flatten an augmented backtest DataFrame into an export table.
+
+    Keeps the bars and every indicator column the strategy and its exit rules
+    computed, drops the internal signal-contract columns, and moves the bar
+    index into a leading ISO-8601 UTC ``time`` column.
+    """
+    internal = [column for column in df.columns if column in SIGNAL_COLUMNS or column == BAR_INDEX]
+    frame = df.drop(columns=internal)
+    frame.insert(0, "time", [_to_iso_timestamp(ts) for ts in frame.index])
+    return frame.reset_index(drop=True)
