@@ -31,11 +31,11 @@
 **Files:** Create src/q_backend/backtesting/strategies/ma_crossover_ml_filter.py; modify strategies/__init__.py, strategy_registry.py, factory.py and api/backtest_jobs.py; tests/backtesting/test_ma_crossover_ml_filter.py and tests/api/test_ml_filter_backtest.py.
 **Interfaces:** MACrossoverMLFilter reuses original crossover strategy params and math; generated ml_filter config resolves Q-086 ready model once and wraps final CompositeEntryStrategy. No filtering inside the per-slot stance calculation.
 
-- [ ] Add focused failing tests: Test original goldens unchanged, identical raw crossover columns, accepted/rejected long/short reversal at next open, repeated score changes without crossover, stop/target/day close with rejected entry, and matching chart/engine decisions. Assert probability never alters sizing strength.
-- [ ] Run `uv run pytest tests/backtesting/test_ma_crossover_ml_filter.py tests/api/test_ml_filter_backtest.py tests/backtesting/test_engine_registry_baseline.py` and confirm the new behavior is missing before implementation; do not count import/setup failures as behavioral evidence.
-- [ ] Implement the specified interfaces and behavior, keeping public types aligned with Q-085 and preserving the existing patterns named above.
-- [ ] Run `uv run pytest tests/backtesting/test_ma_crossover_ml_filter.py tests/api/test_ml_filter_backtest.py tests/backtesting/test_engine_registry_baseline.py` and confirm the focused suite passes.
-- [ ] Commit this independently reviewable unit on the task branch with a conventional, focused message.
+- [x] Add focused failing tests: Test original goldens unchanged, identical raw crossover columns, accepted/rejected long/short reversal at next open, repeated score changes without crossover, stop/target/day close with rejected entry, and matching chart/engine decisions. Assert probability never alters sizing strength.
+- [x] Run `uv run pytest tests/backtesting/test_ma_crossover_ml_filter.py tests/api/test_ml_filter_backtest.py tests/backtesting/test_engine_registry_baseline.py` and confirm the new behavior is missing before implementation; do not count import/setup failures as behavioral evidence.
+- [x] Implement the specified interfaces and behavior, keeping public types aligned with Q-085 and preserving the existing patterns named above.
+- [x] Run `uv run pytest tests/backtesting/test_ma_crossover_ml_filter.py tests/api/test_ml_filter_backtest.py tests/backtesting/test_engine_registry_baseline.py` and confirm the focused suite passes.
+- [x] Commit this independently reviewable unit on the task branch with a conventional, focused message.
 
 ### 2. Enforce compatibility and supported workflows
 

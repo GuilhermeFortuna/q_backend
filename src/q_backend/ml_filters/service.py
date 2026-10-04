@@ -9,7 +9,21 @@ from typing import Any, Literal
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
-from q_backend.ml_filters.artifacts import read_ml_filter_result, write_ml_filter_result
+from q_backend.ml_filters.adapters import FittedEntryModel
+from q_backend.ml_filters.artifacts import (
+    load_model_version,
+    read_dataset_manifest,
+    read_ml_filter_result,
+    read_model_manifest,
+    write_ml_filter_result,
+)
+from q_backend.ml_filters.compatibility import (  # noqa: F401 - re-exported compatibility API
+    MLFilterCompatibilityError,
+    MLFilterModelUnavailableError,
+    MLFilterRequestError,
+    validate_filter_compatibility,
+    validate_filter_request_shape,
+)
 from q_backend.ml_filters.evaluation import compare_filters, evaluate_filter
 from q_backend.ml_filters.training import train_filters
 from q_backend.storage.db.engine import session_scope
@@ -272,6 +286,46 @@ def run_ml_filter_job(job_id: str, request_json: str, run_type: RunType) -> None
                     error_message=str(exc),
                     finished_at=datetime.now(timezone.utc),
                 )
+
+
+def read_filter_manifest(model_version_id: str) -> dict[str, Any]:
+    """Return the ready, checksum-verified model manifest merged with its dataset fields.
+
+    Raises ``MLFilterModelUnavailableError`` for a missing, deleted, not-ready or
+    corrupt model; a different version is never substituted.
+    """
+    with session_scope() as session:
+        row = get_ml_filter_model_version(session, model_version_id)
+        ready = row is not None and row.status == "ready"
+    if not ready:
+        raise MLFilterModelUnavailableError(f"Ready ML filter model '{model_version_id}' was not found")
+    try:
+        manifest = read_model_manifest(model_version_id)
+        dataset = read_dataset_manifest(manifest["dataset_id"])
+    except (FileNotFoundError, ValueError, KeyError) as exc:
+        raise MLFilterModelUnavailableError(
+            f"ML filter model '{model_version_id}' is unavailable or corrupt: {exc}"
+        ) from exc
+    return {
+        **manifest,
+        "compatibility_fingerprint": dataset["compatibility_fingerprint"],
+        "train_end": dataset["train_end"],
+    }
+
+
+def resolve_filter_model(config: dict[str, Any]) -> tuple[FittedEntryModel, dict[str, Any]]:
+    """Validate a backtest config against its pinned model and load the pipeline once."""
+    validate_filter_request_shape(config)
+    model_version_id = config["ml_filter"]["model_version_id"]
+    manifest = read_filter_manifest(model_version_id)
+    validate_filter_compatibility(config, manifest)
+    try:
+        fitted = load_model_version(model_version_id)
+    except (FileNotFoundError, ValueError) as exc:
+        raise MLFilterModelUnavailableError(
+            f"ML filter model '{model_version_id}' is unavailable or corrupt: {exc}"
+        ) from exc
+    return fitted, manifest
 
 
 def get_job_status(job_id: str, expected_type: RunType | None = None) -> dict[str, Any] | None:

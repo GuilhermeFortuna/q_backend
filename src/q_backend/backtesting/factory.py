@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any
 
 import q_backend.backtesting.strategies  # noqa: F401 — register built-in strategies
@@ -41,3 +42,23 @@ def build_strategy(name: str, params: dict[str, Any], symbol: str) -> TradingStr
     strategy.exit_strategy = ExitStrategy(merged)
 
     return strategy
+
+
+def wrap_with_ml_filter(
+    strategy: TradingStrategy,
+    fitted_model: Any,
+    threshold: float,
+    *,
+    entry_start: datetime | None = None,
+    entry_end: datetime | None = None,
+) -> TradingStrategy:
+    """Gate the finished, combined entry strategy with a frozen Q-086 classifier."""
+    from q_backend.ml_filters.filter import EntryFilteredStrategy
+
+    return EntryFilteredStrategy(
+        strategy,
+        fitted_model,
+        threshold,
+        entry_start=entry_start,
+        entry_end=entry_end,
+    )

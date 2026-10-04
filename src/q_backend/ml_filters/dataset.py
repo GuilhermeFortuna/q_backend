@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from q_backend.ml_filters.compatibility import compatibility_fingerprint
 from q_backend.ml_filters.config import EntryFeatureConfig, EntrySample, MLFilterDataset
 from q_backend.ml_filters.features import build_entry_features
 
@@ -206,28 +207,7 @@ def build_dataset_from_frames(
     trade_bytes = trades.to_json(orient="split", date_format="iso").encode()
     bars_digest = bars_checksum or _sha256(bar_bytes)
     trades_digest = trades_checksum or _sha256(trade_bytes)
-    compatibility = _canonical_hash(
-        {
-            key: source_config.get(key)
-            for key in (
-                "symbol",
-                "timeframe",
-                "strategy",
-                "strategy_params",
-                "entries",
-                "entry_manager",
-                "exit_params",
-                "day_trade",
-                "day_trade_start_time",
-                "day_trade_end_time",
-                "day_trade_close_time",
-                "costs",
-                "point_value",
-                "position_sizing",
-                "initial_capital",
-            )
-        }
-    )
+    compatibility = compatibility_fingerprint(source_config)
     identity = _canonical_hash(
         {
             "source_run_id": source_run_id,
