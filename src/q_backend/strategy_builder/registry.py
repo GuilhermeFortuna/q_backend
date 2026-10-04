@@ -78,7 +78,11 @@ _SUPPORTED_MARKETS = ("B3",)
 
 def _builtin_strategies() -> list[StrategyInfo]:
     return sorted(
-        (info for info in list_registered_strategies() if info.name not in _CUSTOM_STRATEGIES),
+        (
+            info
+            for info in list_registered_strategies()
+            if info.name not in _CUSTOM_STRATEGIES and "research_only" not in info.capabilities
+        ),
         key=lambda info: info.name,
     )
 

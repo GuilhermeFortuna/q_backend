@@ -34,6 +34,7 @@ REGISTERED_NAMES = [
     "HurstTrendBlend",
     "MACD",
     "MACrossover",
+    "MACrossoverMLFilter",
     "RSIMeanReversion",
     "TRB",
     "TickMaBreakout",

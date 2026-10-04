@@ -15,6 +15,7 @@ from q_backend.api.schemas.backtest import (
     BacktestRunDetailResponse,
     BacktestRunListItem,
     BacktestRunPatchRequest,
+    MLFilterReference,
 )
 from q_backend.api.schemas.common import BulkDeleteBacktestsRequest
 from q_backend.market_data.timezone import mt5_datetime_to_utc_iso
@@ -23,6 +24,7 @@ from q_backend.storage.db.repositories import (
     delete_backtest_run,
     delete_backtest_runs,
     get_backtest_run,
+    get_ml_filter_model_version,
     list_backtest_runs,
     update_backtest_run,
 )
@@ -65,7 +67,20 @@ def backtest_run_list_item(run: BacktestRun) -> BacktestRunListItem:
     )
 
 
-def backtest_run_detail(run: BacktestRun) -> BacktestRunDetailResponse:
+def _ml_filter_reference(config: Dict[str, Any], session: Session | None) -> MLFilterReference | None:
+    """Restore the exact pinned version; a deleted or unready model is reported unavailable."""
+    pinned = config.get("ml_filter")
+    if not pinned:
+        return None
+    model = get_ml_filter_model_version(session, pinned["model_version_id"]) if session is not None else None
+    return MLFilterReference(
+        model_version_id=pinned["model_version_id"],
+        threshold=pinned["threshold"],
+        available=model is not None and model.status == "ready",
+    )
+
+
+def backtest_run_detail(run: BacktestRun, session: Session | None = None) -> BacktestRunDetailResponse:
     config = run.config or {}
     symbol, strategy, timeframe = backtest_run_fields(config)
     return BacktestRunDetailResponse(
@@ -81,6 +96,7 @@ def backtest_run_detail(run: BacktestRun) -> BacktestRunDetailResponse:
         finished_at=run.finished_at,
         created_at=run.created_at,
         is_saved=run.is_saved,
+        ml_filter=_ml_filter_reference(config, session),
     )
 
 
@@ -164,7 +180,7 @@ def get_run(session: Session, run_id: str) -> BacktestRunDetailResponse:
     run = get_backtest_run(session, run_uuid)
     if run is None:
         raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.")
-    return backtest_run_detail(run)
+    return backtest_run_detail(run, session)
 
 
 def patch_run(
@@ -182,7 +198,7 @@ def patch_run(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.") from exc
 
-    return backtest_run_detail(run)
+    return backtest_run_detail(run, session)
 
 
 def delete(session: Session, run_id: str) -> None:

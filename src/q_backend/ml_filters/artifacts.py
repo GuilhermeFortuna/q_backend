@@ -168,6 +168,25 @@ def load_dataset_snapshot(
     )
 
 
+def read_dataset_manifest(dataset_id: str) -> dict[str, Any]:
+    """Read one published dataset manifest without loading its snapshot frames."""
+    from q_contracts.catalog import MlFilterDatasetManifest
+
+    if re.fullmatch(r"[0-9a-f]{64}", dataset_id) is None:
+        raise ValueError("dataset_id must be a 64-character lowercase SHA-256 id")
+    manifest_path = _dataset_directory(dataset_id) / "manifest.json"
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"Published ML filter dataset '{dataset_id}' was not found")
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest = MlFilterDatasetManifest(**data)
+    except Exception as exc:
+        raise ValueError("Published ML filter dataset manifest is invalid") from exc
+    if manifest.dataset_id != dataset_id or manifest.kind != "ml_filter_dataset":
+        raise ValueError("Dataset manifest identity does not match the requested dataset")
+    return data
+
+
 def _library_versions() -> dict[str, str]:
     names = ("lightgbm", "scikit-learn", "joblib", "numpy", "pandas")
     versions: dict[str, str] = {}

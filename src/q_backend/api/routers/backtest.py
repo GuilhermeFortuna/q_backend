@@ -18,6 +18,11 @@ from q_backend.api.schemas.backtest import (
 )
 from q_backend.api.schemas.common import BulkDeleteBacktestsRequest, BulkDeleteResponse
 from q_backend.backtesting import run_service as backtest_run_service
+from q_backend.ml_filters.compatibility import (
+    MLFilterCompatibilityError,
+    MLFilterModelUnavailableError,
+    MLFilterRequestError,
+)
 from q_backend.observability.sentry import trading_context
 from q_backend.storage.lake import read_backtest_result
 
@@ -35,8 +40,15 @@ def start_backtest(request: BacktestJobRequest):
             status_code=400,
             detail="Multi-entry backtests are only supported for the candle engine.",
         )
-    with trading_context(symbol=request.symbol, strategy=request.strategy):
-        run_id = backtest_jobs.start_job(request)
+    try:
+        with trading_context(symbol=request.symbol, strategy=request.strategy):
+            run_id = backtest_jobs.start_job(request)
+    except MLFilterRequestError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except MLFilterCompatibilityError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except MLFilterModelUnavailableError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"run_id": run_id, "status": "running"}
 
 

@@ -18,11 +18,9 @@ def _build_ma_crossover(params: dict[str, Any], symbol: str) -> MACrossoverStrat
     )
 
 
-register_strategy(
-    name="MACrossover",
-    label="MA Crossover",
-    description="Short/long moving-average crossover.",
-    params=[
+def ma_crossover_param_specs() -> list[StrategyParamSpec]:
+    """Fresh copy of the entry parameter specs; ``register_strategy`` mutates its list."""
+    return [
         StrategyParamSpec(
             name="short_period",
             label="Short Period",
@@ -78,7 +76,14 @@ register_strategy(
             search_step=0.25,
             hint="Higher = require a wider MA gap before entry; zero = pure crossover.",
         ),
-    ],
+    ]
+
+
+register_strategy(
+    name="MACrossover",
+    label="MA Crossover",
+    description="Short/long moving-average crossover.",
+    params=ma_crossover_param_specs(),
     build=_build_ma_crossover,
     strategy_class=MACrossoverStrategy,
     category="trend",

@@ -15,6 +15,7 @@ def test_list_strategies_returns_all_registered():
             "HurstTrendBlend",
             "MACD",
             "MACrossover",
+            "MACrossoverMLFilter",
             "RSIMeanReversion",
             "TRB",
             "TickMaBreakout",

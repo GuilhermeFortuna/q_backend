@@ -13,12 +13,20 @@ __all__ = [
     "EntryInstance",
     "EntryManagerConfig",
     "BacktestRequest",
+    "MLFilterConfig",
     "ChartIndicatorSeries",
     "BacktestResponse",
     "BacktestStartResponse",
     "BacktestStatusResponse",
     "BacktestRunListItem",
 ]
+
+
+class MLFilterConfig(BaseModel):
+    """Pinned Q-086 model version and acceptance threshold for an entry filter."""
+
+    model_version_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    threshold: float = Field(ge=0.0, le=1.0, allow_inf_nan=False)
 
 
 class BacktestRequest(BaseModel):
@@ -31,6 +39,8 @@ class BacktestRequest(BaseModel):
     strategy: str = "MACrossover"
     strategy_params: Dict[str, Any] = {}
     entries: Optional[List[EntryInstance]] = None
+    # Omitted from dumped/persisted configs when unset so existing request shapes are unchanged.
+    ml_filter: Optional[MLFilterConfig] = Field(default=None, exclude_if=lambda value: value is None)
     entry_manager: EntryManagerConfig = Field(default_factory=EntryManagerConfig)
     exit_params: Dict[str, Any] = {}
     position_sizing: Optional[PositionSizingConfig] = None
@@ -58,6 +68,8 @@ class BacktestResponse(BaseModel):
     bars: List[OhlcvBarResponse]
     indicators: List[ChartIndicatorSeries]
     run_id: Optional[str] = None
+    ml_filter: Optional[MLFilterConfig] = Field(default=None, exclude_if=lambda value: value is None)
+    ml_filter_summary: Optional[Dict[str, Any]] = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class BacktestStartResponse(BaseModel):
@@ -89,6 +101,14 @@ class BacktestRunListResponse(BaseModel):
     offset: int
 
 
+class MLFilterReference(BaseModel):
+    """A saved run's pinned ML filter and whether that exact version is still usable."""
+
+    model_version_id: str
+    threshold: float
+    available: bool
+
+
 class BacktestRunDetailResponse(BaseModel):
     run_id: str
     symbol: str
@@ -102,6 +122,7 @@ class BacktestRunDetailResponse(BaseModel):
     finished_at: Optional[datetime] = None
     created_at: datetime
     is_saved: bool = False
+    ml_filter: Optional[MLFilterReference] = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class BacktestRunPatchRequest(BaseModel):

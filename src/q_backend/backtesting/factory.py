@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any
 
 import q_backend.backtesting.strategies  # noqa: F401 — register built-in strategies
@@ -8,6 +9,7 @@ from q_backend.backtesting.strategy import TradingStrategy
 from q_backend.backtesting.strategy_registry import (
     get_registered_strategy,
     merge_strategy_params,
+    reject_research_only_strategy,
 )
 
 
@@ -29,6 +31,9 @@ def build_composite_entry(
 
 
 def build_strategy(name: str, params: dict[str, Any], symbol: str) -> TradingStrategy:
+    # Research-only variants need their post-combination hydration; building them bare
+    # would silently drop the gate.
+    reject_research_only_strategy(name, "this workflow")
     entry = get_registered_strategy(name)
     merged = merge_strategy_params(name, params)
     strategy = entry.build(merged, symbol)
@@ -41,3 +46,23 @@ def build_strategy(name: str, params: dict[str, Any], symbol: str) -> TradingStr
     strategy.exit_strategy = ExitStrategy(merged)
 
     return strategy
+
+
+def wrap_with_ml_filter(
+    strategy: TradingStrategy,
+    fitted_model: Any,
+    threshold: float,
+    *,
+    entry_start: datetime | None = None,
+    entry_end: datetime | None = None,
+) -> TradingStrategy:
+    """Gate the finished, combined entry strategy with a frozen Q-086 classifier."""
+    from q_backend.ml_filters.filter import EntryFilteredStrategy
+
+    return EntryFilteredStrategy(
+        strategy,
+        fitted_model,
+        threshold,
+        entry_start=entry_start,
+        entry_end=entry_end,
+    )

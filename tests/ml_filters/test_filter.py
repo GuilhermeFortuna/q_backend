@@ -49,7 +49,7 @@ def test_entry_gate_masks_only_entries_and_preserves_exits_strength_and_indicato
     assert result[SIGNAL_EXIT_SHORT].tolist() == [False, True, False, False]
     assert wrapper.candidate_count == 3
     assert wrapper.accepted_count == 2
-    assert wrapper.get_chart_indicators()[0].key == "existing"
+    assert [spec.key for spec in wrapper.get_chart_indicators()] == ["existing", "ml_filter_score"]
 
 
 def test_entry_gate_rejects_nonfinite_features_and_bad_model_scores_fail_closed():

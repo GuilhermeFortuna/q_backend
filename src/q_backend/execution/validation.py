@@ -177,6 +177,10 @@ def validate_strategy_identity(
         raise ExecutionValidationError(str(exc)) from exc
     if info.info.engine != "candle":
         raise ExecutionValidationError("tick strategies cannot be deployed to forward execution")
+    if "research_only" in info.info.capabilities:
+        raise ExecutionValidationError(
+            f"{info.info.label} is a research-only strategy and cannot be deployed to forward execution"
+        )
     normalized_tf = validate_timeframe(timeframe)
     cfg_symbol = compiled_config.get("symbol")
     cfg_tf = compiled_config.get("timeframe")

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Literal, Type, Union
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from q_backend.backtesting.strategy import TradingStrategy
 from q_backend.backtesting.tick.strategy import TickStrategy
@@ -12,6 +12,8 @@ StrategyEngine = Literal["candle", "tick"]
 StrategyCategory = Literal["trend", "mean_reversion", "breakout", "momentum", "other"]
 StrategyBase = Union[TradingStrategy, TickStrategy]
 
+
+StrategyCapability = Literal["ml_entry_filter", "research_only"]
 
 ExitGroup = Literal["stop_loss", "trailing", "target", "time", "general"]
 
@@ -57,6 +59,9 @@ class StrategyInfo(BaseModel):
     thesis: str = ""
     strong_in: str = ""
     weak_in: str = ""
+    # Additive feature flags, e.g. ``ml_entry_filter`` / ``research_only``. Omitted
+    # from API payloads when empty so existing strategies keep their wire shape.
+    capabilities: list[StrategyCapability] = Field(default_factory=list, exclude_if=lambda value: not value)
 
 
 class StrategiesResponse(BaseModel):
@@ -122,6 +127,7 @@ def register_strategy(
     thesis: str = "",
     strong_in: str = "",
     weak_in: str = "",
+    capabilities: list[StrategyCapability] | None = None,
 ) -> Type[StrategyBase]:
     if name in _STRATEGY_REGISTRY:
         raise ValueError(f"Strategy '{name}' is already registered.")
@@ -147,6 +153,7 @@ def register_strategy(
             thesis=thesis,
             strong_in=strong_in,
             weak_in=weak_in,
+            capabilities=list(capabilities or []),
         ),
         build=build,
     )
@@ -206,6 +213,7 @@ def load_and_register_custom_strategies() -> None:
                 thesis=base_entry.info.thesis,
                 strong_in=base_entry.info.strong_in,
                 weak_in=base_entry.info.weak_in,
+                capabilities=list(base_entry.info.capabilities),
             ),
             build=make_build(base_entry.build, saved_params),
         )
@@ -230,6 +238,23 @@ def list_registered_strategies() -> list[StrategyInfo]:
         (entry.info for entry in _STRATEGY_REGISTRY.values()),
         key=lambda info: info.name,
     )
+
+
+class UnsupportedStrategyWorkflowError(ValueError):
+    """Raised when a research-only strategy is used outside single backtests."""
+
+
+def reject_research_only_strategy(name: str, workflow: str) -> None:
+    """Refuse ``name`` for ``workflow`` when it is advertised as research-only."""
+    try:
+        info = get_registered_strategy(name).info
+    except ValueError:
+        return
+    if "research_only" in info.capabilities:
+        raise UnsupportedStrategyWorkflowError(
+            f"{info.label} is a research-only strategy and cannot be used for {workflow}; "
+            "run it as a single candle backtest instead."
+        )
 
 
 def default_params_for(name: str) -> dict[str, Any]:

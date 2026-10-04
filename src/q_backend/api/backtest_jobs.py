@@ -22,7 +22,7 @@ from q_backend.backtesting.entry_config import (
     format_entry_strategy_label,
     normalize_entries,
 )
-from q_backend.backtesting.factory import build_composite_entry
+from q_backend.backtesting.factory import build_composite_entry, wrap_with_ml_filter
 from q_backend.backtesting.position_sizing import (
     FixedQuantityPositionSizing,
     PositionSizingConfig,
@@ -125,8 +125,26 @@ def _persist_run_start(request: BacktestJobRequest) -> str:
         return str(run.id)
 
 
+def validate_ml_filter_request(request: BacktestJobRequest) -> None:
+    """Fail an incompatible or unsupported ML-filter request before a run is persisted.
+
+    Raises ``MLFilterRequestError`` (422), ``MLFilterCompatibilityError`` (409) or
+    ``MLFilterModelUnavailableError`` (404). Requests without a filter are untouched.
+    """
+    from q_backend.ml_filters import service as ml_filter_service
+    from q_backend.ml_filters.compatibility import uses_ml_filter
+
+    config = request.model_dump(mode="json")
+    if not uses_ml_filter(config):
+        return
+    ml_filter_service.validate_filter_request_shape(config)
+    manifest = ml_filter_service.read_filter_manifest(config["ml_filter"]["model_version_id"])
+    ml_filter_service.validate_filter_compatibility(config, manifest)
+
+
 def start_job(request: BacktestJobRequest) -> str:
     """Persist the run and dispatch it to the worker pool. Returns the run id."""
+    validate_ml_filter_request(request)
     run_id = _persist_run_start(request)
     _persist_progress(run_id, "running")
 
@@ -165,6 +183,19 @@ def _execute_candle(
         exit_params,
         request.symbol,
     )
+    ml_filter_manifest = None
+    if request.ml_filter is not None:
+        from q_backend.ml_filters import service as ml_filter_service
+        from q_backend.ml_filters.compatibility import to_utc
+
+        # One pinned pipeline per job; entries before train_end are warm-up only.
+        fitted_model, ml_filter_manifest = ml_filter_service.resolve_filter_model(request.model_dump(mode="json"))
+        strategy = wrap_with_ml_filter(
+            strategy,
+            fitted_model,
+            request.ml_filter.threshold,
+            entry_start=to_utc(datetime.fromisoformat(ml_filter_manifest["train_end"])).to_pydatetime(),
+        )
     augmented = augment_indicator_frame(strategy, df)
     chart_data = serialize_chart_data(augmented, strategy)
     market_data = market_data_frame(augmented)
@@ -195,7 +226,31 @@ def _execute_candle(
         "bars": chart_data["bars"],
         "indicators": chart_data["indicators"],
     }
+    if request.ml_filter is not None and ml_filter_manifest is not None:
+        payload["ml_filter"] = request.ml_filter.model_dump(mode="json")
+        payload["ml_filter_summary"] = _ml_filter_summary(
+            strategy,
+            ml_filter_manifest,
+            request,
+            executed_trades=len(closed_trade_objects) + len(registry.get_open_trades()),
+        )
     return payload, closed_trade_objects, equity_df, market_data
+
+
+def _ml_filter_summary(
+    strategy: Any, manifest: dict[str, Any], request: BacktestJobRequest, *, executed_trades: int
+) -> dict[str, Any]:
+    """Candidate-level filter counts, kept apart from executed-trade metrics."""
+    assert request.ml_filter is not None
+    return {
+        **strategy.diagnostics_summary(),
+        "executed_trades": executed_trades,
+        "model_version_id": request.ml_filter.model_version_id,
+        "dataset_id": manifest["dataset_id"],
+        "algorithm": manifest["algorithm"],
+        "train_end": manifest["train_end"],
+        "compatibility_fingerprint": manifest["compatibility_fingerprint"],
+    }
 
 
 def _execute_tick(
@@ -265,10 +320,13 @@ def run_backtest_job(run_id: str, request_json: str) -> None:
         except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
             logger.warning("Failed to write backtest lake artifacts for %s", run_id, exc_info=True)
 
+        result_summary = payload["metrics"]
+        if "ml_filter_summary" in payload:
+            result_summary = {**result_summary, "ml_filter_summary": payload["ml_filter_summary"]}
         _finish_run(
             run_id,
             status=RunStatus.COMPLETED.value,
-            result_summary=payload["metrics"],
+            result_summary=result_summary,
             lake_paths=lake_paths,
         )
         _persist_progress(run_id, "completed")
