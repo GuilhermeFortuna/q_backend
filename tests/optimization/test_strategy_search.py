@@ -174,7 +174,11 @@ def _search_config(
     )
 
 
-CANDLE_STRATEGIES = [info.name for info in list_registered_strategies() if info.engine == "candle"]
+CANDLE_STRATEGIES = [
+    info.name
+    for info in list_registered_strategies()
+    if info.engine == "candle" and "research_only" not in info.capabilities
+]
 
 
 def test_registry_provider_yields_candle_strategies_only():

@@ -8,6 +8,7 @@ from q_backend.api.schemas.backtest import BacktestRequest
 from q_backend.backtesting.entry_config import normalize_entries
 from q_backend.backtesting.factory import build_composite_entry, build_strategy
 from q_backend.backtesting.strategy import TradingStrategy
+from q_backend.backtesting.strategy_registry import get_registered_strategy
 
 
 class UnsupportedForwardStrategyError(ValueError):
@@ -29,6 +30,12 @@ def build_strategy_from_compiled(
         raise UnsupportedForwardStrategyError("tick/sub-second strategies are outside forward execution scope")
 
     entries, manager, exit_params = normalize_entries(request)
+    if request.ml_filter is not None or any(
+        "research_only" in get_registered_strategy(entry.strategy).info.capabilities for entry in entries
+    ):
+        raise UnsupportedForwardStrategyError(
+            "ML-filter strategies are research-only and cannot run on forward execution"
+        )
     if request.entries is not None:
         return build_composite_entry(
             [{"strategy": entry.strategy, "params": entry.params} for entry in entries],

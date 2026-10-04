@@ -177,6 +177,14 @@ class StrategySearchConfig(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def reject_research_only_strategies(self) -> StrategySearchConfig:
+        from q_backend.backtesting.strategy_registry import reject_research_only_strategy
+
+        for name in self.strategies or []:
+            reject_research_only_strategy(name, "strategy discovery")
+        return self
+
+    @model_validator(mode="after")
     def reject_multi_objective(self) -> StrategySearchConfig:
         if self.objective.mode == ObjectiveMode.MULTI_OBJECTIVE_RETURN_DRAWDOWN:
             raise ValueError(
@@ -367,7 +375,8 @@ class RegistryCandidateProvider:
 
     def _selected_infos(self) -> list[StrategyInfo]:
         if self._config.strategies is None:
-            return list_registered_strategies()
+            # Default sweeps never include research-only strategies such as the ML-filter variant.
+            return [info for info in list_registered_strategies() if "research_only" not in info.capabilities]
         infos: list[StrategyInfo] = []
         for name in self._config.strategies:
             infos.append(get_registered_strategy(name).info)

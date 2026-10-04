@@ -110,6 +110,25 @@ class BacktestConfig(BaseModel):
     display_timeframe: str = "M1"
     tick_flags: Optional[str] = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def reject_ml_filter_workflow(cls, data: Any) -> Any:
+        """Optimization, walk-forward and discovery never run ML-filter strategies."""
+        if isinstance(data, dict):
+            from q_backend.backtesting.strategy_registry import reject_research_only_strategy
+
+            if data.get("ml_filter") is not None:
+                raise ValueError("ml_filter backtests are single candle backtests only; remove ml_filter")
+            names = [data.get("strategy", "MACrossover")]
+            names += [
+                entry.get("strategy") if isinstance(entry, dict) else getattr(entry, "strategy", None)
+                for entry in data.get("entries") or []
+            ]
+            for name in names:
+                if isinstance(name, str):
+                    reject_research_only_strategy(name, "optimization, walk-forward or discovery")
+        return data
+
     @model_validator(mode="after")
     def normalize_and_validate_range(self):
         # Frontend sends UTC-aware ISO datetimes; MT5 bars and trade timestamps are

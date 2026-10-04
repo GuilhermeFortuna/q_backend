@@ -53,7 +53,7 @@ def _is_deployable(name: str, base_name: str) -> bool:
         info = get_registered_strategy(name).info
     except ValueError:
         return False
-    return info.engine == "candle"
+    return info.engine == "candle" and "research_only" not in info.capabilities
 
 
 def build_catalog() -> list[CatalogEntry]:

@@ -42,11 +42,11 @@
 **Files:** Modify ml_filters/service.py, api/schemas/backtest.py integration, execution/strategy_build.py and existing optimization/discovery request validation; tests/ml_filters/test_compatibility.py and tests/backtesting/test_ml_filter_capabilities.py.
 **Interfaces:** Central validate_filter_compatibility(config, model_manifest); generated registry capability fields exclude the new variant from unsupported workflows while retaining original capabilities.
 
-- [ ] Add focused failing tests: Reject original+filter, missing/unknown model, multiple entries, non-or/nonempty manager params, tick/optimization/walkforward/discovery/live use, mismatched MA/exit/cost/sizing/day settings and training-overlap trading dates. Permit pre-train warm-up only with suppressed entries; artifact loading or invalid probability fails the run.
-- [ ] Run `uv run pytest tests/ml_filters/test_compatibility.py tests/backtesting/test_ml_filter_capabilities.py` and confirm the new behavior is missing before implementation; do not count import/setup failures as behavioral evidence.
-- [ ] Implement the specified interfaces and behavior, keeping public types aligned with Q-085 and preserving the existing patterns named above.
-- [ ] Run `uv run pytest tests/ml_filters/test_compatibility.py tests/backtesting/test_ml_filter_capabilities.py` and confirm the focused suite passes.
-- [ ] Commit this independently reviewable unit on the task branch with a conventional, focused message.
+- [x] Add focused failing tests: Reject original+filter, missing/unknown model, multiple entries, non-or/nonempty manager params, tick/optimization/walkforward/discovery/live use, mismatched MA/exit/cost/sizing/day settings and training-overlap trading dates. Permit pre-train warm-up only with suppressed entries; artifact loading or invalid probability fails the run.
+- [x] Run `uv run pytest tests/ml_filters/test_compatibility.py tests/backtesting/test_ml_filter_capabilities.py` and confirm the new behavior is missing before implementation; do not count import/setup failures as behavioral evidence.
+- [x] Implement the specified interfaces and behavior, keeping public types aligned with Q-085 and preserving the existing patterns named above.
+- [x] Run `uv run pytest tests/ml_filters/test_compatibility.py tests/backtesting/test_ml_filter_capabilities.py` and confirm the focused suite passes.
+- [x] Commit this independently reviewable unit on the task branch with a conventional, focused message.
 
 ### 3. Persist pinned references and diagnostics
 
