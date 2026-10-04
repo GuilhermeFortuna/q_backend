@@ -1035,6 +1035,21 @@ Defaults are seed `42`, threshold `0.50`, and all allowlisted features except `r
 * **`POST /api/v1/ml-filters/comparisons`** — queue a same-dataset validation comparison at the requested threshold (default `0.50`); **`GET /api/v1/ml-filters/comparisons/{job_id}`** returns classification and actual engine rerun metrics.
 * **`POST /api/v1/ml-filters/evaluations`** — reserve and queue one final lockbox evaluation for a dataset/model/threshold tuple; a conflicting tuple returns `409`. **`GET /api/v1/ml-filters/evaluations/{job_id}`** returns the durable result.
 
+#### MA Crossover · ML Filter backtests
+
+`MACrossoverMLFilter` (label **MA Crossover · ML Filter**) is a separate, research-only strategy. It shares the original `MACrossover` parameters and math; the original strategy, its saved requests and its goldens are unchanged. Run it through `POST /api/v1/backtest` with the variant as the only entry, the `or` manager with empty parameters, and a pinned Q-086 model:
+
+```json
+{"symbol": "WIN$", "timeframe": "M5", "strategy": "MACrossoverMLFilter",
+ "strategy_params": {"short_period": 10, "long_period": 30},
+ "ml_filter": {"model_version_id": "<64-hex model version>", "threshold": 0.6}}
+```
+
+* **Gating.** The finished composite entry is wrapped by the Q-086 gate before indicator augmentation, so the chart and the engine consume the same decisions. A crossover is only a candidate: scores of at least `threshold` keep the entry with its original strength and sizing; lower scores (or not-ready features) drop it. Exits, stops, targets and day-trade closes are untouched, so a rejected reversal still closes the open position at the next open and stays flat until a fresh crossover. Probability never changes sizing and never triggers an exit.
+* **Compatibility (checked at request time and again in the worker).** The model's training source must match the request's symbol, timeframe, MA/exit parameters, costs, sizing and day-trade settings (`409` otherwise); a missing, deleted, not-ready or corrupt model returns `404` and fails a running job; an unsupported composition returns `422`. Entries before the model's `train_end` are suppressed (earlier bars serve only as indicator warm-up), and a range ending at or before `train_end` returns `409`.
+* **Results.** Completed results add `ml_filter` and `ml_filter_summary` (candidate signals, scored, accepted, rejected, not-ready, suppressed, and `executed_trades`, which is reported apart from candidates). The market-data export gains `ml_filter_score` and `ml_filter_accepted` columns; runs of any other strategy gain nothing. `GET /api/v1/backtests/{run_id}` returns `ml_filter` with `available`, so a run keeps its exact pinned version and threshold and reports a deleted model as unavailable instead of substituting another.
+* **Scope.** Candle backtests only: optimization, walk-forward, discovery, the strategy builder, the live catalog and forward-execution deployment reject the variant (`capabilities: ["ml_entry_filter", "research_only"]` in `GET /api/v1/strategies`; other strategies omit the field).
+
 ### Local market storage
 * **`GET /api/v1/storage/inventory`**
   * *Description:* List OHLCV/tick series in the local Parquet store with row counts and byte sizes.

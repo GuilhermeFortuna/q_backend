@@ -101,6 +101,14 @@ class BacktestRunListResponse(BaseModel):
     offset: int
 
 
+class MLFilterReference(BaseModel):
+    """A saved run's pinned ML filter and whether that exact version is still usable."""
+
+    model_version_id: str
+    threshold: float
+    available: bool
+
+
 class BacktestRunDetailResponse(BaseModel):
     run_id: str
     symbol: str
@@ -114,6 +122,7 @@ class BacktestRunDetailResponse(BaseModel):
     finished_at: Optional[datetime] = None
     created_at: datetime
     is_saved: bool = False
+    ml_filter: Optional[MLFilterReference] = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class BacktestRunPatchRequest(BaseModel):

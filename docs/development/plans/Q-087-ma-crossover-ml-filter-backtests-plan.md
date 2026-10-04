@@ -53,11 +53,11 @@
 **Files:** Modify api/backtest_jobs.py, backtesting/run_service.py and chart_data.py additive diagnostics as needed; tests/api/test_ml_filter_backtest_history.py; update README.md.
 **Interfaces:** Persist generated ml_filter and ml_filter_summary; score/acceptance diagnostics alongside raw indicators; run reload retains exact version/threshold regardless of subsequent training.
 
-- [ ] Add focused failing tests: Save/reload model+threshold/config; unavailable reference does not substitute a version. Summaries distinguish scored/accepted/rejected/not-ready candidates from executed trades. Existing CSV/market_data columns remain valid and original strategy has no new mandatory fields.
-- [ ] Run `uv run pytest tests/api/test_ml_filter_backtest_history.py tests/backtesting/test_chart_data.py` and confirm the new behavior is missing before implementation; do not count import/setup failures as behavioral evidence.
-- [ ] Implement the specified interfaces and behavior, keeping public types aligned with Q-085 and preserving the existing patterns named above.
-- [ ] Run `uv run pytest tests/api/test_ml_filter_backtest_history.py tests/backtesting/test_chart_data.py` and confirm the focused suite passes.
-- [ ] Commit this independently reviewable unit on the task branch with a conventional, focused message.
+- [x] Add focused failing tests: Save/reload model+threshold/config; unavailable reference does not substitute a version. Summaries distinguish scored/accepted/rejected/not-ready candidates from executed trades. Existing CSV/market_data columns remain valid and original strategy has no new mandatory fields.
+- [x] Run `uv run pytest tests/api/test_ml_filter_backtest_history.py tests/backtesting/test_chart_data.py` and confirm the new behavior is missing before implementation; do not count import/setup failures as behavioral evidence.
+- [x] Implement the specified interfaces and behavior, keeping public types aligned with Q-085 and preserving the existing patterns named above.
+- [x] Run `uv run pytest tests/api/test_ml_filter_backtest_history.py tests/backtesting/test_chart_data.py` and confirm the focused suite passes.
+- [x] Commit this independently reviewable unit on the task branch with a conventional, focused message.
 
 ## Verification and handoff
 
