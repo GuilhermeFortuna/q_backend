@@ -13,6 +13,7 @@ from q_backend.api.routers import execution as execution_router
 from q_backend.api.routers import experiments as experiments_router
 from q_backend.api.routers import features as features_router
 from q_backend.api.routers import market as market_router
+from q_backend.api.routers import ml_filters as ml_filters_router
 from q_backend.api.routers import neural as neural_router
 from q_backend.api.routers import news as news_router
 from q_backend.api.routers import optimization as optimization_router
@@ -66,6 +67,7 @@ app.include_router(stream_router.router)
 app.include_router(strategies_router.router)
 app.include_router(strategy_builder_router.router)
 app.include_router(market_router.router)
+app.include_router(ml_filters_router.router)
 app.include_router(trades_router.router)
 app.include_router(backtest_router.router)
 app.include_router(optimization_router.router)

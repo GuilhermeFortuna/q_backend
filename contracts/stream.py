@@ -216,9 +216,6 @@ class ExecutionPosition:
     opened_at: str | None = None
 
 
-ExecutionRiskEvent = dict[str, Any] | dict[str, Any]
-
-
 ExecutionSide = Literal["buy", "sell"]
 
 
@@ -481,3 +478,6 @@ class TradeWatermark:
 
 
 UUID = str
+
+
+ExecutionRiskEvent = dict[str, Any] | dict[str, Any]

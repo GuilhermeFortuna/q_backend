@@ -1,6 +1,6 @@
 # Q-086: ML filter training and comparison
 
-**Status:** written spec and plan awaiting human review; status of record is the [Q project board](https://github.com/users/GuilhermeFortuna/projects/2).
+**Status:** implementation and canonical CI complete; awaiting review. Status of record is the [Q project board](https://github.com/users/GuilhermeFortuna/projects/2).
 **Batch:** 14 — ML entry filters for research
 **Depends on:** Q-085, Q-028
 **Implementation plan:** [Plan](../plans/Q-086-ml-filter-training-and-comparison-plan.md)
@@ -51,6 +51,6 @@ Core signatures: `build_source_dataset(source_run_id, config) -> MLFilterDataset
 
 ## Delivery boundary
 
-Written specification and plan await human review. No implementation is authorized by this documentation session. Integrate/publish the documentation before launch; the human approves plans and sets Todo. Start only with `./work start Q-086 --agent <agent> --worktree` after dependencies are Done. Implement natively; delegation requires separate authorization. Never push, merge, edit vendored contracts, or change board status outside the workspace workflow.
+Implementation is limited to this task branch and awaits human review before integration. Never push, merge, edit vendored contracts, or change board status outside the workspace workflow.
 
 Batch 14 is research-only: no live deployment, q_terminal integration, automatic walk-forward retraining, optimizer/discovery support, multi-entry ML combinations, custom uploads, or GPU requirement. Existing MACrossover behavior and saved configurations remain compatible. Python orchestrates model inference; existing q_core indicator and execution semantics are reused without another fill/indicator implementation.

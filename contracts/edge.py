@@ -124,9 +124,6 @@ class ExecutionPosition:
     tp: float | None = None
 
 
-LookupOutcome = dict[str, Any] | dict[str, Any] | dict[str, Any] | dict[str, Any]
-
-
 @dataclass(frozen=True)
 class LookupRequest:
     intent_id: str
@@ -158,10 +155,13 @@ class QuoteResponse:
     time_msc: int
 
 
-SubmitOutcome = dict[str, Any] | dict[str, Any] | dict[str, Any]
-
-
 @dataclass(frozen=True)
 class SubmitRequest:
     intent_id: str
     order: ExecutionOrder
+
+
+LookupOutcome = dict[str, Any] | dict[str, Any] | dict[str, Any] | dict[str, Any]
+
+
+SubmitOutcome = dict[str, Any] | dict[str, Any] | dict[str, Any]

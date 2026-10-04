@@ -20,6 +20,9 @@ from q_backend.storage.db.models import (
     NeuralModelVersion,
     OptimizationStudy,
     OptimizationTrial,
+    MLFilterEvaluation,
+    MLFilterModelVersion,
+    MLFilterRun,
     RunStatus,
     Strategy,
     StrategySearchCandidate,
@@ -110,6 +113,148 @@ def get_or_create_strategy(session: Session, *, name: str) -> Strategy:
 
 def get_backtest_run(session: Session, run_id: uuid.UUID) -> Optional[BacktestRun]:
     return session.get(BacktestRun, run_id)
+
+
+def create_ml_filter_run(
+    session: Session,
+    *,
+    run_type: str,
+    request: dict[str, Any],
+    source_run_id: str | None = None,
+    dataset_id: str | None = None,
+    stage: str | None = None,
+) -> MLFilterRun:
+    row = MLFilterRun(
+        run_type=run_type,
+        request=request,
+        source_run_id=source_run_id,
+        dataset_id=dataset_id,
+        status="queued",
+        stage=stage,
+        progress={},
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def get_ml_filter_run(session: Session, run_id: uuid.UUID) -> MLFilterRun | None:
+    return session.get(MLFilterRun, run_id)
+
+
+def update_ml_filter_run(session: Session, run_id: uuid.UUID, **values: Any) -> MLFilterRun:
+    row = session.get(MLFilterRun, run_id)
+    if row is None:
+        raise ValueError(f"MLFilterRun {run_id} not found")
+    allowed = {
+        "status",
+        "stage",
+        "dataset_id",
+        "progress",
+        "result_summary",
+        "lake_paths",
+        "error_message",
+        "started_at",
+        "finished_at",
+    }
+    unknown = set(values) - allowed
+    if unknown:
+        raise ValueError(f"Unsupported ML filter run fields: {', '.join(sorted(unknown))}")
+    for name, value in values.items():
+        setattr(row, name, value)
+    session.flush()
+    return row
+
+
+def create_ml_filter_model_version(
+    session: Session,
+    *,
+    model_version_id: str,
+    dataset_id: str,
+    source_run_id: str,
+    algorithm: str,
+    manifest_path: str,
+    artifact_path: str,
+    summary: dict[str, Any],
+) -> MLFilterModelVersion:
+    existing = session.execute(
+        select(MLFilterModelVersion).where(MLFilterModelVersion.model_version_id == model_version_id)
+    ).scalar_one_or_none()
+    if existing is not None:
+        if existing.dataset_id != dataset_id or existing.algorithm != algorithm:
+            raise ValueError("Published ML filter model id conflicts with an existing version")
+        return existing
+    row = MLFilterModelVersion(
+        model_version_id=model_version_id,
+        dataset_id=dataset_id,
+        source_run_id=source_run_id,
+        algorithm=algorithm,
+        status="ready",
+        manifest_path=manifest_path,
+        artifact_path=artifact_path,
+        summary=summary,
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def get_ml_filter_model_version(session: Session, model_version_id: str) -> MLFilterModelVersion | None:
+    return session.execute(
+        select(MLFilterModelVersion).where(MLFilterModelVersion.model_version_id == model_version_id)
+    ).scalar_one_or_none()
+
+
+def list_ml_filter_model_versions(
+    session: Session,
+    *,
+    dataset_id: str | None = None,
+    symbol: str | None = None,
+    timeframe: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[MLFilterModelVersion], int]:
+    query = select(MLFilterModelVersion).where(MLFilterModelVersion.status == "ready")
+    if dataset_id is not None:
+        query = query.where(MLFilterModelVersion.dataset_id == dataset_id)
+    if symbol is not None:
+        query = query.where(MLFilterModelVersion.summary["symbol"].as_string() == symbol)
+    if timeframe is not None:
+        query = query.where(MLFilterModelVersion.summary["timeframe"].as_string() == timeframe)
+    total = session.execute(select(func.count()).select_from(query.subquery())).scalar_one()
+    rows = (
+        session.execute(query.order_by(desc(MLFilterModelVersion.created_at)).limit(limit).offset(offset))
+        .scalars()
+        .all()
+    )
+    return list(rows), total
+
+
+def create_ml_filter_evaluation(
+    session: Session,
+    *,
+    dataset_id: str,
+    model_version_id: str,
+    threshold: float,
+    selection: dict[str, Any],
+    run_id: uuid.UUID,
+) -> MLFilterEvaluation:
+    row = MLFilterEvaluation(
+        dataset_id=dataset_id,
+        model_version_id=model_version_id,
+        threshold=threshold,
+        selection=selection,
+        run_id=run_id,
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def get_ml_filter_evaluation_by_dataset(session: Session, dataset_id: str) -> MLFilterEvaluation | None:
+    return session.execute(
+        select(MLFilterEvaluation).where(MLFilterEvaluation.dataset_id == dataset_id)
+    ).scalar_one_or_none()
 
 
 def find_backtest_run_by_config(session: Session, config: dict[str, Any]) -> Optional[BacktestRun]:

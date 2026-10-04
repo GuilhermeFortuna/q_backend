@@ -56,6 +56,7 @@ class BacktestEngine:
         data: pd.DataFrame,
         parallel_mode: ParallelMode = ParallelMode.SEQUENTIAL,
         trade_start: Optional[datetime.datetime] = None,
+        force_close_at_end: bool | None = None,
     ) -> TradeRegistry:
         """
         Entry point for running a backtest.
@@ -91,12 +92,22 @@ class BacktestEngine:
             # budgeted source of CPU parallelism in the backend, and a nested pool
             # per backtest would oversubscribe the cores when several jobs run.
             for _, chunk in data.groupby(data.index.date):
-                master_registry.merge(self._run_single_chunk(chunk, force_close_at_end=True, trade_start=trade_start))
+                master_registry.merge(
+                    self._run_single_chunk(
+                        chunk,
+                        force_close_at_end=True if force_close_at_end is None else force_close_at_end,
+                        trade_start=trade_start,
+                    )
+                )
 
             return master_registry
 
         else:  # SEQUENTIAL
-            return self._run_single_chunk(data, force_close_at_end=False, trade_start=trade_start)
+            return self._run_single_chunk(
+                data,
+                force_close_at_end=bool(force_close_at_end),
+                trade_start=trade_start,
+            )
 
     def _run_single_chunk(
         self,
