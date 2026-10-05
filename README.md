@@ -1133,3 +1133,20 @@ make hooks
 ```
 
 `pre-commit` runs `ruff` and `black`; `pre-push` runs `scripts/ci.sh`.
+
+### ML filter worker imports and validation scores
+
+API schema imports do not initialize the ASGI application. The `q_backend.api`
+package loads `app` lazily when explicitly requested, allowing Dramatiq to import
+the ML filter service before API startup. Source datasets use the shared database
+session scope from `q_backend.storage.db.engine`.
+
+Saved-model detail and comparison responses serialize ROC AUC using the contracts'
+nullable metric shape (`value`, `unavailable_reason`). Stored training metrics and
+model artifacts retain their original format.
+
+The worker import regression runs in a fresh interpreter; source-loader and API
+coverage check the database import and nullable score response. On 2026-10-04,
+the existing Research training job was retried after these fixes and completed
+with all three selected algorithms. A validation comparison also completed;
+the reserved final-evaluation period was not consumed.

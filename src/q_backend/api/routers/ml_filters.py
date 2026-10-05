@@ -149,7 +149,7 @@ def get_ml_filter_model(model_version_id: str, session: Session = Depends(get_se
             "training_label_availability_cutoff": manifest.get("training_label_availability_cutoff"),
             "compatibility_fingerprint": summary.get("compatibility_fingerprint"),
         },
-        "validation_metrics": summary.get("validation_metrics", {}),
+        "validation_metrics": ml_filter_jobs.validation_metrics_payload(summary.get("validation_metrics", {})),
     }
 
 

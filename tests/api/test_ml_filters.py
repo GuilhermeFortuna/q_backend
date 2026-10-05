@@ -162,4 +162,11 @@ def test_model_detail_never_returns_serialized_pipeline(api_db_session: Session,
 
     assert response["selected_features"] == ["close", "side"]
     assert "pipeline" not in response
-    assert response["validation_metrics"]["roc_auc"] == 0.7
+    assert response["validation_metrics"]["roc_auc"] == {"value": 0.7, "unavailable_reason": None}
+
+
+def test_model_metrics_preserve_unavailable_auc_reason():
+    from q_backend.api.ml_filter_jobs import validation_metrics_payload
+
+    metrics = validation_metrics_payload({"roc_auc": None, "roc_auc_reason": "Only one label class"})
+    assert metrics["roc_auc"] == {"value": None, "unavailable_reason": "Only one label class"}

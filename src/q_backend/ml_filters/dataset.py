@@ -264,7 +264,7 @@ def build_source_dataset(source_run_id: str, config: EntryFeatureConfig) -> MLFi
     import uuid
 
     from q_backend.storage.db.models import BacktestRun
-    from q_backend.storage.db.session import session_scope
+    from q_backend.storage.db.engine import session_scope
     from q_backend.storage.lake.artifacts import _artifact_absolute_path
 
     try:

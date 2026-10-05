@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from q_backend.ml_filters.config import EntryFeatureConfig
-from q_backend.ml_filters.dataset import build_dataset_from_frames, partition_features
+from q_backend.ml_filters.dataset import build_dataset_from_frames, build_source_dataset, partition_features
 
 
 def _config():
@@ -113,3 +113,8 @@ def test_dataset_uses_previous_bar_and_partitions_by_real_utc_timestamps():
     assert len(y) == 24
     assert {sample.partition for sample in dataset.samples} == {"train", "validation", "lockbox"}
     assert dataset.rejections["validation"]["nonfinite_feature"] == 1
+
+
+def test_source_loader_imports_runtime_dependencies_before_validating_run_id():
+    with pytest.raises(ValueError, match="source_run_id must be a UUID"):
+        build_source_dataset("not-a-uuid", _config())

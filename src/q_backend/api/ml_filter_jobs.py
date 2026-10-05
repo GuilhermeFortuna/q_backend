@@ -108,6 +108,14 @@ def _nullable_metric(value: Any, reason: str | None = None) -> dict[str, Any]:
     return {"value": value, "unavailable_reason": reason if value is None else None}
 
 
+def validation_metrics_payload(classification: dict[str, Any]) -> dict[str, Any]:
+    """Expose stored classification metrics using the versioned wire shape."""
+    return {
+        "confusion_matrix": classification.get("confusion_matrix"),
+        "roc_auc": _nullable_metric(classification.get("roc_auc"), classification.get("roc_auc_reason")),
+    }
+
+
 def _engine_metrics(value: dict[str, Any]) -> dict[str, Any]:
     metrics = value.get("metrics", {})
     profit_factor = metrics.get("profit_factor")
@@ -130,7 +138,6 @@ def get_comparison_status(job_id: str) -> dict[str, Any] | None:
     results = []
     for item in result.get("results", []):
         classification = item.get("classification", {})
-        auc = classification.get("roc_auc")
         results.append(
             {
                 "model_version_id": item["model_version_id"],
@@ -138,10 +145,7 @@ def get_comparison_status(job_id: str) -> dict[str, Any] | None:
                 "dataset_id": result.get("dataset_id"),
                 "baseline": _engine_metrics(item.get("baseline", {})),
                 "filtered": _engine_metrics(item.get("filtered", {})),
-                "classification": {
-                    "confusion_matrix": classification.get("confusion_matrix"),
-                    "roc_auc": _nullable_metric(auc, classification.get("roc_auc_reason")),
-                },
+                "classification": validation_metrics_payload(classification),
                 "acceptance_counts": {
                     "candidates_scored": int(item.get("filtered", {}).get("candidate_count", 0) or 0)
                     - int(item.get("filtered", {}).get("not_ready_count", 0) or 0),
