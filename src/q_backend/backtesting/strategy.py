@@ -41,6 +41,17 @@ class TradingStrategy(ABC):
       enforces this automatically for every registered strategy.
     """
 
+    requires_single_entry = False
+
+    def filter_entry_signals(self, frame: pd.DataFrame, *, indicator_prefix: str = "") -> pd.DataFrame:
+        """Apply an optional entry gate after composite stance combination.
+
+        Gates must preserve exit columns and raw stance edges. The prefix locates
+        this instance's indicators in a composite frame. Ordinary strategies
+        return the frame unchanged.
+        """
+        return frame
+
     def __init__(self, **kwargs):
         """
         Initialize strategy parameters.

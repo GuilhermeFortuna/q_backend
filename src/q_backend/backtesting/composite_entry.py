@@ -46,6 +46,8 @@ class CompositeEntryStrategy(TradingStrategy):
             slot_id = f"e{index}"
             merged = merge_strategy_params(name, params)
             sub = get_registered_strategy(name).build(merged, symbol)
+            if sub.requires_single_entry and len(instances) != 1:
+                raise ValueError(f"{name} requires a single entry strategy")
             self._instances.append((slot_id, name, sub))
 
         super().__init__(symbol=symbol, **merged_exit, **kwargs)
@@ -95,7 +97,7 @@ class CompositeEntryStrategy(TradingStrategy):
         df["net_short_signal"] = (net_series == Stance.SHORT) & (prev_net != Stance.SHORT)
         df["buy_signal"] = df["net_long_signal"]
         df["sell_signal"] = df["net_short_signal"]
-        return write_signal_columns(
+        df = write_signal_columns(
             df,
             entry_long=df["net_long_signal"],
             entry_short=df["net_short_signal"],
@@ -103,6 +105,10 @@ class CompositeEntryStrategy(TradingStrategy):
             exit_short=(net_series == Stance.LONG).astype(bool),
             strategy_name=type(self).__name__,
         )
+
+        for slot_id, _name, sub in self._instances:
+            df = sub.filter_entry_signals(df, indicator_prefix=f"{slot_id}__")
+        return df
 
     def get_chart_indicators(self) -> List[ChartIndicatorSpec]:
         specs: List[ChartIndicatorSpec] = []

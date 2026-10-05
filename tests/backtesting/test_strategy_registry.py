@@ -35,6 +35,7 @@ REGISTERED_NAMES = [
     "MACD",
     "MACrossover",
     "MACrossoverMLFilter",
+    "MACrossoverStrengthFilter",
     "RSIMeanReversion",
     "TRB",
     "TickMaBreakout",

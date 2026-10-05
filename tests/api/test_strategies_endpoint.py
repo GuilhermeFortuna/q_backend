@@ -16,6 +16,7 @@ def test_list_strategies_returns_all_registered():
             "MACD",
             "MACrossover",
             "MACrossoverMLFilter",
+            "MACrossoverStrengthFilter",
             "RSIMeanReversion",
             "TRB",
             "TickMaBreakout",
@@ -162,3 +163,13 @@ def test_strategies_endpoint_unchanged_after_exit_rules_catalog():
     ]
     assert any(spec.name == "stop_loss_pct" for spec in ma.params)
     assert any(spec.name == "atr_period" for spec in ma.params)
+
+
+def test_strength_filter_catalog_exposes_editable_parameters():
+    info = next(item for item in list_strategies()["strategies"] if item.name == "MACrossoverStrengthFilter")
+    assert info.label == "MA Crossover — Strength Filter"
+    params = {spec.name: spec for spec in info.params}
+    assert params["atr_period"].default == 14
+    assert params["min_cross_strength"].default == 0.1616
+    assert params["min_cross_strength"].type == "float"
+    assert "single entry" in info.description.lower()

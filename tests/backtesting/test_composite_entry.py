@@ -13,6 +13,7 @@ from q_backend.backtesting.models import SignalAction, Trade
 from q_backend.backtesting.position_sizing import FixedQuantitySizer
 from q_backend.backtesting.signal_managers.base import Stance
 from q_backend.backtesting.signal_managers.registry import get_manager
+from q_backend.backtesting.strategy import TradingStrategy
 from q_backend.backtesting.strategy_registry import merge_strategy_params
 
 
@@ -51,7 +52,7 @@ def _long_trade(symbol: str = "BTCUSDT", entry_price: float = 100.0) -> Trade:
     )
 
 
-class _StubSubStrategy:
+class _StubSubStrategy(TradingStrategy):
     def __init__(self, buy: list[bool], sell: list[bool]) -> None:
         self._buy = buy
         self._sell = sell
