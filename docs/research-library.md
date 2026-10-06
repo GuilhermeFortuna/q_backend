@@ -1,7 +1,7 @@
 # Using the research library
 
 The public interface lives in `q_backend.research`. This guide covers market-data
-import, the functionality currently available on `development`.
+import and indicator helpers.
 
 ## Setup
 
@@ -86,11 +86,68 @@ raises `NoMarketDataError`, which you can import from `q_backend.research`.
 Missing gateway configuration or invalid arguments raise `ValueError`; an unavailable
 gateway raises `ConnectionError`.
 
-## Included command-line example
+Offline work uses a pandas frame you already have; this module is for live MT5 history.
 
+## Indicator helpers (`q_backend.research.indicators`)
+
+The `indicators` module provides discoverable, functional helpers backed by Q's high-performance
+Rust calculations (`q_core`) and existing backend bridges. Indicators operate on ordinary pandas
+Series and DataFrames without requiring a database, Redis, Celery/Dramatiq, or an MT5 gateway.
+
+```python
+from q_backend.research import load_bars, indicators
+
+# 1. Fetch fresh bars (requires running MT5 gateway)
+bars = load_bars("WIN$", timeframe="M5", start="2026-09-01")
+
+# 2. Enrich with indicators (offline, pure calculations)
+bars["rsi"] = indicators.rsi(bars["close"], period=14)
+bars["ema_21"] = indicators.ma(bars["close"], period=21, kind="ema")
+bars["atr"] = indicators.atr(bars, period=14)
+
+# Multi-output indicators unpack tuples in standard order
+upper, middle, lower = indicators.bollinger(bars["close"], period=20, num_std=2.0)
+bars = bars.assign(bb_upper=upper, bb_middle=middle, bb_lower=lower)
+
+macd_line, signal_line, hist = indicators.macd(bars["close"], fast_period=12, slow_period=26, signal_period=9)
+donchian_high, donchian_low = indicators.donchian(bars, period=20)
+bars["realized_vol"] = indicators.realized_vol(bars["close"], window=20, periods_per_year=252)
+bars["yang_zhang_vol"] = indicators.yang_zhang(bars, window=20, periods_per_year=252)
+```
+
+### Supported functions
+
+| Function | Return | Description & Delegation |
+|---|---|---|
+| `ma(close, period, kind="sma")` | `Series` | Moving average (`sma`, `ema`, `wma`, `smma`, `hma`), case-insensitive |
+| `rsi(close, period)` | `Series` | Wilder's Relative Strength Index |
+| `atr(frame, period)` | `Series` | Wilder's Average True Range (requires `high`, `low`, `close`) |
+| `bollinger(close, period, num_std=2.0)` | `(upper, middle, lower)` | Bollinger Bands with configurable standard deviation |
+| `macd(close, fast_period=12, slow_period=26, signal_period=9)` | `(line, signal, hist)` | Moving Average Convergence Divergence |
+| `donchian(frame, period)` | `(upper, lower)` | Donchian Channels (requires `high`, `low`) |
+| `realized_vol(close, window, periods_per_year=252)` | `Series` | Annualized close-to-close realized volatility from log returns |
+| `yang_zhang(frame, window, periods_per_year=252)` | `Series` | Annualized Yang-Zhang (2000) volatility (requires `open`, `high`, `low`, `close`, `window >= 2`) |
+
+### Calculation rules & conventions
+
+- **Index preservation:** All returned Series share the exact index (including timezone and name) of the input. Input objects are never mutated.
+- **NaN warm-up:** Initial periods contain `NaN` according to standard indicator warm-up. No backfilling or zero-filling is applied.
+- **Annualization:** Volatility helpers accept an explicit `periods_per_year` parameter (default `252` for daily bars). For intraday bars (e.g. M5), set `periods_per_year` explicitly according to trading sessions per year.
+- **Validation:** Periods and windows must be integers $\ge 1$ (excluding booleans; Yang-Zhang window $\ge 2$). `num_std` must be finite and $> 0$. Non-numeric data, missing required columns, and infinite values fail immediately with descriptive errors. Volume columns are not required.
+
+## Example scripts
+
+### Fetch live market data
 ```bash
 uv run python examples/research/load_market_data.py \
   --symbol WIN$ --timeframe M5 --start 2026-09-01
 ```
 
 Optional `--end`, `--gateway-url`, and `--gateway-token` forward to `load_bars`.
+
+### Offline indicator enrichment
+```bash
+uv run python examples/research/add_indicators.py \
+  --input data/bars.parquet \
+  --output data/enriched_bars.parquet
+```

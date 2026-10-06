@@ -31,19 +31,19 @@
 **Files:** Create src/q_backend/research/indicators.py and tests/research/test_indicators.py; extend research/__init__.py lazy exports.
 **Interfaces:** ma, rsi, atr, bollinger, macd, donchian, realized_vol and yang_zhang with the exact signatures/tuple ordering in Q-090. Delegate through existing backend bridges.
 
-- [ ] Add one parametrized parity test over all eight functions using a small numeric frame: compare against the underlying wrapper with equal NaNs, identical index/tuple ordering and unchanged inputs. Include empty/index-with-timezone cases without duplicating mathematical goldens.
-- [ ] Add a compact invalid-input table covering unknown MA kind, bool/fractional/nonpositive windows, Yang-Zhang window=1, infinity, nonnumeric Series, missing OHLC columns, invalid num_std and periods_per_year. Assert a clear exception before the delegate is called.
-- [ ] Run `uv run pytest tests/research/test_indicators.py -q`; implement validation and delegation, preserving defaults and NaNs. No direct q_core imports or new formulas.
-- [ ] Run `uv run pytest tests/research/test_indicators.py tests/backtesting/test_moving_averages.py tests/backtesting/test_indicator_baseline.py -q` to cover the public wrappers and their delegates. Commit the helper module.
+- [x] Add one parametrized parity test over all eight functions using a small numeric frame: compare against the underlying wrapper with equal NaNs, identical index/tuple ordering and unchanged inputs. Include empty/index-with-timezone cases without duplicating mathematical goldens.
+- [x] Add a compact invalid-input table covering unknown MA kind, bool/fractional/nonpositive windows, Yang-Zhang window=1, infinity, nonnumeric Series, missing OHLC columns, invalid num_std and periods_per_year. Assert a clear exception before the delegate is called.
+- [x] Run `uv run pytest tests/research/test_indicators.py -q`; implement validation and delegation, preserving defaults and NaNs. No direct q_core imports or new formulas.
+- [x] Run `uv run pytest tests/research/test_indicators.py tests/backtesting/test_moving_averages.py tests/backtesting/test_indicator_baseline.py -q` to cover the public wrappers and their delegates. Commit the helper module.
 
 ### 2. Add the offline indicator example
 
 **Files:** Create examples/research/add_indicators.py; extend docs/research-library.md and tests/research/test_indicators.py.
 
-- [ ] Lead the guide with `load_bars("WIN$", timeframe="M5", start="2026-09-01")` followed by indicator assignments; fetching requires the MT5 gateway, while indicator helpers themselves require no gateway/database. Document normal column assignment and tuple unpacking, units/annualization, NaN warm-up and parameter validation. The example accepts a Parquet input path and output path and adds RSI/EMA/ATR, without global configuration or service startup.
-- [ ] Exercise the example against one temporary frame/file and assert added columns, unchanged row count/index and no provider/service access. Reuse the focused test command; commit documentation/examples.
+- [x] Lead the guide with `load_bars("WIN$", timeframe="M5", start="2026-09-01")` followed by indicator assignments; fetching requires the MT5 gateway, while indicator helpers themselves require no gateway/database. Document normal column assignment and tuple unpacking, units/annualization, NaN warm-up and parameter validation. The example accepts a Parquet input path and output path and adds RSI/EMA/ATR, without global configuration or service startup.
+- [x] Exercise the example against one temporary frame/file and assert added columns, unchanged row count/index and no provider/service access. Reuse the focused test command; commit documentation/examples.
 
 ## Handoff
 
-- [ ] Check the spec against the implementation and focused results; document actual commands and outcomes without claiming unrun checks passed.
-- [ ] Commit the final documentation/examples and use `./work board set Q-090 in-review -m "<changes; focused checks and results; follow-ups>"`. If a required prerequisite blocks progress, use the documented blocked workflow.
+- [x] Check the spec against the implementation and focused results; document actual commands and outcomes without claiming unrun checks passed.
+- [x] Commit the final documentation/examples and use `./work board set Q-090 in-review -m "<changes; focused checks and results; follow-ups>"`. If a required prerequisite blocks progress, use the documented blocked workflow.
