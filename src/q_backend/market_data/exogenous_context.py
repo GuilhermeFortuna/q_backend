@@ -22,6 +22,7 @@ LoadOhlcvFn = Callable[[str, str, datetime, datetime], pd.DataFrame]
 _TF_MINUTES: dict[str, int] = {
     "M1": 1,
     "M5": 5,
+    "M10": 10,
     "M15": 15,
     "H1": 60,
     "D1": 1440,
@@ -30,6 +31,7 @@ _TF_MINUTES: dict[str, int] = {
 _PANDAS_RULE: dict[str, str] = {
     "M1": "1min",
     "M5": "5min",
+    "M10": "10min",
     "M15": "15min",
     "H1": "1h",
     "D1": "1D",

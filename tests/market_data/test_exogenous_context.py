@@ -15,6 +15,7 @@ from q_backend.market_data.exogenous_columns import exog_column_name
 from q_backend.market_data.exogenous_context import (
     align_exogenous_close,
     attach_exogenous_context,
+    bar_duration,
     clear_evaluation_frame_cache,
     prepare_evaluation_frame,
     resample_completed_bars,
@@ -102,6 +103,17 @@ class TestExogenousAlignment:
         assert len(h1) == 2
         assert h1.iloc[0]["close"] == 4.0
         assert h1.iloc[1]["close"] == 8.0
+
+    def test_m10_duration_and_resampling_are_supported(self) -> None:
+        m5_index = pd.date_range("2024-01-01 09:00", periods=4, freq="5min")
+        m5 = _ohlcv_frame(m5_index, [1, 2, 3, 4])
+
+        m10 = resample_completed_bars(m5, source_timeframe="M5", target_timeframe="M10")
+
+        assert bar_duration("M10") == pd.Timedelta(minutes=10)
+        assert len(m10) == 2
+        assert m10.iloc[0]["close"] == 2.0
+        assert m10.iloc[1]["close"] == 4.0
 
 
 class TestExogenousPreflight:

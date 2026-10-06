@@ -52,7 +52,7 @@ def get_symbol_info(
 @router.get("/api/v1/market-data/ohlcv", response_model=List[OHLCV])
 def get_ohlcv(
     symbol: str = Query(..., description="Financial instrument (e.g. EURUSD, AUDUSD)"),
-    timeframe: str = Query("M1", description="Candle timeframe (e.g. M1, M5, M15, H1, D1)"),
+    timeframe: str = Query("M1", description="Candle timeframe (e.g. M1, M5, M10, M15, H1, D1)"),
     start: Optional[datetime] = Query(None, description="Start datetime (ISO-8601). Defaults to 1 day ago."),
     end: Optional[datetime] = Query(None, description="End datetime (ISO-8601). Defaults to current time."),
     mds: MarketDataService = Depends(get_market_data_service),
@@ -258,7 +258,7 @@ def get_market_instrument_info(
 @router.get("/api/v1/market/ohlcv/{symbol}", response_model=List[OhlcvBarResponse])
 def get_market_ohlcv(
     symbol: str,
-    timeframe: str = Query("D1", description="Candle timeframe (e.g. M1, M5, M15, M30, H1, H4, D1)"),
+    timeframe: str = Query("D1", description="Candle timeframe (e.g. M1, M5, M10, M15, M30, H1, H4, D1)"),
     count: int = Query(500, ge=1, le=5000, description="Number of most recent bars to return"),
     start: Optional[datetime] = Query(None, description="Start datetime (ISO-8601). Requires end."),
     end: Optional[datetime] = Query(None, description="End datetime (ISO-8601). Requires start."),
@@ -300,7 +300,7 @@ def get_market_ohlcv(
 )
 def get_market_ohlcv_available_range(
     symbol: str,
-    timeframe: str = Query("D1", description="Candle timeframe (e.g. M1, M5, M15, H1, D1)"),
+    timeframe: str = Query("D1", description="Candle timeframe (e.g. M1, M5, M10, M15, H1, D1)"),
     mds: MarketDataService = Depends(get_market_data_service),
 ):
     """

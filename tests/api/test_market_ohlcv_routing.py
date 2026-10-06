@@ -145,6 +145,44 @@ def test_ohlcv_uses_mt5_when_symbol_exists_in_terminal(market_root):
     mock_mt5.copy_rates_from_pos.assert_called_once()
 
 
+def test_market_timeframe_normalizes_ten_minutes():
+    assert market_service.normalize_market_timeframe("10m") == "M10"
+
+
+def test_ohlcv_uses_mt5_ten_minute_constant(market_root):
+    mock_rates = MagicMock()
+    mock_rates.__len__.return_value = 1
+    mock_rates.__iter__.return_value = iter(
+        [
+            {
+                "time": 1_709_251_200,
+                "open": 1.0,
+                "high": 2.0,
+                "low": 0.5,
+                "close": 1.5,
+                "tick_volume": 10,
+                "spread": 1,
+                "real_volume": 0,
+            }
+        ]
+    )
+
+    mock_mt5 = MagicMock()
+    mock_mt5.symbol_select.return_value = True
+    mock_mt5.TIMEFRAME_M10 = 10
+    mock_mt5.copy_rates_from_pos.return_value = mock_rates
+
+    with patch.object(market_data_service, "mt5_available", return_value=True):
+        with patch(
+            "q_backend.market_data.routing.symbol_selectable_in_mt5",
+            return_value=True,
+        ):
+            with patch("q_backend.market_data.clients.metatrader.mt5", mock_mt5):
+                market_service.fetch_ohlcv_rows(market_data_service, "PETR4", "M10", count=1, start=None, end=None)
+
+    mock_mt5.copy_rates_from_pos.assert_called_once_with("PETR4", 10, 0, 1)
+
+
 def test_ohlcv_available_range_uses_remote_client_when_source_is_remote(market_root):
     # Regression: with the source resolved to "remote", the probe must hit the
     # gateway client — not the native one, which on Linux (stub) hangs the
