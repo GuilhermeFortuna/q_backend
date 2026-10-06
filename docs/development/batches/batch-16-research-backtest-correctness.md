@@ -1,6 +1,6 @@
 # Batch 16 — Research data and backtest correctness
 
-**Status:** written task specs and plans await human review. The [Q project board](https://github.com/users/GuilhermeFortuna/projects/2) is the status of record.
+**Status:** issues published on 2026-10-06; written task specs and plans await human review. The [Q project board](https://github.com/users/GuilhermeFortuna/projects/2) is the status of record.
 **Owner:** q_backend, with one companion contract task in q_contracts.
 
 ## Outcome
@@ -24,11 +24,11 @@ Each was reproduced on 2026-10-06 against the running gateway, the MetaTrader 5 
 
 | Task | Repository | Depends on | Specification | Implementation plan |
 | --- | --- | --- | --- | --- |
-| Q-092 — Bar completeness in the data gateway contract | q_contracts | none | `q_contracts/docs/development/specs/Q-092-bar-completeness-in-the-data-gateway-contract-spec.md` | `q_contracts/docs/development/plans/Q-092-bar-completeness-in-the-data-gateway-contract-plan.md` |
-| Q-093 — Complete bar ranges from the MT5 gateway | q_backend | Q-092 | [Spec](../specs/Q-093-complete-bar-ranges-from-the-mt5-gateway-spec.md) | [Plan](../plans/Q-093-complete-bar-ranges-from-the-mt5-gateway-plan.md) |
-| Q-094 — Exit rules state their trigger and fill | q_backend | none | [Spec](../specs/Q-094-exit-rules-state-their-trigger-and-fill-spec.md) | [Plan](../plans/Q-094-exit-rules-state-their-trigger-and-fill-plan.md) |
-| Q-095 — Adjusted price series warning | q_backend | Q-093 | [Spec](../specs/Q-095-adjusted-price-series-warning-spec.md) | [Plan](../plans/Q-095-adjusted-price-series-warning-plan.md) |
-| Q-096 — Research guide: costs, execution, ticks and history depth | q_backend | Q-094, Q-095 | [Spec](../specs/Q-096-research-guide-costs-execution-ticks-and-history-depth-spec.md) | [Plan](../plans/Q-096-research-guide-costs-execution-ticks-and-history-depth-plan.md) |
+| [Q-092](https://github.com/GuilhermeFortuna/q_contracts/issues/14) — Bar completeness in the data gateway contract | q_contracts | none | `q_contracts/docs/development/specs/Q-092-bar-completeness-in-the-data-gateway-contract-spec.md` | `q_contracts/docs/development/plans/Q-092-bar-completeness-in-the-data-gateway-contract-plan.md` |
+| [Q-093](https://github.com/GuilhermeFortuna/q_backend/issues/31) — Complete bar ranges from the MT5 gateway | q_backend | Q-092 | [Spec](../specs/Q-093-complete-bar-ranges-from-the-mt5-gateway-spec.md) | [Plan](../plans/Q-093-complete-bar-ranges-from-the-mt5-gateway-plan.md) |
+| [Q-094](https://github.com/GuilhermeFortuna/q_backend/issues/32) — Exit rules state their trigger and fill | q_backend | none | [Spec](../specs/Q-094-exit-rules-state-their-trigger-and-fill-spec.md) | [Plan](../plans/Q-094-exit-rules-state-their-trigger-and-fill-plan.md) |
+| [Q-095](https://github.com/GuilhermeFortuna/q_backend/issues/33) — Adjusted price series warning | q_backend | Q-093 | [Spec](../specs/Q-095-adjusted-price-series-warning-spec.md) | [Plan](../plans/Q-095-adjusted-price-series-warning-plan.md) |
+| [Q-096](https://github.com/GuilhermeFortuna/q_backend/issues/34) — Research guide: costs, execution, ticks and history depth | q_backend | Q-094, Q-095 | [Spec](../specs/Q-096-research-guide-costs-execution-ticks-and-history-depth-spec.md) | [Plan](../plans/Q-096-research-guide-costs-execution-ticks-and-history-depth-plan.md) |
 
 Implement Q-092, then Q-093, then Q-095, then Q-096. Q-094 has no prerequisite and can run at any point before Q-096.
 
