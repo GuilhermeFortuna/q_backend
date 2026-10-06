@@ -46,7 +46,7 @@ def __getattr__(name: str):
 
         return ResearchStrategy
     if name == "backtest":
-        from q_backend.research.backtest import backtest
+        from q_backend.research.engine import backtest
 
         return backtest
     if name == "BacktestResult":
