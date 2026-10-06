@@ -447,9 +447,10 @@ q_backend/
 ├── pyproject.toml        # Hatchling build configuration & dependency definitions
 ├── uv.lock               # Deterministic dependency lockfile
 ├── configs/              # Example optimization YAML configs
-├── scripts/              # Standalone utility & validation scripts
-│   └── backtests/        # High-performance backtesting runners
-│       └── run_ccm_backtest.py
+├── examples/             # Supported research example scripts
+│   └── research/         # Standalone research scripting examples
+│       ├── rsi_reversion.py
+│       └── mt5_backtest.py
 ├── src/
 │   └── q_backend/        # Core packages
 │       ├── api/          # FastAPI app assembly, routers, schemas, job dispatch
@@ -814,16 +815,21 @@ Run contract tests: `uv run pytest tests/execution/test_metatrader_broker.py`
 
 ---
 
-## 📊 Backtesting Showcase
+## 📊 Research Scripting & Local Backtesting
 
-An executable demo running a **Moving Average Crossover Strategy** on B3 Corn Futures (`CCM$`) is located in the scripts directory. It fetches a year of historical H1 data directly from MT5, simulates trades using a 9/12 MA crossover delta, and prints advanced metrics.
+Standalone research scripts can define three-hook `ResearchStrategy` classes or run built-in candle strategies locally without starting database, worker, Redis, or API services. See [`docs/research-library.md`](docs/research-library.md) for full documentation.
 
-To run it:
-1. Ensure your local MetaTrader 5 terminal is open and connected to your broker.
-2. Execute the runner script:
-   ```bash
-   uv run scripts/backtests/run_ccm_backtest.py
-   ```
+### Offline Parquet backtest
+Run an offline RSI mean-reversion strategy on an existing Parquet dataset:
+```bash
+uv run python examples/research/rsi_reversion.py --input data/bars.parquet --symbol WIN$
+```
+
+### Live MT5 gateway backtest
+Fetch fresh MT5 history and run a backtest (requires a running MT5 gateway):
+```bash
+uv run python examples/research/mt5_backtest.py --symbol WIN$ --timeframe M5 --start 2026-09-01
+```
 
 ---
 
