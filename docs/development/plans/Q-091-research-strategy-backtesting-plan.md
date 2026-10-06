@@ -12,7 +12,7 @@
 
 - Python namespace inside q_backend; retain existing installation/dependency scope and service behavior.
 - No alternative indicator/fill/PnL implementation, generated contract changes, GPU, live trades, desktop or optimizer integration.
-- Use explicit instance configuration and lazy dependencies. No import-time startup or global environment/runtime-config mutation.
+- Use lazy dependencies and explicit gateway overrides when fetching data. No import-time startup or global environment/runtime-config mutation.
 - Verify changed behavior with small fixtures and focused mocks. No benchmarks, full-stack runs, live gateway runs or blanket full CI requirement.
 - Commit focused task changes locally. Human owns integration, publication and initial board Status/Todo approval.
 
@@ -49,11 +49,11 @@
 
 ### 3. Deliver the scripting workflow and examples
 
-**Files:** Create examples/research/{rsi_reversion,catalog_backtest}.py and tests/research/test_examples.py; update docs/research-library.md and README.md.
+**Files:** Create examples/research/{rsi_reversion,mt5_backtest}.py and tests/research/test_examples.py; update docs/research-library.md and README.md.
 
-- [ ] Document three hooks, None/TradeOrder semantics, fixed run sizing, optional exits/costs/session settings, built-in strategy use, result fields and actual provider requirements. Explain callbacks have no fill/position state, compute_indicators must be causal, repeated conditions request repeated entries, and per-prefix Python evaluation/copies are slower than built-in vectorized strategies. No performance claims or benchmark work.
-- [ ] Ship an offline RSI example accepting historical Parquet and a catalog example connecting Q data, indicators and backtesting. Replace the stale missing CCM script link in README. Avoid hard-coded paths/sys.path changes.
-- [ ] Exercise the offline example on one temporary fixture and the catalog example with the mocked Q-089 reader. Verify the RSI example at a few fixed independently prepared prefixes and verify no API/worker/DB/Redis/GPU/native MT5 startup on the offline path.
+- [ ] Document three hooks, None/TradeOrder semantics, fixed run sizing, optional exits/costs/session settings, built-in strategy use, result fields and the load_bars gateway prerequisite. The backtest/indicator functions operate on supplied frames without fetching or accessing a database. Explain callbacks have no fill/position state, compute_indicators must be causal, repeated conditions request repeated entries, and per-prefix Python evaluation/copies are slower than built-in vectorized strategies. No performance claims or benchmark work.
+- [ ] Ship an offline RSI example accepting historical Parquet and an MT5 example calling load_bars with end omitted, then adding indicators and running a built-in/custom backtest. Replace the stale missing CCM script link in README. Avoid hard-coded paths/sys.path changes.
+- [ ] Exercise the offline example on one temporary fixture and the MT5 example with mocked Q-089 load_bars (no live terminal or database). Verify the RSI example at a few fixed independently prepared prefixes and verify no API/worker/DB/Redis/GPU/native MT5 startup on the offline path.
 - [ ] Run `uv run pytest tests/research -q`; commit docs/examples. No live feed, Docker/GPU/Wine/desktop run, benchmark or dedicated benchmark harness.
 
 ## Handoff

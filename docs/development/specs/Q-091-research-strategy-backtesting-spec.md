@@ -12,7 +12,7 @@ Let an experiment define a class with exactly three strategy hooks and run it sy
 ## Strategy and TradeOrder interface
 
 ```python
-from q_backend.research import ResearchStrategy, TradeOrder, indicators, backtest
+from q_backend.research import load_bars, ResearchStrategy, TradeOrder, indicators, backtest
 
 class RSIReversion(ResearchStrategy):
     def __init__(self, period=14):
@@ -36,6 +36,7 @@ class RSIReversion(ResearchStrategy):
             return TradeOrder.close()
         return None
 
+bars = load_bars("WIN$", timeframe="M5", start="2026-09-01")
 result = backtest(bars, strategy=RSIReversion(), symbol="WIN$",
                   quantity=1, point_value=0.20, initial_capital=10_000)
 print(result.metrics)
@@ -76,14 +77,14 @@ BacktestResult exposes `metrics: dict`, `trades: DataFrame`, `equity: DataFrame`
 
 ## Ownership and acceptance
 
-Create research/strategy.py, research/orders.py, research/adapter.py, research/backtest.py, research/results.py and focused tests under tests/research. Extend lazy exports and docs/research-library.md. Add examples/research/rsi_reversion.py (caller-supplied Parquet, no services) and examples/research/catalog_backtest.py (Q data -> indicators -> built-in/custom strategy). Remove/update the stale README reference to the missing scripts/backtests/run_ccm_backtest.py in favor of the real examples. No sys.path hacks.
+Create research/strategy.py, research/orders.py, research/adapter.py, research/backtest.py, research/results.py and focused tests under tests/research. Extend lazy exports and docs/research-library.md. Add examples/research/rsi_reversion.py (caller-supplied Parquet, no services) and examples/research/mt5_backtest.py (load_bars -> indicators -> built-in/custom strategy). Remove/update the stale README reference to the missing scripts/backtests/run_ccm_backtest.py in favor of the real examples. No sys.path hacks.
 
 - Long/short/close/None decisions and callback order/prefix isolation compile to the exact signal arrays expected by the existing engine. Wrong returns, actions, mutations, exceptions and changed market rows fail clearly.
 - Frozen OHLC fixtures match direct engine runs for next-open fills, repeated requests, reversal, simultaneous close+entry, stop/target precedence, day-trade gating, costs, last-bar signals and forced/unforced terminal close. Compare numerical results, not UUIDs.
 - Built-in MACrossover output equals direct factory/engine output under matching config; unsupported tick/ML names and parameter conflicts fail.
 - The shipped RSI example makes identical decisions for the same bar when evaluated from full-prepared and independently prepared prefix data on a few fixed checkpoints.
 - Result metrics/trades/realized equity agree with registry PnL and include open/empty cases; non-Brasília aware input yields correct exchange-local session gates.
-- Both examples and pure DataFrame use run without API/worker/DB/Redis/GPU/Wine. Tests use small in-memory historical frames. Run focused research tests plus existing candle engine/exit/signal/strategy regressions; focused existing regressions are sufficient while the adapter leaves shared engine behavior unchanged. If implementation changes shared engine behavior, identify and run the corresponding additional canonical check. No live market or desktop acceptance requirement.
+- Offline example and pure DataFrame backtesting run without API/worker/DB/Redis/GPU/Wine. The MT5 example requires an already-running terminal/gateway for load_bars only; it never reads a catalog or starts services. Tests use small in-memory historical frames. Run focused research tests plus existing candle engine/exit/signal/strategy regressions; focused existing regressions are sufficient while the adapter leaves shared engine behavior unchanged. If implementation changes shared engine behavior, identify and run the corresponding additional canonical check. No live market or desktop acceptance requirement.
 
 ## Delivery boundary
 

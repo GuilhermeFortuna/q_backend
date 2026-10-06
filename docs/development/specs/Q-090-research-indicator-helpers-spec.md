@@ -12,7 +12,9 @@ Provide discoverable indicator functions that scripts and ResearchStrategy imple
 ## Public interface
 
 ```python
-from q_backend.research import indicators
+from q_backend.research import load_bars, indicators
+
+bars = load_bars("WIN$", timeframe="M5", start="2026-09-01")
 
 bars["rsi"] = indicators.rsi(bars["close"], period=14)
 bars["ema_21"] = indicators.ma(bars["close"], period=21, kind="ema")
@@ -41,7 +43,7 @@ bars = bars.assign(bb_upper=upper, bb_middle=middle, bb_lower=lower)
 3. Require numeric Series, required frame columns, and finite values or NaN; reject infinity and nonnumeric/object data with readable ValueError/TypeError naming the input. Permit NaN because indicator warm-up and user transformations may legitimately contain it. Missing columns report all required missing names; validate before entering native kernels. Do not require OHLCV volume columns for ATR/Donchian/Yang-Zhang.
 4. Each formula is called through existing backend bridge modules; no direct q_core imports outside existing bridges and no duplicate pandas/Rust formula. Unsupported/missing installed kernels preserve the actionable ImportError from the bridge. Pure indicator operations require the installed q_core extension, not Postgres, Redis, an API process or a GPU.
 5. The research package only loads the indicator bridges when indicators are requested. Importing or running helpers does not initialize provider configuration, storage, ASGI, tasks, torch or a terminal.
-6. Document simple column addition, tuple order, parameter validation, NaN warm-up, units and annualization assumptions. The default 252 is an explicit periods-per-year argument, not automatic correction for M5 bars. Include a script that reads a caller-supplied historical Parquet frame and adds RSI/EMA/ATR without service access.
+6. The guide shows Q-089 load_bars -> indicator column assignment; fresh MT5 fetching requires its running gateway only. The helpers themselves still operate on any suitable pandas input without fetching data or requiring a gateway. Document simple column addition, tuple order, parameter validation, NaN warm-up, units and annualization assumptions. The default 252 is an explicit periods-per-year argument, not automatic correction for M5 bars. Include a script that reads a caller-supplied historical Parquet frame and adds RSI/EMA/ATR without service access.
 
 ## Files and acceptance
 

@@ -12,7 +12,7 @@
 
 - Python namespace inside q_backend; retain existing installation/dependency scope and service behavior.
 - No alternative indicator/fill/PnL implementation, generated contract changes, GPU, live trades, desktop or optimizer integration.
-- Use explicit instance configuration and lazy dependencies. No import-time startup or global environment/runtime-config mutation.
+- Use lazy dependencies and explicit gateway overrides when fetching data. No import-time startup or global environment/runtime-config mutation.
 - Verify changed behavior with small fixtures and focused mocks. No benchmarks, full-stack runs, live gateway runs or blanket full CI requirement.
 - Commit focused task changes locally. Human owns integration, publication and initial board Status/Todo approval.
 
@@ -40,7 +40,7 @@
 
 **Files:** Create examples/research/add_indicators.py; extend docs/research-library.md and tests/research/test_indicators.py.
 
-- [ ] Document normal column assignment and tuple unpacking, units/annualization, NaN warm-up and parameter validation. The example accepts a Parquet input path and output path and adds RSI/EMA/ATR, without global configuration or service startup.
+- [ ] Lead the guide with `load_bars("WIN$", timeframe="M5", start="2026-09-01")` followed by indicator assignments; fetching requires the MT5 gateway, while indicator helpers themselves require no gateway/database. Document normal column assignment and tuple unpacking, units/annualization, NaN warm-up and parameter validation. The example accepts a Parquet input path and output path and adds RSI/EMA/ATR, without global configuration or service startup.
 - [ ] Exercise the example against one temporary frame/file and assert added columns, unchanged row count/index and no provider/service access. Reuse the focused test command; commit documentation/examples.
 
 ## Handoff
