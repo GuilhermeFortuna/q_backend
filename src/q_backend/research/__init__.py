@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-__all__ = ("load_bars", "NoMarketDataError")
+__all__ = ("load_bars", "NoMarketDataError", "indicators")
 
 if TYPE_CHECKING:
+    from q_backend.research import indicators
     from q_backend.research.data import load_bars
     from q_backend.research.errors import NoMarketDataError
 
@@ -20,4 +21,8 @@ def __getattr__(name: str):
         from q_backend.research.errors import NoMarketDataError
 
         return NoMarketDataError
+    if name == "indicators":
+        import importlib
+
+        return importlib.import_module("q_backend.research.indicators")
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
