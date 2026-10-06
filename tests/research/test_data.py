@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
+import numpy as np
 
 from q_backend.market_data.models import OHLCV
 from q_backend.market_data.timezone import BRASILIA_TZ
-from q_backend.research import NoMarketDataError, load_bars
+from q_backend.research import NoMarketDataError, load_bars, load_ticks, resample_ticks
 from q_backend.research.frame import (
     drop_forming_bar,
     is_bar_complete,
@@ -18,6 +19,68 @@ from q_backend.research.frame import (
     parse_bounds,
     validate_bars_frame,
 )
+
+
+def _tick_arrays(times: list[int], lasts: list[float]) -> dict[str, np.ndarray]:
+    count = len(times)
+    return {
+        "time_msc": np.asarray(times, dtype=np.int64),
+        "bid": np.full(count, 99.0),
+        "ask": np.full(count, 101.0),
+        "last": np.asarray(lasts, dtype=np.float64),
+        "volume": np.ones(count, dtype=np.float64),
+        "flags": np.arange(count, dtype=np.int32),
+    }
+
+
+def test_load_ticks_returns_ordered_brasilia_frame_and_forwards_flags() -> None:
+    # MT5 time_msc stores broker wall time as UTC-shaped epoch milliseconds.
+    start_ms = int(datetime(2026, 6, 2, 10, 0, tzinfo=timezone.utc).timestamp() * 1000)
+    client = MagicMock()
+    client.is_supported.return_value = True
+    client.get_ticks_columnar.return_value = _tick_arrays(
+        [start_ms + 2, start_ms + 1, start_ms + 1], [10.0, 11.0, 12.0]
+    )
+    with (
+        patch("q_backend.research.data.RemoteMt5Client", return_value=client),
+        patch("q_backend.research.data.resolve_gateway_url", return_value="http://gw.test"),
+        patch("q_backend.research.data.resolve_gateway_token", return_value="secret"),
+    ):
+        frame = load_ticks("WIN$", start="2026-06-02T10:00:00", end="2026-06-02T10:01:00", flags=2)
+    assert list(frame.columns) == ["bid", "ask", "last", "volume", "flags"]
+    assert str(frame.index.tz) == "America/Sao_Paulo"
+    assert frame.index.is_monotonic_increasing
+    assert frame.index[0].strftime("%H:%M:%S.%f") == "10:00:00.001000"
+    assert frame.index[0] == frame.index[1]
+    assert frame["last"].tolist() == [11.0, 12.0, 10.0]
+    client.get_ticks_columnar.assert_called_once()
+    assert client.get_ticks_columnar.call_args.kwargs["flags"] == 2
+    assert client.get_ticks_columnar.call_args.kwargs["use_cache"] is False
+
+
+def test_resample_ticks_aggregates_trades_and_forward_fills_empty_bars() -> None:
+    idx = pd.DatetimeIndex(
+        ["2026-06-02 10:00:05", "2026-06-02 10:00:40", "2026-06-02 10:02:05"],
+        tz=BRASILIA_TZ,
+        name="time",
+    )
+    ticks = pd.DataFrame({"last": [100.0, 102.0, 99.0]}, index=idx)
+    bars = resample_ticks(ticks, timeframe="M1")
+    assert bars.index.strftime("%H:%M").tolist() == ["10:00", "10:01", "10:02"]
+    assert bars[["open", "high", "low", "close"]].values.tolist() == [
+        [100.0, 102.0, 100.0, 102.0],
+        [102.0, 102.0, 102.0, 102.0],
+        [99.0, 99.0, 99.0, 99.0],
+    ]
+    assert bars["tick_volume"].tolist() == [2, 0, 1]
+
+
+def test_resample_ticks_ignores_quote_only_updates() -> None:
+    idx = pd.DatetimeIndex(["2026-06-02 10:00:05", "2026-06-02 10:00:40"], tz=BRASILIA_TZ, name="time")
+    ticks = pd.DataFrame({"last": [100.0, 0.0]}, index=idx)
+    bars = resample_ticks(ticks, timeframe="M1")
+    assert bars["close"].tolist() == [100.0]
+    assert bars["tick_volume"].tolist() == [1]
 
 
 def _ohlcv_at(time: str) -> list[OHLCV]:

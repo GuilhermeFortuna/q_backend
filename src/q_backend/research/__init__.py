@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 
 __all__ = (
     "load_bars",
+    "load_ticks",
+    "resample_ticks",
     "NoMarketDataError",
     "indicators",
     "TradeOrder",
@@ -18,6 +20,7 @@ if TYPE_CHECKING:
     from q_backend.research import indicators
     from q_backend.research.backtest import backtest
     from q_backend.research.data import load_bars
+    from q_backend.research.data import load_ticks, resample_ticks
     from q_backend.research.errors import NoMarketDataError
     from q_backend.research.orders import TradeOrder
     from q_backend.research.results import BacktestResult
@@ -29,6 +32,14 @@ def __getattr__(name: str):
         from q_backend.research.data import load_bars
 
         return load_bars
+    if name == "load_ticks":
+        from q_backend.research.data import load_ticks
+
+        return load_ticks
+    if name == "resample_ticks":
+        from q_backend.research.data import resample_ticks
+
+        return resample_ticks
     if name == "NoMarketDataError":
         from q_backend.research.errors import NoMarketDataError
 

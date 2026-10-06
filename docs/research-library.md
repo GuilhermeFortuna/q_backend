@@ -1,7 +1,7 @@
 # Using the research library
 
 The public interface lives in `q_backend.research`. This guide covers market-data
-import and indicator helpers.
+import, tick resampling, and indicator helpers.
 
 ## Setup
 
@@ -34,6 +34,27 @@ print(bars.tail())
 print(bars["close"])
 ```
 
+Fetch raw ticks and resample them into minute bars:
+
+```python
+from q_backend.research import load_ticks, resample_ticks
+
+ticks = load_ticks("WIN$", start="2026-09-01")
+minute_bars = resample_ticks(ticks, timeframe="M1")
+```
+
+`load_ticks` returns a DataFrame indexed by timezone-aware Brasília tick time, with
+`bid`, `ask`, `last`, `volume`, and `flags` columns. Same-millisecond events remain
+separate rows in stable order. It fetches all MT5 tick events by default; pass
+`flags=` to select an MT5 tick category. Tick reads bypass the shared disk cache.
+
+`resample_ticks(ticks, timeframe=...)` accepts the same canonical MT5 timeframe
+names as `load_bars`. Bars use positive `last` prices for OHLC and count those trade
+updates in `tick_volume`. Quote-only updates do not contribute prices or volume.
+Empty intervals between the first and last eligible trade are forward-filled from
+the prior close with zero `tick_volume`; no bars are added before the first eligible
+trade. The result contains `open`, `high`, `low`, `close`, and `tick_volume`.
+
 Run your script from `q_backend` with `uv run python your_script.py`.
 
 `bars` is an ordinary pandas DataFrame. Each call fetches fresh history from the
@@ -62,13 +83,17 @@ bars = load_bars(
 | `end` | Inclusive bar-open timestamp; defaults to now |
 | `gateway_url` / `gateway_token` | Override `Q_MT5_GATEWAY_URL` / `Q_MT5_GATEWAY_TOKEN` for this call only |
 
+`load_ticks` uses the same `symbol`, `start`, `end`, and gateway override arguments;
+it has no `timeframe` argument and accepts optional `flags` (default: all ticks).
+
 Bounds use `America/Sao_Paulo`. Naive datetimes and date-only strings (`YYYY-MM-DD`) are
 interpreted in Brasília; a date-only **end** is midnight on that day, not the full
 calendar day. Aware inputs convert to exchange time.
 
 ## Returned data
 
-- Index `time`: timezone-aware Brasília, sorted, unique.
+- Bar index `time`: timezone-aware Brasília, sorted, unique. Tick index `time` is
+  sorted and may contain duplicates when MT5 reports events in the same millisecond.
 - Columns: `open`, `high`, `low`, `close` (`float64`); `tick_volume` (`int64`);
   `spread`, `real_volume` (`float64`, may be NaN).
 - `tick_volume` is MT5 tick volume; it is distinct from `real_volume`.
@@ -262,4 +287,3 @@ uv run python examples/research/mt5_backtest.py \
   --start 2026-09-01 \
   --strategy custom
 ```
-

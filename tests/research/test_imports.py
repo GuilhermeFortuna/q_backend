@@ -12,8 +12,8 @@ def test_fresh_import_does_not_start_services() -> None:
     script = textwrap.dedent("""
         import importlib
         importlib.import_module("q_backend.research")
-        from q_backend.research import load_bars
-        print(load_bars.__name__)
+        from q_backend.research import load_bars, load_ticks, resample_ticks
+        print(load_bars.__name__, load_ticks.__name__, resample_ticks.__name__)
         """)
     result = subprocess.run(
         [sys.executable, "-c", script],
@@ -23,4 +23,4 @@ def test_fresh_import_does_not_start_services() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "load_bars"
+    assert result.stdout.strip() == "load_bars load_ticks resample_ticks"
