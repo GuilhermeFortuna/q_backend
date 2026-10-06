@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Mapping
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -25,16 +25,6 @@ FRAME_COLUMNS: tuple[str, ...] = (
     "tick_volume",
     "spread",
     "real_volume",
-)
-
-_INVENTORY_COLUMNS: tuple[str, ...] = (
-    "symbol",
-    "timeframe",
-    "start",
-    "end",
-    "rows",
-    "bytes",
-    "dataset_id",
 )
 
 
@@ -181,20 +171,6 @@ def validate_bars_frame(frame: pd.DataFrame) -> None:
     _validate_volumes(frame)
 
 
-def bars_table_to_frame(table) -> pd.DataFrame:
-    """Convert a lake_query bars table (naive Brasília times) to the research schema."""
-    if table.num_rows == 0:
-        return empty_bars_frame()
-    df = table.to_pandas()
-    df["time"] = pd.to_datetime(df["time"])
-    if df["time"].dt.tz is None:
-        df["time"] = df["time"].dt.tz_localize(BRASILIA_TZ)
-    else:
-        df["time"] = df["time"].dt.tz_convert(BRASILIA_TZ)
-    df = df.set_index("time").sort_index()
-    return _coerce_frame_dtypes(df)
-
-
 def ohlcv_models_to_frame(bars) -> pd.DataFrame:
     if not bars:
         return empty_bars_frame()
@@ -242,20 +218,6 @@ def empty_bars_frame() -> pd.DataFrame:
     return pd.DataFrame(data, index=idx)
 
 
-def empty_inventory_frame() -> pd.DataFrame:
-    return pd.DataFrame(
-        {
-            "symbol": pd.Series(dtype="string"),
-            "timeframe": pd.Series(dtype="string"),
-            "start": pd.Series(dtype=f"datetime64[ns, {PUBLIC_TZ_NAME}]"),
-            "end": pd.Series(dtype=f"datetime64[ns, {PUBLIC_TZ_NAME}]"),
-            "rows": pd.Series(dtype="int64"),
-            "bytes": pd.Series(dtype="int64"),
-            "dataset_id": pd.Series(dtype="string"),
-        }
-    )
-
-
 def filter_index_range(frame: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
     if frame.empty:
         return frame
@@ -273,7 +235,6 @@ def attach_metadata(
     source: str,
     requested_start: pd.Timestamp,
     requested_end: pd.Timestamp,
-    dataset_id: str | None,
 ) -> pd.DataFrame:
     out = frame.copy()
     if out.empty:
@@ -291,27 +252,5 @@ def attach_metadata(
         "returned_start": returned_start,
         "returned_end": returned_end,
         "timezone": PUBLIC_TZ_NAME,
-        "dataset_id": dataset_id,
     }
     return out
-
-
-def inventory_rows_to_frame(rows: list[Mapping[str, Any]]) -> pd.DataFrame:
-    if not rows:
-        return empty_inventory_frame()
-    records: list[dict[str, Any]] = []
-    for row in rows:
-        start = parse_query_bound(row["start"]) if isinstance(row["start"], str) else parse_query_bound(row["start"])
-        end = parse_query_bound(row["end"]) if isinstance(row["end"], str) else parse_query_bound(row["end"])
-        records.append(
-            {
-                "symbol": row["symbol"],
-                "timeframe": str(row["timeframe"]).upper(),
-                "start": start,
-                "end": end,
-                "rows": int(row["rows"]),
-                "bytes": int(row["bytes"]),
-                "dataset_id": str(row["dataset_id"]),
-            }
-        )
-    return pd.DataFrame.from_records(records, columns=list(_INVENTORY_COLUMNS))

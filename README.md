@@ -480,9 +480,9 @@ q_backend/
 
 ## ⚡ Quickstart & Setup
 
-For loading historical OHLCV into pandas outside the API (catalog, gateway, or `auto`),
-see the supported [research library guide](docs/research-library.md) and
-`examples/research/load_market_data.py`.
+For loading fresh MT5 OHLCV into pandas with one call (`load_bars`), see the
+[research library guide](docs/research-library.md) and
+`examples/research/load_market_data.py` (requires a running MT5 terminal and gateway).
 
 ### Prerequisites
 1. **Python 3.12+** and **`uv`** (see install below).

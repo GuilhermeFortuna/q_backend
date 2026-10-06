@@ -1,21 +1,21 @@
-"""Supported research helpers for loading market data outside the API stack."""
+"""Supported research helpers for loading fresh MT5 market data."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-__all__ = ("Research", "NoMarketDataError")
+__all__ = ("load_bars", "NoMarketDataError")
 
 if TYPE_CHECKING:
-    from q_backend.research.data import Research
+    from q_backend.research.data import load_bars
     from q_backend.research.errors import NoMarketDataError
 
 
 def __getattr__(name: str):
-    if name == "Research":
-        from q_backend.research.data import Research
+    if name == "load_bars":
+        from q_backend.research.data import load_bars
 
-        return Research
+        return load_bars
     if name == "NoMarketDataError":
         from q_backend.research.errors import NoMarketDataError
 
