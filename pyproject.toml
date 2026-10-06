@@ -58,7 +58,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["tests/api", "tests"]
+pythonpath = ["tests/api", "tests", "examples"]
 markers = [
     "integration: requires running Postgres and Redis (docker compose)",
     "live_gateway: requires a reachable Q_MT5_GATEWAY_URL (WO190 live pass)",
