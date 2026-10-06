@@ -1,4 +1,4 @@
-"""Exercise the research load example without live catalog or gateway."""
+"""Exercise the research load example without a live gateway."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from examples.research.load_market_data import main
 from q_backend.market_data.timezone import BRASILIA_TZ
 
 
-def test_example_main_uses_research_with_cli_args() -> None:
+def test_example_main_calls_load_bars_with_optional_end() -> None:
     idx = pd.DatetimeIndex(["2024-12-16T10:00:00"], tz=BRASILIA_TZ, name="time")
     frame = pd.DataFrame(
         {
@@ -24,41 +24,35 @@ def test_example_main_uses_research_with_cli_args() -> None:
         },
         index=idx,
     )
-    frame.attrs["q_research"] = {"source": "local", "dataset_id": "test"}
+    frame.attrs["q_research"] = {"source": "mt5"}
 
-    class FakeResearch:
-        def __init__(self, **kwargs):
-            self.kwargs = kwargs
+    calls: list[dict] = []
 
-        def __enter__(self):
-            return self
+    def fake_load_bars(symbol, **kwargs):
+        calls.append({"symbol": symbol, **kwargs})
+        return frame
 
-        def __exit__(self, *args):
-            return False
-
-        def bars(self, symbol, *, timeframe, start, end):
-            assert symbol == "PETR4"
-            assert timeframe == "D1"
-            assert start == "2024-12-16"
-            return frame
-
-    with patch("examples.research.load_market_data.Research", FakeResearch):
+    with patch("examples.research.load_market_data.load_bars", fake_load_bars):
         code = main(
             [
-                "--source",
-                "local",
-                "--database-url",
-                "sqlite:///:memory:",
-                "--market-data-root",
-                "/tmp/q-market",
                 "--symbol",
                 "PETR4",
                 "--timeframe",
                 "D1",
                 "--start",
                 "2024-12-16",
-                "--end",
-                "2024-12-17",
+                "--gateway-url",
+                "http://gw.test",
             ]
         )
     assert code == 0
+    assert calls == [
+        {
+            "symbol": "PETR4",
+            "timeframe": "D1",
+            "start": "2024-12-16",
+            "end": None,
+            "gateway_url": "http://gw.test",
+            "gateway_token": None,
+        }
+    ]

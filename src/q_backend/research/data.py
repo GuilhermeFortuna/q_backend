@@ -1,148 +1,98 @@
-"""Research facade for loading catalog or gateway OHLCV as pandas DataFrames."""
+"""Fresh MT5 historical bars for research scripts."""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Callable, Literal
+from datetime import datetime
 
 import pandas as pd
 
+from q_backend.market_data.clients.remote import RemoteMt5Client
+from q_backend.market_data.timezone import BRASILIA_TZ
 from q_backend.research.errors import NoMarketDataError
 from q_backend.research.frame import (
     attach_metadata,
     bounds_to_brasilia_naive,
     drop_forming_bar,
     filter_index_range,
-    inventory_rows_to_frame,
     normalize_timeframe,
-    parse_bounds,
+    ohlcv_models_to_frame,
+    parse_query_bound,
     validate_bars_frame,
 )
-from q_backend.research.providers import (
-    ResearchResources,
-    load_inventory,
-    read_local_bars,
-    read_remote_bars,
-    resolve_database_url,
-    resolve_gateway_token,
-    resolve_gateway_url,
-    resolve_market_data_root,
-    select_auto_source,
-)
-from q_backend.market_data.timezone import BRASILIA_TZ
+from q_backend.research.providers import resolve_gateway_token, resolve_gateway_url
 
-SourceLiteral = Literal["local", "remote", "auto"]
+MT5_SOURCE = "mt5"
 
 
-class Research:
-    """Load historical OHLCV bars for research scripts without starting Q services."""
+def _exchange_now() -> datetime:
+    return datetime.now(BRASILIA_TZ)
 
-    def __init__(
-        self,
-        *,
-        source: SourceLiteral = "local",
-        database_url: str | None = None,
-        market_data_root: str | Path | None = None,
-        gateway_url: str | None = None,
-        gateway_token: str | None = None,
-        clock: Callable[[], datetime] | None = None,
-        _resources: ResearchResources | None = None,
-    ) -> None:
-        self._source: SourceLiteral = source
-        self._closed = False
-        self._clock = clock or (lambda: datetime.now(BRASILIA_TZ))
-        if _resources is not None:
-            self._resources = _resources
-            self._owns_resources = False
+
+def _resolve_bounds(
+    start: str | datetime,
+    end: str | datetime | None,
+    *,
+    now: datetime,
+) -> tuple[pd.Timestamp, pd.Timestamp]:
+    start_ts = parse_query_bound(start)
+    if end is None:
+        end_ts = pd.Timestamp(now)
+        if end_ts.tzinfo is None:
+            end_ts = end_ts.tz_localize(BRASILIA_TZ)
         else:
-            self._resources = ResearchResources(
-                database_url=resolve_database_url(database_url),
-                market_data_root=resolve_market_data_root(market_data_root),
-                gateway_url=resolve_gateway_url(gateway_url),
-                gateway_token=resolve_gateway_token(gateway_token),
-            )
-            self._owns_resources = True
+            end_ts = end_ts.tz_convert(BRASILIA_TZ)
+    else:
+        end_ts = parse_query_bound(end)
+    if start_ts > end_ts:
+        raise ValueError("start must be <= end")
+    return start_ts, end_ts
 
-    def _ensure_open(self) -> None:
-        if self._closed:
-            raise RuntimeError("Research instance is closed")
 
-    def bars(
-        self,
-        symbol: str,
-        *,
-        timeframe: str,
-        start: str | datetime,
-        end: str | datetime,
-    ) -> pd.DataFrame:
-        self._ensure_open()
-        sym = symbol.strip()
-        if not sym:
-            raise ValueError("symbol must be non-empty")
-        tf = normalize_timeframe(timeframe)
-        start_ts, end_ts = parse_bounds(start, end)
-        start_naive, end_naive = bounds_to_brasilia_naive(start_ts, end_ts)
+def load_bars(
+    symbol: str,
+    *,
+    timeframe: str,
+    start: str | datetime,
+    end: str | datetime | None = None,
+    gateway_url: str | None = None,
+    gateway_token: str | None = None,
+) -> pd.DataFrame:
+    """Fetch completed OHLCV bars from the connected MT5 terminal via the Q gateway."""
+    sym = symbol.strip()
+    if not sym:
+        raise ValueError("symbol must be non-empty")
+    tf = normalize_timeframe(timeframe)
+    captured_now = _exchange_now()
+    start_ts, end_ts = _resolve_bounds(start, end, now=captured_now)
+    start_naive, end_naive = bounds_to_brasilia_naive(start_ts, end_ts)
 
-        selected_source = self._source
-        if selected_source == "auto":
-            selected_source = select_auto_source(self._resources, sym, tf, start_naive, end_naive)
+    resolved_url = resolve_gateway_url(gateway_url)
+    if not resolved_url:
+        raise ValueError("MT5 gateway URL is not configured. Set Q_MT5_GATEWAY_URL or pass gateway_url=.")
+    resolved_token = resolve_gateway_token(gateway_token)
+    client = RemoteMt5Client(base_url=resolved_url, token=resolved_token)
+    if not client.is_supported():
+        raise ValueError("MT5 gateway URL is not configured. Set Q_MT5_GATEWAY_URL or pass gateway_url=.")
 
-        dataset_id: str | None = None
-        if selected_source == "local":
-            frame, dataset_id = read_local_bars(self._resources, sym, tf, start_naive, end_naive)
-        else:
-            frame = read_remote_bars(self._resources, sym, tf, start_naive, end_naive)
-
-        frame = filter_index_range(frame, start_ts, end_ts)
-        frame = drop_forming_bar(frame, tf, now=self._clock())
-        if not frame.empty:
-            validate_bars_frame(frame)
-        if frame.empty:
-            raise NoMarketDataError(
-                symbol=sym,
-                timeframe=tf,
-                source=selected_source,
-                start=start_ts.isoformat(),
-                end=end_ts.isoformat(),
-            )
-        return attach_metadata(
-            frame,
+    bars = client.get_ohlcv(sym, tf, start_naive, end_naive)
+    frame = ohlcv_models_to_frame(bars)
+    frame = filter_index_range(frame, start_ts, end_ts)
+    frame = drop_forming_bar(frame, tf, now=captured_now)
+    if not frame.empty:
+        validate_bars_frame(frame)
+    if frame.empty:
+        raise NoMarketDataError(
             symbol=sym,
             timeframe=tf,
-            source=selected_source,
-            requested_start=start_ts,
-            requested_end=end_ts,
-            dataset_id=dataset_id,
+            source=MT5_SOURCE,
+            start=start_ts.isoformat(),
+            end=end_ts.isoformat(),
         )
-
-    def inventory(self) -> pd.DataFrame:
-        self._ensure_open()
-        rows = load_inventory(self._resources)
-        normalized: list[dict[str, object]] = []
-        for row in rows:
-            start = row["start"]
-            end = row["end"]
-            if isinstance(start, datetime):
-                if start.tzinfo is None:
-                    start = start.replace(tzinfo=timezone.utc)
-                start = start.astimezone(BRASILIA_TZ).isoformat()
-            if isinstance(end, datetime):
-                if end.tzinfo is None:
-                    end = end.replace(tzinfo=timezone.utc)
-                end = end.astimezone(BRASILIA_TZ).isoformat()
-            normalized.append({**row, "start": start, "end": end})
-        return inventory_rows_to_frame(normalized)
-
-    def close(self) -> None:
-        if self._closed:
-            return
-        if self._owns_resources:
-            self._resources.close()
-        self._closed = True
-
-    def __enter__(self) -> Research:
-        return self
-
-    def __exit__(self, *args: object) -> None:
-        self.close()
+    return attach_metadata(
+        frame,
+        symbol=sym,
+        timeframe=tf,
+        source=MT5_SOURCE,
+        requested_start=start_ts,
+        requested_end=end_ts,
+    )
