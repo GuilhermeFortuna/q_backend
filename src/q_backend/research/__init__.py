@@ -1,15 +1,27 @@
-"""Supported research helpers for loading fresh MT5 market data."""
+"""Supported research helpers for loading fresh MT5 market data and running strategies."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-__all__ = ("load_bars", "NoMarketDataError", "indicators")
+__all__ = (
+    "load_bars",
+    "NoMarketDataError",
+    "indicators",
+    "TradeOrder",
+    "ResearchStrategy",
+    "backtest",
+    "BacktestResult",
+)
 
 if TYPE_CHECKING:
     from q_backend.research import indicators
+    from q_backend.research.backtest import backtest
     from q_backend.research.data import load_bars
     from q_backend.research.errors import NoMarketDataError
+    from q_backend.research.orders import TradeOrder
+    from q_backend.research.results import BacktestResult
+    from q_backend.research.strategy import ResearchStrategy
 
 
 def __getattr__(name: str):
@@ -25,4 +37,20 @@ def __getattr__(name: str):
         import importlib
 
         return importlib.import_module("q_backend.research.indicators")
+    if name == "TradeOrder":
+        from q_backend.research.orders import TradeOrder
+
+        return TradeOrder
+    if name == "ResearchStrategy":
+        from q_backend.research.strategy import ResearchStrategy
+
+        return ResearchStrategy
+    if name == "backtest":
+        from q_backend.research.backtest import backtest
+
+        return backtest
+    if name == "BacktestResult":
+        from q_backend.research.results import BacktestResult
+
+        return BacktestResult
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
