@@ -480,6 +480,10 @@ q_backend/
 
 ## ⚡ Quickstart & Setup
 
+For loading historical OHLCV into pandas outside the API (catalog, gateway, or `auto`),
+see the supported [research library guide](docs/research-library.md) and
+`examples/research/load_market_data.py`.
+
 ### Prerequisites
 1. **Python 3.12+** and **`uv`** (see install below).
 2. **Windows + MetaTrader 5** for live broker data, tick ingestion, and storage ingest jobs. On **Linux/macOS**, the API and worker boot with an MT5 stub; use `data_source=local` and the Parquet market store for offline backtesting (copy `data/market/` from a Windows ingest machine).
