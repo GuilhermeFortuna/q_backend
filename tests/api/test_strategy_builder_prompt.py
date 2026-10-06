@@ -5,6 +5,7 @@ from __future__ import annotations
 from q_backend.strategy_builder.interpret_models import ConversationMessage, StrategyInterpretRequest
 from q_backend.strategy_builder.interpret_prompt import (
     _EARLIER_TURNS_OMITTED,
+    _slim_registry_for_prompt,
     build_system_prompt,
     build_user_prompt,
 )
@@ -158,6 +159,18 @@ def test_system_prompt_lists_change_notes_output_key():
     assert "- change_notes (array of strings" in prompt
     assert "11. When a Current StrategySpec draft is provided" in prompt
     assert "13. When the conversation shows the user answering" in prompt
+
+
+def test_prompt_registry_keeps_all_strategies_with_compact_catalog_fields():
+    capabilities = build_capability_registry()
+
+    prompt_registry = _slim_registry_for_prompt(capabilities)
+
+    assert {item["name"] for item in prompt_registry["strategies"]} == {item.name for item in capabilities.strategies}
+    assert all(
+        set(item) <= {"name", "label", "description", "engine", "category", "capabilities"}
+        for item in prompt_registry["strategies"]
+    )
 
 
 def test_system_prompt_length_budget():

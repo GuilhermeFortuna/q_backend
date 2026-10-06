@@ -21,6 +21,13 @@ _OPTIMIZER_ONLY_PARAM_KEYS: tuple[str, ...] = (
     "searchable",
 )
 
+# The interpreter needs the complete catalog and concise strategy identity for
+# selection. The API keeps richer research guidance (thesis/strong/weak regimes)
+# for users, but repeating it for every strategy makes this prompt grow linearly.
+_PROMPT_STRATEGY_KEYS: frozenset[str] = frozenset(
+    {"name", "label", "description", "engine", "category", "capabilities"}
+)
+
 
 def _strip_keys(obj: object, keys: tuple[str, ...]) -> None:
     """Recursively delete the given keys from every nested dict, in place."""
@@ -41,12 +48,15 @@ def _slim_registry_for_prompt(capabilities: CapabilityRegistry) -> dict:
     overflows modest local-model context windows. The bulk is the per-strategy
     ``params`` lists — reference detail the interpreter does not need, since it
     builds specs from the genome/exit vocabulary, not from template parameters.
-    We keep the strategy catalog (name/label/description/thesis) but drop those
-    params, and strip optimizer-only search metadata everywhere.
+    We keep every strategy with concise identity and type metadata, drop its
+    parameters and research prose, and strip optimizer-only search metadata
+    everywhere.
     """
     data = capabilities.model_dump(mode="json")
-    for strategy in data.get("strategies", []):
-        strategy.pop("params", None)
+    data["strategies"] = [
+        {key: value for key, value in strategy.items() if key in _PROMPT_STRATEGY_KEYS}
+        for strategy in data.get("strategies", [])
+    ]
     _strip_keys(data, _OPTIMIZER_ONLY_PARAM_KEYS)
     return data
 
