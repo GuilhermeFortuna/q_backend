@@ -348,3 +348,29 @@ def test_volume_column_not_required_for_frame_indicators(sample_ohlcv: pd.DataFr
     indicators.atr(sample_ohlcv, period=5)
     indicators.donchian(sample_ohlcv, period=5)
     indicators.yang_zhang(sample_ohlcv, window=5)
+
+
+def test_add_indicators_example(sample_ohlcv: pd.DataFrame, tmp_path) -> None:
+    from examples.research.add_indicators import add_indicators_to_frame, main
+
+    input_file = tmp_path / "bars.parquet"
+    output_file = tmp_path / "enriched.parquet"
+
+    sample_ohlcv.to_parquet(input_file)
+
+    # Run the main function
+    exit_code = main(["--input", str(input_file), "--output", str(output_file)])
+    assert exit_code == 0
+    assert output_file.exists()
+
+    enriched = pd.read_parquet(output_file)
+    assert len(enriched) == len(sample_ohlcv)
+    assert enriched.index.equals(sample_ohlcv.index)
+    assert str(enriched.index.tz) == str(sample_ohlcv.index.tz)
+    for col in ("rsi", "ema_21", "atr"):
+        assert col in enriched.columns
+
+    # Verify helper directly
+    df_enriched = add_indicators_to_frame(sample_ohlcv)
+    assert len(df_enriched) == len(sample_ohlcv)
+    pd.testing.assert_frame_equal(df_enriched, enriched, check_freq=False)
