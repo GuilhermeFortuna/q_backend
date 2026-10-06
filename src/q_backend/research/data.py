@@ -28,6 +28,29 @@ from q_backend.research.providers import resolve_gateway_token, resolve_gateway_
 MT5_SOURCE = "mt5"
 
 
+def _decode_tick_flags(flags: np.ndarray) -> np.ndarray:
+    """Describe public MT5 bits, preserving undocumented bits without guessing their meaning."""
+    public_bits = (
+        (2, "bid update"),
+        (4, "ask update"),
+        (8, "last-price update"),
+        (16, "volume update"),
+        (32, "buy trade"),
+        (64, "sell trade"),
+    )
+    public_mask = sum(bit for bit, _ in public_bits)
+    values, inverse = np.unique(flags, return_inverse=True)
+    labels = []
+    for value in values:
+        value = int(value)
+        parts = [label for bit, label in public_bits if value & bit]
+        undocumented = value & ~public_mask
+        if undocumented:
+            parts.append(f"undocumented bits ({undocumented})")
+        labels.append(" | ".join(parts) if parts else "no flags")
+    return np.asarray(labels, dtype=object)[inverse]
+
+
 def _exchange_now() -> datetime:
     return datetime.now(BRASILIA_TZ)
 
@@ -111,7 +134,11 @@ def load_ticks(
     gateway_url: str | None = None,
     gateway_token: str | None = None,
 ) -> pd.DataFrame:
-    """Fetch fresh MT5 ticks as a DataFrame indexed by Brasília tick time."""
+    """Fetch fresh MT5 ticks indexed by Brasília time, with human-readable flag strings.
+
+    The ``flags`` argument selects an MT5 tick category numerically. The returned
+    ``flags`` column describes each event's bits, including undocumented bits.
+    """
     sym = symbol.strip()
     if not sym:
         raise ValueError("symbol must be non-empty")
@@ -144,7 +171,7 @@ def load_ticks(
             "ask": np.asarray(ticks["ask"], dtype=np.float64),
             "last": np.asarray(ticks["last"], dtype=np.float64),
             "volume": np.asarray(ticks["volume"], dtype=np.float64),
-            "flags": np.asarray(ticks["flags"], dtype=np.int32),
+            "flags": _decode_tick_flags(np.asarray(ticks["flags"], dtype=np.int64)),
         },
         index=times,
     ).sort_index(kind="stable")

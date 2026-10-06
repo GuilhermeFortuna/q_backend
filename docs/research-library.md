@@ -48,6 +48,30 @@ minute_bars = resample_ticks(ticks, timeframe="M1")
 separate rows in stable order. It fetches all MT5 tick events by default; pass
 `flags=` to select an MT5 tick category. Tick reads bypass the shared disk cache.
 
+The returned `flags` column contains strings instead of numeric MT5 bit masks.
+Labels are joined with ` | ` in this order: `bid update`, `ask update`,
+`last-price update`, `volume update`, `buy trade`, `sell trade`. For example,
+`1336` becomes `last-price update | volume update | buy trade | undocumented bits (1280)`.
+Bits outside the public MT5 definitions are preserved as `undocumented bits (N)`,
+where `N` is their combined numeric mask; no meaning is inferred for them. A zero
+mask becomes `no flags`. Both side bits produce both `buy trade` and `sell trade`;
+treat that combination as an unknown trade direction.
+
+An update label does not guarantee a numerically different value from the preceding
+row: successive trades can have the same price and size. Quote events carry the
+previous `last` and `volume`, so do not sum volume across all rows. To select buy
+trades with an unambiguous direction:
+
+```python
+buy = ticks["flags"].str.contains("buy trade", regex=False)
+sell = ticks["flags"].str.contains("sell trade", regex=False)
+buy_trades = ticks.loc[buy & ~sell]
+```
+
+Code that previously applied bitwise operations to the returned `flags` column
+must use string matching instead. The input `flags=` filter remains numeric;
+lower-level market-data clients continue to return numeric flags.
+
 `resample_ticks(ticks, timeframe=...)` accepts the same canonical MT5 timeframe
 names as `load_bars`. Bars use positive `last` prices for OHLC and count those trade
 updates in `tick_volume`. Quote-only updates do not contribute prices or volume.

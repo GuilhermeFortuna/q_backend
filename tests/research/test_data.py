@@ -53,9 +53,44 @@ def test_load_ticks_returns_ordered_brasilia_frame_and_forwards_flags() -> None:
     assert frame.index[0].strftime("%H:%M:%S.%f") == "10:00:00.001000"
     assert frame.index[0] == frame.index[1]
     assert frame["last"].tolist() == [11.0, 12.0, 10.0]
+    assert frame["flags"].tolist() == ["undocumented bits (1)", "bid update", "no flags"]
     client.get_ticks_columnar.assert_called_once()
     assert client.get_ticks_columnar.call_args.kwargs["flags"] == 2
     assert client.get_ticks_columnar.call_args.kwargs["use_cache"] is False
+
+
+def test_load_ticks_decodes_combined_flags_without_losing_unknown_bits() -> None:
+    start_ms = int(datetime(2026, 6, 2, 10, 0, tzinfo=timezone.utc).timestamp() * 1000)
+    raw_flags = [0, 2, 4, 8, 16, 32, 64, 6, 24, 1080, 1336, 1368, 1400, 256, 2048, 1336]
+    arrays = _tick_arrays([start_ms + i for i in range(len(raw_flags))], [100.0] * len(raw_flags))
+    arrays["flags"] = np.asarray(raw_flags, dtype=np.int32)
+    client = MagicMock()
+    client.get_ticks_columnar.return_value = arrays
+    with (
+        patch("q_backend.research.data.RemoteMt5Client", return_value=client),
+        patch("q_backend.research.data.resolve_gateway_url", return_value="http://gw.test"),
+        patch("q_backend.research.data.resolve_gateway_token", return_value=None),
+    ):
+        frame = load_ticks("WDO$N", start="2026-06-02T10:00:00", end="2026-06-02T10:01:00")
+    assert frame["flags"].tolist() == [
+        "no flags",
+        "bid update",
+        "ask update",
+        "last-price update",
+        "volume update",
+        "buy trade",
+        "sell trade",
+        "bid update | ask update",
+        "last-price update | volume update",
+        "last-price update | volume update | buy trade | undocumented bits (1024)",
+        "last-price update | volume update | buy trade | undocumented bits (1280)",
+        "last-price update | volume update | sell trade | undocumented bits (1280)",
+        "last-price update | volume update | buy trade | sell trade | undocumented bits (1280)",
+        "undocumented bits (256)",
+        "undocumented bits (2048)",
+        "last-price update | volume update | buy trade | undocumented bits (1280)",
+    ]
+    np.testing.assert_array_equal(arrays["flags"], raw_flags)
 
 
 def test_resample_ticks_aggregates_trades_and_forward_fills_empty_bars() -> None:
