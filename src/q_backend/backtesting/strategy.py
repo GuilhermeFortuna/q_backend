@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Literal, Optional
 import pandas as pd
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from q_backend.backtesting.moving_averages import (
     MA_TYPE_LABELS,
     compute_ma,
@@ -15,6 +15,8 @@ class ChartIndicatorSpec(BaseModel):
     label: str
     pane: Literal["price", "oscillator"] = "price"
     color: Optional[str] = None
+    line_style: Optional[Literal["solid", "dashed", "dotted"]] = None
+    line_width: Optional[float] = Field(default=None, gt=0)
 
 
 class TradingStrategy(ABC):

@@ -299,6 +299,24 @@ def test_chart_indicator_defaults_label_to_column() -> None:
     assert indicator.pane == "price"
     assert indicator.label == "short_ma"
     assert indicator.color is None
+    assert indicator.line_style is None
+    assert indicator.line_width is None
+
+
+def test_chart_indicator_accepts_line_styling() -> None:
+    indicator = ChartIndicator("rsi", color="#ff0000", line_style="dotted", line_width=2.5)
+    assert (indicator.color, indicator.line_style, indicator.line_width) == ("#ff0000", "dotted", 2.5)
+
+
+def test_chart_indicator_rejects_unknown_line_style() -> None:
+    with pytest.raises(ValueError, match="line_style"):
+        ChartIndicator("rsi", line_style="wavy")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("width", [0, -1, float("nan"), float("inf"), True])
+def test_chart_indicator_rejects_invalid_line_width(width: float) -> None:
+    with pytest.raises(ValueError, match="line_width"):
+        ChartIndicator("rsi", line_width=width)
 
 
 def test_chart_indicator_rejects_unknown_pane() -> None:

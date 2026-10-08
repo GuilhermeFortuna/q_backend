@@ -287,7 +287,8 @@ class RSIReversion(ResearchStrategy):
    - `positions` is optional in your override's signature; existing `exit_strategy(self, frame)` methods remain supported.
 4. **`chart_indicators() -> Sequence[ChartIndicator]`** (optional):
    - Declares the computed columns the Trade Chart draws, in order. Defaults to an empty sequence.
-   - `ChartIndicator(column, pane="price", label="", color=None)`: `column` must be a numeric column added by `compute_indicators`; `pane` is `"price"` or `"oscillator"`; an empty `label` defaults to the column name.
+   - `ChartIndicator(column, pane="price", label="", color=None, line_style=None, line_width=None)`: `column` must be a numeric column added by `compute_indicators`; `pane` is `"price"` or `"oscillator"`; an empty `label` defaults to the column name.
+   - Styling is optional: `color` is a CSS color string, `line_style` is `"solid"`, `"dashed"` or `"dotted"`, and `line_width` is a positive finite number in pixels. Unset values use the chart's defaults (solid, 1.2 px). An invalid `line_style` or `line_width` raises `ValueError` when the `ChartIndicator` is created.
    - Called once per backtest and does not receive the frame, so it cannot change results. A declared column that is missing, a market column (`open`, `high`, `low`, `close`), non-numeric or declared twice raises `ValueError` naming the strategy class and column.
    - No pane is inferred: a column that is not declared is not drawn.
 
@@ -295,8 +296,8 @@ class RSIReversion(ResearchStrategy):
    class SmartMaCrossover(ResearchStrategy):
        def chart_indicators(self):
            return [
-               ChartIndicator("short_ma", label="EMA 9"),
-               ChartIndicator("long_ma", label="WMA 20"),
+               ChartIndicator("short_ma", label="EMA 9", color="#4da3ff", line_style="dashed"),
+               ChartIndicator("long_ma", label="WMA 20", color="#ff9f43", line_width=2),
                ChartIndicator("ma_delta", pane="oscillator"),
            ]
    ```

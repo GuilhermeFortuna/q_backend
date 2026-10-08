@@ -127,6 +127,8 @@
         "color": "#c9a227",
         "key": "e0__ma_short",
         "label": "e0 \u00b7 SMA Short (3)",
+        "line_style": null,
+        "line_width": null,
         "pane": "price",
         "values": [
           null,
@@ -150,6 +152,8 @@
         "color": "#6eb5ff",
         "key": "e0__ma_long",
         "label": "e0 \u00b7 SMA Long (6)",
+        "line_style": null,
+        "line_width": null,
         "pane": "price",
         "values": [
           null,
@@ -173,6 +177,8 @@
         "color": "#c9a227",
         "key": "e0__delta",
         "label": "e0 \u00b7 Delta",
+        "line_style": null,
+        "line_width": null,
         "pane": "oscillator",
         "values": [
           null,

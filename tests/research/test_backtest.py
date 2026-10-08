@@ -622,6 +622,13 @@ def test_declared_chart_indicators_are_returned_in_order(ohlcv_5m: pd.DataFrame)
     )
 
 
+def test_styled_chart_indicators_survive_adapter_and_serialization(ohlcv_5m: pd.DataFrame) -> None:
+    styled = ChartIndicator("short_ma", color="#abcdef", line_style="dotted", line_width=3)
+    strategy = DeclaredChartStrategy([styled])
+    result = backtest(ohlcv_5m, strategy=strategy, symbol="WIN$")
+    assert result.indicators == (styled,)
+
+
 def test_chart_indicators_hook_runs_once_per_backtest(ohlcv_5m: pd.DataFrame) -> None:
     strategy = DeclaredChartStrategy()
     backtest(ohlcv_5m, strategy=strategy, symbol="WIN$")

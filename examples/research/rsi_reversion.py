@@ -31,7 +31,7 @@ class RSIReversion(ResearchStrategy):
         self.upper = upper
 
     def chart_indicators(self) -> list[ChartIndicator]:
-        return [ChartIndicator("rsi", pane="oscillator")]
+        return [ChartIndicator("rsi", pane="oscillator", color="#9b59b6", line_style="dotted")]
 
     def compute_indicators(self, frame: pd.DataFrame) -> pd.DataFrame:
         frame = frame.copy()

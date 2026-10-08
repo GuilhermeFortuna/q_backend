@@ -58,6 +58,10 @@ def test_serialize_chart_data_shape_and_alignment():
         assert len(ind["values"]) == len(bars)
         assert ind["pane"] in ("price", "oscillator")
 
+    for ind in indicators:
+        assert ind["line_style"] is None
+        assert ind["line_width"] is None
+
     ma_short = next(ind for ind in indicators if ind["key"] == "ma_short")
     assert ma_short["values"][0] is None
     assert ma_short["values"][1] is not None

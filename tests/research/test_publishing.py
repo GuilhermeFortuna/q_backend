@@ -46,7 +46,7 @@ class MockPublishedStrategy(ResearchStrategy):
 
     def chart_indicators(self) -> tuple[ChartIndicator, ...]:
         return (
-            ChartIndicator("sma", pane="price", label="SMA"),
+            ChartIndicator("sma", pane="price", label="SMA", color="#112233", line_style="dashed", line_width=2.0),
             ChartIndicator("osc", pane="oscillator", label="Oscillator"),
         )
 
@@ -126,6 +126,11 @@ def test_publish_posts_valid_request_shape(ohlcv_bars: pd.DataFrame) -> None:
     assert sma_series["values"][0] is None
     assert sma_series["values"][1] is None
     assert sma_series["values"][2] is not None
+
+    # Line styling is published; unset styling stays null
+    assert (sma_series["color"], sma_series["line_style"], sma_series["line_width"]) == ("#112233", "dashed", 2.0)
+    osc_series = next(i for i in body["result"]["indicators"] if i["key"] == "osc")
+    assert (osc_series["line_style"], osc_series["line_width"]) == (None, None)
 
     # 4. Closed trades only
     closed_trades = result.trades[result.trades["status"] == "closed"]

@@ -75,7 +75,17 @@ def _extract_strategy_params(strategy: Any) -> dict[str, Any]:
 def _chart_indicators(trading_strategy: TradingStrategy) -> tuple[ChartIndicator, ...]:
     # The base TradingStrategy hook returns None; treat that as no declared series.
     specs = trading_strategy.get_chart_indicators() or ()
-    return tuple(ChartIndicator(spec.key, pane=spec.pane, label=spec.label, color=spec.color) for spec in specs)
+    return tuple(
+        ChartIndicator(
+            spec.key,
+            pane=spec.pane,
+            label=spec.label,
+            color=spec.color,
+            line_style=spec.line_style,
+            line_width=spec.line_width,
+        )
+        for spec in specs
+    )
 
 
 def _validate_input_frame(frame: pd.DataFrame, is_builtin: bool) -> pd.DataFrame:

@@ -58,6 +58,8 @@ def serialize_chart_data(
                 "label": spec.label,
                 "pane": spec.pane,
                 "color": spec.color,
+                "line_style": spec.line_style,
+                "line_width": spec.line_width,
                 "values": _series_values(df[spec.key]),
             }
         )

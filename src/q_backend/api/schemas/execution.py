@@ -440,6 +440,8 @@ class DeploymentChartIndicator(BaseModel):
     label: str
     pane: Literal["price", "oscillator"]
     color: Optional[str] = None
+    line_style: Optional[Literal["solid", "dashed", "dotted"]] = None
+    line_width: Optional[float] = Field(default=None, gt=0)
     values: list[Optional[float]]
 
 

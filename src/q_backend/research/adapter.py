@@ -314,6 +314,13 @@ class ResearchStrategyAdapter(TradingStrategy):
 
     def get_chart_indicators(self) -> list[ChartIndicatorSpec]:
         return [
-            ChartIndicatorSpec(key=indicator.column, label=indicator.label, pane=indicator.pane, color=indicator.color)
+            ChartIndicatorSpec(
+                key=indicator.column,
+                label=indicator.label,
+                pane=indicator.pane,
+                color=indicator.color,
+                line_style=indicator.line_style,
+                line_width=indicator.line_width,
+            )
             for indicator in self._chart_indicators
         ]

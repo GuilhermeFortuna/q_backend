@@ -45,6 +45,8 @@ class _IndicatorAdapter:
                 label=ind.label,
                 pane=ind.pane,
                 color=ind.color,
+                line_style=ind.line_style,
+                line_width=ind.line_width,
             )
             for ind in self._indicators
         ]
@@ -202,6 +204,8 @@ def publish_backtest_result(
                 label=ind["label"],
                 pane=ind["pane"],
                 color=ind["color"],
+                line_style=ind["line_style"],
+                line_width=ind["line_width"],
                 values=clean_values,
             )
         )
