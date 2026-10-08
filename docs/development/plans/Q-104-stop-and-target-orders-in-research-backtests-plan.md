@@ -1,21 +1,34 @@
-# Q-104 implementation plan: Stop and target orders in research backtests
+# Q-104 implementation plan: Stop, target and lazy intrabar exits
 
 > **For implementation agents:** Read the linked specification and repository instructions. Use superpowers:executing-plans when available. Launch only through `./work start Q-104 --agent <agent> --worktree` after written-plan approval and with Q-102 and Q-103 Done. Implement natively; delegation requires separate authorization.
 
-**Goal:** A research entry order carries a stop and a target price that `backtest()` fills inside the bar from a `TickStore`.
-**Architecture:** `TradeOrder` gains two levels; the research adapter compiles them into two columns; the candle bridge forwards them and a price callable backed by the store to the `q_core` kernel; results gain the fill time, the levels and the rejected entries.
-**Tech stack:** Python 3.12, pandas, numpy, `q_core` (tag containing Q-102), pytest.
+**Goal:** Entry orders carry protective levels, and `exit_strategy()` can confirm
+exits inside a candidate candle using lazily loaded `TickStore` prices.
+**Architecture:** Extend the shared Rust/PyO3 loop with screen/tick callbacks and
+runtime entry-level transport. Resolve protective/custom exits chronologically.
+The research adapter rebuilds causal partial candles and recomputes indicators
+only during candidate replay; results record the actual tick fill.
+**Tech stack:** Rust, PyO3, Python 3.12, pandas, numpy, `q_core`, pytest.
 **Spec:** [Specification](../specs/Q-104-stop-and-target-orders-in-research-backtests-spec.md)
-**Status:** written plan awaiting human review.
+**Status:** revised plan awaiting human review; no product implementation performed.
 
 ## Global constraints
 
-- The fill rule lives in `q_core`. This task adds no price comparison of its own beyond the frame-versus-store check.
+- Execution ordering and protective fill rules live in `q_core`. User exit hooks
+  define screen/confirmation conditions; Python does not implement a second ledger.
 - Levels and the price source reach the kernel only from `q_backend.research`. `BacktestEngine` callers that pass neither take today's path unchanged.
-- Results for strategies without levels are byte-for-byte unchanged, including the empty-frame path.
+- Results for strategies without levels or phase-aware exits are byte-for-byte
+  unchanged, including the empty-frame path.
 - `exit_time` stays a timestamp of the frame's index.
 - Tests use stores written under `tmp_path`; no gateway.
 - Commit focused units on the task branch; no push, merge or protected-branch checkout.
+- Preserve the released position-aware hooks. Explicit keyword-capable `phase`
+  opts exit hooks into `screen`, `tick` and `bar` calls; other signatures keep
+  today's closed-bar behavior. Screening is execution-free and conservative.
+- Final-candle information may screen, but cannot enter causal replay frames,
+  indicator values or execution state. Never backdate a screen result as a fill.
+- Coordinate the required core branch/release before implementation. Q-102 is
+  Done and is not reopened; the new callback extension belongs to Q-104's scope.
 
 ## Review focus
 
@@ -25,15 +38,46 @@
 - `ledger_to_registry` still asserts that kernel and registry profit agree for protective exits.
 - The public export list and the import test agree, and importing `q_backend.research` stays inert.
 - `publish()` output is unchanged for a result that has the new columns.
+- A high/low crossing can reverse before close; screens must not miss it. For
+  conditions OHLC cannot exclude, screen every open-position candle.
+- Partial current-row unavailable fields are `NaN`; replay indicators are freshly
+  computed. No preview state or shared frame/index backing leaks into replay.
+- One chronological walk resolves custom and protective candidates, requesting
+  each interval once; stop once no positions remain. Same-tick protective priority
+  and the exclusion of a newly opened position's own entry tick are explicit gates.
 
 ## Ordered implementation
+
+### 0. Extend the core for lazy custom exits
+
+**Repository:** `q_core` candle loop, input/decision types, PyO3 binding and focused
+Rust/Python gates. Its existing callback runs after protective execution and is
+insufficient for a custom exit earlier in the same candle.
+**Interfaces:** additive optional `exit_screen_callback(bar, positions) -> bool`
+and `exit_tick_callback(bar, tick_index, time_us, price, positions) -> bool` in the
+candle binding. A screen `True` requests replay; a tick `True` closes at that tick.
+Snapshots use the existing binding shape; tick callbacks receive one observed
+price at a time. Runtime entry orders must also transport their protective levels,
+preserving the old strategy callback return for callers without levels.
+
+- [ ] Add failing core/binding tests for lazy union screening, one source request,
+  chronological custom/protective competition, ties, actual snapshots, entry-tick
+  exclusion, timestamp/source ordering and old callback compatibility.
+- [ ] Integrate callbacks in the shared loop: screen after queued fills, combine
+  protective/custom processing in tick order, then evaluate closed-bar decisions.
+  Preserve owned buffers and contextual callback/source exceptions.
+- [ ] Run focused candle/protective Rust and binding gates and commit core changes.
+  Record the exact final runtime level-transport interface in this plan.
+- [ ] Coordinate publication through the normal core release workflow and record
+  its tag. Do not finish backend adoption against an unpublished local core path.
 
 ### 1. Pin the kernel and extend the order
 
 **Files:** Modify `pyproject.toml`, `uv.lock`, `src/q_backend/backtesting/candle_kernel.py` (`check_engine`), `src/q_backend/research/orders.py`, `tests/research/test_research_strategy.py` and the `check_engine` test.
 **Interfaces:** `TradeOrder.buy(*, stop_loss=None, take_profit=None)`, `TradeOrder.sell(...)`.
 
-- [ ] Move the `q-core` pin to the released tag that contains Q-102 and record the tag here.
+- [ ] Move the current `v2026.10.08.2` pin to the released tag from step 0; require
+  both protective and custom intrabar callback capabilities, preserving positions.
 - [ ] Add failing tests for spec acceptance item 9 and for `check_engine` rejecting a module without `PROTECTIVE_ORDERS`.
 - [ ] Implement, run `uv run pytest tests/research/test_research_strategy.py tests/backtesting -q` and confirm green. Commit this unit.
 
@@ -43,30 +87,61 @@
 **Interfaces:** two optional level columns in the signal contract; `BacktestEngine(..., intrabar=None)` forwarded to `run_chunk`.
 
 - [ ] Add failing tests for spec acceptance items 1 to 3 and 6 to 8 with a counting store.
-- [ ] Have the adapter record each entry order's levels in the two columns, and the bridge forward them with the callable. Map `exit_time_us` to `exit_tick_time` in Brasília time.
+- [ ] Transport levels through static columns and actual runtime position-aware
+  decisions; do not infer fills in Python. Map protective and custom tick times
+  to `exit_tick_time` in the frame timezone.
 - [ ] Implement the price callable in `src/q_backend/research/engine.py`: bar interval, `TickStore.trade_prices`, the frame-versus-store check, and the missing-session error.
 - [ ] Run `uv run pytest tests/research tests/backtesting -q` and confirm green, including the unchanged candle goldens. Commit this unit.
+
+### 2b. Adapt phase-aware exit screening and causal replay
+
+**Subsystems:** research strategy/adapter, prepared engine and candle bridge.
+**Interface:** `exit_strategy(frame[, positions], *, phase="bar")`, returning a
+close request or `None` in every phase; explicit `phase` selects the capability.
+
+- [ ] Add failing tests for spec acceptance 11–17, including a reversed price
+  crossing, false-positive screens, partial-candle indicator crossing, future-data
+  isolation, optional positions, `**kwargs` detection and contextual errors.
+- [ ] Bind screen/tick callbacks to isolated raw history. Screen on the full
+  candidate candle; reconstruct observed OHLC/tick count for replay, set unavailable
+  current-row fields `NaN`, and recompute indicators before each tick hook call.
+- [ ] Validate phases/actions and keep screen/replay free of evolving user state.
+  Never invoke entry hooks per tick. Evaluate bar-phase exit before entry afterward
+  with the same post-fill position snapshot. Preserve legacy signature behavior.
+- [ ] Verify no reads/calls for screened-out or flat candles, one interval load for
+  overlapping candidates, exact first-confirmed fill and chronological precedence.
+- [ ] Run focused research/bridge/engine tests and commit this unit.
 
 ### 3. Expose results and errors
 
 **Files:** Modify `src/q_backend/research/engine.py`, `src/q_backend/research/results.py`, `tests/research/test_stop_target_backtest.py` and `tests/research/test_backtest.py`.
 **Interfaces:** `backtest(..., ticks=None)`; `BacktestResult.rejected_entries`; `trades` columns `exit_tick_time`, `stop_loss`, `take_profit`.
 
-- [ ] Add failing tests for spec acceptance items 4 and 5.
-- [ ] Implement the argument checks, the new columns on both the normal and the empty-frame path, and `rejected_entries`.
+- [ ] Add failing tests for spec acceptance items 4, 5 and 11–17: missing stores
+  for phase-aware hooks, candidate-only reads, OHLC consistency, empty intervals,
+  same-session interval ends and empty result schemas.
+- [ ] Implement argument checks and complete normal/empty result schemas; record
+  custom tick exits with the signal-exit reason and actual tick timestamp. Verify
+  realized equity/costs for both mechanisms and preserve `rejected_entries`.
 - [ ] Run `uv run pytest tests/research tests/execution -q` and confirm green with unchanged evaluator tests. Commit this unit.
 
 ### 4. Document
 
 **Files:** Create `examples/research/stop_target_backtest.py`; modify `docs/research-library.md` and `tests/research/test_examples.py`.
 
-- [ ] Update the four guide sections and add the example as the spec lists, with an example test that runs it over a `tmp_path` store.
+- [ ] Document entry levels plus phase-aware screening/replay, conservative range
+  checks, causal indicators, tick prices/costs and legacy/bar-phase next-open closes.
+  Extend the example/test to prove an exit inside its candle at a price different
+  from the next open, and no replay for a screened-out candle.
 - [ ] Run `uv run pytest tests/research/test_examples.py -q`. Commit docs and example.
 
 ## Verification and handoff
 
 - [ ] Run `uv run pytest tests/research tests/backtesting tests/execution -q`, `uv run ruff check src tests examples/research` and `uv run black --check` on the changed paths.
 - [ ] Record the commands actually run and their results in this plan; do not claim unrun checks passed.
+- [ ] Record core/binding verification and the published additive release. Ensure
+  the spec, plan and issue agree on the phase API and acceptance coverage. This
+  scope revision does not change the board status or dependency completion.
 - [ ] Use `./work board set Q-104 in-review -m "<changes; checks and results; follow-ups>"`.
 
 `make contracts-check` is not needed: this task changes no contract.
