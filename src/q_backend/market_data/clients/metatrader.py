@@ -42,7 +42,6 @@ T = TypeVar("T")
 # Match the market OHLCV endpoint max; large single requests trigger MT5 "Invalid params".
 _HISTORY_CHUNK_SIZE = 5_000
 _MAX_HISTORY_CHUNKS = 1_000
-_MAX_OHLCV_BARS = 50_000
 _HISTORY_ANCHOR = datetime(1990, 1, 1)
 _RANGE_PROBE_YEARS = 2
 _RANGE_FETCH_DAYS = 365
@@ -383,7 +382,6 @@ class MetaTraderClient:
         end = _to_naive_local(end)
 
         chunks: List[np.ndarray] = []
-        total_bars = 0
         cursor = start
         chunk_days = _get_chunk_days(mt5_timeframe)
 
@@ -395,25 +393,13 @@ class MetaTraderClient:
             rates = mt5.copy_rates_range(symbol, mt5_timeframe, cursor, chunk_end)
 
             if rates is not None and len(rates) > 0:
-                chunk_len = len(rates)
-                if total_bars + chunk_len > _MAX_OHLCV_BARS:
-                    remaining = _MAX_OHLCV_BARS - total_bars
-                    if remaining <= 0:
-                        break
-                    rates = rates[:remaining]
-                    chunk_len = remaining
-
                 chunks.append(rates)
-                total_bars += chunk_len
                 next_cursor = _bar_open_time(rates, -1) + timedelta(seconds=1)
                 if next_cursor <= cursor:
                     break
                 cursor = next_cursor
             else:
                 cursor = chunk_end + timedelta(seconds=1)
-
-            if total_bars >= _MAX_OHLCV_BARS:
-                break
 
         if not chunks:
             return []

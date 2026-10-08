@@ -61,10 +61,10 @@
 
 **Files:** Modify `src/q_backend/market_data/clients/metatrader.py` and `tests/market_data/test_get_ohlcv_chunked.py`.
 
-- [ ] Replace `test_get_ohlcv_respects_max_bar_cap` with a test that a range longer than a patched small cap is returned whole; confirm it fails first.
-- [ ] Remove the truncation from `_fetch_ohlcv_range_chunked`, keeping `_MAX_HISTORY_CHUNKS` as the loop bound, and delete the constant if nothing else uses it.
-- [ ] Run `uv run pytest tests/market_data/test_get_ohlcv_chunked.py tests/market_data/test_metatrader_client_lock.py -q` and confirm it passes.
-- [ ] Commit this unit.
+- [x] Replace `test_get_ohlcv_respects_max_bar_cap` with a test that a range longer than a patched small cap is returned whole; confirm it fails first.
+- [x] Remove the truncation from `_fetch_ohlcv_range_chunked`, keeping `_MAX_HISTORY_CHUNKS` as the loop bound, and delete the constant if nothing else uses it.
+- [x] Run `uv run pytest tests/market_data/test_get_ohlcv_chunked.py tests/market_data/test_metatrader_client_lock.py -q` and confirm it passes.
+- [x] Commit this unit.
 
 ### 5. Prove the research path and document it
 
