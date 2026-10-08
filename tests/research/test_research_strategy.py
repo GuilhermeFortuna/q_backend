@@ -49,6 +49,34 @@ def test_trade_order_immutability_and_validation() -> None:
         TradeOrder("hold")  # type: ignore[arg-type]
 
 
+def test_trade_order_levels_are_validated_at_construction() -> None:
+    order = TradeOrder.buy(stop_loss=9.0, take_profit=12.5)
+    assert (order.stop_loss, order.take_profit) == (9.0, 12.5)
+    assert TradeOrder.sell(stop_loss=12.0, take_profit=9.0).take_profit == 9.0
+    assert TradeOrder.buy(take_profit=12.0).stop_loss is None
+    assert TradeOrder.buy().stop_loss is None
+
+    for bad in (0.0, -1.0, float("nan"), float("inf"), True, "9"):
+        with pytest.raises(ValueError, match="stop_loss must be a finite positive price"):
+            TradeOrder.buy(stop_loss=bad)  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="take_profit must be a finite positive price"):
+            TradeOrder.sell(take_profit=bad)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="stop_loss must be below take_profit"):
+        TradeOrder.buy(stop_loss=10.0, take_profit=10.0)
+    with pytest.raises(ValueError, match="stop_loss must be above take_profit"):
+        TradeOrder.sell(stop_loss=10.0, take_profit=10.0)
+    with pytest.raises(ValueError, match="stop_loss must be above take_profit"):
+        TradeOrder.sell(stop_loss=9.0, take_profit=10.0)
+
+    with pytest.raises(TypeError):
+        TradeOrder.close(stop_loss=9.0)  # type: ignore[call-arg]
+    with pytest.raises(ValueError, match="close orders carry no levels"):
+        TradeOrder("close", stop_loss=9.0)
+    with pytest.raises(TypeError):
+        TradeOrder.buy(9.0)  # type: ignore[misc]
+
+
 def test_scripted_strategy_lifecycle_and_isolation(sample_bars: pd.DataFrame) -> None:
     calls = []
 

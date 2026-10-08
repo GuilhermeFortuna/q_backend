@@ -100,10 +100,10 @@ worktree. Final task merging remains the normal human review/finish step.
   `095c2ce507278dcb814b620db1087fa5b77393a9`. Installed-module inspection confirmed
   `PROTECTIVE_ORDERS` and both screen/tick callback parameters. Package version is
   `2026.10.8` and contracts revision is `998a50570905524bfb9af0465a725b170f2970df`.
-- [ ] Update `check_engine` to require protective and custom intrabar callback
+- [x] Update `check_engine` to require protective and custom intrabar callback
   capabilities, preserving positions.
-- [ ] Add failing tests for spec acceptance item 9 and for `check_engine` rejecting a module without `PROTECTIVE_ORDERS`.
-- [ ] Implement, run `uv run pytest tests/research/test_research_strategy.py tests/backtesting -q` and confirm green. Commit this unit.
+- [x] Add failing tests for spec acceptance item 9 and for `check_engine` rejecting a module without `PROTECTIVE_ORDERS`.
+- [x] Implement, run `uv run pytest tests/research/test_research_strategy.py tests/backtesting/test_candle_kernel_bridge.py -q` and confirm green. Commit this unit.
 
 ### 2. Carry levels to the kernel
 

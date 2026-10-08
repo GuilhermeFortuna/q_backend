@@ -26,16 +26,30 @@ from q_backend.backtesting.signal_columns import SignalArrays
 from q_backend.backtesting.strategy import TradingStrategy
 
 REQUIRED_ENGINE_FUNCTIONS: Final = ("run_candle", "DecisionStep", "size_entry", "required_columns")
+REQUIRED_ENGINE_CAPABILITIES: Final = ("PROTECTIVE_ORDERS",)
+REQUIRED_RUN_CANDLE_PARAMETERS: Final = (
+    "stop_price",
+    "target_price",
+    "intrabar",
+    "strategy_callback",
+    "exit_screen_callback",
+    "exit_tick_callback",
+)
 
 
 def check_engine(module: Any) -> None:
-    """Raise a startup error if the installed q_core lacks Q-027's candle API."""
+    """Raise a startup error if the installed q_core lacks the candle API this bridge uses."""
     target = getattr(module, "engine", module)
     version_fn = getattr(module, "version", None)
     version = version_fn() if callable(version_fn) else getattr(module, "__version__", "unknown")
     missing = [name for name in REQUIRED_ENGINE_FUNCTIONS if not hasattr(target, name)]
+    missing += [name for name in REQUIRED_ENGINE_CAPABILITIES if getattr(target, name, None) is not True]
     if missing:
         raise ImportError(f"q_core {version} is missing required candle kernel functions: {', '.join(missing)}")
+    parameters = inspect.signature(target.run_candle).parameters
+    absent = [name for name in REQUIRED_RUN_CANDLE_PARAMETERS if name not in parameters]
+    if absent:
+        raise ImportError(f"q_core {version} run_candle lacks required parameters: {', '.join(absent)}")
 
 
 check_engine(q_core)
