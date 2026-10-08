@@ -172,6 +172,8 @@ through the gateway if the range exceeds the gateway's per-response limit (50,00
 The available history depth still depends on the connected terminal and broker. A shorter
 result is returned as supplied; missing candles are not filled in. No completed candles
 raises `NoMarketDataError`, which you can import from `q_backend.research`.
+If the gateway cannot finish a bounded history scan, it returns an error rather than
+incomplete success; retry with a narrower range.
 Missing gateway configuration or invalid arguments raise `ValueError`; an unavailable
 gateway raises `ConnectionError`.
 
@@ -321,7 +323,7 @@ print(result.equity)
 ## Execution model
 
 - Strategy hooks see completed bars only. An entry or close decided on a bar fills at the next bar's open.
-- Exit rules follow the catalog text from Q-094: evaluated on each completed bar against its high or low, closing at the next bar's open, so the exit price can differ from the level. A rule can trigger on the entry bar.
+- Exit rules follow the catalog text from Q-094: price-level rules evaluate each completed bar against its high or low, while time stops count completed bars. Triggered exits close at the next bar's open, so the exit price can differ from the level. A rule can trigger on the entry bar. Exit parameter values must match the registry's types and bounds; nonfinite values are rejected.
 - One position per symbol under fixed-quantity sizing: repeated entry requests do not stack, and an opposite entry request is skipped while the position cap is full. Returning a close and an opposite entry on the same bar reverses at the next open.
 - With `day_trade=True`: an entry is taken only from a signal bar whose time lies between the start and end times inclusive; open positions close at the open of the first bar at or after the close time; a position still open on the last bar of a calendar day closes at that bar's close.
 - Without `day_trade`, positions carry across sessions. `force_close_at_end` closes at the last bar's close.
@@ -352,7 +354,7 @@ print(result.equity)
 ### Fetch live market data
 ```bash
 uv run python examples/research/load_market_data.py \
-  --symbol WIN$N --timeframe M5 --start 2026-09-01
+  --symbol 'WIN$N' --timeframe M5 --start 2026-09-01
 ```
 
 ### Offline indicator enrichment
@@ -366,7 +368,7 @@ uv run python examples/research/add_indicators.py \
 ```bash
 uv run python examples/research/rsi_reversion.py \
   --input data/bars.parquet \
-  --symbol WIN$N \
+  --symbol 'WIN$N' \
   --period 14 \
   --quantity 1 \
   --point-value 0.20 \
@@ -376,7 +378,7 @@ uv run python examples/research/rsi_reversion.py \
 ### Live MT5 gateway backtest
 ```bash
 uv run python examples/research/mt5_backtest.py \
-  --symbol WIN$N \
+  --symbol 'WIN$N' \
   --timeframe M5 \
   --start 2026-09-01 \
   --strategy custom \
