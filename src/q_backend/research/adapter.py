@@ -6,6 +6,7 @@ from typing import Any, Mapping
 
 import numpy as np
 import pandas as pd
+from pandas.api.types import is_numeric_dtype
 
 from q_backend.backtesting.exit_strategy import ExitStrategy
 from q_backend.backtesting.signal_columns import (
@@ -14,11 +15,13 @@ from q_backend.backtesting.signal_columns import (
     write_signal_columns,
 )
 from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy
+from q_backend.research.charting import ChartIndicator
 from q_backend.research.orders import TradeOrder
 from q_backend.research.frame import FRAME_COLUMNS
 from q_backend.research.strategy import ResearchStrategy
 
 _RESERVED_COLUMNS = frozenset((*SIGNAL_COLUMNS, BAR_INDEX))
+_MARKET_COLUMNS = ("open", "high", "low", "close")
 
 
 class ResearchStrategyAdapter(TradingStrategy):
@@ -39,6 +42,7 @@ class ResearchStrategyAdapter(TradingStrategy):
 
         # Retain engine exit strategy on the adapter so it does not shadow user's exit_strategy method
         self.exit_strategy = ExitStrategy(self.parameters)
+        self._chart_indicators: tuple[ChartIndicator, ...] = ()
 
     def compute_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
         """Call compute_indicators once on an owned copy and compile prefix decisions."""
@@ -105,6 +109,8 @@ class ResearchStrategyAdapter(TradingStrategy):
                     raise ValueError(f"Missing original market column {col!r} after compute_indicators")
                 if not data[col].equals(augmented[col]):
                     raise ValueError(f"Market column {col!r} was modified in compute_indicators")
+
+        self._chart_indicators = self._declare_chart_indicators(augmented)
 
         # 2. Iterate bar by bar: evaluate exit_strategy then entry_strategy on owned prefix
         entry_long = np.zeros(orig_len, dtype=bool)
@@ -178,5 +184,31 @@ class ResearchStrategyAdapter(TradingStrategy):
         )
         return result_df
 
+    def _declare_chart_indicators(self, augmented: pd.DataFrame) -> tuple[ChartIndicator, ...]:
+        name = type(self.research_strategy).__name__
+        try:
+            declared = list(self.research_strategy.chart_indicators())
+        except Exception as exc:
+            raise RuntimeError(f"Error in {name}.chart_indicators: {exc}") from exc
+
+        seen: set[str] = set()
+        for entry in declared:
+            if not isinstance(entry, ChartIndicator):
+                raise ValueError(f"{name}.chart_indicators returned {entry!r}, expected ChartIndicator")
+            column = entry.column
+            if column in seen:
+                raise ValueError(f"{name}.chart_indicators declares column {column!r} more than once")
+            seen.add(column)
+            if column in _MARKET_COLUMNS:
+                raise ValueError(f"{name}.chart_indicators declares market column {column!r}")
+            if column not in augmented.columns:
+                raise ValueError(f"{name}.chart_indicators declares column {column!r} missing from compute_indicators")
+            if not is_numeric_dtype(augmented[column]):
+                raise ValueError(f"{name}.chart_indicators declares non-numeric column {column!r}")
+        return tuple(declared)
+
     def get_chart_indicators(self) -> list[ChartIndicatorSpec]:
-        return []
+        return [
+            ChartIndicatorSpec(key=indicator.column, label=indicator.label, pane=indicator.pane, color=indicator.color)
+            for indicator in self._chart_indicators
+        ]

@@ -76,6 +76,11 @@ def test_offline_rsi_example_execution(synthetic_rsi_parquet: Path) -> None:
     assert "q_signal_entry" not in result.data.columns
 
 
+def test_offline_rsi_example_declares_rsi_in_oscillator_pane(synthetic_rsi_parquet: Path) -> None:
+    result = run_rsi_backtest(synthetic_rsi_parquet, symbol="WIN$", capital=10000.0)
+    assert [(indicator.column, indicator.pane) for indicator in result.indicators] == [("rsi", "oscillator")]
+
+
 def test_rsi_prefix_stability_checkpoints(synthetic_rsi_parquet: Path) -> None:
     """Verify that RSIReversion decisions at fixed bar checkpoints match when evaluated on prefixes."""
     df = pd.read_parquet(synthetic_rsi_parquet)

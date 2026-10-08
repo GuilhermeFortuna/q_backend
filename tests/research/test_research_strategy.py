@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -13,7 +15,7 @@ from q_backend.backtesting.signal_columns import (
     SIGNAL_STRENGTH,
 )
 from q_backend.market_data.timezone import BRASILIA_TZ
-from q_backend.research import ResearchStrategy, TradeOrder
+from q_backend.research import ChartIndicator, ResearchStrategy, TradeOrder
 from q_backend.research.adapter import ResearchStrategyAdapter
 
 
@@ -289,3 +291,30 @@ def test_hook_exceptions_preserve_cause_and_timestamp(sample_bars: pd.DataFrame)
     with pytest.raises(RuntimeError, match=f"entry_strategy at bar {target_ts}") as exc_info:
         adapter.compute_indicators(sample_bars)
     assert isinstance(exc_info.value.__cause__, ValueError)
+
+
+def test_chart_indicator_defaults_label_to_column() -> None:
+    indicator = ChartIndicator("short_ma")
+    assert indicator.column == "short_ma"
+    assert indicator.pane == "price"
+    assert indicator.label == "short_ma"
+    assert indicator.color is None
+
+
+def test_chart_indicator_rejects_unknown_pane() -> None:
+    with pytest.raises(ValueError, match="pane"):
+        ChartIndicator("rsi", pane="volume")
+
+
+def test_chart_indicator_is_immutable() -> None:
+    indicator = ChartIndicator("rsi", pane="oscillator")
+    with pytest.raises(FrozenInstanceError):
+        indicator.pane = "price"  # type: ignore[misc]
+
+
+def test_chart_indicators_hook_defaults_to_empty() -> None:
+    class Plain(ResearchStrategy):
+        def entry_strategy(self, frame: pd.DataFrame):
+            return None
+
+    assert tuple(Plain().chart_indicators()) == ()

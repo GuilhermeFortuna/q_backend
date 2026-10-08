@@ -45,3 +45,19 @@ def test_adjusted_series_warning_lazy_export() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_chart_indicator_is_public_export() -> None:
+    script = textwrap.dedent("""
+        import q_backend.research as research
+        assert "ChartIndicator" in research.__all__
+        assert research.ChartIndicator.__name__ == "ChartIndicator"
+        """)
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        cwd=str(Path(__file__).resolve().parents[2]),
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr

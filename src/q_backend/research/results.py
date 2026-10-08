@@ -11,6 +11,7 @@ import pandas as pd
 from q_backend.backtesting.models import OrderAction, TradeStatus
 from q_backend.backtesting.registry import TradeRegistry
 from q_backend.market_data.timezone import BRASILIA_TZ
+from q_backend.research.charting import ChartIndicator
 
 TRADE_COLUMNS = [
     "trade_id",
@@ -37,6 +38,7 @@ class BacktestResult:
     trades: pd.DataFrame
     equity: pd.DataFrame
     data: pd.DataFrame
+    indicators: tuple[ChartIndicator, ...] = ()
 
 
 def empty_trades_frame() -> pd.DataFrame:
