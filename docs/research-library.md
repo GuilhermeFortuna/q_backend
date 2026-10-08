@@ -491,6 +491,24 @@ run_id = result.publish()
 - Rows can carry a zero bid or ask and must be filtered before computing a midpoint or spread.
 - A row with both the buy and the sell flag has an unknown aggressor, as the guide already says.
 
+## Tick store
+
+Research scripts can keep gateway tick history on disk under `data/tick_store/` by default (`Q_RESEARCH_TICK_STORE` overrides the root). Layout: one zstd Parquet file per symbol slug and exchange calendar day (`<root>/<slug>/<YYYY-MM-DD>.parquet`) with gateway columns unchanged (`time_msc`, `bid`, `ask`, `last`, `volume`, `flags`). This store is separate from the API tick cache (`Q_TICK_CACHE_DIR`) and from the stack market catalog.
+
+```python
+from q_backend.research import TickStore
+
+store = TickStore("WDO$N")
+store.sync(start="2025-10-01")  # needs the MT5 gateway
+bars = store.bars("M10", start="2025-10-01")  # offline
+ticks = store.ticks(start="2026-10-05", end="2026-10-06")
+```
+
+- `sync` walks weekdays from `start` through `end` (default: yesterday in Brasília), skips days already on disk, and never stores the current session. Each missing day is fetched twice; a day is written only when both responses return the same row count. An empty pair is reported as **empty** (no file) and retried on the next sync. A mismatched pair is **unsettled**. Gateway errors are **failed** for that day only.
+- `ticks` returns the same frame as `load_ticks` for stored sessions. `bars` builds `load_bars`-shaped OHLCV from positive `last` trade prices only, per session, with no overnight bar synthesis. History is limited to synced sessions; use `sessions()` to see what is on disk.
+- One-minute bars per session are cached under `<slug>/bars_M1/` the first time a session is read; coarser timeframes aggregate from that cache.
+- Broker tick history is short and old sessions can stop being served after the terminal drops them. Sync regularly while the gateway still has the sessions you need.
+
 ## History depth and completeness
 
 - `load_bars` and `load_ticks` return what the terminal has. Compare `attrs["q_research"]["returned_start"]` with the requested start before trusting a range.
@@ -498,6 +516,12 @@ run_id = result.publish()
 - The first tick request for a symbol can return nothing while the terminal downloads history, and tick history depth differs by symbol. MetaTrader 5 reports success with an empty result in both cases, so the gateway cannot tell them apart. `load_ticks` raises `NoMarketDataError` for an empty result and returns a shorter frame, without error, when only part of the range has ticks. Retry after a few seconds and check the returned range.
 
 ## Example scripts
+
+### Sync tick history to the research store
+```bash
+uv run python examples/research/sync_ticks.py \
+  --symbol 'WDO$N' --start 2025-10-01
+```
 
 ### Fetch live market data
 ```bash

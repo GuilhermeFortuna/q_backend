@@ -57,6 +57,7 @@ Heavy jobs — backtests (via `POST /api/v1/backtest`), Optuna studies, walk-for
 * **Multi-Format Datatypes:** Optimized data schemas for Tick-by-Tick transactions and standardized OHLCV candle streams (from 1-minute `M1` to Monthly `MN1` intervals).
 * **Columnar tick loader:** `MetaTraderClient.get_ticks_columnar` / `MarketDataService.get_ticks_columnar` fetch historical ticks as aligned NumPy arrays (no per-row Pydantic objects) for the tick backtest engine. Results are cached on disk as Parquet (see below).
 * **Tick cache:** Parquet files under `data/tick_cache/` by default (`Q_TICK_CACHE_DIR` overrides). Key = `{symbol_slug}_{sha256(symbol|start|end|flags)[:12]}`. Delete files in that directory to force a refetch from MT5.
+* **Research tick store:** Per-session tick Parquet under `data/tick_store/` by default (`Q_RESEARCH_TICK_STORE` overrides), synced offline via `q_backend.research.TickStore` for long-lived tick research without the API lake catalog.
 * **Local market store (WO48 / WO50):** Portable OHLCV and tick parquet under `data/market/` by default (`Q_MARKET_DATA_ROOT` / `Settings.market_data_root`). Layout: `ohlcv/{symbol_slug}/{timeframe}/{YYYY}.parquet`, `ticks/{symbol_slug}/{YYYY-MM}.parquet`, plus `catalog.json`. Catalog entries include a `kind` field (`"bars"` or `"ticks"`); existing bar rows default to `"bars"` when `kind` is omitted. Local tick mode serves **all stored ticks** (COPY_TICKS_ALL shape); requested `flags` are ignored. Copy the folder or repoint the root to move data between machines (e.g. Windows ingest → Linux backtest). **Storage API:** `GET /api/v1/storage/inventory`, `POST /api/v1/storage/ingest` with `kind: "bars" | "ticks"` (MT5 → local, Windows-only source), `GET /api/v1/storage/ingest/{job_id}`, `DELETE /api/v1/storage/{symbol}/{timeframe}`.
 * **Robust Resiliency:** Smart automatic reconnection and local environment configuration mapping.
 
@@ -517,6 +518,7 @@ Q_REDIS_URL=redis://localhost:6380/0
 Q_DATA_LAKE_ROOT=data/lake
 Q_MARKET_DATA_ROOT=data/market
 Q_TICK_CACHE_DIR=data/tick_cache
+Q_RESEARCH_TICK_STORE=data/tick_store
 Q_RUNTIME_CONFIG_PATH=data/runtime_config.json
 Q_MT5_GATEWAY_URL=http://127.0.0.1:18812
 Q_MT5_GATEWAY_TOKEN=

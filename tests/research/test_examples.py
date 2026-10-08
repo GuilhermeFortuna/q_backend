@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from examples.research.sync_ticks import build_parser as sync_build_parser, main as sync_main
 from examples.research.mt5_backtest import (
     build_parser as mt5_build_parser,
     main as mt5_main,
@@ -54,6 +55,42 @@ def synthetic_rsi_parquet(tmp_path: Path) -> Path:
     file_path = tmp_path / "bars.parquet"
     df.to_parquet(file_path)
     return file_path
+
+
+def test_sync_ticks_example_forwards_sync_arguments(tmp_path: Path) -> None:
+    with patch("examples.research.sync_ticks.TickStore") as store_cls:
+        store = store_cls.return_value
+        store.sync.return_value = "stored: 2026-10-05"
+        ret = sync_main(
+            [
+                "--symbol",
+                "WDO$N",
+                "--start",
+                "2026-10-05",
+                "--end",
+                "2026-10-06",
+                "--root",
+                str(tmp_path),
+                "--gateway-url",
+                "http://gw.test",
+                "--gateway-token",
+                "tok",
+            ]
+        )
+        assert ret == 0
+        store_cls.assert_called_once_with("WDO$N", root=tmp_path)
+        store.sync.assert_called_once_with(
+            start="2026-10-05",
+            end="2026-10-06",
+            gateway_url="http://gw.test",
+            gateway_token="tok",
+        )
+
+
+def test_sync_ticks_parser_defaults() -> None:
+    args = sync_build_parser().parse_args(["--symbol", "WIN$", "--start", "2026-01-01"])
+    assert args.end is None
+    assert args.root is None
 
 
 def test_example_scripts_default_to_unadjusted_win_symbol() -> None:
