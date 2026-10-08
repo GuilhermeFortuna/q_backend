@@ -28,6 +28,11 @@ class RunStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class BacktestOrigin(str, Enum):
+    STACK = "stack"
+    SCRIPT = "script"
+
+
 class TrialStatus(str, Enum):
     PENDING = "pending"
     RUNNING = "running"
@@ -129,6 +134,13 @@ class BacktestRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=False,
         server_default="false",
     )
+    origin: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default=BacktestOrigin.STACK.value,
+        server_default=BacktestOrigin.STACK.value,
+    )
+    provenance: Mapped[Optional[dict[str, Any]]] = mapped_column(PortableJSON, nullable=True)
 
     backtest_config: Mapped["BacktestConfig"] = relationship(back_populates="runs")
 
@@ -136,6 +148,7 @@ class BacktestRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_backtest_runs_status", "status"),
         Index("ix_backtest_runs_config_created", "backtest_config_id", "created_at"),
         Index("ix_backtest_runs_is_saved", "is_saved"),
+        Index("ix_backtest_runs_origin", "origin"),
     )
 
 

@@ -8,6 +8,7 @@ from q_backend.api.backtest_jobs import BacktestJobRequest
 from q_backend.api.deps import get_session
 from q_backend.api.schemas.backtest import (
     BacktestEquityArtifactResponse,
+    BacktestOrigin,
     BacktestResponse,
     BacktestRunDetailResponse,
     BacktestRunListResponse,
@@ -81,6 +82,7 @@ def list_backtests(
     symbol: Optional[str] = None,
     strategy: Optional[str] = None,
     saved_only: Optional[bool] = None,
+    origin: Optional[BacktestOrigin] = None,
     sort: Literal["created_at_desc", "pnl_desc", "pnl_asc"] = "created_at_desc",
 ):
     """Return a paginated list of backtest runs."""
@@ -91,6 +93,7 @@ def list_backtests(
         symbol=symbol,
         strategy=strategy,
         saved_only=saved_only,
+        origin=origin,
         sort=sort,
     )
 
