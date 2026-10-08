@@ -64,11 +64,11 @@
 **Files:** Modify `examples/research/rsi_reversion.py`, `examples/research/mt5_backtest.py` and `tests/research/test_examples.py`.
 **Interfaces:** `--cost-per-contract FLOAT` (default `0.0`) on both scripts, forwarded as `TransactionCostConfig(cost_per_contract=...)`; both print total commission and, at zero, one line saying no transaction costs were applied.
 
-- [ ] Add failing tests for the flag, the forwarded configuration, the reported commission and the zero-cost line.
-- [ ] Run `uv run pytest tests/research/test_examples.py -q` and confirm they fail for the missing flag.
-- [ ] Implement the flag and the two printed lines.
-- [ ] Run the same command and confirm it passes.
-- [ ] Commit this unit.
+- [x] Add failing tests for the flag, the forwarded configuration, the reported commission and the zero-cost line.
+- [x] Run `uv run pytest tests/research/test_examples.py -q` and confirm they fail for the missing flag.
+- [x] Implement the flag and the two printed lines.
+- [x] Run the same command and confirm it passes.
+- [x] Commit this unit.
 
 ### 3. Write the guide sections
 

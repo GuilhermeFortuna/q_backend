@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from q_backend.backtesting.costs import TransactionCostConfig
 from q_backend.research import (
     ResearchStrategy,
     TradeOrder,
@@ -69,6 +70,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--quantity", type=int, default=1, help="Fixed trade quantity (default: 1)")
     parser.add_argument("--point-value", type=float, default=0.20, help="Value per point/multiplier (default: 0.20)")
     parser.add_argument("--capital", type=float, default=10000.0, help="Initial capital (default: 10000.0)")
+    parser.add_argument(
+        "--cost-per-contract",
+        type=float,
+        default=0.0,
+        help="Transaction cost per contract per side in BRL (default: 0.0)",
+    )
     return parser
 
 
@@ -80,9 +87,11 @@ def run_rsi_backtest(
     quantity: int = 1,
     point_value: float = 0.20,
     capital: float = 10000.0,
+    cost_per_contract: float = 0.0,
 ):
     frame = pd.read_parquet(input_path)
     strategy = RSIReversion(period=period)
+    costs = TransactionCostConfig(cost_per_contract=cost_per_contract)
     result = backtest(
         frame,
         strategy=strategy,
@@ -90,6 +99,7 @@ def run_rsi_backtest(
         quantity=quantity,
         point_value=point_value,
         initial_capital=capital,
+        costs=costs,
     )
     return result
 
@@ -106,10 +116,14 @@ def main(argv: list[str] | None = None) -> int:
         quantity=args.quantity,
         point_value=args.point_value,
         capital=args.capital,
+        cost_per_contract=args.cost_per_contract,
     )
 
     print(f"Total trades: {result.metrics['total_trades']}")
     print(f"Total net PnL: {result.metrics['total_pnl']:.2f}")
+    print(f"Total commission: {result.metrics['total_commission']:.2f}")
+    if args.cost_per_contract == 0.0:
+        print("No transaction costs were applied.")
     print(f"Win rate: {result.metrics['win_rate']:.2%}")
     if len(result.trades) > 0:
         print("\nTrades:")

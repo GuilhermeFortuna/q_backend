@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import os
 
+from q_backend.backtesting.costs import TransactionCostConfig
 from q_backend.research import (
     ResearchStrategy,
     TradeOrder,
@@ -61,6 +62,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--quantity", type=int, default=1, help="Fixed trade quantity (default: 1)")
     parser.add_argument("--point-value", type=float, default=0.20, help="Value per point/multiplier (default: 0.20)")
     parser.add_argument("--capital", type=float, default=10000.0, help="Initial capital (default: 10000.0)")
+    parser.add_argument(
+        "--cost-per-contract",
+        type=float,
+        default=0.0,
+        help="Transaction cost per contract per side in BRL (default: 0.0)",
+    )
     parser.add_argument("--gateway-url", default=os.getenv("Q_MT5_GATEWAY_URL"))
     parser.add_argument("--gateway-token", default=os.getenv("Q_MT5_GATEWAY_TOKEN"))
     return parser
@@ -75,6 +82,7 @@ def run_mt5_workflow(
     quantity: int = 1,
     point_value: float = 0.20,
     capital: float = 10000.0,
+    cost_per_contract: float = 0.0,
     gateway_url: str | None = None,
     gateway_token: str | None = None,
 ):
@@ -90,6 +98,7 @@ def run_mt5_workflow(
     print(f"Loaded {len(bars)} completed bars for {symbol} ({timeframe})")
 
     # 2. Run backtest
+    costs = TransactionCostConfig(cost_per_contract=cost_per_contract)
     if strategy_mode == "builtin":
         result = backtest(
             bars,
@@ -99,6 +108,7 @@ def run_mt5_workflow(
             quantity=quantity,
             point_value=point_value,
             initial_capital=capital,
+            costs=costs,
         )
     else:
         result = backtest(
@@ -108,6 +118,7 @@ def run_mt5_workflow(
             quantity=quantity,
             point_value=point_value,
             initial_capital=capital,
+            costs=costs,
         )
     return result
 
@@ -123,12 +134,16 @@ def main(argv: list[str] | None = None) -> int:
         quantity=args.quantity,
         point_value=args.point_value,
         capital=args.capital,
+        cost_per_contract=args.cost_per_contract,
         gateway_url=args.gateway_url,
         gateway_token=args.gateway_token,
     )
 
     print(f"Total trades: {result.metrics['total_trades']}")
     print(f"Total net PnL: {result.metrics['total_pnl']:.2f}")
+    print(f"Total commission: {result.metrics['total_commission']:.2f}")
+    if args.cost_per_contract == 0.0:
+        print("No transaction costs were applied.")
     print(f"Win rate: {result.metrics['win_rate']:.2%}")
     if len(result.trades) > 0:
         print("\nTrades:")
