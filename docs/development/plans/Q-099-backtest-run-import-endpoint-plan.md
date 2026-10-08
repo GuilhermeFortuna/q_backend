@@ -6,7 +6,7 @@
 **Architecture:** A synchronous endpoint over one import service function that writes the ledger rows and the lake files together; origin is a column on the run.
 **Tech stack:** Python 3.12, FastAPI, SQLAlchemy, Alembic, pandas, pytest.
 **Spec:** [Specification](../specs/Q-099-backtest-run-import-endpoint-spec.md)
-**Status:** written plan awaiting human review.
+**Status:** implemented; awaiting human review.
 
 ## Global constraints
 
@@ -30,43 +30,51 @@
 
 **Files:** Modify `CONTRACTS_REV`; run `make contracts`.
 
-- [ ] Set `CONTRACTS_REV` to the merged Q-097 commit, run `make contracts` then `make contracts-check`.
-- [ ] If the commit cannot be fetched from the remote, stop and use the blocked workflow; do not point the Makefile at a local path in a committed change.
-- [ ] Commit the pin and the regenerated vendored tree.
+- [x] Set `CONTRACTS_REV` to the merged Q-097 commit, run `make contracts` then `make contracts-check`.
+- [x] If the commit cannot be fetched from the remote, stop and use the blocked workflow; do not point the Makefile at a local path in a committed change.
+- [x] Commit the pin and the regenerated vendored tree.
 
 ### 2. Add origin and provenance to the ledger
 
 **Files:** Create an Alembic revision under `alembic/versions/`; modify `src/q_backend/storage/db/models.py`, the run repository functions, `src/q_backend/api/schemas/backtest.py` and `src/q_backend/backtesting/run_service.py`; extend the run service and router tests under `tests/api` and `tests/storage`.
 **Interfaces:** `BacktestRun.origin`, `BacktestRun.provenance`; `origin` on list item and detail; `provenance` on detail; `origin` filter on `list_runs`; `find_backtest_run_by_config` restricted to stack runs.
 
-- [ ] Add failing tests: existing runs report `stack`; the list filter partitions runs; a job does not reuse a script run with an equal configuration.
-- [ ] Run the focused tests and confirm they fail on the missing column and fields.
-- [ ] Implement the migration, model, schemas, filter and the reuse restriction.
-- [ ] Run the focused tests and the migration upgrade and downgrade against the test database.
-- [ ] Commit this unit.
+- [x] Add failing tests: existing runs report `stack`; the list filter partitions runs; a job does not reuse a script run with an equal configuration.
+- [x] Run the focused tests and confirm they fail on the missing column and fields.
+- [x] Implement the migration, model, schemas, filter and the reuse restriction.
+- [x] Run the focused tests and the migration upgrade and downgrade against the test database.
+- [x] Commit this unit.
 
 ### 3. Implement the import service and endpoint
 
 **Files:** Create `src/q_backend/backtesting/run_import.py`; modify `src/q_backend/api/routers/backtest.py` and `src/q_backend/api/schemas/backtest.py`; create `tests/api/test_backtest_import.py`.
 **Interfaces:** `import_backtest_run(session, request) -> str`; `POST /api/v1/backtests/import`.
 
-- [ ] Add failing tests for spec acceptance items 1 to 4: the round trip through list, detail, result, both artifacts and both exports; each validation rule; and a forced lake write failure.
-- [ ] Run `uv run pytest tests/api/test_backtest_import.py -q` and confirm the cases fail because the route is missing.
-- [ ] Implement validation first, then the write with cleanup on failure.
-- [ ] Run the file again and confirm it passes.
-- [ ] Commit this unit.
+- [x] Add failing tests for spec acceptance items 1 to 4: the round trip through list, detail, result, both artifacts and both exports; each validation rule; and a forced lake write failure.
+- [x] Run `uv run pytest tests/api/test_backtest_import.py -q` and confirm the cases fail because the route is missing.
+- [x] Implement validation first, then the write with cleanup on failure.
+- [x] Run the file again and confirm it passes.
+- [x] Commit this unit.
 
 ### 4. Keep script runs review-only and document
 
 **Files:** Modify the ML filter source eligibility in `src/q_backend/ml_filters/` and its test; modify `README.md`.
 
-- [ ] Add a failing test that a script run is an ineligible ML filter source with a reason naming its origin.
-- [ ] Implement, run `uv run pytest tests/ml_filters -q -k source`, and update the README section the spec names.
-- [ ] Commit this unit.
+- [x] Add a failing test that a script run is an ineligible ML filter source with a reason naming its origin.
+- [x] Implement, run `uv run pytest tests/ml_filters -q -k source`, and update the README section the spec names.
+- [x] Commit this unit.
 
 ## Verification and handoff
 
-- [ ] Run `uv run pytest tests/api tests/storage tests/backtesting -q -m "not integration" -k "backtest or run"`, `uv run ruff check src/q_backend/api src/q_backend/backtesting src/q_backend/storage tests/api` and `uv run black --check` on the same paths.
-- [ ] Run `make contracts-check`.
-- [ ] Record the commands actually run and their results in this plan; do not claim unrun checks passed.
-- [ ] Use `./work board set Q-099 in-review -m "<changes; checks and results; follow-ups>"`. State that the operator must apply the migration to the Research database after merge.
+- [x] Run `uv run pytest tests/api tests/storage tests/backtesting -q -m "not integration" -k "backtest or run"`, `uv run ruff check src/q_backend/api src/q_backend/backtesting src/q_backend/storage tests/api` and `uv run black --check` on the same paths.
+- [x] Run `make contracts-check`.
+- [x] Record the commands actually run and their results in this plan; do not claim unrun checks passed.
+- [x] Use `./work board set Q-099 in-review -m "<changes; checks and results; follow-ups>"`. State that the operator must apply the migration to the Research database after merge.
+
+## Verification record
+
+- `make contracts-check` at `CONTRACTS_REV` `e06a3c9f7f79517b47bea826ecef8f3527655a73`: clean (exit 0).
+- `uv run ruff check .` and `uv run black --check .`: clean.
+- `uv run pytest tests/api tests/storage tests/backtesting tests/ml_filters -q -m "not integration" -k "backtest or run or import or ml_filter or source"`: 902 passed, 11 skipped.
+- Focused: `tests/api/test_backtest_import.py` (18 cases), `tests/api/test_backtest_persistence.py`, `tests/storage/test_backtest_run_origin_migration.py` (upgrade backfills `stack`, downgrade removes the columns), `tests/api/test_ml_filters.py`.
+- Not run: the Postgres integration migration test, worker, Redis, Docker, GPU and desktop runs (outside this task's verification boundary). The operator applies revision `20261008_0027` to the Research database after merge.
