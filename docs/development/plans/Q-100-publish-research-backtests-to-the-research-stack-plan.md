@@ -66,6 +66,11 @@
 
 ## Verification and handoff
 
-- [ ] Run `uv run pytest tests/research tests/api/test_backtest_import.py -q`, `uv run ruff check src/q_backend/research tests/research examples/research` and `uv run black --check` on the same paths.
-- [ ] Record the commands actually run and their results in this plan; do not claim unrun checks passed.
+- [x] Run `uv run pytest tests/research tests/api/test_backtest_import.py -q`, `uv run ruff check src/q_backend/research tests/research examples/research` and `uv run black --check` on the same paths.
+- [x] Record the commands actually run and their results in this plan; do not claim unrun checks passed.
+  - `uv run pytest tests/research tests/api/test_backtest_import.py -q`: 178 passed, 3 warnings in 9.01s.
+  - `uv run ruff check src/q_backend/research tests/research examples/research`: All checks passed!
+  - `uv run black --check src/q_backend/research tests/research examples/research`: All done! 25 files would be left unchanged.
+  - `make contracts-check`: contracts verified against CONTRACTS_REV (generated 5 files, no diff).
 - [ ] Use `./work board set Q-100 in-review -m "<changes; checks and results; follow-ups>"`. State the manual step: publish from `experiments/ccm_test.py` against `./dev research` and open the run in Backtests history once Q-101 is merged.
+
