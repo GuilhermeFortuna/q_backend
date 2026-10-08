@@ -413,3 +413,38 @@ def test_bounds_validation() -> None:
         parse_bounds("2024-01-02", "2024-01-01")
     with pytest.raises(ValueError, match="Unknown timeframe"):
         normalize_timeframe("INVALID")
+
+
+def test_load_bars_multi_page_gateway_range_returns_complete_frame() -> None:
+    from tests.market_data.test_remote_client import _fake_gateway, _FakeState, _ohlcv_npz
+
+    # MT5 epoch seconds: 10:00, 10:01, 10:02, 10:03 UTC-shaped wall clock
+    t0 = int(datetime(2026, 6, 2, 10, 0, tzinfo=timezone.utc).timestamp())
+    page1_times = [t0, t0 + 60]
+    page2_times = [t0 + 120, t0 + 180]
+    p1 = _ohlcv_npz(page1_times, metadata={"truncated": True, "max_bars": 2})
+    p2 = _ohlcv_npz(page2_times, metadata={"truncated": False, "max_bars": 2})
+
+    state = _FakeState()
+    state.ohlcv_queue = [p1, p2]
+
+    frozen = datetime(2026, 6, 2, 11, 0, tzinfo=BRASILIA_TZ)
+    with _fake_gateway(state) as (base_url, st):
+        with patch("q_backend.research.data._exchange_now", return_value=frozen):
+            frame = load_bars(
+                "WIN$",
+                timeframe="M1",
+                start="2026-06-02T10:00:00",
+                end="2026-06-02T10:04:00",
+                gateway_url=base_url,
+            )
+
+    ohlcv_paths = [p for p in st.paths if "/v1/ohlcv?" in p]
+    assert len(ohlcv_paths) == 2
+    assert len(frame) == 4
+    assert frame.index.is_monotonic_increasing
+    assert frame.index.is_unique
+    assert frame.index[0] == pd.Timestamp("2026-06-02 10:00:00", tz=BRASILIA_TZ)
+    assert frame.index[-1] == pd.Timestamp("2026-06-02 10:03:00", tz=BRASILIA_TZ)
+    assert frame.attrs["q_research"]["symbol"] == "WIN$"
+    assert frame.attrs["q_research"]["timeframe"] == "M1"

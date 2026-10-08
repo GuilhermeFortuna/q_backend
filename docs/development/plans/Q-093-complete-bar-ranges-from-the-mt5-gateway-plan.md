@@ -70,10 +70,10 @@
 
 **Files:** Modify `tests/research/test_data.py`, `docs/research-library.md` and `docs/mt5-wine-gateway.md`.
 
-- [ ] Add a research test: `load_bars` over a mocked multi-page gateway range returns one frame with a unique ascending index covering the full range.
-- [ ] Update both guides as the spec lists, including the troubleshooting row and the manual checklist step.
-- [ ] Run `uv run pytest tests/research/test_data.py -q` and confirm it passes.
-- [ ] Commit docs and test.
+- [x] Add a research test: `load_bars` over a mocked multi-page gateway range returns one frame with a unique ascending index covering the full range.
+- [x] Update both guides as the spec lists, including the troubleshooting row and the manual checklist step.
+- [x] Run `uv run pytest tests/research/test_data.py -q` and confirm it passes.
+- [x] Commit docs and test.
 
 ## Verification and handoff
 

@@ -227,6 +227,16 @@ curl -s http://127.0.0.1:18812/v1/health
 # 3. backend on data_source=auto now serves fresh WIN$/WDO$ bars via the gateway.
 ```
 
+## Bar completeness (`/v1/ohlcv`)
+
+`GET /v1/ohlcv?symbol=&timeframe=&start=&end=` returns bars as an `.npz` archive containing
+structured arrays and a JSON `metadata` entry: `{"truncated": <bool>, "max_bars": <limit>}`
+(where `max_bars` defaults to 50,000). When a requested range exceeds `max_bars`, the response
+caps at `max_bars` and sets `truncated: true`. The remote client transparently pages through
+the remaining range by requesting from one second after the last returned bar with the same `end`,
+returning the complete requested history to the caller without silent truncation. `/v1/ohlcv/recent`
+is unchanged and carries no metadata.
+
 ## Session trades (`/v1/trades`)
 
 `GET /v1/trades?symbol=&start_utc=&end_utc=` is additive and read-only. It is the only endpoint
@@ -246,6 +256,7 @@ that metadata.
 | `MetaTrader5` fails to import in the Wine Python     | Version/ABI mismatch. Confirm the pinned wheel matches the Wine Python: `wine "C:\Python311\python.exe" -m pip show MetaTrader5`. Re-run `setup_wine.sh` to reinstall the pinned version; if a Wine bump broke it, revert Wine or move to a Windows VM. |
 | `/v1/health` shows `"mt5_connected": false`          | The terminal isn't running or isn't logged in. Start `mt5-terminal.service` (or the terminal GUI), log in, confirm symbols in Market Watch. The gateway retries MT5 init lazily, so health flips to `true` once the terminal is up. |
 | Schema-version mismatch after a repo update          | The client refuses a gateway whose `schema_version` major differs (it treats it as unavailable and degrades to `local`). Redeploy the updated `gateway/mt5_gateway.py` to the prefix/box and restart `mt5-gateway.service` so both sides speak the same `/vN/`. |
+| Gateway does not report bar completeness             | `ConnectionError: MT5 gateway at <url> does not report bar completeness; redeploy gateway/mt5_gateway.py and restart mt5-gateway.service`. The client requires bar completeness metadata from the gateway (Q-093). The running gateway script predates this change. Redeploy `gateway/mt5_gateway.py` to the Wine prefix/box and restart `mt5-gateway.service`. |
 | `curl` to the port hangs / connection refused        | Gateway not running or wrong port. `systemctl --user status mt5-gateway.service`; check `MT5_GATEWAY_PORT`. Confirm nothing else owns 18812. |
 
 ## Fallback: run the gateway on a Windows box
@@ -276,6 +287,10 @@ step's observed output when reporting.
 
 - [ ] **Health OK.** `curl -s http://127.0.0.1:18812/v1/health` →
       `{"status":"ok","schema_version":"1.0","mt5_connected":true,"terminal_build":<N>}`.
+- [ ] **Complete range >50k bars.** Restart `mt5-gateway.service` after redeploying
+      `gateway/mt5_gateway.py`. Run `load_bars("WDO$N", timeframe="M10", start="2021-10-01")`
+      (or another range with >50,000 bars in MT5); verify it returns more than 50,000 bars
+      covering the full history without silent truncation.
 - [ ] **Ingest on Linux.** In the Storage page, ingest `WIN$` `M5` for the last week; the
       job completes and rows land in the local parquet store (served via the gateway's
       acquisition path, WO185).
