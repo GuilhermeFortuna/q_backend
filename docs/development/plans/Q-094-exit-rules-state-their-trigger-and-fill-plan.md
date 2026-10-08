@@ -31,9 +31,9 @@
 **Files:** Modify `tests/backtesting/test_exit_rules.py`; reuse its existing engine helpers and frame builders.
 **Interfaces:** None change; these tests document existing behaviour and are expected to pass before any source edit.
 
-- [ ] Check which of the spec's pinned behaviours 1–5 an existing test or golden already demonstrates (for example `test_golden_fixed_stop_loss_long`, `test_golden_fixed_take_profit_long`, `test_time_stop_closes_on_max_bars`), and note the test name beside each in this plan.
-- [ ] Add the missing cases: the long stop whose bar closes back above the level and exits at the next open at a price above the level; the long target exiting at the next open away from the level; the mirrored short cases; a trigger on the entry bar; the time stop's exit bar.
-- [ ] Run `uv run pytest tests/backtesting/test_exit_rules.py -q` and confirm the new cases pass against the unmodified engine. A failure here means the spec's description of the engine is wrong: stop and report it instead of changing the engine.
+- [x] Check which of the spec's pinned behaviours 1–5 an existing test or golden already demonstrates. Existing: `test_golden_fixed_stop_loss_long` and `test_golden_fixed_take_profit_long` pin the next-open fill for longs, but their bars never close back past the level; `test_time_stop_closes_on_max_bars` checks the bar index at rule level only, not the fill. Pinned behaviours 1–5 are therefore new tests below; behaviour 6 is new.
+- [x] Add the missing cases: `test_long_stop_triggered_by_low_fills_at_next_open_above_level`, `test_long_target_triggered_by_high_fills_at_next_open_away_from_level`, `test_short_stop_triggered_by_high_fills_at_next_open_below_level`, `test_short_target_triggered_by_low_fills_at_next_open_away_from_level`, `test_stop_triggered_on_entry_bar_exits_at_next_open`, `test_time_stop_exits_at_open_of_nth_bar_after_entry_bar`.
+- [x] Run `uv run pytest tests/backtesting/test_exit_rules.py -q` and confirm the new cases pass against the unmodified engine. A failure here means the spec's description of the engine is wrong: stop and report it instead of changing the engine.
 - [ ] Commit the tests.
 
 ### 2. Rewrite the catalog text

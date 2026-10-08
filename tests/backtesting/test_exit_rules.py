@@ -621,3 +621,133 @@ def test_exit_presets_are_valid_and_enable_intended_rules():
         exit_strat = ExitStrategy(preset.parameters)
         enabled_ids = sorted(rule.id for rule in exit_strat._rules)
         assert enabled_ids == sorted(PRESET_ENABLED_RULES[preset.id])
+
+
+class _FirstBarSignalStrategy(TradingStrategy):
+    """Signals one entry on bar 0; the engine fills it at bar 1's open."""
+
+    def __init__(self, side: str, **kwargs):
+        super().__init__(**kwargs)
+        self.symbol = "TEST"
+        self.side = side
+
+    def compute_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
+        df = data.copy()
+        signal = pd.Series(False, index=df.index, dtype=bool)
+        signal.iloc[0] = True
+        no_signal = pd.Series(False, index=df.index, dtype=bool)
+        return write_signal_columns(
+            df,
+            entry_long=signal if self.side == "long" else no_signal,
+            entry_short=signal if self.side == "short" else no_signal,
+            exit_long=False,
+            exit_short=False,
+            strategy_name=type(self).__name__,
+        )
+
+    def get_chart_indicators(self):
+        return []
+
+
+def _run_single_trade(side: str, bars: list[tuple[float, float, float, float]], **exit_params):
+    frame = pd.DataFrame(
+        bars,
+        columns=["open", "high", "low", "close"],
+        index=pd.date_range("2024-01-01", periods=len(bars), freq="h", tz=timezone.utc),
+    )
+    engine = BacktestEngine(
+        _FirstBarSignalStrategy(side=side, **exit_params),
+        FixedQuantitySizer(quantity=1.0),
+        initial_capital=10_000,
+    )
+    closed = engine.run(frame, parallel_mode=ParallelMode.SEQUENTIAL).get_closed_trades()
+    assert len(closed) == 1
+    trade = closed[0]
+    return trade, frame.index.get_loc(trade.entry_time), frame.index.get_loc(trade.exit_time)
+
+
+def test_long_stop_triggered_by_low_fills_at_next_open_above_level():
+    # Entry at bar 1 open 100; stop 98. Bar 2 low 97.5 pierces it but closes at 99.0.
+    bars = [
+        (100.0, 100.5, 99.5, 100.0),
+        (100.0, 100.5, 99.5, 100.0),
+        (100.0, 100.2, 97.5, 99.0),
+        (100.6, 101.0, 100.2, 100.8),
+        (100.8, 101.0, 100.5, 100.9),
+    ]
+    trade, entry_idx, exit_idx = _run_single_trade("long", bars, stop_loss_pct=0.02)
+    assert (entry_idx, exit_idx) == (1, 3)
+    assert trade.exit_reason == "fixed_sl"
+    assert trade.exit_price == 100.6
+    assert trade.exit_price > 100.0 * (1 - 0.02)
+
+
+def test_long_target_triggered_by_high_fills_at_next_open_away_from_level():
+    # Entry at bar 1 open 100; target 104. Bar 2 high 104.5 reaches it but closes at 103.0.
+    bars = [
+        (100.0, 100.5, 99.5, 100.0),
+        (100.0, 100.5, 99.5, 100.0),
+        (101.0, 104.5, 100.5, 103.0),
+        (103.2, 103.5, 102.5, 103.4),
+        (103.4, 103.6, 103.0, 103.5),
+    ]
+    trade, entry_idx, exit_idx = _run_single_trade("long", bars, take_profit_pct=0.04)
+    assert (entry_idx, exit_idx) == (1, 3)
+    assert trade.exit_reason == "fixed_tp"
+    assert trade.exit_price == 103.2
+    assert trade.exit_price != pytest.approx(100.0 * 1.04)
+
+
+def test_short_stop_triggered_by_high_fills_at_next_open_below_level():
+    # Entry at bar 1 open 100; stop 102. Bar 2 high 102.5 pierces it but closes at 101.0.
+    bars = [
+        (100.0, 100.5, 99.5, 100.0),
+        (100.0, 100.5, 99.5, 100.0),
+        (100.0, 102.5, 99.5, 101.0),
+        (99.4, 99.8, 99.0, 99.5),
+        (99.5, 99.6, 99.0, 99.2),
+    ]
+    trade, entry_idx, exit_idx = _run_single_trade("short", bars, stop_loss_pct=0.02)
+    assert (entry_idx, exit_idx) == (1, 3)
+    assert trade.exit_reason == "fixed_sl"
+    assert trade.exit_price == 99.4
+    assert trade.exit_price < 100.0 * (1 + 0.02)
+
+
+def test_short_target_triggered_by_low_fills_at_next_open_away_from_level():
+    # Entry at bar 1 open 100; target 96. Bar 2 low 95.5 reaches it but closes at 97.0.
+    bars = [
+        (100.0, 100.5, 99.5, 100.0),
+        (100.0, 100.5, 99.5, 100.0),
+        (99.0, 99.5, 95.5, 97.0),
+        (97.6, 98.0, 97.0, 97.2),
+        (97.2, 97.5, 96.5, 97.0),
+    ]
+    trade, entry_idx, exit_idx = _run_single_trade("short", bars, take_profit_pct=0.04)
+    assert (entry_idx, exit_idx) == (1, 3)
+    assert trade.exit_reason == "fixed_tp"
+    assert trade.exit_price == 97.6
+    assert trade.exit_price != pytest.approx(100.0 * (1 - 0.04))
+
+
+def test_stop_triggered_on_entry_bar_exits_at_next_open():
+    # Entry bar 1 opens at 100; its low 97.5 pierces the 98 stop, so the exit queues for bar 2.
+    bars = [
+        (100.0, 100.5, 99.5, 100.0),
+        (100.0, 100.2, 97.5, 99.0),
+        (100.4, 100.6, 100.2, 100.5),
+        (100.5, 100.6, 100.2, 100.4),
+    ]
+    trade, entry_idx, exit_idx = _run_single_trade("long", bars, stop_loss_pct=0.02)
+    assert (entry_idx, exit_idx) == (1, 2)
+    assert trade.exit_reason == "fixed_sl"
+    assert trade.exit_price == 100.4
+
+
+def test_time_stop_exits_at_open_of_nth_bar_after_entry_bar():
+    bars = [(100.0, 101.0, 99.5, 100.5)] * 8
+    bars[4] = (100.3, 101.0, 99.5, 100.5)
+    trade, entry_idx, exit_idx = _run_single_trade("long", bars, max_bars_in_trade=3)
+    assert (entry_idx, exit_idx) == (1, 4)
+    assert trade.exit_reason == "time_stop"
+    assert trade.exit_price == 100.3
