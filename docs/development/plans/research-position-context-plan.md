@@ -15,9 +15,8 @@ for both hooks; flat context after executed stops/closures; isolated history and
 immutable snapshots; legacy and mixed signatures; exceptions and invalid decisions;
 static/callback ledger and trace parity; repeat runs; empty and gated/final bars.
 
-Delivery: build a local wheel for validation without committing local dependency
-paths. A human must release the reviewed q_core branch, then the backend release tag
-and lockfile can be updated against that published release. No push or merge here.
+Initial implementation delivery used a local wheel without committing dependency
+paths. Release adoption was subsequently authorized and is recorded below.
 
 ## Validation and review
 
@@ -39,5 +38,17 @@ Deferred minor review suggestions: broaden input-buffer mutation tests beyond
 prices; isolate nested mutable objects in object-valued indicator columns (pandas
 copies these object references); include bar context in binding return-type errors.
 
-No implementation rulings changed the approved behavior. Integration still requires
-a human core release followed by the backend release-tag/lockfile update.
+No implementation rulings changed the approved behavior.
+
+## Release adoption — 2026-10-08
+
+- Published `q_core` tag `v2026.10.08.2` at
+  `7e189227a51e7b3df50762148df79abdda0bd21e` after `make check` and the normal
+  pre-push CI passed. The same-day package version remains `2026.10.8`.
+- Updated `pyproject.toml` and `uv.lock` to this published tag and exact commit;
+  `uv sync` installed it in the backend environment.
+- Confirmed the installed candle API exposes `strategy_callback` and the public
+  `ResearchPosition` export; all 229 focused research/engine tests passed against
+  the published dependency, with the two existing Pydantic warnings.
+- Backend publication runs its full CI hook. The resulting consumer commit and
+  cross-repository verification evidence belong in `q_contracts/COMPAT.md`.
