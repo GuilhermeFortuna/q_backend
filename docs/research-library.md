@@ -303,8 +303,8 @@ print(result.equity)
 | `quantity` | `int` | `1` | Fixed contract/share quantity per trade (positive integer). |
 | `point_value` | `float` | `1.0` | Value per point/multiplier (finite positive float). Futures (e.g. `WIN$`, `WDO$`) must supply their multiplier. |
 | `initial_capital` | `float` | `100000.0` | Starting capital in account currency. |
-| `costs` | `TransactionCostConfig` | `None` | Per-contract and basis-point transaction costs. `None` models zero transaction costs. |
-| `exit_params` | `Mapping[str, Any]` | `None` | Optional stop-loss, take-profit, or trailing parameters (e.g. `stop_loss_pct`, `take_profit_atr`). |
+| `costs` | `TransactionCostConfig` | `None` | Per-contract and basis-point transaction costs. `None` models zero transaction costs. See [Transaction costs](#transaction-costs). |
+| `exit_params` | `Mapping[str, Any]` | `None` | Optional stop-loss, take-profit, or trailing parameters (e.g. `stop_loss_pct`, `take_profit_atr`). See [Execution model](#execution-model). |
 | `day_trade` | `bool` | `False` | Enables intraday session filtering. |
 | `day_trade_start_time` | `str` | `"09:00"` | Earliest entry time (`HH:MM`). |
 | `day_trade_end_time` | `str` | `"16:00"` | Latest new entry time (`HH:MM`). |
@@ -317,6 +317,35 @@ print(result.equity)
 - **`trades: DataFrame`**: Execution log with stable columns (`trade_id`, `symbol`, `side`, `status`, `entry_time`, `entry_price`, `exit_time`, `exit_price`, `pnl`, `quantity`, `commission`, `point_value`, `exit_reason`).
 - **`equity: DataFrame`**: Time series indexed by bar timestamp containing `realized_equity` (initial capital plus cumulative net PnL from closed trades). Open positions are not marked to market.
 - **`data: DataFrame`**: Prepared historical bars augmented with user and exit indicator columns (internal signal arrays omitted).
+
+## Execution model
+
+- Strategy hooks see completed bars only. An entry or close decided on a bar fills at the next bar's open.
+- Exit rules follow the catalog text from Q-094: evaluated on each completed bar against its high or low, closing at the next bar's open, so the exit price can differ from the level. A rule can trigger on the entry bar.
+- One position per symbol under fixed-quantity sizing: repeated entry requests do not stack, and an opposite entry request is skipped while the position cap is full. Returning a close and an opposite entry on the same bar reverses at the next open.
+- With `day_trade=True`: an entry is taken only from a signal bar whose time lies between the start and end times inclusive; open positions close at the open of the first bar at or after the close time; a position still open on the last bar of a calendar day closes at that bar's close.
+- Without `day_trade`, positions carry across sessions. `force_close_at_end` closes at the last bar's close.
+- `equity` is realized only, as the guide already says.
+
+## Transaction costs
+
+- `costs=None` means zero cost. `TransactionCostConfig.cost_per_contract` is charged per contract on each side.
+- A realistic per-side cost for a market order is the exchange and broker fee per side plus half the spread: `fee_per_side + 0.5 × tick_size × point_value` when the spread is one tick.
+- Worked example for the mini dollar future with `point_value=10.0`, a 0.5-point tick and an assumed fee of R$1.25 per side: `cost_per_contract=3.75`, R$7.50 per round trip, 0.75 points. The fee is an assumption the reader replaces with their own.
+- Measurement behind the half-spread term: on 250 `WDO$N` sessions from 2025-10-01 to 2026-10-05, a market order sent within one to three seconds of a 10-minute bar's open paid 0.25 points per side beyond the bar's recorded open price, and the spread at those moments averaged 0.50 points.
+
+## Reading tick rows
+
+- Every row carries the terminal's current bid and ask, including trade rows. The flags say which fields changed on that row; an unchanged quote produces no new quote row.
+- The time since the last quote-update row is therefore not a measure of staleness. To price a moment, use the bid and ask of the latest row at or before it.
+- Rows can carry a zero bid or ask and must be filtered before computing a midpoint or spread.
+- A row with both the buy and the sell flag has an unknown aggressor, as the guide already says.
+
+## History depth and completeness
+
+- `load_bars` and `load_ticks` return what the terminal has. Compare `attrs["q_research"]["returned_start"]` with the requested start before trusting a range.
+- The terminal keeps a limited number of bars per symbol and timeframe (its "Max bars in chart" setting, 100,000 by default). At that setting on 2026-10-06 `WDO$N` held M1 from 2026-01-22, M5 from 2023-03-17 and M10 from 2021-10-04, the last being the start of broker history.
+- The first tick request for a symbol can return nothing while the terminal downloads history, and tick history depth differs by symbol. MetaTrader 5 reports success with an empty result in both cases, so the gateway cannot tell them apart. `load_ticks` raises `NoMarketDataError` for an empty result and returns a shorter frame, without error, when only part of the range has ticks. Retry after a few seconds and check the returned range.
 
 ## Example scripts
 
@@ -340,7 +369,8 @@ uv run python examples/research/rsi_reversion.py \
   --symbol WIN$N \
   --period 14 \
   --quantity 1 \
-  --point-value 0.20
+  --point-value 0.20 \
+  --cost-per-contract 1.00
 ```
 
 ### Live MT5 gateway backtest
@@ -349,5 +379,6 @@ uv run python examples/research/mt5_backtest.py \
   --symbol WIN$N \
   --timeframe M5 \
   --start 2026-09-01 \
-  --strategy custom
+  --strategy custom \
+  --cost-per-contract 1.00
 ```

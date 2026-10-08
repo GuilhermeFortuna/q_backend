@@ -74,10 +74,19 @@
 
 **Files:** Modify `docs/research-library.md`.
 
-- [ ] Write "Execution model", "Transaction costs", "Reading tick rows" and "History depth and completeness" from the spec, in that order, each as short declarative statements. Put the measurement context (symbol, period, sample) next to each measured number.
-- [ ] Extend the `exit_params` and `costs` rows of the configuration table to point at the new sections, and add the cost flag to the example commands.
-- [ ] Check the cost example arithmetic by hand and state the result in the plan record.
-- [ ] Commit the guide.
+- [x] Write "Execution model", "Transaction costs", "Reading tick rows" and "History depth and completeness" from the spec, in that order, each as short declarative statements. Put the measurement context (symbol, period, sample) next to each measured number.
+- [x] Extend the `exit_params` and `costs` rows of the configuration table to point at the new sections, and add the cost flag to the example commands.
+- [x] Check the cost example arithmetic by hand and state the result in the plan record.
+- [x] Commit the guide.
+
+#### Cost example arithmetic verification
+- Mini dollar future (`WDO$N`): `point_value = 10.0` R$/point, `tick_size = 0.5` points.
+- Spread = 1 tick = 0.5 points. Half-spread = 0.5 × 0.5 = 0.25 points = 0.25 × 10.0 = R$2.50 per contract per side.
+- Assumed fee per side = R$1.25 per contract.
+- Total per-side cost = fee_per_side + 0.5 × tick_size × point_value = 1.25 + 2.50 = 3.75 (`cost_per_contract = 3.75` R$ per contract per side).
+- Round trip cost (entry + exit) = 2 × R$3.75 = R$7.50 per contract.
+- In points: R$7.50 / 10.0 R$/point = 0.75 points.
+- All numbers match the spec and guide text.
 
 ### 4. Add the operator note
 
