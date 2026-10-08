@@ -51,11 +51,11 @@
 **Files:** Modify `src/q_backend/market_data/clients/remote.py` and `tests/market_data/test_remote_client.py`; update other tests whose mocked gateway bar archives lack metadata.
 **Interfaces:** `get_ohlcv` and `get_ohlcv_columnar` keep their signatures and return types. One private helper performs the paged fetch for both.
 
-- [ ] Add failing tests: a three-page range from both methods (order, no duplicates, request `start` values one second after each page's last bar, unchanged `end`); one request for a single page; `ConnectionError` for missing metadata, for an empty truncated page and for a non-advancing page.
-- [ ] Run `uv run pytest tests/market_data/test_remote_client.py -q` and confirm the new cases fail for the expected reason.
-- [ ] Implement the paged fetch with a bounded loop. Reuse the existing timezone helpers for the cursor; add no new timezone code.
-- [ ] Run `uv run pytest tests/market_data tests/streaming -q -k "ohlcv or remote or publisher"` and fix any test double that now needs metadata.
-- [ ] Commit this unit.
+- [x] Add failing tests: a three-page range from both methods (order, no duplicates, request `start` values one second after each page's last bar, unchanged `end`); one request for a single page; `ConnectionError` for missing metadata, for an empty truncated page and for a non-advancing page.
+- [x] Run `uv run pytest tests/market_data/test_remote_client.py -q` and confirm the new cases fail for the expected reason.
+- [x] Implement the paged fetch with a bounded loop. Reuse the existing timezone helpers for the cursor; add no new timezone code.
+- [x] Run `uv run pytest tests/market_data tests/streaming -q -k "ohlcv or remote or publisher"` and fix any test double that now needs metadata.
+- [x] Commit this unit.
 
 ### 4. Remove the cap from the native client
 

@@ -33,7 +33,7 @@ import json
 import logging
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import httpx
@@ -183,19 +183,86 @@ class RemoteMt5Client:
             return False
 
     # -- OHLCV --------------------------------------------------------------
+    def _fetch_ohlcv_pages(
+        self,
+        symbol: str,
+        timeframe: str,
+        start: datetime,
+        end: datetime,
+    ) -> list[tuple[dict[str, np.ndarray], set[str]]]:
+        """Fetch complete OHLCV pages following the Q-092 continuation rule.
+
+        Returns a list of per-page tuples of (array_dict, present_files).
+        Raises ConnectionError if metadata is missing, or if a truncated page is empty
+        or fails to advance the cursor.
+        """
+        cursor = to_brasilia_naive(start)
+        naive_end = to_brasilia_naive(end)
+        pages: list[dict[str, np.ndarray]] = []
+        max_pages = 10_000
+
+        for _ in range(max_pages):
+            if cursor > naive_end:
+                break
+
+            params = {
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "start": cursor.isoformat(),
+                "end": naive_end.isoformat(),
+            }
+            try:
+                content = self._get_npz("/v1/ohlcv", params)
+            except _GatewayNotFound:
+                return []
+
+            with np.load(io.BytesIO(content)) as npz:
+                if "metadata" not in npz.files:
+                    raise ConnectionError(
+                        "Remote MT5 gateway does not report bar completeness; "
+                        "redeploy gateway/mt5_gateway.py and restart mt5-gateway.service."
+                    )
+                try:
+                    meta = json.loads(str(npz["metadata"]))
+                except Exception as exc:
+                    raise ConnectionError("Remote MT5 gateway returned invalid bar completeness metadata.") from exc
+
+                truncated = bool(meta.get("truncated", False))
+                page_data, page_files = _npz_to_ohlcv_arrays(npz)
+
+            page_len = len(page_data["time"])
+            if truncated and page_len == 0:
+                raise ConnectionError("Remote MT5 gateway returned an empty truncated page.")
+
+            if page_len > 0:
+                last_time_epoch = int(page_data["time"][-1])
+                last_time_dt = unix_seconds_to_brasilia_naive(last_time_epoch)
+                next_cursor = last_time_dt + timedelta(seconds=1)
+                if next_cursor <= cursor:
+                    raise ConnectionError(
+                        "Remote MT5 gateway returned a non-advancing page that failed to advance the cursor."
+                    )
+                pages.append((page_data, page_files))
+                cursor = next_cursor
+            else:
+                # Untruncated empty page
+                break
+
+            if not truncated:
+                break
+        else:
+            raise ConnectionError(f"Exceeded maximum page iterations ({max_pages}) fetching OHLCV for {symbol}.")
+
+        return pages
+
     def get_ohlcv(self, symbol: str, timeframe: str, start: datetime, end: datetime) -> list[OHLCV]:
-        params = {
-            "symbol": symbol,
-            "timeframe": timeframe,
-            "start": to_brasilia_naive(start).isoformat(),
-            "end": to_brasilia_naive(end).isoformat(),
-        }
-        try:
-            content = self._get_npz("/v1/ohlcv", params)
-        except _GatewayNotFound:
+        pages = self._fetch_ohlcv_pages(symbol, timeframe, start, end)
+        if not pages:
             return []
-        with np.load(io.BytesIO(content)) as npz:
-            return _npz_to_ohlcv(npz)
+        bars: list[OHLCV] = []
+        for page_data, page_files in pages:
+            bars.extend(_arrays_to_ohlcv_list(page_data, page_files))
+        return bars
 
     def get_recent_ohlcv(self, symbol: str, timeframe: str, count: int) -> list[OHLCV]:
         """Read a bounded recent window without asking MT5 to scan full history."""
@@ -213,18 +280,12 @@ class RemoteMt5Client:
 
     def get_ohlcv_columnar(self, symbol: str, timeframe: str, start: datetime, end: datetime) -> dict[str, np.ndarray]:
         """Return gateway OHLCV arrays without creating per-bar models."""
-        params = {
-            "symbol": symbol,
-            "timeframe": timeframe,
-            "start": to_brasilia_naive(start).isoformat(),
-            "end": to_brasilia_naive(end).isoformat(),
-        }
-        try:
-            content = self._get_npz("/v1/ohlcv", params)
-        except _GatewayNotFound:
+        pages = self._fetch_ohlcv_pages(symbol, timeframe, start, end)
+        if not pages:
             return _empty_ohlcv_columnar()
-        with np.load(io.BytesIO(content)) as npz:
-            return _npz_to_ohlcv_columnar(npz)
+        if len(pages) == 1:
+            return pages[0][0]
+        return {key: np.concatenate([p[0][key] for p in pages]) for key in pages[0][0]}
 
     def get_available_ohlcv_range(self, symbol: str, timeframe: str) -> Optional[OhlcvAvailableRange]:
         try:
@@ -397,6 +458,57 @@ def _error_detail(resp: httpx.Response) -> tuple[str | None, str | None]:
     if isinstance(body, dict):
         return body.get("code"), body.get("error")
     return None, None
+
+
+def _arrays_to_ohlcv_list(arrays: dict[str, np.ndarray], files: set[str] | None = None) -> list[OHLCV]:
+    time_arr = arrays["time"]
+    count = len(time_arr)
+    files = set(arrays.keys()) if files is None else files
+    has_spread = "spread" in files
+    has_real_volume = "real_volume" in files
+    open_ = arrays["open"]
+    high = arrays["high"]
+    low = arrays["low"]
+    close = arrays["close"]
+    tick_volume = arrays["tick_volume"]
+    spread = arrays.get("spread")
+    real_volume = arrays.get("real_volume")
+
+    return [
+        OHLCV(
+            time=unix_seconds_to_brasilia_naive(int(time_arr[i])),
+            open=float(open_[i]),
+            high=float(high[i]),
+            low=float(low[i]),
+            close=float(close[i]),
+            tick_volume=int(tick_volume[i]),
+            spread=int(spread[i]) if has_spread and spread is not None else None,
+            real_volume=int(real_volume[i]) if has_real_volume and real_volume is not None else None,
+        )
+        for i in range(count)
+    ]
+
+
+def _npz_to_ohlcv_arrays(npz) -> tuple[dict[str, np.ndarray], set[str]]:
+    count = len(npz["time"])
+    files = set(npz.files)
+    arrays = {
+        "time": np.asarray(npz["time"], dtype=np.int64),
+        "open": np.asarray(npz["open"], dtype=np.float64),
+        "high": np.asarray(npz["high"], dtype=np.float64),
+        "low": np.asarray(npz["low"], dtype=np.float64),
+        "close": np.asarray(npz["close"], dtype=np.float64),
+        "tick_volume": np.asarray(npz["tick_volume"], dtype=np.int64),
+    }
+    if "spread" in files:
+        arrays["spread"] = np.asarray(npz["spread"], dtype=np.int64)
+    else:
+        arrays["spread"] = np.zeros(count, dtype=np.int64)
+    if "real_volume" in files:
+        arrays["real_volume"] = np.asarray(npz["real_volume"], dtype=np.int64)
+    else:
+        arrays["real_volume"] = np.zeros(count, dtype=np.int64)
+    return arrays, files
 
 
 def _npz_to_ohlcv(npz) -> list[OHLCV]:
