@@ -129,8 +129,10 @@ You can save a fetched frame for later experiments using pandas:
 bars.to_parquet("win_m5.parquet")
 ```
 
-The available history depends on the connected terminal and broker. A shorter result
-is returned as supplied; missing candles are not filled in. No completed candles
+`load_bars` returns the whole requested range in one call, automatically paging
+through the gateway if the range exceeds the gateway's per-response limit (50,000 bars).
+The available history depth still depends on the connected terminal and broker. A shorter
+result is returned as supplied; missing candles are not filled in. No completed candles
 raises `NoMarketDataError`, which you can import from `q_backend.research`.
 Missing gateway configuration or invalid arguments raise `ValueError`; an unavailable
 gateway raises `ConnectionError`.

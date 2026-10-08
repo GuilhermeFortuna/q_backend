@@ -43,7 +43,10 @@ Wire contract
 - ``/v1/ohlcv`` ``.npz`` arrays, all equal length: ``time`` (int64, raw MT5 epoch
   seconds exactly as returned by ``copy_rates_range``), ``open`` / ``high`` / ``low`` /
   ``close`` (float64), ``tick_volume`` (int64), and ``spread`` / ``real_volume`` (int64)
-  only when present in the rates dtype.
+  only when present in the rates dtype, plus a ``metadata`` entry holding a JSON object
+  with ``{"truncated": <bool>, "max_bars": <limit>}``. ``truncated`` is true when the
+  chunk loop stops at the limit before exhausting the range; ``/v1/ohlcv/recent`` carries
+  no metadata.
 - ``/v1/ticks`` ``.npz`` arrays with the columnar tick keys: ``time_msc`` int64 (raw MT5
   milliseconds), ``bid`` / ``ask`` / ``last`` / ``volume`` float64, ``flags`` int32. The
   ``flags`` query param is ``all`` (default) or ``trade``, mapped to
@@ -402,16 +405,18 @@ def _get_chunk_days(mt5_timeframe: int) -> int:
     return 365
 
 
-def _fetch_ohlcv_chunked(symbol: str, mt5_timeframe: int, start: datetime, end: datetime) -> np.ndarray:
+def _fetch_ohlcv_chunked(symbol: str, mt5_timeframe: int, start: datetime, end: datetime) -> tuple[np.ndarray, bool]:
     """Reimplementation of MetaTraderClient._fetch_ohlcv_range_chunked (gateway-side).
 
-    Must be called with the MT5 lock held. Returns a concatenated structured rates
-    array (possibly zero-length) with raw MT5 columns preserved.
+    Must be called with the MT5 lock held. Returns a tuple of:
+    - concatenated structured rates array (possibly zero-length) with raw MT5 columns preserved.
+    - boolean indicating whether the fetch stopped due to reaching the max bars limit.
     """
     chunks: list[np.ndarray] = []
     total_bars = 0
     cursor = start
     chunk_days = _get_chunk_days(mt5_timeframe)
+    truncated = False
 
     for _ in range(_MAX_HISTORY_CHUNKS):
         if cursor > end:
@@ -425,9 +430,11 @@ def _fetch_ohlcv_chunked(symbol: str, mt5_timeframe: int, start: datetime, end: 
             if total_bars + chunk_len > _MAX_OHLCV_BARS:
                 remaining = _MAX_OHLCV_BARS - total_bars
                 if remaining <= 0:
+                    truncated = True
                     break
                 rates = rates[:remaining]
                 chunk_len = remaining
+                truncated = True
 
             chunks.append(rates)
             total_bars += chunk_len
@@ -439,11 +446,14 @@ def _fetch_ohlcv_chunked(symbol: str, mt5_timeframe: int, start: datetime, end: 
             cursor = chunk_end + timedelta(seconds=1)
 
         if total_bars >= _MAX_OHLCV_BARS:
+            if cursor <= end:
+                truncated = True
             break
 
     if not chunks:
-        return np.empty(0, dtype=_OHLCV_BASE_DTYPE)
-    return np.concatenate(chunks) if len(chunks) > 1 else chunks[0]
+        return np.empty(0, dtype=_OHLCV_BASE_DTYPE), truncated
+    all_rates = np.concatenate(chunks) if len(chunks) > 1 else chunks[0]
+    return all_rates, truncated
 
 
 def _fetch_ticks_chunked(symbol: str, start: datetime, end: datetime, flags: int) -> dict[str, np.ndarray]:
@@ -500,7 +510,7 @@ def _fetch_ticks_chunked(symbol: str, start: datetime, end: datetime, flags: int
     return _ticks_structured_to_columnar(all_ticks)
 
 
-def _ohlcv_to_npz_bytes(rates: np.ndarray) -> bytes:
+def _ohlcv_to_npz_bytes(rates: np.ndarray, meta: dict | None = None) -> bytes:
     names = rates.dtype.names or ()
     arrays: dict[str, np.ndarray] = {
         "time": np.asarray(rates["time"], dtype=np.int64),
@@ -514,6 +524,8 @@ def _ohlcv_to_npz_bytes(rates: np.ndarray) -> bytes:
         arrays["spread"] = np.asarray(rates["spread"], dtype=np.int64)
     if "real_volume" in names:
         arrays["real_volume"] = np.asarray(rates["real_volume"], dtype=np.int64)
+    if meta is not None:
+        arrays["metadata"] = np.array(json.dumps(meta))
     return _savez_bytes(arrays)
 
 
@@ -703,8 +715,12 @@ class GatewayApp:
             self._require_ready()
             if not mt5.symbol_select(symbol, True):
                 raise GatewayError(404, "symbol_not_found", f"Symbol '{symbol}' is not selectable.")
-            rates = _fetch_ohlcv_chunked(symbol, mt5_timeframe, start, end)
-        return _ohlcv_to_npz_bytes(rates)
+            rates, truncated = _fetch_ohlcv_chunked(symbol, mt5_timeframe, start, end)
+        meta = {
+            "truncated": bool(truncated),
+            "max_bars": int(_MAX_OHLCV_BARS),
+        }
+        return _ohlcv_to_npz_bytes(rates, meta)
 
     @_in_lane(_CHART_LANE)
     def recent_ohlcv(self, symbol: str, timeframe: str, count: int) -> bytes:

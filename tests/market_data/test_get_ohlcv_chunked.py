@@ -56,8 +56,8 @@ def test_get_ohlcv_fetches_range_in_multiple_chunks(mock_mt5):
 
 
 @patch("q_backend.market_data.clients.metatrader.mt5")
-@patch.object(mt_module, "_MAX_OHLCV_BARS", 3)
-def test_get_ohlcv_respects_max_bar_cap(mock_mt5):
+@patch.object(mt_module, "_MAX_OHLCV_BARS", 3, create=True)
+def test_get_ohlcv_returns_full_range_without_cap(mock_mt5):
     mock_mt5.symbol_select.return_value = True
     mock_mt5.TIMEFRAME_D1 = 16408
     mock_mt5.copy_rates_range.return_value = np.array(
@@ -75,7 +75,7 @@ def test_get_ohlcv_respects_max_bar_cap(mock_mt5):
         datetime.fromtimestamp(5),
     )
 
-    assert len(result) == 3
+    assert len(result) == 5
 
 
 @patch("q_backend.market_data.clients.metatrader.mt5")

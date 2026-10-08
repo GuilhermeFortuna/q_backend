@@ -27,7 +27,13 @@ from q_backend.market_data.clients.remote import RemoteMt5Client
 from q_backend.market_data.timezone import unix_seconds_to_brasilia_naive
 
 
-def _ohlcv_npz(times, *, include_spread=True, include_real_volume=True) -> bytes:
+def _ohlcv_npz(
+    times,
+    *,
+    include_spread=True,
+    include_real_volume=True,
+    metadata: dict | None = None,
+) -> bytes:
     n = len(times)
     arrays = {
         "time": np.array(times, dtype=np.int64),
@@ -41,6 +47,10 @@ def _ohlcv_npz(times, *, include_spread=True, include_real_volume=True) -> bytes
         arrays["spread"] = np.ones(n, dtype=np.int64)
     if include_real_volume:
         arrays["real_volume"] = np.zeros(n, dtype=np.int64)
+    if metadata is not None:
+        import json
+
+        arrays["metadata"] = np.array(json.dumps(metadata))
     buf = io.BytesIO()
     np.savez_compressed(buf, **arrays)
     return buf.getvalue()
@@ -83,7 +93,8 @@ class _FakeState:
             "mt5_connected": True,
             "terminal_build": 4200,
         }
-        self.ohlcv_npz = _ohlcv_npz([1_700_000_000])
+        self.ohlcv_npz = _ohlcv_npz([1_700_000_000], metadata={"truncated": False, "max_bars": 50_000})
+        self.ohlcv_queue: list[bytes] = []
         self.ohlcv_error = None  # (status, {"error", "code"})
         self.ticks_npz = _empty_ticks_npz()
         self.symbol_info = {"name": "WIN$", "description": "Mini Ibovespa"}
@@ -138,6 +149,8 @@ class _FakeHandler(BaseHTTPRequestHandler):
         elif path == "/v1/ohlcv":
             if st.ohlcv_error is not None:
                 self._json(*st.ohlcv_error)
+            elif st.ohlcv_queue:
+                self._npz(st.ohlcv_queue.pop(0))
             else:
                 self._npz(st.ohlcv_npz)
         elif path == "/v1/ticks":
@@ -201,7 +214,11 @@ def test_satisfies_marketdataprovider_protocol():
 def test_get_ohlcv_round_trip_naive_brasilia_time():
     epochs = [1_700_000_000, 1_700_000_060, 1_700_000_120]
     state = _FakeState()
-    state.ohlcv_npz = _ohlcv_npz(epochs, include_spread=True)
+    state.ohlcv_npz = _ohlcv_npz(
+        epochs,
+        include_spread=True,
+        metadata={"truncated": False, "max_bars": 50_000},
+    )
 
     with _fake_gateway(state) as (base_url, _st):
         client = RemoteMt5Client(base_url=base_url)
@@ -218,7 +235,12 @@ def test_get_ohlcv_round_trip_naive_brasilia_time():
 
 def test_get_ohlcv_absent_spread_column_maps_to_none():
     state = _FakeState()
-    state.ohlcv_npz = _ohlcv_npz([1_700_000_000], include_spread=False, include_real_volume=False)
+    state.ohlcv_npz = _ohlcv_npz(
+        [1_700_000_000],
+        include_spread=False,
+        include_real_volume=False,
+        metadata={"truncated": False, "max_bars": 50_000},
+    )
 
     with _fake_gateway(state) as (base_url, _st):
         from datetime import datetime
@@ -229,6 +251,124 @@ def test_get_ohlcv_absent_spread_column_maps_to_none():
     assert len(bars) == 1
     assert bars[0].spread is None
     assert bars[0].real_volume is None
+
+
+def test_get_ohlcv_single_page_issues_one_request():
+    state = _FakeState()
+    state.ohlcv_npz = _ohlcv_npz(
+        [1_700_000_000, 1_700_000_060],
+        metadata={"truncated": False, "max_bars": 50_000},
+    )
+    with _fake_gateway(state) as (base_url, st):
+        from datetime import datetime
+
+        client = RemoteMt5Client(base_url=base_url)
+        bars = client.get_ohlcv("WIN$", "M1", datetime(2023, 11, 14), datetime(2023, 11, 15))
+
+    assert len(bars) == 2
+    ohlcv_paths = [p for p in st.paths if "/v1/ohlcv?" in p or p.endswith("/v1/ohlcv")]
+    assert len(ohlcv_paths) == 1
+
+
+def test_get_ohlcv_and_columnar_three_page_continuation():
+    from datetime import datetime, timedelta
+    from urllib.parse import parse_qs, urlparse
+
+    page1_times = [1_700_000_000, 1_700_000_060]
+    page2_times = [1_700_000_120, 1_700_000_180]
+    page3_times = [1_700_000_240]
+
+    p1 = _ohlcv_npz(page1_times, metadata={"truncated": True, "max_bars": 2})
+    p2 = _ohlcv_npz(page2_times, metadata={"truncated": True, "max_bars": 2})
+    p3 = _ohlcv_npz(page3_times, metadata={"truncated": False, "max_bars": 2})
+
+    # Test get_ohlcv
+    state1 = _FakeState()
+    state1.ohlcv_queue = [p1, p2, p3]
+    start_dt = unix_seconds_to_brasilia_naive(page1_times[0])
+    end_dt = unix_seconds_to_brasilia_naive(page3_times[-1] + 3600)
+
+    with _fake_gateway(state1) as (base_url, st1):
+        client = RemoteMt5Client(base_url=base_url)
+        bars = client.get_ohlcv("WIN$", "M1", start_dt, end_dt)
+
+    assert len(bars) == 5
+    assert [b.time for b in bars] == [
+        unix_seconds_to_brasilia_naive(t) for t in (page1_times + page2_times + page3_times)
+    ]
+
+    # Check request query params for the 3 pages
+    ohlcv_paths = [p for p in st1.paths if "/v1/ohlcv?" in p]
+    assert len(ohlcv_paths) == 3
+    q1 = parse_qs(urlparse(ohlcv_paths[0]).query)
+    q2 = parse_qs(urlparse(ohlcv_paths[1]).query)
+    q3 = parse_qs(urlparse(ohlcv_paths[2]).query)
+
+    # All keep same end
+    expected_end = end_dt.isoformat()
+    assert q1["end"][0] == expected_end
+    assert q2["end"][0] == expected_end
+    assert q3["end"][0] == expected_end
+
+    # First start is original start
+    assert q1["start"][0] == start_dt.isoformat()
+    # Next start is last bar time of page 1 + 1 second
+    p1_last_dt = unix_seconds_to_brasilia_naive(page1_times[-1])
+    assert q2["start"][0] == (p1_last_dt + timedelta(seconds=1)).isoformat()
+    # Next start is last bar time of page 2 + 1 second
+    p2_last_dt = unix_seconds_to_brasilia_naive(page2_times[-1])
+    assert q3["start"][0] == (p2_last_dt + timedelta(seconds=1)).isoformat()
+
+    # Test get_ohlcv_columnar
+    state2 = _FakeState()
+    state2.ohlcv_queue = [p1, p2, p3]
+    with _fake_gateway(state2) as (base_url, st2):
+        client = RemoteMt5Client(base_url=base_url)
+        cols = client.get_ohlcv_columnar("WIN$", "M1", start_dt, end_dt)
+
+    assert list(cols["time"]) == page1_times + page2_times + page3_times
+    assert len(cols["open"]) == 5
+
+
+def test_get_ohlcv_missing_metadata_raises_connection_error():
+    # Response without metadata entry
+    state = _FakeState()
+    state.ohlcv_npz = _ohlcv_npz([1_700_000_000], metadata=None)
+
+    with _fake_gateway(state) as (base_url, _st):
+        from datetime import datetime
+
+        client = RemoteMt5Client(base_url=base_url)
+        with pytest.raises(ConnectionError, match="redeploy"):
+            client.get_ohlcv("WIN$", "M1", datetime(2023, 11, 14), datetime(2023, 11, 15))
+
+
+def test_get_ohlcv_empty_truncated_page_raises_connection_error():
+    state = _FakeState()
+    state.ohlcv_npz = _ohlcv_npz([], metadata={"truncated": True, "max_bars": 50_000})
+
+    with _fake_gateway(state) as (base_url, _st):
+        from datetime import datetime
+
+        client = RemoteMt5Client(base_url=base_url)
+        with pytest.raises(ConnectionError, match="empty truncated"):
+            client.get_ohlcv("WIN$", "M1", datetime(2023, 11, 14), datetime(2023, 11, 15))
+
+
+def test_get_ohlcv_non_advancing_cursor_raises_connection_error():
+    # Page 1 ends at 1_700_000_060; Page 2 returns bars not advancing cursor (same timestamp)
+    p1 = _ohlcv_npz([1_700_000_000, 1_700_000_060], metadata={"truncated": True, "max_bars": 2})
+    p2 = _ohlcv_npz([1_700_000_060], metadata={"truncated": True, "max_bars": 2})
+
+    state = _FakeState()
+    state.ohlcv_queue = [p1, p2]
+
+    with _fake_gateway(state) as (base_url, _st):
+        from datetime import datetime
+
+        client = RemoteMt5Client(base_url=base_url)
+        with pytest.raises(ConnectionError, match="advance"):
+            client.get_ohlcv("WIN$", "M1", datetime(2023, 11, 14), datetime(2023, 11, 15))
 
 
 def test_get_ticks_columnar_round_trip():
