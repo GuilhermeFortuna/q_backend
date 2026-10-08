@@ -327,6 +327,7 @@ def backtest(
             indicators=_chart_indicators(trading_strategy),
             config=read_only_config,
             _closed_trades=tuple(registry.get_closed_trades()),
+            _strategy=strategy,
         )
 
     return _execute_backtest(
@@ -336,6 +337,7 @@ def backtest(
         initial_capital=float(initial_capital),
         force_close_at_end=force_close_at_end,
         config=read_only_config,
+        strategy=strategy,
     )
 
 
@@ -346,6 +348,7 @@ def _execute_backtest(
     initial_capital: float,
     force_close_at_end: bool,
     config: Mapping[str, Any],
+    strategy: Any,
 ) -> BacktestResult:
     # If trading_strategy is ResearchStrategyAdapter, cache its augmented data
     # so subsequent call inside engine._run_single_chunk reuses it.
@@ -390,4 +393,5 @@ def _execute_backtest(
         indicators=_chart_indicators(trading_strategy),
         config=config,
         _closed_trades=tuple(registry.get_closed_trades()),
+        _strategy=strategy,
     )

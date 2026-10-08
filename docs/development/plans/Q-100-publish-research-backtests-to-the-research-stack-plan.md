@@ -42,11 +42,11 @@
 **Files:** Create `src/q_backend/research/publishing.py` and `tests/research/test_publishing.py`; modify `src/q_backend/research/results.py`.
 **Interfaces:** `BacktestResult.publish(*, name=None, timeframe=None, api_url=None) -> str`; `Q_API_URL`.
 
-- [ ] Add failing tests for spec acceptance items 2 to 5 with mocked HTTP and a temporary git repository for provenance.
-- [ ] Run `uv run pytest tests/research/test_publishing.py -q` and confirm the cases fail because `publish` is missing.
-- [ ] Implement request building, provenance collection and error mapping.
-- [ ] Run `uv run pytest tests/research -q` and confirm it passes, including `test_imports.py`.
-- [ ] Commit this unit.
+- [x] Add failing tests for spec acceptance items 2 to 5 with mocked HTTP and a temporary git repository for provenance.
+- [x] Run `uv run pytest tests/research/test_publishing.py -q` and confirm the cases fail because `publish` is missing.
+- [x] Implement request building, provenance collection and error mapping.
+- [x] Run `uv run pytest tests/research -q` and confirm it passes, including `test_imports.py`.
+- [x] Commit this unit.
 
 ### 3. Prove the round trip against the endpoint
 

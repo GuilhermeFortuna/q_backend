@@ -43,6 +43,26 @@ class BacktestResult:
     indicators: tuple[ChartIndicator, ...] = ()
     config: Mapping[str, Any] = MappingProxyType({})
     _closed_trades: tuple[Trade, ...] = ()
+    _strategy: Any = None
+
+    def publish(
+        self,
+        *,
+        name: str | None = None,
+        timeframe: str | None = None,
+        api_url: str | None = None,
+        **kwargs: Any,
+    ) -> str:
+        """Publish the finished backtest to the Research stack."""
+        from q_backend.research.publishing import publish_backtest_result
+
+        return publish_backtest_result(
+            self,
+            name=name,
+            timeframe=timeframe,
+            api_url=api_url,
+            **kwargs,
+        )
 
 
 def empty_trades_frame() -> pd.DataFrame:
