@@ -12,6 +12,8 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from q_backend.api.schemas.backtest import (
+    BacktestOrigin,
+    BacktestProvenance,
     BacktestRunDetailResponse,
     BacktestRunListItem,
     BacktestRunPatchRequest,
@@ -63,6 +65,7 @@ def backtest_run_list_item(run: BacktestRun) -> BacktestRunListItem:
         status=run.status,
         created_at=run.created_at,
         is_saved=run.is_saved,
+        origin=run.origin,
         summary=run.result_summary,
     )
 
@@ -96,6 +99,8 @@ def backtest_run_detail(run: BacktestRun, session: Session | None = None) -> Bac
         finished_at=run.finished_at,
         created_at=run.created_at,
         is_saved=run.is_saved,
+        origin=run.origin,
+        provenance=BacktestProvenance.model_validate(run.provenance) if run.provenance else None,
         ml_filter=_ml_filter_reference(config, session),
     )
 
@@ -152,6 +157,7 @@ def list_runs(
     symbol: Optional[str] = None,
     strategy: Optional[str] = None,
     saved_only: Optional[bool] = None,
+    origin: Optional[BacktestOrigin] = None,
     sort: Literal["created_at_desc", "pnl_desc", "pnl_asc"] = "created_at_desc",
 ) -> Dict[str, Any]:
     runs, total = list_backtest_runs(
@@ -161,6 +167,7 @@ def list_runs(
         symbol=symbol,
         strategy=strategy,
         saved_only=saved_only,
+        origin=origin,
         sort=sort,
     )
     return {

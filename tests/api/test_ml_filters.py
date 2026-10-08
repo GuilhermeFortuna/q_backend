@@ -49,7 +49,20 @@ def test_training_and_comparison_contract_validation():
         ComparisonRequest(dataset_id="dataset", model_version_ids=["model", "model"])
 
 
-def test_source_api_reads_frozen_lake_without_market_provider(api_db_session: Session, monkeypatch):
+@pytest.mark.parametrize(
+    ("origin", "eligible", "reason"),
+    [
+        ("stack", True, None),
+        (
+            "script",
+            False,
+            "Backtest source is a script run; only stack runs can be ML filter sources",
+        ),
+    ],
+)
+def test_source_api_reads_frozen_lake_without_market_provider(
+    api_db_session: Session, monkeypatch, origin, eligible, reason
+):
     from q_backend.api import ml_filter_jobs
     from q_backend.market_data.service import MarketDataService
 
@@ -72,7 +85,7 @@ def test_source_api_reads_frozen_lake_without_market_provider(api_db_session: Se
     backtest_config = BacktestConfig(name="source", config=config)
     api_db_session.add(backtest_config)
     api_db_session.flush()
-    run = BacktestRun(backtest_config_id=backtest_config.id, config=config, status="completed")
+    run = BacktestRun(backtest_config_id=backtest_config.id, config=config, status="completed", origin=origin)
     api_db_session.add(run)
     api_db_session.flush()
     times = pd.date_range("2026-01-01T00:00:00Z", periods=4, freq="5min")
@@ -105,7 +118,8 @@ def test_source_api_reads_frozen_lake_without_market_provider(api_db_session: Se
     assert response["total"] == 1
     source = response["items"][0]
     assert source["run_id"] == str(run.id)
-    assert source["eligible"] is True
+    assert source["eligible"] is eligible
+    assert source["eligibility_reason"] == reason
     assert source["source_sample_count"] == 1
     assert "real_volume" not in source["available_features"]
 

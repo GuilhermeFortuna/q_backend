@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from q_backend.storage.db.models import (
     BacktestConfig,
+    BacktestOrigin,
     BacktestRun,
     DataIngestionRun,
     EvaluationRun,
@@ -258,9 +259,12 @@ def get_ml_filter_evaluation_by_dataset(session: Session, dataset_id: str) -> ML
 
 
 def find_backtest_run_by_config(session: Session, config: dict[str, Any]) -> Optional[BacktestRun]:
-    """Return the newest persisted run whose stored config matches exactly."""
+    """Return the newest stack run whose stored config matches exactly."""
     return session.execute(
-        select(BacktestRun).where(BacktestRun.config == config).order_by(desc(BacktestRun.created_at)).limit(1)
+        select(BacktestRun)
+        .where(BacktestRun.config == config, BacktestRun.origin == BacktestOrigin.STACK.value)
+        .order_by(desc(BacktestRun.created_at))
+        .limit(1)
     ).scalar_one_or_none()
 
 
@@ -321,9 +325,12 @@ def list_backtest_runs(
     symbol: Optional[str] = None,
     strategy: Optional[str] = None,
     saved_only: Optional[bool] = None,
+    origin: Optional[str] = None,
     sort: str = "created_at_desc",
 ) -> tuple[list[BacktestRun], int]:
     base = select(BacktestRun)
+    if origin is not None:
+        base = base.where(BacktestRun.origin == origin)
     if symbol is not None:
         base = base.where(BacktestRun.config["symbol"].as_string() == symbol)
     if strategy is not None:
@@ -381,12 +388,16 @@ def create_backtest_run(
     config: dict[str, Any],
     status: str = RunStatus.PENDING.value,
     started_at: Optional[datetime] = None,
+    origin: str = BacktestOrigin.STACK.value,
+    provenance: Optional[dict[str, Any]] = None,
 ) -> BacktestRun:
     backtest_run = BacktestRun(
         backtest_config_id=backtest_config_id,
         config=config,
         status=status,
         started_at=started_at,
+        origin=origin,
+        provenance=provenance,
     )
     session.add(backtest_run)
     session.flush()

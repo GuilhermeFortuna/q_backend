@@ -22,6 +22,8 @@ from q_backend.api.schemas.backtest import BacktestRunPatchRequest
 from q_backend.api.schemas.common import BulkDeleteBacktestsRequest
 from q_backend.market_data.models import OHLCV
 from q_backend.storage.db.base import Base
+from q_backend.storage.db.models import RunStatus
+from q_backend.storage.db.repositories import create_backtest_config, create_backtest_run
 from backtest_test_helpers import run_async_backtest
 
 
@@ -253,3 +255,70 @@ def test_run_backtest_creates_separate_history_for_different_config(
 
     list_payload = list_backtests(session=api_db_session, limit=50, offset=0)
     assert list_payload["total"] == 2
+
+
+def _script_run_row(api_db_session, config: dict, *, origin: str = "script") -> str:
+    bt_config = create_backtest_config(api_db_session, name="WIN$-M5", config=config)
+    run = create_backtest_run(
+        api_db_session,
+        backtest_config_id=bt_config.id,
+        config=config,
+        status=RunStatus.COMPLETED.value,
+        origin=origin,
+    )
+    api_db_session.commit()
+    return str(run.id)
+
+
+def test_list_backtests_partitions_runs_by_origin(run_jobs_sync, api_db_session, api_session_scope, sample_ohlcv):
+    stack_id, _ = run_async_backtest(REQUEST_BODY, api_session_scope=api_session_scope, sample_ohlcv=sample_ohlcv)
+    script_id = _script_run_row(
+        api_db_session,
+        {"symbol": "WIN$", "timeframe": "M5", "strategy": "ScriptStrategy", "engine": "candle"},
+    )
+
+    everything = list_backtests(session=api_db_session, limit=50, offset=0)
+    assert everything["total"] == 2
+    origins = {item.run_id: item.origin for item in everything["items"]}
+    assert origins == {stack_id: "stack", script_id: "script"}
+
+    script_only = list_backtests(session=api_db_session, limit=50, offset=0, origin="script")
+    assert [item.run_id for item in script_only["items"]] == [script_id]
+    assert script_only["total"] == 1
+
+    stack_only = list_backtests(session=api_db_session, limit=50, offset=0, origin="stack")
+    assert [item.run_id for item in stack_only["items"]] == [stack_id]
+    assert stack_only["total"] == 1
+
+
+def test_detail_reports_origin_and_provenance(api_db_session):
+    provenance = {"script": "research/scripts/run_backtest.py", "strategy_class": "my.MaCross"}
+    config = {"symbol": "WIN$", "timeframe": "M5", "strategy": "ScriptStrategy", "engine": "candle"}
+    bt_config = create_backtest_config(api_db_session, name="WIN$-M5", config=config)
+    run = create_backtest_run(
+        api_db_session,
+        backtest_config_id=bt_config.id,
+        config=config,
+        status=RunStatus.COMPLETED.value,
+        origin="script",
+        provenance=provenance,
+    )
+    api_db_session.commit()
+
+    detail = get_backtest(str(run.id), session=api_db_session)
+    assert detail.origin == "script"
+    assert detail.provenance is not None
+    assert detail.provenance.model_dump(exclude_none=True) == provenance
+
+
+def test_run_backtest_does_not_reuse_script_run_with_identical_config(
+    run_jobs_sync, api_db_session, api_session_scope, sample_ohlcv
+):
+    job_config = BacktestJobRequest.model_validate(REQUEST_BODY).model_dump(mode="json")
+    script_id = _script_run_row(api_db_session, job_config)
+
+    stack_id, _ = run_async_backtest(REQUEST_BODY, api_session_scope=api_session_scope, sample_ohlcv=sample_ohlcv)
+
+    assert stack_id != script_id
+    list_payload = list_backtests(session=api_db_session, limit=50, offset=0, origin="stack")
+    assert [item.run_id for item in list_payload["items"]] == [stack_id]

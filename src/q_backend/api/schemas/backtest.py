@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -83,6 +83,42 @@ class BacktestStatusResponse(BaseModel):
     error: Optional[str] = None
 
 
+BacktestOrigin = Literal["stack", "script"]
+
+
+class BacktestProvenance(BaseModel):
+    script: str
+    strategy_class: str
+    strategy_source: Optional[str] = None
+    git_revision: Optional[str] = None
+    git_dirty: Optional[bool] = None
+
+
+class BacktestImportBar(BaseModel):
+    """A bar as a script produces it: epoch seconds or the ISO-8601 string the result endpoint serves."""
+
+    timestamp: Union[int, str]
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+
+
+class BacktestImportResult(BacktestResponse):
+    bars: List[BacktestImportBar]
+
+
+class BacktestImportRequest(BaseModel):
+    config: BacktestRequest
+    result: BacktestImportResult
+    provenance: BacktestProvenance
+
+
+class BacktestImportResponse(BaseModel):
+    run_id: str
+
+
 class BacktestRunListItem(BaseModel):
     run_id: str
     symbol: str
@@ -91,6 +127,7 @@ class BacktestRunListItem(BaseModel):
     status: str
     created_at: datetime
     is_saved: bool = False
+    origin: BacktestOrigin = "stack"
     summary: Optional[Dict[str, Any]] = None
 
 
@@ -122,6 +159,8 @@ class BacktestRunDetailResponse(BaseModel):
     finished_at: Optional[datetime] = None
     created_at: datetime
     is_saved: bool = False
+    origin: BacktestOrigin = "stack"
+    provenance: Optional[BacktestProvenance] = None
     ml_filter: Optional[MLFilterReference] = Field(default=None, exclude_if=lambda value: value is None)
 
 

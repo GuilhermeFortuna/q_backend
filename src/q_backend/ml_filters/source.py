@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from q_backend.ml_filters.dataset import _signal_matches, _source_strategy, _utc
 from q_backend.ml_filters.features import FEATURE_ALLOWLIST
-from q_backend.storage.db.models import BacktestRun
+from q_backend.storage.db.models import BacktestOrigin, BacktestRun
 from q_backend.storage.lake.artifacts import _artifact_absolute_path, read_backtest_artifact
 
 
@@ -24,6 +24,8 @@ def describe_source(run: BacktestRun) -> dict[str, Any]:
     errors: list[str] = []
     bars: pd.DataFrame | None = None
     trades: pd.DataFrame | None = None
+    if run.origin != BacktestOrigin.STACK.value:
+        errors.append(f"Backtest source is a {run.origin} run; only stack runs can be ML filter sources")
     try:
         if run.status != "completed":
             errors.append("Backtest source is not completed")
