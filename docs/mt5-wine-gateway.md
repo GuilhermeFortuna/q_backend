@@ -247,6 +247,26 @@ build the session tape (`docs/operations/session-trade-tape.md`); redeploy the g
 after updating so the endpoint exists. `MT5_GATEWAY_PROVIDER_ID` (default `mt5`) names the provider in
 that metadata.
 
+## History depth
+
+The terminal limits the number of historical bars it retains per symbol and timeframe through its "Max bars in chart" setting (default: 100,000 bars). To increase history depth:
+
+1. In the terminal GUI, open **Tools → Options → Charts** and raise **Max bars in chart** (e.g. to `Unlimited` or a larger count). Alternatively, configure `MaxBars` under `[Charts]` in the terminal's `Config/common.ini` inside the Wine prefix:
+   ```ini
+   [Charts]
+   MaxBars=unlimited
+   ```
+2. Restart the terminal (`systemctl --user restart mt5-terminal.service` or restart the GUI).
+3. Confirm available history depth using the gateway's `/v1/available_range` endpoint:
+   ```bash
+   curl -s 'http://127.0.0.1:18812/v1/available_range?symbol=WDO$N&timeframe=M1' | jq
+   ```
+
+Deeper history then loads on demand from the broker and remains subject to what the broker serves.
+
+> [!NOTE]
+> This section records expected MetaTrader 5 behaviour not yet confirmed on this target machine. Verify the configuration using `/v1/available_range` as shown above.
+
 ## Troubleshooting
 
 | Symptom                                              | Likely cause / fix                                                                                                                                                 |
@@ -258,6 +278,8 @@ that metadata.
 | Schema-version mismatch after a repo update          | The client refuses a gateway whose `schema_version` major differs (it treats it as unavailable and degrades to `local`). Redeploy the updated `gateway/mt5_gateway.py` to the prefix/box and restart `mt5-gateway.service` so both sides speak the same `/vN/`. |
 | Gateway does not report bar completeness             | `ConnectionError: MT5 gateway at <url> does not report bar completeness; redeploy gateway/mt5_gateway.py and restart mt5-gateway.service`. The client requires bar completeness metadata from the gateway (Q-093). The running gateway script predates this change. Redeploy `gateway/mt5_gateway.py` to the Wine prefix/box and restart `mt5-gateway.service`. |
 | `curl` to the port hangs / connection refused        | Gateway not running or wrong port. `systemctl --user status mt5-gateway.service`; check `MT5_GATEWAY_PORT`. Confirm nothing else owns 18812. |
+| M1 or M5 history is shorter than expected           | The terminal's "Max bars in chart" setting (100,000 by default) caps retained bars. Raise "Max bars in chart" in Tools → Options → Charts (or `MaxBars` in `Config/common.ini`), restart the terminal, and confirm with `curl -s 'http://127.0.0.1:18812/v1/available_range?symbol=...&timeframe=...'`. Deeper history loads on demand and remains subject to what the broker serves. |
+| The first tick request for a symbol returns nothing | The terminal downloads tick history from the broker on demand on first request, during which MT5 reports success with an empty result. `load_ticks` raises `NoMarketDataError`. Wait a few seconds for download to complete and retry, then check the returned range. |
 
 ## Fallback: run the gateway on a Windows box
 
