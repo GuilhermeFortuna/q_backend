@@ -110,12 +110,12 @@ worktree. Final task merging remains the normal human review/finish step.
 **Files:** Modify `src/q_backend/backtesting/signal_columns.py`, `src/q_backend/backtesting/candle_kernel.py` (`run_chunk`, `ChunkRun`, `ledger_to_registry`), `src/q_backend/backtesting/engine.py`, `src/q_backend/backtesting/models.py` (`Trade` gains optional `exit_tick_time`, `stop_loss`, `take_profit`) and `src/q_backend/research/adapter.py`; add `tests/research/test_stop_target_backtest.py`.
 **Interfaces:** two optional level columns in the signal contract; `BacktestEngine(..., intrabar=None)` forwarded to `run_chunk`.
 
-- [ ] Add failing tests for spec acceptance items 1 to 3 and 6 to 8 with a counting store.
-- [ ] Transport levels through static columns and actual runtime position-aware
+- [x] Add failing tests for spec acceptance items 1 to 3 and 6 to 8 with a counting store.
+- [x] Transport levels through static columns and actual runtime position-aware
   decisions; do not infer fills in Python. Map protective and custom tick times
   to `exit_tick_time` in the frame timezone.
-- [ ] Implement the price callable in `src/q_backend/research/engine.py`: bar interval, `TickStore.trade_prices`, the frame-versus-store check, and the missing-session error.
-- [ ] Run `uv run pytest tests/research tests/backtesting -q` and confirm green, including the unchanged candle goldens. Commit this unit.
+- [x] Implement the price callable in `src/q_backend/research/engine.py`: bar interval, `TickStore.trade_prices`, the frame-versus-store check, and the missing-session error.
+- [x] Run `uv run pytest tests/research tests/backtesting -q` and confirm green, including the unchanged candle goldens. Commit this unit.
 
 ### 2b. Adapt phase-aware exit screening and causal replay
 
@@ -123,49 +123,58 @@ worktree. Final task merging remains the normal human review/finish step.
 **Interface:** `exit_strategy(frame[, positions], *, phase="bar")`, returning a
 close request or `None` in every phase; explicit `phase` selects the capability.
 
-- [ ] Add failing tests for spec acceptance 11–17, including a reversed price
+- [x] Add failing tests for spec acceptance 11–17, including a reversed price
   crossing, false-positive screens, partial-candle indicator crossing, future-data
   isolation, optional positions, `**kwargs` detection and contextual errors.
-- [ ] Bind screen/tick callbacks to isolated raw history. Screen on the full
+- [x] Bind screen/tick callbacks to isolated raw history. Screen on the full
   candidate candle; reconstruct observed OHLC/tick count for replay, set unavailable
   current-row fields `NaN`, and recompute indicators before each tick hook call.
-- [ ] Validate phases/actions and keep screen/replay free of evolving user state.
+- [x] Validate phases/actions and keep screen/replay free of evolving user state.
   Never invoke entry hooks per tick. Evaluate bar-phase exit before entry afterward
   with the same post-fill position snapshot. Preserve legacy signature behavior.
-- [ ] Verify no reads/calls for screened-out or flat candles, one interval load for
+- [x] Verify no reads/calls for screened-out or flat candles, one interval load for
   overlapping candidates, exact first-confirmed fill and chronological precedence.
-- [ ] Run focused research/bridge/engine tests and commit this unit.
+- [x] Run focused research/bridge/engine tests and commit this unit.
 
 ### 3. Expose results and errors
 
 **Files:** Modify `src/q_backend/research/engine.py`, `src/q_backend/research/results.py`, `tests/research/test_stop_target_backtest.py` and `tests/research/test_backtest.py`.
 **Interfaces:** `backtest(..., ticks=None)`; `BacktestResult.rejected_entries`; `trades` columns `exit_tick_time`, `stop_loss`, `take_profit`.
 
-- [ ] Add failing tests for spec acceptance items 4, 5 and 11–17: missing stores
+- [x] Add failing tests for spec acceptance items 4, 5 and 11–17: missing stores
   for phase-aware hooks, candidate-only reads, OHLC consistency, empty intervals,
   same-session interval ends and empty result schemas.
-- [ ] Implement argument checks and complete normal/empty result schemas; record
+- [x] Implement argument checks and complete normal/empty result schemas; record
   custom tick exits with the signal-exit reason and actual tick timestamp. Verify
   realized equity/costs for both mechanisms and preserve `rejected_entries`.
-- [ ] Run `uv run pytest tests/research tests/execution -q` and confirm green with unchanged evaluator tests. Commit this unit.
+- [x] Run `uv run pytest tests/research tests/execution -q` and confirm green with unchanged evaluator tests. Commit this unit.
 
 ### 4. Document
 
 **Files:** Create `examples/research/stop_target_backtest.py`; modify `docs/research-library.md` and `tests/research/test_examples.py`.
 
-- [ ] Document entry levels plus phase-aware screening/replay, conservative range
+- [x] Document entry levels plus phase-aware screening/replay, conservative range
   checks, causal indicators, tick prices/costs and legacy/bar-phase next-open closes.
   Extend the example/test to prove an exit inside its candle at a price different
   from the next open, and no replay for a screened-out candle.
-- [ ] Run `uv run pytest tests/research/test_examples.py -q`. Commit docs and example.
+- [x] Run `uv run pytest tests/research/test_examples.py -q`. Commit docs and example.
 
 ## Verification and handoff
 
-- [ ] Run `uv run pytest tests/research tests/backtesting tests/execution -q`, `uv run ruff check src tests examples/research` and `uv run black --check` on the changed paths.
-- [ ] Record the commands actually run and their results in this plan; do not claim unrun checks passed.
-- [ ] Record core/binding verification and the published additive release. Ensure
+Commands run on the final tree:
+
+- `uv run pytest tests/research tests/backtesting tests/execution -q`: 1058 passed, 11 skipped.
+- `uv run pytest tests/api -k "payload or backtest"`: 93 passed. The pinned job payload fixture is unchanged because the new trade fields are `exclude=True` on the model.
+- `uv run ruff check src tests examples/research`: passed. `uv run black --check` on the changed Python files: passed.
+- `uv run pytest tests -k "backtest or publish or trade or candle or research"` outside the three suites: 257 passed and one payload test failed before the `exclude=True` fix, which now passes. Seven integration tests need Postgres/Redis and were not run.
+
+Known deviation: q_core rejects a wrong-side entry before it applies sizing and the position cap, so an entry that is both on the wrong side and capped is reported in `rejected_entries`. The spec says it should not be. Fixing this needs a q_core change that moves the rejection after sizing, and it is left as a follow-up.
+
+- [x] Run `uv run pytest tests/research tests/backtesting tests/execution -q`, `uv run ruff check src tests examples/research` and `uv run black --check` on the changed paths.
+- [x] Record the commands actually run and their results in this plan; do not claim unrun checks passed.
+- [x] Record core/binding verification and the published additive release. Ensure
   the spec, plan and issue agree on the phase API and acceptance coverage. This
   scope revision does not change the board status or dependency completion.
-- [ ] Use `./work board set Q-104 in-review -m "<changes; checks and results; follow-ups>"`.
+- [x] Use `./work board set Q-104 in-review -m "<changes; checks and results; follow-ups>"`.
 
 `make contracts-check` is not needed: this task changes no contract.
