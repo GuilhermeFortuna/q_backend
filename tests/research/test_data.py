@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import warnings
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
@@ -11,7 +13,7 @@ import numpy as np
 
 from q_backend.market_data.models import OHLCV
 from q_backend.market_data.timezone import BRASILIA_TZ
-from q_backend.research import NoMarketDataError, load_bars, load_ticks, resample_ticks
+from q_backend.research import AdjustedSeriesWarning, NoMarketDataError, load_bars, load_ticks, resample_ticks
 from q_backend.research.frame import (
     drop_forming_bar,
     is_bar_complete,
@@ -118,19 +120,47 @@ def test_resample_ticks_ignores_quote_only_updates() -> None:
     assert bars["tick_volume"].tolist() == [1]
 
 
-def _ohlcv_at(time: str) -> list[OHLCV]:
+def _ohlcv_at(time: str, *, close: float = 100.5) -> list[OHLCV]:
     return [
         OHLCV(
             time=datetime.fromisoformat(time),
-            open=100.0,
-            high=101.0,
-            low=99.0,
-            close=100.5,
+            open=close - 0.5,
+            high=close + 0.5,
+            low=close - 1.0,
+            close=close,
             tick_volume=10,
             spread=1,
             real_volume=0,
         )
     ]
+
+
+def _ohlcv_series(times: list[str], *, close: float = 100.0) -> list[OHLCV]:
+    return [
+        OHLCV(
+            time=datetime.fromisoformat(t),
+            open=close,
+            high=close + 1.0,
+            low=close - 1.0,
+            close=close,
+            tick_volume=10,
+            spread=1,
+            real_volume=0,
+        )
+        for t in times
+    ]
+
+
+@contextmanager
+def _patch_load_bars(client: MagicMock, frozen: datetime | None = None):
+    frozen = frozen or datetime(2026, 6, 2, 12, 0, tzinfo=BRASILIA_TZ)
+    with (
+        patch("q_backend.research.data._exchange_now", return_value=frozen),
+        patch("q_backend.research.data.RemoteMt5Client", return_value=client),
+        patch("q_backend.research.data.resolve_gateway_url", return_value="http://gw.test"),
+        patch("q_backend.research.data.resolve_gateway_token", return_value=None),
+    ):
+        yield
 
 
 def _frame_at(time: str) -> pd.DataFrame:
@@ -147,6 +177,102 @@ def _frame_at(time: str) -> pd.DataFrame:
         },
         index=idx,
     )
+
+
+def test_load_bars_on_grid_records_tick_metadata_without_warning() -> None:
+    client = MagicMock()
+    client.get_ohlcv.return_value = _ohlcv_at("2026-06-02T10:00:00", close=5400.5)
+    client.get_symbol_info.return_value = {"trade_tick_size": 0.5}
+    with _patch_load_bars(client):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            frame = load_bars("WDO$N", timeframe="M5", start="2026-06-02T10:00:00", end="2026-06-02T11:00:00")
+    assert not any(item.category is AdjustedSeriesWarning for item in caught)
+    meta = frame.attrs["q_research"]
+    assert meta["tick_size"] == 0.5
+    assert meta["off_tick_share"] == 0.0
+    client.get_symbol_info.assert_called_once_with("WDO$N")
+
+
+def test_load_bars_off_grid_above_threshold_warns_once() -> None:
+    client = MagicMock()
+    client.get_ohlcv.return_value = _ohlcv_at("2026-06-02T10:00:00", close=100.33)
+    client.get_symbol_info.return_value = {"trade_tick_size": 0.5}
+    with _patch_load_bars(client):
+        with pytest.warns(AdjustedSeriesWarning, match="WDO\\$") as record:
+            frame = load_bars("WDO$", timeframe="M5", start="2026-06-02T10:00:00", end="2026-06-02T11:00:00")
+    assert len(record) == 1
+    assert record[0].filename == __file__
+    assert frame.attrs["q_research"]["off_tick_share"] == 1.0
+
+
+def test_load_bars_off_grid_at_threshold_does_not_warn() -> None:
+    # 100 OHLC values; one off-grid close -> share == 0.01
+    times = [f"2026-06-02T10:{i:02d}:00" for i in range(25)]
+    bars = _ohlcv_series(times, close=100.0)
+    bars[-1] = OHLCV(
+        time=datetime.fromisoformat(times[-1]),
+        open=100.0,
+        high=101.0,
+        low=99.0,
+        close=100.33,
+        tick_volume=10,
+        spread=1,
+        real_volume=0,
+    )
+    client = MagicMock()
+    client.get_ohlcv.return_value = bars
+    client.get_symbol_info.return_value = {"trade_tick_size": 0.5}
+    with _patch_load_bars(client):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            frame = load_bars("WDO$", timeframe="M5", start="2026-06-02T10:00:00", end="2026-06-02T11:00:00")
+    assert not any(item.category is AdjustedSeriesWarning for item in caught)
+    assert frame.attrs["q_research"]["off_tick_share"] == pytest.approx(0.01)
+
+
+def test_load_bars_symbol_info_failures_skip_tick_metadata() -> None:
+    frozen = datetime(2026, 6, 2, 12, 0, tzinfo=BRASILIA_TZ)
+    baseline_client = MagicMock()
+    baseline_client.is_supported.return_value = True
+    baseline_client.get_ohlcv.return_value = _ohlcv_at("2026-06-02T10:00:00")
+    baseline_client.get_symbol_info.return_value = None
+    with (
+        patch("q_backend.research.data._exchange_now", return_value=frozen),
+        patch("q_backend.research.data.RemoteMt5Client", return_value=baseline_client),
+        patch("q_backend.research.data.resolve_gateway_url", return_value="http://gw.test"),
+        patch("q_backend.research.data.resolve_gateway_token", return_value=None),
+    ):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            baseline = load_bars("WIN$", timeframe="M5", start="2026-06-02T10:00:00", end="2026-06-02T11:00:00")
+    assert not any(item.category is AdjustedSeriesWarning for item in caught)
+    assert "tick_size" not in baseline.attrs["q_research"]
+    assert "off_tick_share" not in baseline.attrs["q_research"]
+
+    failure_modes = [
+        {"get_symbol_info": None},
+        {"get_symbol_info": {}},
+        {"get_symbol_info": {"trade_tick_size": 0}},
+        {"get_symbol_info": {"trade_tick_size": float("nan")}},
+        {"get_symbol_info": ConnectionError("down")},
+    ]
+    for mode in failure_modes:
+        client = MagicMock()
+        client.is_supported.return_value = True
+        client.get_ohlcv.return_value = _ohlcv_at("2026-06-02T10:00:00")
+        if isinstance(mode["get_symbol_info"], Exception):
+            client.get_symbol_info.side_effect = mode["get_symbol_info"]
+        else:
+            client.get_symbol_info.return_value = mode["get_symbol_info"]
+        with _patch_load_bars(client, frozen=frozen):
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                frame = load_bars("WIN$", timeframe="M5", start="2026-06-02T10:00:00", end="2026-06-02T11:00:00")
+        assert not any(item.category is AdjustedSeriesWarning for item in caught)
+        assert "tick_size" not in frame.attrs["q_research"]
+        assert "off_tick_share" not in frame.attrs["q_research"]
+        pd.testing.assert_frame_equal(frame, baseline)
 
 
 def test_load_bars_schema_metadata_and_mt5_source() -> None:

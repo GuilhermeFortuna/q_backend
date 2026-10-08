@@ -227,6 +227,21 @@ def filter_index_range(frame: pd.DataFrame, start: pd.Timestamp, end: pd.Timesta
     return frame.loc[mask]
 
 
+def off_tick_share(frame: pd.DataFrame, tick_size: float) -> float:
+    """Fraction of open/high/low/close values that are not multiples of ``tick_size``."""
+    if tick_size <= 0 or not np.isfinite(tick_size):
+        raise ValueError("tick_size must be a finite positive number")
+    columns = ("open", "high", "low", "close")
+    chunks = [frame[col].to_numpy(dtype=np.float64, copy=False) for col in columns]
+    values = np.concatenate(chunks) if chunks else np.array([], dtype=np.float64)
+    if values.size == 0:
+        return 0.0
+    scaled = values / tick_size
+    nearest = np.round(scaled)
+    off = ~np.isclose(scaled, nearest, rtol=0.0, atol=1e-9)
+    return float(np.mean(off))
+
+
 def attach_metadata(
     frame: pd.DataFrame,
     *,

@@ -1,6 +1,10 @@
-"""Research library errors."""
+"""Research library errors and warnings."""
 
 from __future__ import annotations
+
+
+class AdjustedSeriesWarning(UserWarning):
+    """Loaded OHLCV prices sit off the instrument tick grid (often a proportionally adjusted series)."""
 
 
 class NoMarketDataError(ValueError):
