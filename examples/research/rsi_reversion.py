@@ -14,6 +14,7 @@ import pandas as pd
 
 from q_backend.backtesting.costs import TransactionCostConfig
 from q_backend.research import (
+    ChartIndicator,
     ResearchStrategy,
     TradeOrder,
     backtest,
@@ -28,6 +29,9 @@ class RSIReversion(ResearchStrategy):
         self.period = period
         self.lower = lower
         self.upper = upper
+
+    def chart_indicators(self) -> list[ChartIndicator]:
+        return [ChartIndicator("rsi", pane="oscillator")]
 
     def compute_indicators(self, frame: pd.DataFrame) -> pd.DataFrame:
         frame = frame.copy()

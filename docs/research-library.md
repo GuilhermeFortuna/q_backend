@@ -232,7 +232,7 @@ The `ResearchStrategy` ABC and `backtest()` function allow defining custom strat
 
 ### Writing a ResearchStrategy
 
-A strategy class provides exactly three hooks:
+A strategy class provides three decision hooks and may declare chart series with an optional fourth (`chart_indicators`, see [Strategy hooks and causality](#strategy-hooks-and-causality)):
 
 ```python
 from q_backend.research import ResearchStrategy, TradeOrder, indicators, backtest
@@ -273,6 +273,21 @@ class RSIReversion(ResearchStrategy):
 3. **`exit_strategy(frame: DataFrame) -> TradeOrder | None`**:
    - Called on an isolated owned copy of closed-bar history up to the current bar, evaluated **before** `entry_strategy`.
    - Returns `TradeOrder.close()` or `None`. Defaults to returning `None`.
+4. **`chart_indicators() -> Sequence[ChartIndicator]`** (optional):
+   - Declares the computed columns the Trade Chart draws, in order. Defaults to an empty sequence.
+   - `ChartIndicator(column, pane="price", label="", color=None)`: `column` must be a numeric column added by `compute_indicators`; `pane` is `"price"` or `"oscillator"`; an empty `label` defaults to the column name.
+   - Called once per backtest and does not receive the frame, so it cannot change results. A declared column that is missing, a market column (`open`, `high`, `low`, `close`), non-numeric or declared twice raises `ValueError` naming the strategy class and column.
+   - No pane is inferred: a column that is not declared is not drawn.
+
+   ```python
+   class SmartMaCrossover(ResearchStrategy):
+       def chart_indicators(self):
+           return [
+               ChartIndicator("short_ma", label="EMA 9"),
+               ChartIndicator("long_ma", label="WMA 20"),
+               ChartIndicator("ma_delta", pane="oscillator"),
+           ]
+   ```
 
 > [!IMPORTANT]
 > **No fill or position state in hooks:** Decision hooks are pure functions of closed-bar price history up to the current bar. They receive no fill or position callbacks. Repeated signal conditions produce repeated order requests (the kernel risk model caps total exposure). Strategies must not attempt to track open positions in instance variables or assume prior orders were filled. Furthermore, per-prefix Python evaluation and frame copying is designed for research agility and is slower than built-in vectorized strategies.
@@ -318,7 +333,8 @@ print(result.equity)
 - **`metrics: dict`**: Summary performance statistics computed across closed trades (`total_trades`, `total_pnl`, `win_rate`, `profit_factor`, `max_drawdown_value`, `max_drawdown_pct`, etc.).
 - **`trades: DataFrame`**: Execution log with stable columns (`trade_id`, `symbol`, `side`, `status`, `entry_time`, `entry_price`, `exit_time`, `exit_price`, `pnl`, `quantity`, `commission`, `point_value`, `exit_reason`).
 - **`equity: DataFrame`**: Time series indexed by bar timestamp containing `realized_equity` (initial capital plus cumulative net PnL from closed trades). Open positions are not marked to market.
-- **`data: DataFrame`**: Prepared historical bars augmented with user and exit indicator columns (internal signal arrays omitted).
+- **`data: DataFrame`**: Prepared historical bars augmented with user and exit indicator columns (internal signal arrays omitted). Keeps every computed column, declared or not.
+- **`indicators: tuple[ChartIndicator, ...]`**: Chart series in declaration order. For a custom strategy, the columns from `chart_indicators()`; for a registered strategy run by name, its own chart indicators; empty when none are declared.
 
 ## Execution model
 
