@@ -60,9 +60,9 @@
 
 **Files:** Modify `docs/research-library.md`, `examples/research/mt5_backtest.py` and `tests/research/test_examples.py`.
 
-- [ ] Write the guide section and the results entry as the spec lists; add `--publish` to the example with a test that mocks the call.
-- [ ] Run `uv run pytest tests/research/test_examples.py -q`.
-- [ ] Commit docs and example.
+- [x] Write the guide section and the results entry as the spec lists; add `--publish` to the example with a test that mocks the call.
+- [x] Run `uv run pytest tests/research/test_examples.py -q`.
+- [x] Commit docs and example.
 
 ## Verification and handoff
 
