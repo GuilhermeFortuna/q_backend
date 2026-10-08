@@ -31,9 +31,9 @@
 
 **Files:** Modify `CONTRACTS_REV`; run `make contracts`.
 
-- [ ] Set `CONTRACTS_REV` to the merged Q-092 commit and run `make contracts` then `make contracts-check`.
-- [ ] Confirm the vendored tree is unchanged and the check is clean. If the commit cannot be fetched from the remote, stop and use the blocked workflow; do not point the Makefile at a local path in a committed change.
-- [ ] Commit the pin.
+- [x] Set `CONTRACTS_REV` to the merged Q-092 commit and run `make contracts` then `make contracts-check`.
+- [x] Confirm the vendored tree is unchanged and the check is clean. If the commit cannot be fetched from the remote, stop and use the blocked workflow; do not point the Makefile at a local path in a committed change.
+- [x] Commit the pin.
 
 ### 2. Report truncation from the gateway
 
