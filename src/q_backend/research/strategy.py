@@ -9,6 +9,7 @@ import pandas as pd
 
 from q_backend.research.charting import ChartIndicator
 from q_backend.research.orders import TradeOrder
+from q_backend.research.positions import ResearchPosition
 
 
 class ResearchStrategy(ABC):
@@ -22,8 +23,11 @@ class ResearchStrategy(ABC):
     3. ``exit_strategy(frame)``: hook called per closed-bar prefix before entry_strategy.
        Returns ``TradeOrder.close()`` or ``None``. Defaults to returning ``None``.
 
-    Hooks observe only closed-bar history up to the current bar, have no fill or position state,
-    and must not keep evolving state or assume order execution.
+    Decision hooks may additionally declare ``positions``, an immutable tuple of
+    actual open positions after this bar's fills. Frame-only overrides remain
+    supported. Exit and entry receive the same snapshot; requested orders fill
+    later and do not change it. Hooks observe only closed-bar history and must
+    not infer actual fills from previous returned orders or keep evolving state.
     """
 
     def chart_indicators(self) -> Sequence[ChartIndicator]:
@@ -43,10 +47,10 @@ class ResearchStrategy(ABC):
         return frame
 
     @abstractmethod
-    def entry_strategy(self, frame: pd.DataFrame) -> TradeOrder | None:
+    def entry_strategy(self, frame: pd.DataFrame, positions: tuple[ResearchPosition, ...] = ()) -> TradeOrder | None:
         """Produce an entry decision request for the current bar given historical prefix."""
         ...
 
-    def exit_strategy(self, frame: pd.DataFrame) -> TradeOrder | None:
+    def exit_strategy(self, frame: pd.DataFrame, positions: tuple[ResearchPosition, ...] = ()) -> TradeOrder | None:
         """Produce an exit decision request for the current bar given historical prefix."""
         return None

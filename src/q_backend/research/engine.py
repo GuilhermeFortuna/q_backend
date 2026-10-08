@@ -350,34 +350,9 @@ def _execute_backtest(
     config: Mapping[str, Any],
     strategy: Any,
 ) -> BacktestResult:
-    # If trading_strategy is ResearchStrategyAdapter, cache its augmented data
-    # so subsequent call inside engine._run_single_chunk reuses it.
-    augmented_data: pd.DataFrame
-    if isinstance(trading_strategy, ResearchStrategyAdapter):
-        # Augment once
-        augmented_data = augment_indicator_frame(trading_strategy, validated_frame)
-        # Store cached result so adapter.compute_indicators returns it directly
-        cached_result = augmented_data.copy()
-
-        original_compute = trading_strategy.compute_indicators
-        call_count = 0
-
-        def cached_compute(data: pd.DataFrame) -> pd.DataFrame:
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return cached_result
-            return original_compute(data)
-
-        trading_strategy.compute_indicators = cached_compute  # type: ignore[method-assign]
-        try:
-            registry = engine.run(validated_frame, force_close_at_end=force_close_at_end)
-        finally:
-            trading_strategy.compute_indicators = original_compute  # type: ignore[method-assign]
-    else:
-        # Built-in strategy
-        augmented_data = augment_indicator_frame(trading_strategy, validated_frame)
-        registry = engine.run(validated_frame, force_close_at_end=force_close_at_end)
+    # Prepare once, then reuse explicitly for execution and result data.
+    augmented_data = augment_indicator_frame(trading_strategy, validated_frame)
+    registry = engine.run_prepared(augmented_data, force_close_at_end=force_close_at_end)
 
     # Clean data (omit internal columns)
     clean_data = augmented_data.drop(columns=[col for col in _INTERNAL_COLUMNS if col in augmented_data.columns])

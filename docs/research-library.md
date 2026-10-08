@@ -289,8 +289,60 @@ class RSIReversion(ResearchStrategy):
            ]
    ```
 
-> [!IMPORTANT]
-> **No fill or position state in hooks:** Decision hooks are pure functions of closed-bar price history up to the current bar. They receive no fill or position callbacks. Repeated signal conditions produce repeated order requests (the kernel risk model caps total exposure). Strategies must not attempt to track open positions in instance variables or assume prior orders were filled. Furthermore, per-prefix Python evaluation and frame copying is designed for research agility and is slower than built-in vectorized strategies.
+### Open position context
+
+Both decision hooks may declare a `positions` parameter. Existing `(self, frame)`
+overrides continue working, and each hook can choose its signature independently.
+A keyword-only parameter (`def exit_strategy(self, frame, *, positions)`) is also
+supported. Parameters must explicitly be named `positions`; `*args` or `**kwargs`
+alone do not opt into context.
+
+`positions` is a tuple of immutable `ResearchPosition` snapshots. Each exposes
+`symbol`, `side` (`"long"` or `"short"`), `entry_time`, `entry_price`, and `quantity`.
+The tuple is empty when flat. It contains actual fills after queued execution and
+intrabar protective fills, before evaluating this closed bar's decisions.
+
+```python
+from q_backend.research import ResearchPosition, ResearchStrategy, TradeOrder
+
+
+class DirectionalExit(ResearchStrategy):
+    def entry_strategy(self, frame, positions: tuple[ResearchPosition, ...]):
+        if positions or len(frame) < 2:
+            return None
+        change = frame["close"].iloc[-1] - frame["close"].iloc[-2]
+        if change > 0:
+            return TradeOrder.buy()
+        if change < 0:
+            return TradeOrder.sell()
+        return None
+
+    def exit_strategy(self, frame, positions: tuple[ResearchPosition, ...]):
+        if len(frame) < 2:
+            return None
+        falling = frame["close"].iloc[-1] < frame["close"].iloc[-2]
+        rising = frame["close"].iloc[-1] > frame["close"].iloc[-2]
+        for position in positions:
+            if (position.side == "long" and falling) or (position.side == "short" and rising):
+                return TradeOrder.close()
+        return None
+```
+
+Exit runs before entry, and both receive the same position tuple. Returning a close
+request leaves those positions visible to the entry hook until the close fills at
+the next open. Returning an opposite entry alongside a close therefore still allows
+a reversal at the next open. `TradeOrder.close()` closes all open positions for the
+backtest symbol; it does not target individual snapshots.
+
+Both hooks run on every bar, even while positions are open and on final or
+session-gated bars. The engine applies its normal entry capacity and session gates;
+a request need not fill. End-of-day closure at the final bar's close and terminal
+force-close occur after that bar's hooks. Empty frames call no hooks.
+
+Keep hooks deterministic functions of their history and position snapshot, rather
+than tracking assumed fills in instance variables. Context requires a `q_core`
+release exposing the candle strategy callback. Frame copying and Python evaluation
+remain slower than built-in vectorized strategies.
 
 ### Running a backtest
 

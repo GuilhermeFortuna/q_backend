@@ -9,6 +9,8 @@ from typing import Any, Final
 
 import numpy as np
 import pandas as pd
+import inspect
+
 import q_core
 
 from q_backend.backtesting.position_sizing import (
@@ -286,6 +288,14 @@ def run_chunk(
         name: values for name in engine.required_columns(exit_params) if (values := _column(chunk, name)) is not None
     }
     tradable = None if trade_start is None else np.ascontiguousarray(~(chunk.index < trade_start), dtype=bool)
+    runtime_factory = getattr(strategy, "runtime_callback", None)
+    callback = runtime_factory(chunk) if runtime_factory is not None else None
+    if callback is not None and "strategy_callback" not in inspect.signature(engine.run_candle).parameters:
+        raise ImportError(
+            "Position-aware research strategies require a q_core release with candle strategy_callback support; "
+            "install the reviewed core wheel or update the q-core release pin after publication."
+        )
+    callback_args = {} if callback is None else {"strategy_callback": callback}
     result = engine.run_candle(
         time_us=np.ascontiguousarray(wall_clock_us(signals.index)),
         open=_column(chunk, "open"),
@@ -309,6 +319,7 @@ def run_chunk(
         exit_params=exit_params,
         day_trade_us=day_trade_us,
         force_close_at_end=force_close_at_end,
+        **callback_args,
     )
     return ChunkRun(
         {

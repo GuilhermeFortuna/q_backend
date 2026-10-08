@@ -109,14 +109,33 @@ class BacktestEngine:
                 trade_start=trade_start,
             )
 
+    def run_prepared(
+        self,
+        data: pd.DataFrame,
+        *,
+        force_close_at_end: bool = False,
+        trade_start: Optional[datetime.datetime] = None,
+    ) -> TradeRegistry:
+        """Run a sequential, already augmented frame without recomputing indicators.
+
+        The caller owns preparation, including exit-rule columns. Daily trading
+        windows still apply through the normal kernel configuration.
+        """
+        if data.empty:
+            return TradeRegistry()
+        return self._run_single_chunk(data, force_close_at_end, trade_start, prepared=True)
+
     def _run_single_chunk(
         self,
         chunk: pd.DataFrame,
         force_close_at_end: bool,
         trade_start: Optional[datetime.datetime] = None,
+        *,
+        prepared: bool = False,
     ) -> TradeRegistry:
         # 1. Compute indicators (vectorized, no lookahead bias)
-        chunk = augment_indicator_frame(self.strategy, chunk)
+        if not prepared:
+            chunk = augment_indicator_frame(self.strategy, chunk)
         signals = signal_arrays(self.strategy, chunk)
         day_trade_us = (
             parse_day_trade_times(self.day_trade_start_time, self.day_trade_end_time, self.day_trade_close_time)

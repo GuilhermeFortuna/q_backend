@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import inspect
+from collections.abc import Callable
 from typing import Any, Mapping
 
 import numpy as np
@@ -16,12 +18,22 @@ from q_backend.backtesting.signal_columns import (
 )
 from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy
 from q_backend.research.charting import ChartIndicator
-from q_backend.research.orders import TradeOrder
 from q_backend.research.frame import FRAME_COLUMNS
+from q_backend.research.orders import TradeOrder
+from q_backend.research.positions import ResearchPosition
 from q_backend.research.strategy import ResearchStrategy
 
 _RESERVED_COLUMNS = frozenset((*SIGNAL_COLUMNS, BAR_INDEX))
 _MARKET_COLUMNS = ("open", "high", "low", "close")
+
+
+def _owned_prefix(frame: pd.DataFrame, end: int) -> pd.DataFrame:
+    prefix = frame.iloc[:end].copy()
+    # DataFrame.copy retains index backing storage, which otherwise exposes future
+    # timestamps and lets a hook mutate later decision/position timestamps.
+    prefix.index = prefix.index.copy(deep=True)
+    prefix.attrs = {}
+    return prefix
 
 
 class ResearchStrategyAdapter(TradingStrategy):
@@ -43,6 +55,12 @@ class ResearchStrategyAdapter(TradingStrategy):
         # Retain engine exit strategy on the adapter so it does not shadow user's exit_strategy method
         self.exit_strategy = ExitStrategy(self.parameters)
         self._chart_indicators: tuple[ChartIndicator, ...] = ()
+        self._hook_modes = {name: self._hook_mode(name) for name in ("exit_strategy", "entry_strategy")}
+        self._uses_positions = any(
+            mode != "legacy" and getattr(type(research_strategy), name) is not getattr(ResearchStrategy, name)
+            for name, mode in self._hook_modes.items()
+        )
+        self._decision_frame: pd.DataFrame | None = None
 
     def compute_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
         """Call compute_indicators once on an owned copy and compile prefix decisions."""
@@ -118,12 +136,23 @@ class ResearchStrategyAdapter(TradingStrategy):
         exit_long = np.zeros(orig_len, dtype=bool)
         exit_short = np.zeros(orig_len, dtype=bool)
 
+        if self._uses_positions:
+            self._decision_frame = augmented.copy()
+            self._decision_frame.attrs = {}
+            return write_signal_columns(
+                augmented,
+                entry_long=pd.Series(entry_long, index=augmented.index, dtype=bool),
+                entry_short=pd.Series(entry_short, index=augmented.index, dtype=bool),
+                exit_long=pd.Series(exit_long, index=augmented.index, dtype=bool),
+                exit_short=pd.Series(exit_short, index=augmented.index, dtype=bool),
+                strategy_name=type(self.research_strategy).__name__,
+            )
+
         for i in range(orig_len):
             timestamp = augmented.index[i]
 
             # 2a. exit_strategy on an isolated owned copy of prefix
-            prefix_exit = augmented.iloc[: i + 1].copy()
-            prefix_exit.attrs = {}
+            prefix_exit = _owned_prefix(augmented, i + 1)
 
             try:
                 exit_decision = self.research_strategy.exit_strategy(prefix_exit)
@@ -147,8 +176,7 @@ class ResearchStrategyAdapter(TradingStrategy):
                 exit_short[i] = True
 
             # 2b. entry_strategy on an isolated owned copy of prefix
-            prefix_entry = augmented.iloc[: i + 1].copy()
-            prefix_entry.attrs = {}
+            prefix_entry = _owned_prefix(augmented, i + 1)
 
             try:
                 entry_decision = self.research_strategy.entry_strategy(prefix_entry)
@@ -183,6 +211,83 @@ class ResearchStrategyAdapter(TradingStrategy):
             strategy_name=type(self.research_strategy).__name__,
         )
         return result_df
+
+    def _hook_mode(self, name: str) -> str:
+        """Validate once; inspecting an explicit parameter avoids guessing from **kwargs."""
+        hook = getattr(self.research_strategy, name)
+        try:
+            signature = inspect.signature(hook)
+            parameter = signature.parameters.get("positions")
+            if parameter is None or parameter.kind in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD):
+                signature.bind(object())
+                return "legacy"
+            if parameter.kind == parameter.POSITIONAL_ONLY:
+                signature.bind(object(), ())
+                return "positional"
+            signature.bind(object(), positions=())
+            return "keyword"
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                f"{type(self.research_strategy).__name__}.{name} has an incompatible signature; "
+                "expected (frame) or (frame, positions)"
+            ) from exc
+
+    def runtime_callback(self, chunk: pd.DataFrame) -> Callable | None:
+        """Bind one prepared chunk to its original, isolated indicator history."""
+        if not self._uses_positions:
+            return None
+        history = self._decision_frame
+        if history is None:
+            raise RuntimeError("Research indicators must be prepared before runtime decisions")
+        history_positions = history.index.get_indexer(chunk.index)
+        if (history_positions < 0).any():
+            raise ValueError("Runtime chunk is not part of the prepared research frame")
+
+        def decide(bar: int, raw_positions: tuple) -> tuple[int, bool, bool, float]:
+            positions = tuple(
+                ResearchPosition(
+                    symbol=self.symbol,
+                    side="long" if side == 1 else "short",
+                    entry_time=chunk.index[entry_bar],
+                    entry_price=price,
+                    quantity=quantity,
+                )
+                for _ordinal, side, entry_bar, price, quantity in raw_positions
+            )
+            end = int(history_positions[bar]) + 1
+            decisions = []
+            for name in ("exit_strategy", "entry_strategy"):
+                prefix = _owned_prefix(history, end)
+                decisions.append(self._invoke_hook(name, prefix, positions))
+            exit_decision, entry_decision = decisions
+            entry = 0 if entry_decision is None else (1 if entry_decision.action == "buy" else -1)
+            return entry, exit_decision is not None, exit_decision is not None, 1.0 if entry else 0.0
+
+        return decide
+
+    def _invoke_hook(
+        self, name: str, prefix: pd.DataFrame, positions: tuple[ResearchPosition, ...]
+    ) -> TradeOrder | None:
+        hook = getattr(self.research_strategy, name)
+        mode = self._hook_modes[name]
+        timestamp = prefix.index[-1]
+        label = f"{type(self.research_strategy).__name__}.{name} at bar {timestamp}"
+        try:
+            if mode == "legacy":
+                decision = hook(prefix)
+            elif mode == "positional":
+                decision = hook(prefix, positions)
+            else:
+                decision = hook(prefix, positions=positions)
+        except Exception as exc:
+            raise RuntimeError(f"Error in {label}: {exc}") from exc
+        if decision is not None:
+            if not isinstance(decision, TradeOrder):
+                raise TypeError(f"{label} returned {type(decision).__name__}, expected TradeOrder or None")
+            allowed = ("close",) if name == "exit_strategy" else ("buy", "sell")
+            if decision.action not in allowed:
+                raise ValueError(f"{label} returned illegal action {decision.action!r}; permitted actions: {allowed}")
+        return decision
 
     def _declare_chart_indicators(self, augmented: pd.DataFrame) -> tuple[ChartIndicator, ...]:
         name = type(self.research_strategy).__name__

@@ -1,5 +1,7 @@
 # Q-091: Research strategy classes and local backtesting
 
+> Position context is extended by [research-position-context-spec.md](research-position-context-spec.md). Its optional hook signatures and runtime evaluation supersede this initial spec's no-position limitation.
+
 **Status:** written spec and plan awaiting human review; the Q project board is the status of record.
 **Batch:** 15 — Python research library
 **Depends on:** Q-089, Q-090, Q-028
