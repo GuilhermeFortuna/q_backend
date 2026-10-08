@@ -10,7 +10,7 @@ The research adapter rebuilds causal partial candles and recomputes indicators
 only during candidate replay; results record the actual tick fill.
 **Tech stack:** Rust, PyO3, Python 3.12, pandas, numpy, `q_core`, pytest.
 **Spec:** [Specification](../specs/Q-104-stop-and-target-orders-in-research-backtests-spec.md)
-**Status:** revised plan awaiting human review; no product implementation performed.
+**Status:** In Progress. Core step 0 is implemented, verified and published; continue backend steps 1–4.
 
 ## Global constraints
 
@@ -27,8 +27,10 @@ only during candidate replay; results record the actual tick fill.
   today's closed-bar behavior. Screening is execution-free and conservative.
 - Final-candle information may screen, but cannot enter causal replay frames,
   indicator values or execution state. Never backdate a screen result as a fill.
-- Coordinate the required core branch/release before implementation. Q-102 is
-  Done and is not reopened; the new callback extension belongs to Q-104's scope.
+- The required core extension is published as `v2026.10.08.3`; its branch and
+  worktree use Q-104's canonical name. Q-102 remains Done. Continue the remaining
+  backend implementation through final verification and In Review; no additional
+  core scope approval or intermediate release handoff is needed.
 
 ## Review focus
 
@@ -60,24 +62,46 @@ Snapshots use the existing binding shape; tick callbacks receive one observed
 price at a time. Runtime entry orders must also transport their protective levels,
 preserving the old strategy callback return for callers without levels.
 
-- [ ] Add failing core/binding tests for lazy union screening, one source request,
-  chronological custom/protective competition, ties, actual snapshots, entry-tick
-  exclusion, timestamp/source ordering and old callback compatibility.
-- [ ] Integrate callbacks in the shared loop: screen after queued fills, combine
-  protective/custom processing in tick order, then evaluate closed-bar decisions.
-  Preserve owned buffers and contextual callback/source exceptions.
-- [ ] Run focused candle/protective Rust and binding gates and commit core changes.
-  Record the exact final runtime level-transport interface in this plan.
-- [ ] Coordinate publication through the normal core release workflow and record
-  its tag. Do not finish backend adoption against an unpublished local core path.
+- [x] Core/binding tests cover lazy union screening, one source request,
+  chronological custom/protective competition, ties, snapshots, entry-tick
+  exclusion, source ordering and old callback compatibility.
+- [x] Callbacks are integrated into the shared loop; screen after queued fills,
+  combine protective/custom processing in tick order, then evaluate bar decisions.
+- [x] Core changes committed as `e4ed25d` and `095c2ce`. Fresh `make check` passed
+  on the final source, including Rust, fixtures, parity isolation, Python wheel,
+  Qt harness and contracts gates. The publication pre-push CI also passed.
+- [x] Published `v2026.10.08.3` at
+  `095c2ce507278dcb814b620db1087fa5b77393a9` on 2026-10-08. The intermediate core
+  fast-forward/tag/push was authorized by the user's instruction to remove the
+  release gate so the assigned agent can finish Q-104. Q-104 itself stays open.
+
+**Final binding interface:** `strategy_callback` returns either the original
+`(entry, exit_long, exit_short, strength)` or six values
+`(entry, exit_long, exit_short, strength, stop_price, target_price)`. `NaN` means
+no level; six-value decisions override static levels. Screen/tick callbacks must
+be supplied together, return Python booleans, and use the signatures above.
+There is no separate custom-exit capability constant; check the supported
+callback parameters in addition to `PROTECTIVE_ORDERS` when adopting the binding.
+
+**Continuation:** Use the published tag, complete all remaining steps and their
+acceptance checks, and report Q-104 In Review only after the backend work passes.
+The `q_core`, `q_backend` and compatibility-record branches/worktrees share the
+canonical name `Q-104-stop-target-and-lazy-intrabar-exits-in-research-backtests`.
+Record backend adoption and its evidence in the existing Q-104 `q_contracts`
+worktree. Final task merging remains the normal human review/finish step.
 
 ### 1. Pin the kernel and extend the order
 
 **Files:** Modify `pyproject.toml`, `uv.lock`, `src/q_backend/backtesting/candle_kernel.py` (`check_engine`), `src/q_backend/research/orders.py`, `tests/research/test_research_strategy.py` and the `check_engine` test.
 **Interfaces:** `TradeOrder.buy(*, stop_loss=None, take_profit=None)`, `TradeOrder.sell(...)`.
 
-- [ ] Move the current `v2026.10.08.2` pin to the released tag from step 0; require
-  both protective and custom intrabar callback capabilities, preserving positions.
+- [x] Move the pin from `v2026.10.08.2` to published `v2026.10.08.3`.
+  `uv lock` and `uv sync` passed; the lock resolves
+  `095c2ce507278dcb814b620db1087fa5b77393a9`. Installed-module inspection confirmed
+  `PROTECTIVE_ORDERS` and both screen/tick callback parameters. Package version is
+  `2026.10.8` and contracts revision is `998a50570905524bfb9af0465a725b170f2970df`.
+- [ ] Update `check_engine` to require protective and custom intrabar callback
+  capabilities, preserving positions.
 - [ ] Add failing tests for spec acceptance item 9 and for `check_engine` rejecting a module without `PROTECTIVE_ORDERS`.
 - [ ] Implement, run `uv run pytest tests/research/test_research_strategy.py tests/backtesting -q` and confirm green. Commit this unit.
 
