@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -92,6 +92,31 @@ class BacktestProvenance(BaseModel):
     strategy_source: Optional[str] = None
     git_revision: Optional[str] = None
     git_dirty: Optional[bool] = None
+
+
+class BacktestImportBar(BaseModel):
+    """A bar as a script produces it: epoch seconds or the ISO-8601 string the result endpoint serves."""
+
+    timestamp: Union[int, str]
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+
+
+class BacktestImportResult(BacktestResponse):
+    bars: List[BacktestImportBar]
+
+
+class BacktestImportRequest(BaseModel):
+    config: BacktestRequest
+    result: BacktestImportResult
+    provenance: BacktestProvenance
+
+
+class BacktestImportResponse(BaseModel):
+    run_id: str
 
 
 class BacktestRunListItem(BaseModel):

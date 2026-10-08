@@ -8,6 +8,8 @@ from q_backend.api.backtest_jobs import BacktestJobRequest
 from q_backend.api.deps import get_session
 from q_backend.api.schemas.backtest import (
     BacktestEquityArtifactResponse,
+    BacktestImportRequest,
+    BacktestImportResponse,
     BacktestOrigin,
     BacktestResponse,
     BacktestRunDetailResponse,
@@ -18,6 +20,7 @@ from q_backend.api.schemas.backtest import (
     BacktestTradesArtifactResponse,
 )
 from q_backend.api.schemas.common import BulkDeleteBacktestsRequest, BulkDeleteResponse
+from q_backend.backtesting import run_import
 from q_backend.backtesting import run_service as backtest_run_service
 from q_backend.ml_filters.compatibility import (
     MLFilterCompatibilityError,
@@ -51,6 +54,12 @@ def start_backtest(request: BacktestJobRequest):
     except MLFilterModelUnavailableError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"run_id": run_id, "status": "running"}
+
+
+@router.post("/api/v1/backtests/import", response_model=BacktestImportResponse, status_code=201)
+def import_backtest(body: BacktestImportRequest, session: Session = Depends(get_session)):
+    """Record a finished backtest produced outside the stack as a completed script run."""
+    return {"run_id": run_import.import_backtest_run(session, body)}
 
 
 @router.get("/api/v1/backtest/{run_id}", response_model=BacktestStatusResponse)
