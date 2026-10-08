@@ -78,6 +78,25 @@ def _record_tick_grid_check(
     return out
 
 
+def _ticks_frame_from_columnar(arrays: dict[str, np.ndarray]) -> pd.DataFrame:
+    """Build the research tick frame from gateway columnar arrays."""
+    times = pd.DatetimeIndex(
+        [_time_msc_to_naive_local(int(value)) for value in arrays["time_msc"]],
+        name="time",
+    ).tz_localize(BRASILIA_TZ)
+    frame = pd.DataFrame(
+        {
+            "bid": np.asarray(arrays["bid"], dtype=np.float64),
+            "ask": np.asarray(arrays["ask"], dtype=np.float64),
+            "last": np.asarray(arrays["last"], dtype=np.float64),
+            "volume": np.asarray(arrays["volume"], dtype=np.float64),
+            "flags": _decode_tick_flags(np.asarray(arrays["flags"], dtype=np.int64)),
+        },
+        index=times,
+    ).sort_index(kind="stable")
+    return frame
+
+
 def _decode_tick_flags(flags: np.ndarray) -> np.ndarray:
     """Describe public MT5 bits, preserving undocumented bits without guessing their meaning."""
     public_bits = (
@@ -212,20 +231,7 @@ def load_ticks(
         flags=COPY_TICKS_ALL if flags is None else flags,
         use_cache=False,
     )
-    times = pd.DatetimeIndex(
-        [_time_msc_to_naive_local(int(value)) for value in ticks["time_msc"]],
-        name="time",
-    ).tz_localize(BRASILIA_TZ)
-    frame = pd.DataFrame(
-        {
-            "bid": np.asarray(ticks["bid"], dtype=np.float64),
-            "ask": np.asarray(ticks["ask"], dtype=np.float64),
-            "last": np.asarray(ticks["last"], dtype=np.float64),
-            "volume": np.asarray(ticks["volume"], dtype=np.float64),
-            "flags": _decode_tick_flags(np.asarray(ticks["flags"], dtype=np.int64)),
-        },
-        index=times,
-    ).sort_index(kind="stable")
+    frame = _ticks_frame_from_columnar(ticks)
     frame = filter_index_range(frame, start_ts, end_ts)
     if frame.empty:
         raise NoMarketDataError(
