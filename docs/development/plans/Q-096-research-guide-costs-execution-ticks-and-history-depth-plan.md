@@ -29,10 +29,35 @@
 
 **Files:** Modify `tests/research/test_backtest.py`.
 
-- [ ] List the execution statements from the spec and find the existing test for each in `tests/research/test_backtest.py`, `tests/backtesting/test_engine.py` and `tests/backtesting/test_exit_rules.py`. Record the mapping in this plan.
-- [ ] For each statement with no test, add one focused case on a small synthetic frame: likely candidates are the inclusive day-trade entry window, a skipped opposite entry while a position is open, the same-bar close-and-reverse, and overnight carry without `day_trade`.
-- [ ] Run `uv run pytest tests/research/test_backtest.py -q`. These tests describe existing behaviour and should pass without a source change; a failure means the statement is wrong, so correct the statement, not the engine.
-- [ ] Commit the tests.
+- [x] List the execution statements from the spec and find the existing test for each in `tests/research/test_backtest.py`, `tests/backtesting/test_engine.py` and `tests/backtesting/test_exit_rules.py`. Record the mapping in this plan.
+- [x] For each statement with no test, add one focused case on a small synthetic frame: likely candidates are the inclusive day-trade entry window, a skipped opposite entry while a position is open, the same-bar close-and-reverse, and overnight carry without `day_trade`.
+- [x] Run `uv run pytest tests/research/test_backtest.py -q`. These tests describe existing behaviour and should pass without a source change; a failure means the statement is wrong, so correct the statement, not the engine.
+- [x] Commit the tests.
+
+#### Execution statement to test mapping
+
+1. Strategy hooks see completed bars only. An entry or close decided on a bar fills at the next bar's open.
+   - `tests/backtesting/test_engine.py::test_engine_fills_at_next_bar_open_not_signal_bar_close`
+   - `tests/backtesting/test_engine.py::test_engine_sequential_swing_trade`
+   - `tests/research/test_backtest.py::test_parity_with_direct_engine_calls`
+2. Exit rules follow the catalog text from Q-094: evaluated on each completed bar against its high or low, closing at the next bar's open, so the exit price can differ from the level. A rule can trigger on the entry bar.
+   - `tests/backtesting/test_exit_rules.py::test_stop_loss_long_exits_at_next_bar_open`
+   - `tests/backtesting/test_exit_rules.py::test_take_profit_long_exits_at_next_bar_open`
+   - `tests/backtesting/test_exit_rules.py::test_stop_triggered_on_entry_bar_exits_at_next_open`
+3. One position per symbol under fixed-quantity sizing: repeated entry requests do not stack, and an opposite entry request is skipped while the position cap is full. Returning a close and an opposite entry on the same bar reverses at the next open.
+   - Repeated entry requests do not stack: `tests/backtesting/test_engine.py::test_engine_caps_position_at_risk_model_size`
+   - Skipped opposite entry while position is open: `tests/research/test_backtest.py::test_opposite_entry_skipped_while_position_open`
+   - Same-bar close and reverse: `tests/research/test_backtest.py::test_same_bar_close_and_reverse`
+4. With `day_trade=True`: an entry is taken only from a signal bar whose time lies between the start and end times inclusive; open positions close at the open of the first bar at or after the close time; a position still open on the last bar of a calendar day closes at that bar's close.
+   - Inclusive entry window bounds (start and end times inclusive): `tests/research/test_backtest.py::test_day_trade_inclusive_entry_window_and_forced_close_prices`
+   - Forced close at open of first bar at or after close time: `tests/backtesting/test_engine.py::test_engine_day_trade_hours`, `tests/research/test_backtest.py::test_day_trade_inclusive_entry_window_and_forced_close_prices`
+   - Forced close at close of last bar of calendar day: `tests/backtesting/test_engine.py::test_engine_parallel_day_trade`, `tests/backtesting/test_engine.py::test_engine_sequential_day_trade`, `tests/research/test_backtest.py::test_day_trade_inclusive_entry_window_and_forced_close_prices`
+5. Without `day_trade`, positions carry across sessions. `force_close_at_end` closes at the last bar's close.
+   - Carry across sessions: `tests/backtesting/test_engine.py::test_engine_sequential_swing_trade`, `tests/research/test_backtest.py::test_overnight_carry_without_day_trade`
+   - Force close at end: `tests/research/test_backtest.py::test_open_trade_and_unforced_vs_forced_close`, `tests/research/test_backtest.py::test_overnight_carry_without_day_trade`
+6. `equity` is realized only, as the guide already says.
+   - `tests/research/test_backtest.py::test_realized_equity_equals_initial_capital_plus_closed_pnl`
+
 
 ### 2. Show costs in the examples
 

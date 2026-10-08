@@ -335,3 +335,191 @@ def test_open_trade_and_unforced_vs_forced_close(ohlcv_5m: pd.DataFrame) -> None
     assert not pd.isna(t_closed["exit_time"])
     assert not pd.isna(t_closed["pnl"])
     assert res_closed.metrics["total_trades"] == 1
+
+
+def test_opposite_entry_skipped_while_position_open() -> None:
+    """An opposite entry signal is skipped while a position is already open."""
+    idx = pd.date_range("2026-09-01 09:00", periods=5, freq="5min", tz=BRASILIA_TZ, name="time")
+    df = pd.DataFrame(
+        {
+            "open": [100.0, 101.0, 102.0, 103.0, 104.0],
+            "high": [101.0, 102.0, 103.0, 104.0, 105.0],
+            "low": [99.0, 100.0, 101.0, 102.0, 103.0],
+            "close": [100.0, 101.0, 102.0, 103.0, 104.0],
+            "tick_volume": [100] * 5,
+        },
+        index=idx,
+    )
+
+    class OppositeEntryStrat(ResearchStrategy):
+        def entry_strategy(self, frame: pd.DataFrame) -> TradeOrder | None:
+            # Bar 0 signals BUY -> enters at bar 1 open
+            if len(frame) == 1:
+                return TradeOrder.buy()
+            # Bar 1 signals SELL while long position is already open
+            if len(frame) == 2:
+                return TradeOrder.sell()
+            return None
+
+    res = backtest(df, strategy=OppositeEntryStrat(), symbol="PETR4", force_close_at_end=False)
+    assert len(res.trades) == 1
+    trade = res.trades.iloc[0]
+    assert trade["side"] == "long"
+    assert trade["status"] == "open"
+    assert trade["entry_time"] == idx[1]
+    assert trade["entry_price"] == 101.0
+
+
+def test_same_bar_close_and_reverse() -> None:
+    """Returning a close and an opposite entry on the same bar reverses at the next open."""
+    idx = pd.date_range("2026-09-01 09:00", periods=5, freq="5min", tz=BRASILIA_TZ, name="time")
+    df = pd.DataFrame(
+        {
+            "open": [100.0, 101.0, 102.0, 103.0, 104.0],
+            "high": [101.0, 102.0, 103.0, 104.0, 105.0],
+            "low": [99.0, 100.0, 101.0, 102.0, 103.0],
+            "close": [100.0, 101.0, 102.0, 103.0, 104.0],
+            "tick_volume": [100] * 5,
+        },
+        index=idx,
+    )
+
+    class ReversalStrat(ResearchStrategy):
+        def entry_strategy(self, frame: pd.DataFrame) -> TradeOrder | None:
+            if len(frame) == 1:
+                return TradeOrder.buy()
+            if len(frame) == 2:
+                return TradeOrder.sell()
+            return None
+
+        def exit_strategy(self, frame: pd.DataFrame) -> TradeOrder | None:
+            if len(frame) == 2:
+                return TradeOrder.close()
+            return None
+
+    res = backtest(df, strategy=ReversalStrat(), symbol="PETR4", force_close_at_end=False)
+    assert len(res.trades) == 2
+    long_trade = res.trades.iloc[0]
+    short_trade = res.trades.iloc[1]
+
+    # Long trade entered at bar 1 open, closed at bar 2 open
+    assert long_trade["side"] == "long"
+    assert long_trade["status"] == "closed"
+    assert long_trade["entry_time"] == idx[1]
+    assert long_trade["entry_price"] == 101.0
+    assert long_trade["exit_time"] == idx[2]
+    assert long_trade["exit_price"] == 102.0
+
+    # Short trade entered on the same bar (bar 2 open)
+    assert short_trade["side"] == "short"
+    assert short_trade["status"] == "open"
+    assert short_trade["entry_time"] == idx[2]
+    assert short_trade["entry_price"] == 102.0
+
+
+def test_day_trade_inclusive_entry_window_and_forced_close_prices() -> None:
+    """Verifies inclusive entry window bounds and two forced-close prices under day_trade=True."""
+    times = pd.to_datetime(
+        [
+            "2026-09-01 09:25:00",
+            "2026-09-01 09:30:00",
+            "2026-09-01 15:00:00",
+            "2026-09-01 15:30:00",
+            "2026-09-02 15:00:00",
+            "2026-09-02 15:05:00",
+        ]
+    ).tz_localize(BRASILIA_TZ)
+
+    df = pd.DataFrame(
+        {
+            "open": [100.0, 101.0, 102.0, 104.0, 110.0, 112.0],
+            "high": [101.0, 102.0, 103.0, 105.0, 111.0, 115.0],
+            "low": [99.0, 100.0, 101.0, 103.0, 109.0, 111.0],
+            "close": [100.0, 101.0, 102.0, 104.0, 110.0, 114.0],
+            "tick_volume": [100] * len(times),
+        },
+        index=times,
+    )
+
+    class WindowStrat(ResearchStrategy):
+        def entry_strategy(self, frame: pd.DataFrame) -> TradeOrder | None:
+            return TradeOrder.buy()
+
+    res = backtest(
+        df,
+        strategy=WindowStrat(),
+        symbol="PETR4",
+        day_trade=True,
+        day_trade_start_time="09:30",
+        day_trade_end_time="15:00",
+        day_trade_close_time="15:30",
+        force_close_at_end=False,
+    )
+
+    assert len(res.trades) == 2
+    t1 = res.trades.iloc[0]
+    t2 = res.trades.iloc[1]
+
+    # Trade 1:
+    # 09:25 signal ignored (< 09:30).
+    # 09:30 signal accepted (inclusive start) -> entered at 15:00 open (102.0).
+    # 15:30 close time reached -> force closed at open of the close-time bar (104.0).
+    assert t1["entry_time"] == times[2]
+    assert t1["entry_price"] == 102.0
+    assert t1["exit_time"] == times[3]
+    assert t1["exit_price"] == 104.0
+
+    # Trade 2:
+    # 15:00 signal accepted (inclusive end) -> entered at 15:05 open (112.0).
+    # 15:05 is last bar of day 2 -> force closed at the close of the last bar of the day (114.0).
+    assert t2["entry_time"] == times[5]
+    assert t2["entry_price"] == 112.0
+    assert t2["exit_time"] == times[5]
+    assert t2["exit_price"] == 114.0
+    assert t2["exit_reason"] == "END_OF_DAY"
+
+
+def test_overnight_carry_without_day_trade() -> None:
+    """Without day_trade, positions carry across sessions until exited or force-closed at the end."""
+    times = pd.to_datetime(
+        [
+            "2026-09-01 10:00:00",
+            "2026-09-01 10:05:00",
+            "2026-09-02 10:00:00",
+            "2026-09-02 10:05:00",
+        ]
+    ).tz_localize(BRASILIA_TZ)
+
+    df = pd.DataFrame(
+        {
+            "open": [100.0, 101.0, 102.0, 103.0],
+            "high": [101.0, 102.0, 103.0, 104.0],
+            "low": [99.0, 100.0, 101.0, 102.0],
+            "close": [100.0, 101.0, 102.0, 103.5],
+            "tick_volume": [100] * 4,
+        },
+        index=times,
+    )
+
+    class SwingStrat(ResearchStrategy):
+        def entry_strategy(self, frame: pd.DataFrame) -> TradeOrder | None:
+            if len(frame) == 1:
+                return TradeOrder.buy()
+            return None
+
+    # Unforced: stays open overnight across session boundary
+    res_open = backtest(df, strategy=SwingStrat(), symbol="PETR4", day_trade=False, force_close_at_end=False)
+    assert len(res_open.trades) == 1
+    t_open = res_open.trades.iloc[0]
+    assert t_open["status"] == "open"
+    assert t_open["entry_time"] == times[1]
+    assert pd.isna(t_open["exit_time"])
+
+    # Forced at end: carries overnight across day 1 to day 2, then closes at the last bar's close
+    res_forced = backtest(df, strategy=SwingStrat(), symbol="PETR4", day_trade=False, force_close_at_end=True)
+    assert len(res_forced.trades) == 1
+    t_forced = res_forced.trades.iloc[0]
+    assert t_forced["status"] == "closed"
+    assert t_forced["entry_time"] == times[1]
+    assert t_forced["exit_time"] == times[3]
+    assert t_forced["exit_price"] == 103.5  # close of the final bar
