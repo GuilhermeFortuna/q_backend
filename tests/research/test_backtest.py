@@ -693,3 +693,120 @@ def test_chart_indicator_series_serialize_one_value_per_bar(ohlcv_5m: pd.DataFra
     assert [series["pane"] for series in chart["indicators"]] == ["price", "oscillator"]
     for series in chart["indicators"]:
         assert len(series["values"]) == len(ohlcv_5m)
+
+
+class CustomConfigStrategy(ResearchStrategy):
+    """Strategy with scalar and non-scalar attributes for config testing."""
+
+    def __init__(self) -> None:
+        self.fast_period = 3
+        self.slow_period = 5
+        self.tag = "alpha"
+        self.active = True
+        self.threshold = 0.5
+        self.optional_val = None
+        # Non-scalar attributes that must be omitted
+        self.weights = [0.1, 0.2, 0.7]
+        self.nested_dict = {"a": 1}
+        self.custom_obj = object()
+        # Private attribute that must be omitted
+        self._private_key = "secret"
+
+    def compute_indicators(self, frame: pd.DataFrame) -> pd.DataFrame:
+        return frame
+
+    def entry_strategy(self, frame: pd.DataFrame) -> TradeOrder | None:
+        return None
+
+    def helper_method(self) -> str:
+        return "noop"
+
+
+def test_config_records_run_arguments_and_scalar_params(ohlcv_5m: pd.DataFrame) -> None:
+    frame = ohlcv_5m.copy()
+    frame.attrs["q_research"] = {"timeframe": "M5", "symbol": "WIN$"}
+    strat = CustomConfigStrategy()
+    result = backtest(
+        frame,
+        strategy=strat,
+        symbol="WIN$",
+        quantity=2,
+        point_value=0.2,
+        initial_capital=50000.0,
+        day_trade=True,
+        day_trade_start_time="09:15",
+        day_trade_end_time="16:30",
+        day_trade_close_time="17:15",
+        force_close_at_end=True,
+    )
+    assert result.config["symbol"] == "WIN$"
+    assert result.config["strategy"] == "CustomConfigStrategy"
+    assert result.config["quantity"] == 2
+    assert result.config["point_value"] == 0.2
+    assert result.config["initial_capital"] == 50000.0
+    assert result.config["costs"] is None
+    assert result.config["exit_params"] is None
+    assert result.config["day_trade"] is True
+    assert result.config["day_trade_start_time"] == "09:15"
+    assert result.config["day_trade_end_time"] == "16:30"
+    assert result.config["day_trade_close_time"] == "17:15"
+    assert result.config["force_close_at_end"] is True
+    assert result.config["timeframe"] == "M5"
+
+    expected_params = {
+        "fast_period": 3,
+        "slow_period": 5,
+        "tag": "alpha",
+        "active": True,
+        "threshold": 0.5,
+        "optional_val": None,
+    }
+    assert result.config["strategy_params"] == expected_params
+
+    with pytest.raises(TypeError):
+        result.config["symbol"] = "PETR4"  # type: ignore[index]
+
+
+def test_config_records_registered_strategy(ohlcv_5m: pd.DataFrame) -> None:
+    params = {"short_period": 3, "long_period": 5}
+    costs = TransactionCostConfig(cost_per_contract=1.5, cost_bps=2.0)
+    result = backtest(
+        ohlcv_5m,
+        strategy="MACrossover",
+        symbol="WIN$",
+        strategy_params=params,
+        costs=costs,
+        exit_params={"stop_loss_pct": 0.01},
+    )
+    assert result.config["symbol"] == "WIN$"
+    assert result.config["strategy"] == "MACrossover"
+    assert result.config["strategy_params"] == params
+    assert result.config["costs"] == costs
+    assert result.config["exit_params"] == {"stop_loss_pct": 0.01}
+    assert result.config["timeframe"] is None
+
+
+def test_config_frame_without_timeframe_metadata(ohlcv_5m: pd.DataFrame) -> None:
+    frame = ohlcv_5m.copy()
+    assert "q_research" not in frame.attrs
+    result = backtest(frame, strategy=CrossoverHelper(), symbol="WIN$")
+    assert result.config["timeframe"] is None
+
+
+def test_config_and_trades_on_empty_frame() -> None:
+    idx = pd.DatetimeIndex([], name="time", tz=BRASILIA_TZ)
+    empty_df = pd.DataFrame(columns=["open", "high", "low", "close", "volume"], index=idx)
+    empty_df.attrs["q_research"] = {"timeframe": "H1"}
+    result = backtest(empty_df, strategy="MACrossover", symbol="WIN$")
+    assert result.config["symbol"] == "WIN$"
+    assert result.config["strategy"] == "MACrossover"
+    assert result.config["timeframe"] == "H1"
+    assert result._closed_trades == ()
+
+
+def test_result_retains_private_closed_trades(ohlcv_5m: pd.DataFrame) -> None:
+    from q_backend.backtesting.models import Trade
+
+    result = backtest(ohlcv_5m, strategy=CrossoverHelper(), symbol="WIN$")
+    assert len(result._closed_trades) == len(result.trades[result.trades["status"] == "closed"])
+    assert all(isinstance(t, Trade) for t in result._closed_trades)

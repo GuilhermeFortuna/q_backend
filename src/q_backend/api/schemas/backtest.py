@@ -87,8 +87,8 @@ BacktestOrigin = Literal["stack", "script"]
 
 
 class BacktestProvenance(BaseModel):
-    script: str
-    strategy_class: str
+    script: Optional[str] = None
+    strategy_class: Optional[str] = None
     strategy_source: Optional[str] = None
     git_revision: Optional[str] = None
     git_dirty: Optional[bool] = None

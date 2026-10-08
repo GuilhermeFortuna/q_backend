@@ -35,7 +35,7 @@ Sends the run to `POST /api/v1/backtests/import` (Q-097, Q-099) and returns the 
 
 - `name` is the strategy name shown in history; it defaults to `config["strategy"]`.
 - `timeframe` overrides the recorded one. With neither, `publish` raises `ValueError` saying to pass `timeframe=`.
-- `api_url` overrides `Q_API_URL`, which defaults to `http://127.0.0.1:8000`, the address `./dev research` serves.
+- `api_url` overrides `Q_API_URL`, which defaults to `http://127.0.0.1:8001`, the address `./dev research` serves.
 
 The request is built as follows:
 

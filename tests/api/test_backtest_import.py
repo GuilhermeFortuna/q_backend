@@ -251,3 +251,83 @@ def test_import_lake_write_failure_leaves_no_row_or_lake_directory(api_db_sessio
     assert raised.value.status_code == 500
     assert list_backtests(session=api_db_session, limit=50, offset=0)["total"] == 0
     assert _lake_backtest_dirs(lake) == []
+
+
+from q_backend.research import ChartIndicator, ResearchStrategy, TradeOrder, backtest
+
+
+class ImportRoundTripStrategy(ResearchStrategy):
+    def chart_indicators(self):
+        return (ChartIndicator("sma", pane="price", label="SMA"),)
+
+    def compute_indicators(self, frame):
+        frame = frame.copy()
+        frame["sma"] = frame["close"].rolling(2).mean()
+        return frame
+
+    def entry_strategy(self, frame):
+        if len(frame) == 3:
+            return TradeOrder.buy()
+        return None
+
+    def exit_strategy(self, frame):
+        if len(frame) == 4:
+            return TradeOrder.close()
+        return None
+
+
+def test_publish_round_trip_through_api_test_client(api_db_session, api_session_scope, lake):
+    import httpx
+    import pandas as pd
+    from fastapi.testclient import TestClient
+
+    from q_backend.api.deps import get_session
+    from q_backend.api.main import app
+    from q_backend.market_data.timezone import BRASILIA_TZ
+
+    app.dependency_overrides[get_session] = lambda: api_db_session
+    try:
+        client = TestClient(app)
+        idx = pd.date_range("2024-01-02 10:00", periods=5, freq="5min", tz=BRASILIA_TZ, name="time")
+        frame = pd.DataFrame(
+            {
+                "open": [100.0, 101.0, 102.0, 103.0, 104.0],
+                "high": [101.0, 102.0, 103.0, 104.0, 105.0],
+                "low": [99.0, 100.0, 101.0, 102.0, 103.0],
+                "close": [100.5, 101.5, 102.5, 103.5, 104.5],
+                "tick_volume": [100, 110, 120, 130, 140],
+            },
+            index=idx,
+        )
+        frame.attrs["q_research"] = {"timeframe": "M5", "symbol": "WIN$N"}
+
+        strat = ImportRoundTripStrategy()
+        result = backtest(frame, strategy=strat, symbol="WIN$N")
+
+        with patch("q_backend.research.publishing.httpx.Client", return_value=client):
+            run_id = result.publish(api_url="http://testserver")
+
+        resp = client.get(f"/api/v1/backtest/{run_id}/result")
+        assert resp.status_code == 200
+        read_back = resp.json()
+
+        assert read_back["run_id"] == run_id
+        assert read_back["metrics"] == result.metrics
+
+        assert len(read_back["bars"]) == len(result.data)
+        for i, bar in enumerate(read_back["bars"]):
+            assert bar["close"] == result.data["close"].iloc[i]
+            assert bar["open"] == result.data["open"].iloc[i]
+
+        assert len(read_back["indicators"]) == len(result.indicators)
+        assert read_back["indicators"][0]["key"] == "sma"
+        assert read_back["indicators"][0]["values"][0] is None
+        assert read_back["indicators"][0]["values"][1] == 101.0
+
+        closed_trades = result.trades[result.trades["status"] == "closed"]
+        assert len(read_back["trades"]) == len(closed_trades)
+        assert len(read_back["trades"]) > 0
+        assert read_back["trades"][0]["status"] == "CLOSED"
+        assert read_back["trades"][0]["pnl"] == closed_trades["pnl"].iloc[0]
+    finally:
+        app.dependency_overrides.pop(get_session, None)

@@ -335,6 +335,23 @@ print(result.equity)
 - **`equity: DataFrame`**: Time series indexed by bar timestamp containing `realized_equity` (initial capital plus cumulative net PnL from closed trades). Open positions are not marked to market.
 - **`data: DataFrame`**: Prepared historical bars augmented with user and exit indicator columns (internal signal arrays omitted). Keeps every computed column, declared or not.
 - **`indicators: tuple[ChartIndicator, ...]`**: Chart series in declaration order. For a custom strategy, the columns from `chart_indicators()`; for a registered strategy run by name, its own chart indicators; empty when none are declared.
+- **`config: Mapping`**: Read-only mapping recording the run arguments (`symbol`, `strategy`, `strategy_params`, `quantity`, `point_value`, `initial_capital`, `costs`, `exit_params`, `day_trade`, session times, `force_close_at_end`, and `timeframe`).
+
+### Publish a backtest to the Research stack
+
+A research script can record its finished backtest in the Research stack for visual review:
+
+```python
+result = backtest(bars, strategy=SmartMaCrossover(), symbol="CCM$", quantity=1, point_value=450.0)
+run_id = result.publish()
+```
+
+- **History and views:** Once published, the run appears in Backtests history on the Research desktop (`origin: script`). The Trade Chart, Performance, Monthly breakdown, and Trade List views are fully populated.
+- **Chart indicators:** Chart series drawn in the Trade Chart come directly from `chart_indicators()`.
+- **Review only:** A published run is a record for review and analysis. Because custom strategy code lives in the research script, the run cannot be re-run or optimised from the desktop.
+- **API URL:** `publish()` sends the run to `POST /api/v1/backtests/import`. The base URL defaults to `http://127.0.0.1:8001` (the address `./dev research` serves) and can be configured via the `Q_API_URL` environment variable or overridden with `api_url=`.
+- **Strategy name and timeframe:** `name` defaults to `result.config["strategy"]` and `timeframe` defaults to `result.config["timeframe"]` (from `bars.attrs["q_research"]["timeframe"]`). Both can be overridden explicitly: `result.publish(name="MyModel", timeframe="H1")`. If the input frame lacks timeframe metadata, `timeframe=` is required.
+- **Run lifecycle:** Publishing never alters the `BacktestResult` and never retries automatically. Each call creates a new run in the stack.
 
 ## Execution model
 

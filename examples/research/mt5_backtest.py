@@ -70,6 +70,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--gateway-url", default=os.getenv("Q_MT5_GATEWAY_URL"))
     parser.add_argument("--gateway-token", default=os.getenv("Q_MT5_GATEWAY_TOKEN"))
+    parser.add_argument(
+        "--publish",
+        action="store_true",
+        help="Publish the completed backtest to the Research stack",
+    )
     return parser
 
 
@@ -150,6 +155,11 @@ def main(argv: list[str] | None = None) -> int:
         print(result.trades.head())
     print("\nFinal Realized Equity:")
     print(result.equity.tail(1))
+
+    if args.publish:
+        run_id = result.publish()
+        print(f"\nPublished backtest run to the Research stack: {run_id}")
+
     return 0
 
 

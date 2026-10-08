@@ -32,40 +32,45 @@
 **Files:** Modify `src/q_backend/research/engine.py`, `src/q_backend/research/results.py` and `tests/research/test_backtest.py`.
 **Interfaces:** `BacktestResult.config`; private closed-trade records on the result.
 
-- [ ] Add failing tests for spec acceptance item 1, including a registered strategy, a frame without timeframe metadata and a strategy with a non-scalar attribute.
-- [ ] Run `uv run pytest tests/research/test_backtest.py -q` and confirm the new cases fail.
-- [ ] Implement on the normal and empty-frame paths; re-run until green.
-- [ ] Commit this unit.
+- [x] Add failing tests for spec acceptance item 1, including a registered strategy, a frame without timeframe metadata and a strategy with a non-scalar attribute.
+- [x] Run `uv run pytest tests/research/test_backtest.py -q` and confirm the new cases fail.
+- [x] Implement on the normal and empty-frame paths; re-run until green.
+- [x] Commit this unit.
 
 ### 2. Build and send the import request
 
 **Files:** Create `src/q_backend/research/publishing.py` and `tests/research/test_publishing.py`; modify `src/q_backend/research/results.py`.
 **Interfaces:** `BacktestResult.publish(*, name=None, timeframe=None, api_url=None) -> str`; `Q_API_URL`.
 
-- [ ] Add failing tests for spec acceptance items 2 to 5 with mocked HTTP and a temporary git repository for provenance.
-- [ ] Run `uv run pytest tests/research/test_publishing.py -q` and confirm the cases fail because `publish` is missing.
-- [ ] Implement request building, provenance collection and error mapping.
-- [ ] Run `uv run pytest tests/research -q` and confirm it passes, including `test_imports.py`.
-- [ ] Commit this unit.
+- [x] Add failing tests for spec acceptance items 2 to 5 with mocked HTTP and a temporary git repository for provenance.
+- [x] Run `uv run pytest tests/research/test_publishing.py -q` and confirm the cases fail because `publish` is missing.
+- [x] Implement request building, provenance collection and error mapping.
+- [x] Run `uv run pytest tests/research -q` and confirm it passes, including `test_imports.py`.
+- [x] Commit this unit.
 
 ### 3. Prove the round trip against the endpoint
 
 **Files:** Extend `tests/api/test_backtest_import.py`.
 
-- [ ] Add a test that routes `publish()` to the API test client and reads the result back, per spec acceptance item 6.
-- [ ] Run `uv run pytest tests/api/test_backtest_import.py -q`.
-- [ ] Commit this unit.
+- [x] Add a test that routes `publish()` to the API test client and reads the result back, per spec acceptance item 6.
+- [x] Run `uv run pytest tests/api/test_backtest_import.py -q`.
+- [x] Commit this unit.
 
 ### 4. Document
 
 **Files:** Modify `docs/research-library.md`, `examples/research/mt5_backtest.py` and `tests/research/test_examples.py`.
 
-- [ ] Write the guide section and the results entry as the spec lists; add `--publish` to the example with a test that mocks the call.
-- [ ] Run `uv run pytest tests/research/test_examples.py -q`.
-- [ ] Commit docs and example.
+- [x] Write the guide section and the results entry as the spec lists; add `--publish` to the example with a test that mocks the call.
+- [x] Run `uv run pytest tests/research/test_examples.py -q`.
+- [x] Commit docs and example.
 
 ## Verification and handoff
 
-- [ ] Run `uv run pytest tests/research tests/api/test_backtest_import.py -q`, `uv run ruff check src/q_backend/research tests/research examples/research` and `uv run black --check` on the same paths.
-- [ ] Record the commands actually run and their results in this plan; do not claim unrun checks passed.
+- [x] Run `uv run pytest tests/research tests/api/test_backtest_import.py -q`, `uv run ruff check src/q_backend/research tests/research examples/research` and `uv run black --check` on the same paths.
+- [x] Record the commands actually run and their results in this plan; do not claim unrun checks passed.
+  - `uv run pytest tests/research tests/api/test_backtest_import.py -q`: 178 passed, 3 warnings in 9.01s.
+  - `uv run ruff check src/q_backend/research tests/research examples/research`: All checks passed!
+  - `uv run black --check src/q_backend/research tests/research examples/research`: All done! 25 files would be left unchanged.
+  - `make contracts-check`: contracts verified against CONTRACTS_REV (generated 5 files, no diff).
 - [ ] Use `./work board set Q-100 in-review -m "<changes; checks and results; follow-ups>"`. State the manual step: publish from `experiments/ccm_test.py` against `./dev research` and open the run in Backtests history once Q-101 is merged.
+

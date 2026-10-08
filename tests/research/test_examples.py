@@ -289,3 +289,28 @@ def test_mt5_example_cost_forwarding_and_output(
             gateway_url=None,
             gateway_token=None,
         )
+
+
+def test_mt5_example_publish_flag(capsys: pytest.CaptureFixture[str]) -> None:
+    """MT5 example with --publish calls result.publish() and prints run id."""
+    mock_result = MagicMock(
+        metrics={"total_trades": 1, "total_pnl": 100.0, "total_commission": 0.0, "win_rate": 1.0},
+        trades=pd.DataFrame(),
+        equity=pd.DataFrame({"realized_equity": [10000.0]}),
+    )
+    mock_result.publish.return_value = "published-run-uuid-999"
+
+    with patch("examples.research.mt5_backtest.run_mt5_workflow", return_value=mock_result):
+        # 1. Without --publish, publish() is not called
+        capsys.readouterr()
+        ret = mt5_main(["--start", "2026-09-01"])
+        assert ret == 0
+        mock_result.publish.assert_not_called()
+        assert "Published backtest run" not in capsys.readouterr().out
+
+        # 2. With --publish, publish() is called and run id printed
+        ret_pub = mt5_main(["--start", "2026-09-01", "--publish"])
+        assert ret_pub == 0
+        mock_result.publish.assert_called_once()
+        out = capsys.readouterr().out
+        assert "Published backtest run to the Research stack: published-run-uuid-999" in out
