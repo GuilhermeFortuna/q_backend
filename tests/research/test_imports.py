@@ -47,6 +47,26 @@ def test_adjusted_series_warning_lazy_export() -> None:
     assert result.returncode == 0, result.stderr
 
 
+def test_tick_store_import_is_inert() -> None:
+    script = textwrap.dedent("""
+        from pathlib import Path
+        import q_backend.research as research
+        assert "TickStore" in research.__all__
+        root = Path("/tmp/q103-tick-store-inert-root")
+        store = research.TickStore("WDO$N", root=root)
+        assert store.symbol == "WDO$N"
+        assert not root.exists()
+        """)
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        cwd=str(Path(__file__).resolve().parents[2]),
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_chart_indicator_is_public_export() -> None:
     script = textwrap.dedent("""
         import q_backend.research as research
