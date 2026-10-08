@@ -97,7 +97,18 @@
 
 ## Verification and handoff
 
-- [ ] Run `uv run pytest tests/research -q`, `uv run ruff check examples/research tests/research` and `uv run black --check` on the same paths.
-- [ ] Read the four guide sections once against the statement-to-test mapping and remove anything unsupported.
-- [ ] Record the commands actually run, their results and the mapping in this plan; do not claim unrun checks passed.
+- [x] Run `uv run pytest tests/research -q`, `uv run ruff check examples/research tests/research` and `uv run black --check` on the same paths.
+- [x] Read the four guide sections once against the statement-to-test mapping and remove anything unsupported.
+- [x] Record the commands actually run, their results and the mapping in this plan; do not claim unrun checks passed.
 - [ ] Use `./work board set Q-096 in-review -m "<changes; checks and results; follow-ups>"`. Say in the message whether the operator steps were confirmed on the target machine.
+
+### Verification records
+
+1. `uv run pytest tests/research/test_backtest.py -q`: 11 passed, 2 warnings in 2.23s.
+2. `uv run pytest tests/research/test_examples.py -q`: 7 passed, 2 warnings in 2.16s.
+3. `uv run pytest tests/research -q`: 93 passed, 2 warnings in 6.63s.
+4. `uv run ruff check examples/research tests/research`: All checks passed.
+5. `uv run black --check examples/research tests/research`: All done! 11 files left unchanged.
+6. `make contracts-check`: All checks passed (5 files generated, diff clean).
+7. Statement-to-test mapping reviewed against all 4 guide sections; all statements are supported by existing or added tests and dated measurements.
+8. Operator note added to `docs/mt5-wine-gateway.md` noting expected MT5 behavior not yet confirmed on this target machine.
