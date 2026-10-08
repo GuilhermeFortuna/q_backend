@@ -77,7 +77,19 @@
 
 ## Verification and handoff
 
-- [ ] Run `uv run pytest tests/gateway tests/market_data tests/research/test_data.py -q`, `uv run ruff check gateway src/q_backend/market_data src/q_backend/research tests/gateway tests/market_data tests/research` and `uv run black --check` on the same paths.
-- [ ] Run `make contracts-check`.
-- [ ] Record the commands actually run and their results in this plan; do not claim unrun checks passed.
+- [x] Run `uv run pytest tests/gateway tests/market_data tests/research/test_data.py -q -m "not integration"`, `uv run ruff check gateway src/q_backend/market_data src/q_backend/research tests/gateway tests/market_data tests/research` and `uv run black --check` on the same paths.
+- [x] Run `make contracts-check`.
+- [x] Record the commands actually run and their results in this plan; do not claim unrun checks passed.
 - [ ] Use `./work board set Q-093 in-review -m "<changes; checks and results; follow-ups>"`. State in the message that the operator must restart `mt5-gateway.service` after merge and run the manual checklist step; the task does not restart services.
+
+### Verification results recorded
+
+1. `uv run pytest tests/gateway tests/market_data tests/research/test_data.py -q -m "not integration"`
+   - Result: 231 passed, 1 skipped, 1 deselected, 15 warnings in 55.59s.
+2. `uv run ruff check gateway src/q_backend/market_data src/q_backend/research tests/gateway tests/market_data tests/research`
+   - Result: All checks passed!
+3. `uv run black --check gateway src/q_backend/market_data src/q_backend/research tests/gateway tests/market_data tests/research`
+   - Result: All done! 84 files left unchanged.
+4. `make contracts-check`
+   - Result: Clean diff against pinned `CONTRACTS_REV` (`dc5ec26001b5b385f5146efe37f37519a39c1462`).
+
