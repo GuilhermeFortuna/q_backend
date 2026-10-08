@@ -95,6 +95,81 @@ def test_ohlcv_round_trip_preserves_raw_epochs_and_dtypes(gateway, fake_mt5):
         assert npz["real_volume"].dtype == np.int64
         np.testing.assert_array_equal(npz["close"], rates["close"])
         np.testing.assert_array_equal(npz["real_volume"], rates["real_volume"].astype(np.int64))
+        assert "metadata" in npz.files
+        meta = json.loads(str(npz["metadata"]))
+        assert meta["truncated"] is False
+        assert meta["max_bars"] == 50_000
+
+
+def test_ohlcv_truncation_reporting_inside_chunk_and_on_boundary(gateway, fake_mt5, monkeypatch):
+    # Patch limit to a small number, e.g., 5 bars, on the loaded gateway module
+    monkeypatch.setattr(gateway, "_MAX_OHLCV_BARS", 5)
+
+    base_epoch = _epoch(datetime(2026, 1, 5, 9, 0, 0))
+
+    # Case 1: cut inside a chunk (chunk has 7 bars, limit is 5)
+    rates_inside = np.array(
+        [(base_epoch + i * 60, 100.0, 101.0, 99.0, 100.5, 10, 1, 5) for i in range(7)],
+        dtype=_RATE_DTYPE,
+    )
+    fake_mt5._state["rates_queue"] = [rates_inside]
+
+    with running_gateway_server(gateway) as base:
+        status, headers, body = http_get(
+            base,
+            "/v1/ohlcv",
+            {
+                "symbol": "WIN$",
+                "timeframe": "M1",
+                "start": "2026-01-05T09:00:00",
+                "end": "2026-01-05T09:10:00",
+            },
+        )
+
+    assert status == 200
+    with np.load(io.BytesIO(body)) as npz:
+        assert len(npz["time"]) == 5
+        assert "metadata" in npz.files
+        meta = json.loads(str(npz["metadata"]))
+        assert meta["truncated"] is True
+        assert meta["max_bars"] == 5
+
+    # Case 2: cut exactly on a chunk boundary
+    # Chunk 1 has 3 bars, chunk 2 has 2 bars (total reaches exactly 5), chunk 3 has 2 bars
+    rates_chunk1 = np.array(
+        [(base_epoch + i * 60, 100.0, 101.0, 99.0, 100.5, 10, 1, 5) for i in range(3)],
+        dtype=_RATE_DTYPE,
+    )
+    rates_chunk2 = np.array(
+        [(base_epoch + (3 + i) * 60, 100.0, 101.0, 99.0, 100.5, 10, 1, 5) for i in range(2)],
+        dtype=_RATE_DTYPE,
+    )
+    rates_chunk3 = np.array(
+        [(base_epoch + (5 + i) * 60, 100.0, 101.0, 99.0, 100.5, 10, 1, 5) for i in range(2)],
+        dtype=_RATE_DTYPE,
+    )
+    # The range end is after all chunks so the loop doesn't end before trying chunk 3
+    fake_mt5._state["rates_queue"] = [rates_chunk1, rates_chunk2, rates_chunk3]
+
+    with running_gateway_server(gateway) as base:
+        status, headers, body = http_get(
+            base,
+            "/v1/ohlcv",
+            {
+                "symbol": "WIN$",
+                "timeframe": "M1",
+                "start": "2026-01-05T09:00:00",
+                "end": "2026-01-05T09:10:00",
+            },
+        )
+
+    assert status == 200
+    with np.load(io.BytesIO(body)) as npz:
+        assert len(npz["time"]) == 5
+        assert "metadata" in npz.files
+        meta = json.loads(str(npz["metadata"]))
+        assert meta["truncated"] is True
+        assert meta["max_bars"] == 5
 
 
 def test_recent_ohlcv_uses_one_bounded_positional_read(gateway, fake_mt5):
@@ -118,6 +193,7 @@ def test_recent_ohlcv_uses_one_bounded_positional_read(gateway, fake_mt5):
     assert fake_mt5._state["last_rates_from_pos"] == ("CCM$", fake_mt5.TIMEFRAME_H1, 0, 2)
     with np.load(io.BytesIO(body)) as npz:
         assert list(npz["time"]) == [base_epoch + 3600, base_epoch + 7200]
+        assert "metadata" not in npz.files
 
 
 def test_ticks_round_trip_and_flags_trade_mapping(gateway, fake_mt5):

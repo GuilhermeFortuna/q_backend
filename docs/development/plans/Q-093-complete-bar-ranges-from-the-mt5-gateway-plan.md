@@ -40,11 +40,11 @@
 **Files:** Modify `gateway/mt5_gateway.py` and `tests/gateway/test_mt5_gateway.py`; extend `tests/gateway/fake_metatrader5.py` only if it cannot already serve a multi-chunk range.
 **Interfaces:** `_fetch_ohlcv_chunked` reports whether it stopped at the limit before exhausting the range; `GatewayApp.ohlcv` writes `metadata` with `truncated` and `max_bars`; `/v1/ohlcv/recent` output is unchanged.
 
-- [ ] Add failing tests: under the limit gives `truncated: false`; over a patched small limit gives `truncated: true` and exactly `max_bars` bars, for a cut inside a chunk and for a cut on a chunk boundary; dtypes and raw epochs unchanged; `/v1/ohlcv/recent` has no `metadata` entry.
-- [ ] Run `uv run pytest tests/gateway/test_mt5_gateway.py -q` and confirm the new cases fail on the missing metadata.
-- [ ] Implement the metadata and update the module docstring's wire-contract notes.
-- [ ] Run `uv run pytest tests/gateway -q` and confirm it passes.
-- [ ] Commit this unit.
+- [x] Add failing tests: under the limit gives `truncated: false`; over a patched small limit gives `truncated: true` and exactly `max_bars` bars, for a cut inside a chunk and for a cut on a chunk boundary; dtypes and raw epochs unchanged; `/v1/ohlcv/recent` has no `metadata` entry.
+- [x] Run `uv run pytest tests/gateway/test_mt5_gateway.py -q` and confirm the new cases fail on the missing metadata.
+- [x] Implement the metadata and update the module docstring's wire-contract notes.
+- [x] Run `uv run pytest tests/gateway -q` and confirm it passes.
+- [x] Commit this unit.
 
 ### 3. Follow the continuation rule in the remote client
 
