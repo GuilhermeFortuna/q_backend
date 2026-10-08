@@ -232,10 +232,14 @@ The `ResearchStrategy` ABC and `backtest()` function allow defining custom strat
 
 ### Writing a ResearchStrategy
 
-A strategy class provides three decision hooks and may declare chart series with an optional fourth (`chart_indicators`, see [Strategy hooks and causality](#strategy-hooks-and-causality)):
+A strategy class provides an indicator hook and two decision hooks. Both decision
+hooks can receive actual open positions by declaring a `positions` parameter.
+The following strategy enters long or short on RSI threshold crossings and exits
+according to the filled position's direction. It may also declare chart series
+with `chart_indicators` (see [Strategy hooks and causality](#strategy-hooks-and-causality)).
 
 ```python
-from q_backend.research import ResearchStrategy, TradeOrder, indicators, backtest
+from q_backend.research import ResearchPosition, ResearchStrategy, TradeOrder, indicators, backtest
 
 class RSIReversion(ResearchStrategy):
     def __init__(self, period: int = 14):
@@ -246,17 +250,23 @@ class RSIReversion(ResearchStrategy):
         frame["rsi"] = indicators.rsi(frame["close"], self.period)
         return frame
 
-    def entry_strategy(self, frame):
-        if len(frame) < 2:
+    def entry_strategy(self, frame, positions: tuple[ResearchPosition, ...]):
+        if positions or len(frame) < 2:
             return None
         previous, current = frame["rsi"].iloc[-2:]
         if previous >= 30 and current < 30:
             return TradeOrder.buy()
+        if previous <= 70 and current > 70:
+            return TradeOrder.sell()
         return None
 
-    def exit_strategy(self, frame):
-        if frame["rsi"].iloc[-1] > 50:
-            return TradeOrder.close()
+    def exit_strategy(self, frame, positions: tuple[ResearchPosition, ...]):
+        rsi = frame["rsi"].iloc[-1]
+        for position in positions:
+            if position.side == "long" and rsi > 50:
+                return TradeOrder.close()
+            if position.side == "short" and rsi < 50:
+                return TradeOrder.close()
         return None
 ```
 
@@ -267,12 +277,14 @@ class RSIReversion(ResearchStrategy):
    - Defaults to returning the input frame unchanged.
    - May add new indicator columns. Must NOT modify, drop, or reorder index or market columns (`open`, `high`, `low`, `close`), and must NOT introduce reserved columns (`q_signal_*`, `bar_index`).
    - Must be strictly **causal**: all calculations must only depend on rows $\le$ current row. Centered rolling windows, `shift(-1)`, or whole-frame statistics (global mean, min, max) leak future information and invalidate research results.
-2. **`entry_strategy(frame: DataFrame) -> TradeOrder | None`**:
+2. **`entry_strategy(frame: DataFrame, positions: tuple[ResearchPosition, ...]) -> TradeOrder | None`**:
    - Abstract method called on an isolated owned copy of closed-bar history up to the current bar.
    - Returns `TradeOrder.buy()`, `TradeOrder.sell()`, or `None`.
-3. **`exit_strategy(frame: DataFrame) -> TradeOrder | None`**:
+   - `positions` is optional in your override's signature; existing `entry_strategy(self, frame)` methods remain supported.
+3. **`exit_strategy(frame: DataFrame, positions: tuple[ResearchPosition, ...]) -> TradeOrder | None`**:
    - Called on an isolated owned copy of closed-bar history up to the current bar, evaluated **before** `entry_strategy`.
    - Returns `TradeOrder.close()` or `None`. Defaults to returning `None`.
+   - `positions` is optional in your override's signature; existing `exit_strategy(self, frame)` methods remain supported.
 4. **`chart_indicators() -> Sequence[ChartIndicator]`** (optional):
    - Declares the computed columns the Trade Chart draws, in order. Defaults to an empty sequence.
    - `ChartIndicator(column, pane="price", label="", color=None)`: `column` must be a numeric column added by `compute_indicators`; `pane` is `"price"` or `"oscillator"`; an empty `label` defaults to the column name.
@@ -291,16 +303,54 @@ class RSIReversion(ResearchStrategy):
 
 ### Open position context
 
+After updating your checkout, run `uv sync` from `q_backend` before using these
+hooks. The backend pins `q_core` release `v2026.10.08.2`, which supports position
+context. An older core without this capability raises a descriptive error when
+you run a strategy that declares `positions`.
+
 Both decision hooks may declare a `positions` parameter. Existing `(self, frame)`
 overrides continue working, and each hook can choose its signature independently.
 A keyword-only parameter (`def exit_strategy(self, frame, *, positions)`) is also
 supported. Parameters must explicitly be named `positions`; `*args` or `**kwargs`
-alone do not opt into context.
+alone do not opt into context. Type annotations are optional; the parameter name
+selects the capability. `compute_indicators` and `chart_indicators` keep their
+existing signatures and do not receive positions.
 
-`positions` is a tuple of immutable `ResearchPosition` snapshots. Each exposes
-`symbol`, `side` (`"long"` or `"short"`), `entry_time`, `entry_price`, and `quantity`.
-The tuple is empty when flat. It contains actual fills after queued execution and
-intrabar protective fills, before evaluating this closed bar's decisions.
+`positions` is a tuple of immutable `ResearchPosition` snapshots, exported from
+`q_backend.research`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `symbol` | `str` | Backtest instrument symbol. |
+| `side` | `Literal["long", "short"]` | Direction of the filled position. |
+| `entry_time` | `pandas.Timestamp` | Actual entry timestamp in the research frame's timezone. |
+| `entry_price` | `float` | Actual filled entry price. |
+| `quantity` | `float` | Actual filled quantity from engine sizing. |
+
+The tuple is empty (`()`) when flat. With the research backtest's fixed-quantity
+sizing, it contains at most one position for the backtest symbol. Pending entry
+requests do not appear in it. Do not mutate snapshots or use an order you returned
+as evidence that a position exists.
+
+To migrate only your exit hook, keep your entry hook unchanged and add the named
+parameter to the exit hook:
+
+```python
+def exit_strategy(self, frame, *, positions):
+    close = frame["close"].iloc[-1]
+    for position in positions:
+        if position.side == "long" and close < position.entry_price:
+            return TradeOrder.close()
+        if position.side == "short" and close > position.entry_price:
+            return TradeOrder.close()
+    return None
+```
+
+This is a decision based on the completed bar's close; its order fills at the next
+open. It does not place an intrabar stop at `entry_price`.
+
+For a complete strategy using both hooks, this example avoids requesting new
+entries while a position is open and chooses an exit based on its direction:
 
 ```python
 from q_backend.research import ResearchPosition, ResearchStrategy, TradeOrder
@@ -334,15 +384,28 @@ the next open. Returning an opposite entry alongside a close therefore still all
 a reversal at the next open. `TradeOrder.close()` closes all open positions for the
 backtest symbol; it does not target individual snapshots.
 
+At each bar, the engine first executes queued orders and any intrabar protective
+fills, then builds the snapshot for that bar's decisions. For example, an entry
+requested on bar A is absent from bar A's snapshot and becomes visible on bar B
+if it fills at bar B's open. A close requested on bar B leaves the position in
+both hooks' bar B snapshot; it disappears on bar C after that close fills.
+If a protective fill closes the position before a bar's hooks, they receive an
+empty tuple.
+
+The examples' `if positions: return None` entry guard also prevents a same-bar
+reversal: a pending close is still visible. To reverse at the next open, your
+entry hook must deliberately return the opposite entry while your exit hook
+returns `TradeOrder.close()` on the same decision bar.
+
 Both hooks run on every bar, even while positions are open and on final or
 session-gated bars. The engine applies its normal entry capacity and session gates;
 a request need not fill. End-of-day closure at the final bar's close and terminal
 force-close occur after that bar's hooks. Empty frames call no hooks.
 
-Keep hooks deterministic functions of their history and position snapshot, rather
-than tracking assumed fills in instance variables. Context requires a `q_core`
-release exposing the candle strategy callback. Frame copying and Python evaluation
-remain slower than built-in vectorized strategies.
+Keep hooks deterministic functions of their history and position snapshot. Use
+the supplied snapshot to determine whether a position is open; tracking assumed
+fills in instance variables can produce incorrect decisions. Frame copying and
+Python evaluation remain slower than built-in vectorized strategies.
 
 ### Running a backtest
 
