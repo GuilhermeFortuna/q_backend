@@ -53,7 +53,7 @@ class MovingAverageBreakout(ResearchStrategy):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Load fresh MT5 bars via the Q gateway and run a local backtest.")
-    parser.add_argument("--symbol", default="WIN$", help="MT5 symbol (default: WIN$)")
+    parser.add_argument("--symbol", default="WIN$N", help="MT5 symbol (default: WIN$N, unadjusted)")
     parser.add_argument("--timeframe", default="M5", help="Timeframe (default: M5)")
     parser.add_argument("--start", required=True, help="Inclusive bar-open bound (ISO or YYYY-MM-DD)")
     parser.add_argument("--end", default=None, help="Inclusive bar-open bound; default is now")

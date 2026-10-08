@@ -21,6 +21,42 @@ The gateway can run on the same Linux workstation under Wine or on another machi
 Data import requires neither PostgreSQL nor Redis, the control API, or a worker.
 The library does not start services for you.
 
+## Choosing a price series
+
+MetaTrader 5 lists each B3 continuous future in three forms:
+
+| Symbol suffix | Broker description (Portuguese) | Prices | What it preserves |
+| --- | --- | --- | --- |
+| `$N` (e.g. `WIN$N`) | Sem Ajustes | As traded; a gap at each roll | Point differences and per-contract costs match the exchange |
+| `$D` (e.g. `WIN$D`) | Ajuste por Diferença | Shifted by a constant at each roll | Point differences between bars (not absolute price levels) |
+| `$` (e.g. `WIN$`) | Ajuste Proporcional | Multiplied by a roll factor at each roll | Percentage returns; many prices fall off the tick grid |
+
+`backtest()` computes profit and loss as price difference × quantity × point value and
+charges costs per contract. On the proportionally adjusted series (`WIN$`, `WDO$`, …)
+historical price moves are scaled by the cumulative roll factor while costs are not, which
+distorts point-based backtests.
+
+**Recommendation**
+
+- **Intraday backtests that close each session:** use the unadjusted series (`$N`).
+- **Positions held across sessions:** difference-adjusted (`$D`) keeps point-based P&L coherent across rolls.
+- **Percentage-return analysis only:** proportional (`$`) is appropriate when you neither use
+  point value nor per-contract costs.
+
+`load_bars` performs a best-effort tick-grid check after each load. When more than 1% of
+open, high, low, and close values are not multiples of the symbol's `trade_tick_size`, it
+emits `AdjustedSeriesWarning` and records `tick_size` and `off_tick_share` in
+`bars.attrs["q_research"]`. Adjusted series remain loadable; the warning is informational.
+
+Silence it deliberately with the standard `warnings` filters:
+
+```python
+import warnings
+from q_backend.research import AdjustedSeriesWarning
+
+warnings.filterwarnings("ignore", category=AdjustedSeriesWarning)
+```
+
 ## Import market data
 
 Save this in a Python script:
@@ -28,7 +64,7 @@ Save this in a Python script:
 ```python
 from q_backend.research import load_bars
 
-bars = load_bars("WIN$", timeframe="M5", start="2026-09-01")
+bars = load_bars("WIN$N", timeframe="M5", start="2026-09-01")
 
 print(bars.tail())
 print(bars["close"])
@@ -39,7 +75,7 @@ Fetch raw ticks and resample them into minute bars:
 ```python
 from q_backend.research import load_ticks, resample_ticks
 
-ticks = load_ticks("WIN$", start="2026-09-01")
+ticks = load_ticks("WIN$N", start="2026-09-01")
 minute_bars = resample_ticks(ticks, timeframe="M1")
 ```
 
@@ -90,7 +126,7 @@ For a fixed date range, provide `end`:
 
 ```python
 bars = load_bars(
-    "WIN$",
+    "WIN$N",
     timeframe="M5",
     start="2026-09-01",
     end="2026-09-30T18:00:00-03:00",
@@ -121,7 +157,9 @@ calendar day. Aware inputs convert to exchange time.
 - Columns: `open`, `high`, `low`, `close` (`float64`); `tick_volume` (`int64`);
   `spread`, `real_volume` (`float64`, may be NaN).
 - `tick_volume` is MT5 tick volume; it is distinct from `real_volume`.
-- `bars.attrs["q_research"]` contains source and query metadata.
+- `bars.attrs["q_research"]` contains source and query metadata. When symbol information
+  is available, it may also include `tick_size` and `off_tick_share` from the adjusted-series
+  tick-grid check (see [Choosing a price series](#choosing-a-price-series)).
 
 You can save a fetched frame for later experiments using pandas:
 
@@ -149,7 +187,7 @@ Series and DataFrames without requiring a database, Redis, Celery/Dramatiq, or a
 from q_backend.research import load_bars, indicators
 
 # 1. Fetch fresh bars (requires running MT5 gateway)
-bars = load_bars("WIN$", timeframe="M5", start="2026-09-01")
+bars = load_bars("WIN$N", timeframe="M5", start="2026-09-01")
 
 # 2. Enrich with indicators (offline, pure calculations)
 bars["rsi"] = indicators.rsi(bars["close"], period=14)
@@ -243,7 +281,7 @@ class RSIReversion(ResearchStrategy):
 result = backtest(
     bars,
     strategy=RSIReversion(),
-    symbol="WIN$",
+    symbol="WIN$N",
     quantity=1,
     point_value=0.20,
     initial_capital=10_000.0,
@@ -285,7 +323,7 @@ print(result.equity)
 ### Fetch live market data
 ```bash
 uv run python examples/research/load_market_data.py \
-  --symbol WIN$ --timeframe M5 --start 2026-09-01
+  --symbol WIN$N --timeframe M5 --start 2026-09-01
 ```
 
 ### Offline indicator enrichment
@@ -299,7 +337,7 @@ uv run python examples/research/add_indicators.py \
 ```bash
 uv run python examples/research/rsi_reversion.py \
   --input data/bars.parquet \
-  --symbol WIN$ \
+  --symbol WIN$N \
   --period 14 \
   --quantity 1 \
   --point-value 0.20
@@ -308,7 +346,7 @@ uv run python examples/research/rsi_reversion.py \
 ### Live MT5 gateway backtest
 ```bash
 uv run python examples/research/mt5_backtest.py \
-  --symbol WIN$ \
+  --symbol WIN$N \
   --timeframe M5 \
   --start 2026-09-01 \
   --strategy custom

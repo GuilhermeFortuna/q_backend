@@ -822,13 +822,13 @@ Standalone research scripts can define three-hook `ResearchStrategy` classes or 
 ### Offline Parquet backtest
 Run an offline RSI mean-reversion strategy on an existing Parquet dataset:
 ```bash
-uv run python examples/research/rsi_reversion.py --input data/bars.parquet --symbol WIN$
+uv run python examples/research/rsi_reversion.py --input data/bars.parquet --symbol WIN$N
 ```
 
 ### Live MT5 gateway backtest
 Fetch fresh MT5 history and run a backtest (requires a running MT5 gateway):
 ```bash
-uv run python examples/research/mt5_backtest.py --symbol WIN$ --timeframe M5 --start 2026-09-01
+uv run python examples/research/mt5_backtest.py --symbol WIN$N --timeframe M5 --start 2026-09-01
 ```
 
 ---
