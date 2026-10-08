@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from q_backend.backtesting.candle_kernel import enabled_rule_ids
-from q_backend.backtesting.exit_rules.base import ExitRule
+from q_backend.backtesting.exit_rules.base import NEXT_OPEN_FILL_SENTENCE, ExitRule
 from q_backend.backtesting.strategy_registry import StrategyParamSpec
 
 
@@ -11,7 +11,11 @@ class FixedStopLossRule(ExitRule):
     id = "fixed_sl"
     exit_group = "stop_loss"
     label = "Fixed Stop Loss"
-    description = "Exit when price moves against the position by a fixed percentage from entry."
+    description = (
+        "Triggers when a completed bar's low (long) or high (short) reaches the fixed percentage "
+        "stop from entry. "
+        f"{NEXT_OPEN_FILL_SENTENCE}"
+    )
     enable_param = "stop_loss_pct"
     enable_value = 0.02
 
@@ -41,7 +45,11 @@ class AtrStopLossRule(ExitRule):
     id = "atr_sl"
     exit_group = "stop_loss"
     label = "ATR Stop Loss"
-    description = "Exit when price breaches entry minus or plus an ATR multiple."
+    description = (
+        "Triggers when a completed bar's low (long) or high (short) reaches entry minus or plus an "
+        "ATR multiple. "
+        f"{NEXT_OPEN_FILL_SENTENCE}"
+    )
     enable_param = "stop_loss_atr"
     enable_value = 2.0
 
@@ -94,7 +102,11 @@ class FixedTakeProfitRule(ExitRule):
     id = "fixed_tp"
     exit_group = "target"
     label = "Fixed Take Profit"
-    description = "Exit when price reaches a fixed percentage gain from entry."
+    description = (
+        "Triggers when a completed bar's high (long) or low (short) reaches the fixed percentage "
+        "gain from entry. "
+        f"{NEXT_OPEN_FILL_SENTENCE}"
+    )
     enable_param = "take_profit_pct"
     enable_value = 0.05
 
@@ -124,7 +136,11 @@ class AtrTakeProfitRule(ExitRule):
     id = "atr_tp"
     exit_group = "target"
     label = "ATR Take Profit"
-    description = "Exit when price reaches entry plus or minus an ATR multiple in profit."
+    description = (
+        "Triggers when a completed bar's high (long) or low (short) reaches entry plus or minus an "
+        "ATR multiple. "
+        f"{NEXT_OPEN_FILL_SENTENCE}"
+    )
     enable_param = "take_profit_atr"
     enable_value = 3.0
 
@@ -163,7 +179,11 @@ class TrailingStopRule(ExitRule):
     id = "trailing"
     exit_group = "trailing"
     label = "Percent Trailing Stop"
-    description = "Exit when price retraces a fixed percentage from the in-trade peak or trough."
+    description = (
+        "Triggers when a completed bar's low (long) or high (short) reaches a fixed percentage "
+        "retracement from the in-trade peak or trough. "
+        f"{NEXT_OPEN_FILL_SENTENCE}"
+    )
     enable_param = "trailing_stop_pct"
     enable_value = 0.02
 

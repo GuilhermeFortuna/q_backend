@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from q_backend.backtesting.candle_kernel import enabled_rule_ids
-from q_backend.backtesting.exit_rules.base import ExitRule
+from q_backend.backtesting.exit_rules.base import NEXT_OPEN_FILL_SENTENCE, ExitRule
 from q_backend.backtesting.strategy_registry import StrategyParamSpec
 
 
@@ -11,7 +11,9 @@ class TimeStopRule(ExitRule):
     id = "time_stop"
     exit_group = "time"
     label = "Time Stop"
-    description = "Close the position after a maximum number of bars in trade."
+    description = (
+        "Triggers once the number of completed bars in the trade reaches the maximum. " f"{NEXT_OPEN_FILL_SENTENCE}"
+    )
     enable_param = "max_bars_in_trade"
     enable_value = 50
 

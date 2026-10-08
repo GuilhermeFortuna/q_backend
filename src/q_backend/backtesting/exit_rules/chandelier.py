@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from q_backend.backtesting.candle_kernel import enabled_rule_ids
-from q_backend.backtesting.exit_rules.base import ExitRule
+from q_backend.backtesting.exit_rules.base import NEXT_OPEN_FILL_SENTENCE, ExitRule
 from q_backend.backtesting.strategy_registry import StrategyParamSpec
 
 
@@ -11,7 +11,11 @@ class ChandelierExitRule(ExitRule):
     id = "chandelier"
     exit_group = "trailing"
     label = "Chandelier Exit"
-    description = "Trailing stop at peak high minus an ATR multiple."
+    description = (
+        "Triggers when a completed bar's low (long) or high (short) reaches the trailing stop set "
+        "an ATR multiple from the in-trade peak high or trough low. "
+        f"{NEXT_OPEN_FILL_SENTENCE}"
+    )
     enable_param = "chandelier_atr_mult"
     enable_value = 3.0
 

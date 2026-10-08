@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from q_backend.backtesting.candle_kernel import enabled_rule_ids
-from q_backend.backtesting.exit_rules.base import ExitRule
+from q_backend.backtesting.exit_rules.base import NEXT_OPEN_FILL_SENTENCE, ExitRule
 from q_backend.backtesting.strategy_registry import StrategyParamSpec
 
 
@@ -11,7 +11,11 @@ class ParabolicSarStopRule(ExitRule):
     id = "psar"
     exit_group = "trailing"
     label = "Parabolic SAR Trailing Stop"
-    description = "Textbook Wilder parabolic SAR trailing stop updated each bar in rule state."
+    description = (
+        "Triggers when a completed bar's low (long) or high (short) reaches the Wilder parabolic "
+        "SAR trail, updated each bar. "
+        f"{NEXT_OPEN_FILL_SENTENCE}"
+    )
     enable_param = "psar_af_start"
     enable_value = 0.02
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from q_backend.backtesting.candle_kernel import enabled_rule_ids
-from q_backend.backtesting.exit_rules.base import ExitRule
+from q_backend.backtesting.exit_rules.base import NEXT_OPEN_FILL_SENTENCE, ExitRule
 from q_backend.backtesting.strategy_registry import StrategyParamSpec
 
 
@@ -11,7 +11,11 @@ class DonchianChannelStopRule(ExitRule):
     id = "donchian_stop"
     exit_group = "trailing"
     label = "Donchian Channel Stop"
-    description = "Exit when price crosses the opposite N-bar Donchian extreme."
+    description = (
+        "Triggers when a completed bar's low (long) or high (short) reaches the opposite N-bar "
+        "Donchian extreme. "
+        f"{NEXT_OPEN_FILL_SENTENCE}"
+    )
     enable_param = "donchian_exit_period"
     enable_value = 20
 
@@ -25,7 +29,10 @@ class DonchianChannelStopRule(ExitRule):
                 min=0,
                 max=500,
                 step=1,
-                hint=("Exit when price crosses the opposite N-bar Donchian extreme " "(channel trail). 0 to disable."),
+                hint=(
+                    "N-bar Donchian lookback for the opposite extreme; the stop triggers on a completed bar's low "
+                    "or high. 0 to disable."
+                ),
                 exit_group="trailing",
             ),
         ]

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from q_backend.backtesting.candle_kernel import enabled_rule_ids
-from q_backend.backtesting.exit_rules.base import ExitRule
+from q_backend.backtesting.exit_rules.base import NEXT_OPEN_FILL_SENTENCE, ExitRule
 from q_backend.backtesting.strategy_registry import StrategyParamSpec
 
 
@@ -11,7 +11,11 @@ class BreakevenStopRule(ExitRule):
     id = "breakeven"
     exit_group = "stop_loss"
     label = "Break-even Stop"
-    description = "Arm a stop at entry plus a small offset once gain reaches a trigger threshold."
+    description = (
+        "Triggers when a completed bar's low (long) or high (short) reaches the break-even stop "
+        "once gain reaches the trigger threshold. "
+        f"{NEXT_OPEN_FILL_SENTENCE}"
+    )
     enable_param = "breakeven_trigger_pct"
     enable_value = 0.02
 

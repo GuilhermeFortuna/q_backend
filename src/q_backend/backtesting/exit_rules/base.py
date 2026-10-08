@@ -5,6 +5,8 @@ from typing import Any
 
 from q_backend.backtesting.strategy_registry import StrategyParamSpec
 
+NEXT_OPEN_FILL_SENTENCE = "The position closes at the next bar's open, so the exit price can differ from the level."
+
 
 class ExitRule(ABC):
     id: str
