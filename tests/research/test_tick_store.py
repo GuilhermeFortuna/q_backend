@@ -12,7 +12,7 @@ import pytest
 
 from q_backend.market_data.timezone import BRASILIA_TZ
 from q_backend.research import NoMarketDataError, TickStore, load_ticks, resample_ticks
-from q_backend.research.tick_store import _slug_symbol, _write_day_atomic
+from q_backend.research.tick_store import TickSyncReport, _slug_symbol, _write_day_atomic
 
 
 def _ms_at(day: date, hour: int, minute: int, second: int = 0, msec: int = 0) -> int:
@@ -281,3 +281,21 @@ def test_bars_rejects_w1() -> None:
     store = TickStore("WIN$", root="/tmp/unused")
     with pytest.raises(ValueError, match="W1"):
         store.bars("W1", start="2026-10-01")
+
+
+def test_bars_sync_true_invokes_sync(tmp_path) -> None:
+    store = TickStore("WDO$N", root=tmp_path)
+    _write_session_fixture(tmp_path)
+    empty_report = TickSyncReport(stored=[], already_present=[], empty=[], unsettled=[], failed=[])
+
+    with patch.object(store, "sync", return_value=empty_report) as sync_mock:
+        store.bars("M10", start="2026-10-05", end="2026-10-06", sync=True)
+
+    sync_mock.assert_called_once_with(start="2026-10-05", end="2026-10-06", gateway_url=None, gateway_token=None)
+
+
+def test_bars_without_sessions_suggests_sync(tmp_path) -> None:
+    store = TickStore("WDO$N", root=tmp_path)
+    with pytest.raises(NoMarketDataError, match="q-sync-ticks") as exc:
+        store.bars("M10", start="2026-10-05")
+    assert "sync=True" in str(exc.value)

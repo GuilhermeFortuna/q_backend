@@ -539,15 +539,24 @@ run_id = result.publish()
 Research scripts can keep gateway tick history on disk under `data/tick_store/` by default (`Q_RESEARCH_TICK_STORE` overrides the root). Layout: one zstd Parquet file per symbol slug and exchange calendar day (`<root>/<slug>/<YYYY-MM-DD>.parquet`) with gateway columns unchanged (`time_msc`, `bid`, `ask`, `last`, `volume`, `flags`). This store is separate from the API tick cache (`Q_TICK_CACHE_DIR`) and from the stack market catalog.
 
 ```python
-from q_backend.research import TickStore
+from q_backend.research import TickStore, sync_ticks
 
 store = TickStore("WDO$N")
-store.sync(start="2025-10-01")  # needs the MT5 gateway
-bars = store.bars("M10", start="2025-10-01")  # offline
+# One-liner while developing (gateway must be up; skips days already on disk):
+bars = store.bars("M10", start="2025-10-01", sync=True)
+# Or sync explicitly, then read offline:
+sync_ticks("WDO$N", start="2025-10-01")
+bars = store.bars("M10", start="2025-10-01")
 ticks = store.ticks(start="2026-10-05", end="2026-10-06")
 ```
 
-- `sync` walks weekdays from `start` through `end` (default: yesterday in Brasília), skips days already on disk, and never stores the current session. Each missing day is fetched twice; a day is written only when both responses return the same row count. An empty pair is reported as **empty** (no file) and retried on the next sync. A mismatched pair is **unsettled**. Gateway errors are **failed** for that day only.
+CLI (from `q_backend`):
+
+```bash
+uv run q-sync-ticks --symbol 'WDO$N' --start 2025-10-01
+```
+
+- `sync` / `sync_ticks` / `bars(..., sync=True)` walk weekdays from `start` through `end` (default end: yesterday in Brasília), skip days already on disk, and never store the current session. Each call needs the MT5 gateway (`Q_MT5_GATEWAY_URL`, optional `Q_MT5_GATEWAY_TOKEN`). Each missing day is fetched twice; a day is written only when both responses return the same row count. An empty pair is reported as **empty** (no file) and retried on the next sync. A mismatched pair is **unsettled**. Gateway errors are **failed** for that day only.
 - `ticks` returns the same frame as `load_ticks` for stored sessions. `bars` builds `load_bars`-shaped OHLCV from positive `last` trade prices only, per session, with no overnight bar synthesis. History is limited to synced sessions; use `sessions()` to see what is on disk.
 - One-minute bars per session are cached under `<slug>/bars_M1/` the first time a session is read; coarser timeframes aggregate from that cache.
 - Broker tick history is short and old sessions can stop being served after the terminal drops them. Sync regularly while the gateway still has the sessions you need.

@@ -10,6 +10,7 @@ __all__ = (
     "resample_ticks",
     "TickStore",
     "TickSyncReport",
+    "sync_ticks",
     "AdjustedSeriesWarning",
     "NoMarketDataError",
     "indicators",
@@ -56,6 +57,10 @@ def __getattr__(name: str):
         from q_backend.research.tick_store import TickSyncReport
 
         return TickSyncReport
+    if name == "sync_ticks":
+        from q_backend.research.tick_store import sync_ticks
+
+        return sync_ticks
     if name == "AdjustedSeriesWarning":
         from q_backend.research.errors import AdjustedSeriesWarning
 

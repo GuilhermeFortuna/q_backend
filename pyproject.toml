@@ -46,6 +46,7 @@ q-outbox-relay = "q_backend.cli.q_outbox_relay:main"
 q-market-publisher = "q_backend.cli.q_market_publisher:main"
 q-catalog = "q_backend.cli.q_catalog:main"
 q-api = "q_backend.cli.q_api:main"
+q-sync-ticks = "q_backend.cli.q_sync_ticks:main"
 
 
 [dependency-groups]

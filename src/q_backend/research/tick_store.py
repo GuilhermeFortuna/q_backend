@@ -31,6 +31,12 @@ from q_backend.research.frame import (
 from q_backend.research.providers import resolve_gateway_token, resolve_gateway_url
 
 TICK_STORE_SOURCE = "tick_store"
+
+_SYNC_HINT = (
+    "Sync from the MT5 gateway: run `uv run q-sync-ticks --symbol <SYM> --start YYYY-MM-DD` "
+    "(with the gateway up), or pass `sync=True` to TickStore.bars(...)."
+)
+
 _COLUMNAR_KEYS = ("time_msc", "bid", "ask", "last", "volume", "flags")
 _DTYPE_MAP = {
     "time_msc": np.int64,
@@ -439,10 +445,20 @@ class TickStore:
         *,
         start: str | datetime,
         end: str | datetime | None = None,
+        sync: bool = False,
+        gateway_url: str | None = None,
+        gateway_token: str | None = None,
     ) -> pd.DataFrame:
         tf = normalize_timeframe(timeframe)
         if tf in ("W1", "MN1"):
             raise ValueError(f"Unsupported timeframe '{timeframe}' for tick store bars")
+        if sync:
+            self.sync(
+                start=start,
+                end=end,
+                gateway_url=gateway_url,
+                gateway_token=gateway_token,
+            )
         start_ts, end_ts = self._resolve_read_bounds(start, end)
         days = self._session_days_in_range(start_ts, end_ts)
         if not days:
@@ -452,6 +468,7 @@ class TickStore:
                 source=TICK_STORE_SOURCE,
                 start=start_ts.isoformat(),
                 end=end_ts.isoformat(),
+                hint=_SYNC_HINT,
             )
         session_frames: list[pd.DataFrame] = []
         for day in days:
@@ -466,6 +483,7 @@ class TickStore:
                 source=TICK_STORE_SOURCE,
                 start=start_ts.isoformat(),
                 end=end_ts.isoformat(),
+                hint=_SYNC_HINT,
             )
         frame = pd.concat(session_frames).sort_index(kind="stable")
         frame = filter_index_range(frame, start_ts, end_ts)
@@ -476,6 +494,7 @@ class TickStore:
                 source=TICK_STORE_SOURCE,
                 start=start_ts.isoformat(),
                 end=end_ts.isoformat(),
+                hint=_SYNC_HINT,
             )
         if not frame.empty:
             validate_bars_frame(frame)
@@ -525,3 +544,21 @@ class TickStore:
             times.append(int(time_msc) * 1000)
             prices.append(float(last))
         return np.asarray(times, dtype=np.int64), np.asarray(prices, dtype=np.float64)
+
+
+def sync_ticks(
+    symbol: str,
+    start: str | datetime,
+    end: str | datetime | None = None,
+    *,
+    root: str | Path | None = None,
+    gateway_url: str | None = None,
+    gateway_token: str | None = None,
+) -> TickSyncReport:
+    """Fetch missing weekday sessions for ``symbol`` into the research tick store."""
+    return TickStore(symbol, root=root).sync(
+        start=start,
+        end=end,
+        gateway_url=gateway_url,
+        gateway_token=gateway_token,
+    )
