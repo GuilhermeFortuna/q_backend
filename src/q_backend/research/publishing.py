@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from q_backend.research.charting import ChartIndicator
     from q_backend.research.results import BacktestResult
 
-Q_API_URL: str = os.getenv("Q_API_URL", "http://127.0.0.1:8000")
+Q_API_URL: str = os.getenv("Q_API_URL", "http://127.0.0.1:8001")
 
 
 class _IndicatorAdapter:

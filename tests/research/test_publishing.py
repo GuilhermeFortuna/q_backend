@@ -106,7 +106,7 @@ def test_publish_posts_valid_request_shape(ohlcv_bars: pd.DataFrame) -> None:
     assert len(captured_requests) == 1
     req = captured_requests[0]
     assert req.method == "POST"
-    assert str(req.url) == "http://127.0.0.1:8000/api/v1/backtests/import"
+    assert str(req.url) == "http://127.0.0.1:8001/api/v1/backtests/import"
 
     body = json.loads(req.content.decode())
     # 1. Validates against vendored Q-097 model
@@ -248,10 +248,10 @@ def test_publish_connection_error_raises_connection_error(ohlcv_bars: pd.DataFra
     mock_client = httpx.Client(transport=httpx.MockTransport(mock_handler))
     with patch("q_backend.research.publishing.httpx.Client", return_value=mock_client):
         with pytest.raises(ConnectionError) as exc_info:
-            result.publish(api_url="http://127.0.0.1:8000")
+            result.publish(api_url="http://127.0.0.1:8001")
 
     msg = str(exc_info.value)
-    assert "127.0.0.1:8000" in msg
+    assert "127.0.0.1:8001" in msg
     assert "./dev research" in msg
 
 

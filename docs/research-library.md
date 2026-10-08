@@ -349,7 +349,7 @@ run_id = result.publish()
 - **History and views:** Once published, the run appears in Backtests history on the Research desktop (`origin: script`). The Trade Chart, Performance, Monthly breakdown, and Trade List views are fully populated.
 - **Chart indicators:** Chart series drawn in the Trade Chart come directly from `chart_indicators()`.
 - **Review only:** A published run is a record for review and analysis. Because custom strategy code lives in the research script, the run cannot be re-run or optimised from the desktop.
-- **API URL:** `publish()` sends the run to `POST /api/v1/backtests/import`. The base URL defaults to `http://127.0.0.1:8000` (the address `./dev research` serves) and can be configured via the `Q_API_URL` environment variable or overridden with `api_url=`.
+- **API URL:** `publish()` sends the run to `POST /api/v1/backtests/import`. The base URL defaults to `http://127.0.0.1:8001` (the address `./dev research` serves) and can be configured via the `Q_API_URL` environment variable or overridden with `api_url=`.
 - **Strategy name and timeframe:** `name` defaults to `result.config["strategy"]` and `timeframe` defaults to `result.config["timeframe"]` (from `bars.attrs["q_research"]["timeframe"]`). Both can be overridden explicitly: `result.publish(name="MyModel", timeframe="H1")`. If the input frame lacks timeframe metadata, `timeframe=` is required.
 - **Run lifecycle:** Publishing never alters the `BacktestResult` and never retries automatically. Each call creates a new run in the stack.
 
