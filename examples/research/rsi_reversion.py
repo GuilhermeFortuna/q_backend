@@ -64,7 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Path to input Parquet file containing historical OHLC bars",
     )
-    parser.add_argument("--symbol", default="WIN$", help="Traded instrument symbol (default: WIN$)")
+    parser.add_argument("--symbol", default="WIN$N", help="Traded instrument symbol (default: WIN$N)")
     parser.add_argument("--period", type=int, default=14, help="RSI lookback period (default: 14)")
     parser.add_argument("--quantity", type=int, default=1, help="Fixed trade quantity (default: 1)")
     parser.add_argument("--point-value", type=float, default=0.20, help="Value per point/multiplier (default: 0.20)")
@@ -75,7 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
 def run_rsi_backtest(
     input_path: Path,
     *,
-    symbol: str = "WIN$",
+    symbol: str = "WIN$N",
     period: int = 14,
     quantity: int = 1,
     point_value: float = 0.20,

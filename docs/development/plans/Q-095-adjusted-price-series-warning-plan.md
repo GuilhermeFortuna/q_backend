@@ -31,24 +31,30 @@
 **Files:** Modify `src/q_backend/research/errors.py`, `src/q_backend/research/__init__.py`, `src/q_backend/research/data.py`, `tests/research/test_data.py` and `tests/research/test_imports.py`. Put a small pure helper for the off-grid share in `src/q_backend/research/frame.py` if that keeps `data.py` readable.
 **Interfaces:** `AdjustedSeriesWarning(UserWarning)` exported from `q_backend.research`. `load_bars` signature unchanged. `attrs["q_research"]` may gain `tick_size: float` and `off_tick_share: float`.
 
-- [ ] Add failing tests for spec acceptance 1 to 4: on-grid bars; a frame just under and just over the 1% threshold; each lookup failure mode (returns `None`, missing key, zero, NaN, raises `ConnectionError`); the lazy export and inert import. Use `pytest.warns` and `warnings.catch_warnings` to assert presence and absence.
-- [ ] Run `uv run pytest tests/research/test_data.py tests/research/test_imports.py -q` and confirm the new cases fail because the behaviour is missing.
-- [ ] Implement the warning class, the export (lazy `__getattr__`, `__all__` and the `TYPE_CHECKING` block) and the check.
-- [ ] Run the same command and confirm it passes, including the existing request-count test.
-- [ ] Commit this unit.
+- [x] Add failing tests for spec acceptance 1 to 4: on-grid bars; a frame just under and just over the 1% threshold; each lookup failure mode (returns `None`, missing key, zero, NaN, raises `ConnectionError`); the lazy export and inert import. Use `pytest.warns` and `warnings.catch_warnings` to assert presence and absence.
+- [x] Run `uv run pytest tests/research/test_data.py tests/research/test_imports.py -q` and confirm the new cases fail because the behaviour is missing.
+- [x] Implement the warning class, the export (lazy `__getattr__`, `__all__` and the `TYPE_CHECKING` block) and the check.
+- [x] Run the same command and confirm it passes, including the existing request-count test.
+- [x] Commit this unit.
 
 ### 2. Document the series and change the example defaults
 
 **Files:** Modify `docs/research-library.md`, the research commands in `README.md`, `examples/research/rsi_reversion.py`, `examples/research/mt5_backtest.py`, `examples/research/load_market_data.py`, `tests/research/test_examples.py` and `tests/research/test_load_market_data_example.py`.
 
-- [ ] Update the example tests to expect `WIN$N` where a default or documented symbol is asserted; confirm they fail.
-- [ ] Change the example defaults and help text.
-- [ ] Write the "Choosing a price series" section from the spec's table and recommendation, and switch the guide's snippets and the README research commands to `WIN$N`. Leave other README sections as they are.
-- [ ] Run `uv run pytest tests/research -q` and confirm it passes.
-- [ ] Commit docs and examples.
+- [x] Update the example tests to expect `WIN$N` where a default or documented symbol is asserted; confirm they fail.
+- [x] Change the example defaults and help text.
+- [x] Write the "Choosing a price series" section from the spec's table and recommendation, and switch the guide's snippets and the README research commands to `WIN$N`. Leave other README sections as they are.
+- [x] Run `uv run pytest tests/research -q` and confirm it passes.
+- [x] Commit docs and examples.
 
 ## Verification and handoff
 
-- [ ] Run `uv run pytest tests/research -q`, `uv run ruff check src/q_backend/research examples/research tests/research` and `uv run black --check` on the same paths.
-- [ ] Record the commands actually run and their results in this plan; do not claim unrun checks passed.
+- [x] Run `uv run pytest tests/research -q`, `uv run ruff check src/q_backend/research examples/research tests/research` and `uv run black --check` on the same paths.
+- [x] Record the commands actually run and their results in this plan; do not claim unrun checks passed.
 - [ ] Use `./work board set Q-095 in-review -m "<changes; checks and results; follow-ups>"`.
+
+### Verification log (2026-10-08)
+
+- `uv run pytest tests/research -q` — **86 passed** (2 pydantic deprecation warnings).
+- `uv run ruff check src/q_backend/research examples/research tests/research` — **All checks passed**.
+- `uv run black --check src/q_backend/research examples/research tests/research` — **22 files unchanged**.

@@ -9,8 +9,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from examples.research.mt5_backtest import run_mt5_workflow
-from examples.research.rsi_reversion import RSIReversion, run_rsi_backtest
+from examples.research.mt5_backtest import build_parser as mt5_build_parser, run_mt5_workflow
+from examples.research.rsi_reversion import (
+    RSIReversion,
+    build_parser as rsi_build_parser,
+    run_rsi_backtest,
+)
 from q_backend.market_data.timezone import BRASILIA_TZ
 from q_backend.research import indicators
 
@@ -44,6 +48,11 @@ def synthetic_rsi_parquet(tmp_path: Path) -> Path:
     file_path = tmp_path / "bars.parquet"
     df.to_parquet(file_path)
     return file_path
+
+
+def test_example_scripts_default_to_unadjusted_win_symbol() -> None:
+    assert rsi_build_parser().parse_args(["--input", "data.parquet"]).symbol == "WIN$N"
+    assert mt5_build_parser().parse_args(["--start", "2026-09-01"]).symbol == "WIN$N"
 
 
 def test_offline_rsi_example_execution(synthetic_rsi_parquet: Path) -> None:

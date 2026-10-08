@@ -6,8 +6,13 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from examples.research.load_market_data import main
+from examples.research.load_market_data import build_parser, main
 from q_backend.market_data.timezone import BRASILIA_TZ
+
+
+def test_load_market_data_help_documents_unadjusted_symbol() -> None:
+    help_text = build_parser().format_help()
+    assert "WIN$N" in help_text
 
 
 def test_example_main_calls_load_bars_with_optional_end() -> None:

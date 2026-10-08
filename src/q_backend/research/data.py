@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import warnings
 from datetime import datetime
+from numbers import Real
 
 import pandas as pd
 import numpy as np
@@ -11,13 +13,14 @@ from q_backend.market_data.clients.shared import _time_msc_to_naive_local
 from q_backend.market_data.clients.remote import RemoteMt5Client
 from q_backend.market_data.clients.shared import COPY_TICKS_ALL
 from q_backend.market_data.timezone import BRASILIA_TZ
-from q_backend.research.errors import NoMarketDataError
+from q_backend.research.errors import AdjustedSeriesWarning, NoMarketDataError
 from q_backend.research.frame import (
     attach_metadata,
     bounds_to_brasilia_naive,
     drop_forming_bar,
     filter_index_range,
     normalize_timeframe,
+    off_tick_share,
     ohlcv_models_to_frame,
     parse_query_bound,
     PUBLIC_TZ_NAME,
@@ -26,6 +29,53 @@ from q_backend.research.frame import (
 from q_backend.research.providers import resolve_gateway_token, resolve_gateway_url
 
 MT5_SOURCE = "mt5"
+OFF_TICK_WARN_THRESHOLD = 0.01
+_GUIDE_SECTION = "Choosing a price series (docs/research-library.md)"
+
+
+def _trade_tick_size(symbol_info: dict[str, object] | None) -> float | None:
+    if not isinstance(symbol_info, dict):
+        return None
+    raw = symbol_info.get("trade_tick_size")
+    if raw is None or isinstance(raw, bool) or not isinstance(raw, Real):
+        return None
+    tick = float(raw)
+    if not np.isfinite(tick) or tick <= 0:
+        return None
+    return tick
+
+
+def _record_tick_grid_check(
+    frame: pd.DataFrame,
+    *,
+    symbol: str,
+    client: RemoteMt5Client,
+) -> pd.DataFrame:
+    try:
+        symbol_info = client.get_symbol_info(symbol)
+    except ConnectionError:
+        return frame
+    tick_size = _trade_tick_size(symbol_info)
+    if tick_size is None:
+        return frame
+    share = off_tick_share(frame, tick_size)
+    meta = dict(frame.attrs.get("q_research", {}))
+    meta["tick_size"] = tick_size
+    meta["off_tick_share"] = share
+    out = frame.copy()
+    out.attrs["q_research"] = meta
+    if share > OFF_TICK_WARN_THRESHOLD:
+        pct = share * 100.0
+        warnings.warn(
+            (
+                f"{symbol}: {pct:.1f}% of loaded OHLC prices are off the {tick_size} tick grid. "
+                "Point-based profit and loss and per-contract costs are distorted on "
+                f"price-adjusted history. See {_GUIDE_SECTION}."
+            ),
+            AdjustedSeriesWarning,
+            stacklevel=3,
+        )
+    return out
 
 
 def _decode_tick_flags(flags: np.ndarray) -> np.ndarray:
@@ -115,7 +165,7 @@ def load_bars(
             start=start_ts.isoformat(),
             end=end_ts.isoformat(),
         )
-    return attach_metadata(
+    frame = attach_metadata(
         frame,
         symbol=sym,
         timeframe=tf,
@@ -123,6 +173,7 @@ def load_bars(
         requested_start=start_ts,
         requested_end=end_ts,
     )
+    return _record_tick_grid_check(frame, symbol=sym, client=client)
 
 
 def load_ticks(
