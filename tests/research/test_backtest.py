@@ -5,6 +5,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
+from q_backend.backtesting.chart_data import serialize_chart_data
 from q_backend.backtesting.costs import TransactionCostConfig
 from q_backend.backtesting.engine import BacktestEngine
 from q_backend.backtesting.factory import build_strategy
@@ -12,6 +13,7 @@ from q_backend.backtesting.position_sizing import FixedQuantitySizer
 from q_backend.market_data.timezone import BRASILIA_TZ
 from q_backend.research import (
     BacktestResult,
+    ChartIndicator,
     ResearchStrategy,
     TradeOrder,
     backtest,
@@ -583,3 +585,111 @@ def test_overnight_carry_without_day_trade() -> None:
     assert t_forced["entry_time"] == times[1]
     assert t_forced["exit_time"] == times[3]
     assert t_forced["exit_price"] == 103.5  # close of the final bar
+
+
+class DeclaredChartStrategy(ResearchStrategy):
+    def __init__(self, declared=None, *, extra_columns=None) -> None:
+        self.declared = declared
+        self.extra_columns = extra_columns or {}
+        self.hook_calls = 0
+
+    def compute_indicators(self, frame: pd.DataFrame) -> pd.DataFrame:
+        frame = frame.copy()
+        frame["short_ma"] = frame["close"].rolling(3).mean()
+        frame["ma_delta"] = frame["close"].rolling(3).mean() - frame["close"].rolling(5).mean()
+        for name, values in self.extra_columns.items():
+            frame[name] = values(frame)
+        return frame
+
+    def chart_indicators(self):
+        self.hook_calls += 1
+        if self.declared is None:
+            return [
+                ChartIndicator("short_ma", label="EMA 9"),
+                ChartIndicator("ma_delta", pane="oscillator"),
+            ]
+        return self.declared
+
+    def entry_strategy(self, frame: pd.DataFrame) -> TradeOrder | None:
+        return None
+
+
+def test_declared_chart_indicators_are_returned_in_order(ohlcv_5m: pd.DataFrame) -> None:
+    result = backtest(ohlcv_5m, strategy=DeclaredChartStrategy(), symbol="WIN$")
+    assert result.indicators == (
+        ChartIndicator("short_ma", pane="price", label="EMA 9"),
+        ChartIndicator("ma_delta", pane="oscillator", label="ma_delta"),
+    )
+
+
+def test_chart_indicators_hook_runs_once_per_backtest(ohlcv_5m: pd.DataFrame) -> None:
+    strategy = DeclaredChartStrategy()
+    backtest(ohlcv_5m, strategy=strategy, symbol="WIN$")
+    assert strategy.hook_calls == 1
+
+
+@pytest.mark.parametrize(
+    ("declared", "expected"),
+    [
+        pytest.param(["short_ma"], "DeclaredChartStrategy", id="non-ChartIndicator entry"),
+        pytest.param([ChartIndicator("missing")], "'missing'", id="missing column"),
+        pytest.param([ChartIndicator("close")], "'close'", id="market column"),
+        pytest.param([ChartIndicator("open", pane="oscillator")], "'open'", id="market column in oscillator"),
+        pytest.param([ChartIndicator("tag")], "'tag'", id="non-numeric column"),
+        pytest.param(
+            [ChartIndicator("short_ma"), ChartIndicator("short_ma", pane="oscillator")],
+            "'short_ma'",
+            id="duplicate column",
+        ),
+    ],
+)
+def test_invalid_chart_declarations_raise_naming_class_and_column(
+    ohlcv_5m: pd.DataFrame, declared: list, expected: str
+) -> None:
+    strategy = DeclaredChartStrategy(
+        declared=declared,
+        extra_columns={"tag": lambda frame: ["x"] * len(frame)},
+    )
+    with pytest.raises(ValueError, match="DeclaredChartStrategy") as exc_info:
+        backtest(ohlcv_5m, strategy=strategy, symbol="WIN$")
+    assert expected in str(exc_info.value)
+
+
+def test_strategy_without_hook_reports_no_indicators(ohlcv_5m: pd.DataFrame) -> None:
+    result = backtest(ohlcv_5m, strategy=CrossoverHelper(), symbol="WIN$")
+    assert result.indicators == ()
+
+
+class NoChartHookStrategy(DeclaredChartStrategy):
+    chart_indicators = ResearchStrategy.chart_indicators
+
+
+def test_chart_indicators_leave_trades_metrics_equity_and_data_unchanged(ohlcv_5m: pd.DataFrame) -> None:
+    without_hook = backtest(ohlcv_5m, strategy=NoChartHookStrategy(), symbol="WIN$")
+    with_hook = backtest(ohlcv_5m, strategy=DeclaredChartStrategy(), symbol="WIN$")
+    pd.testing.assert_frame_equal(with_hook.trades, without_hook.trades)
+    pd.testing.assert_frame_equal(with_hook.equity, without_hook.equity)
+    pd.testing.assert_frame_equal(with_hook.data, without_hook.data)
+    assert with_hook.metrics == without_hook.metrics
+    assert without_hook.indicators == ()
+
+
+def test_registered_strategy_reports_its_chart_indicators(ohlcv_5m: pd.DataFrame) -> None:
+    params = {"short_period": 3, "long_period": 5}
+    result = backtest(ohlcv_5m, strategy="MACrossover", symbol="WIN$", strategy_params=params)
+    expected = tuple(
+        ChartIndicator(spec.key, pane=spec.pane, label=spec.label, color=spec.color)
+        for spec in build_strategy("MACrossover", params, symbol="WIN$").get_chart_indicators()
+    )
+    assert result.indicators == expected
+    assert [indicator.column for indicator in result.indicators] == ["ma_short", "ma_long", "delta"]
+
+
+def test_chart_indicator_series_serialize_one_value_per_bar(ohlcv_5m: pd.DataFrame) -> None:
+    adapter = ResearchStrategyAdapter(DeclaredChartStrategy(), symbol="WIN$")
+    augmented = adapter.compute_indicators(ohlcv_5m)
+    chart = serialize_chart_data(augmented, adapter)
+    assert [series["key"] for series in chart["indicators"]] == ["short_ma", "ma_delta"]
+    assert [series["pane"] for series in chart["indicators"]] == ["price", "oscillator"]
+    for series in chart["indicators"]:
+        assert len(series["values"]) == len(ohlcv_5m)

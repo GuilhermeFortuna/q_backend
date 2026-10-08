@@ -17,17 +17,25 @@ from q_backend.backtesting.factory import build_strategy
 from q_backend.backtesting.indicator_frame import augment_indicator_frame
 from q_backend.backtesting.position_sizing import FixedQuantitySizer
 from q_backend.backtesting.signal_columns import BAR_INDEX, SIGNAL_COLUMNS
+from q_backend.backtesting.strategy import TradingStrategy
 from q_backend.backtesting.strategy_registry import (
     UnsupportedStrategyWorkflowError,
     get_registered_strategy,
 )
 from q_backend.market_data.timezone import BRASILIA_TZ
 from q_backend.research.adapter import ResearchStrategyAdapter
+from q_backend.research.charting import ChartIndicator
 from q_backend.research.frame import _validate_prices
 from q_backend.research.results import BacktestResult, build_equity_curve, trades_to_frame
 from q_backend.research.strategy import ResearchStrategy
 
 _INTERNAL_COLUMNS = frozenset((*SIGNAL_COLUMNS, BAR_INDEX))
+
+
+def _chart_indicators(trading_strategy: TradingStrategy) -> tuple[ChartIndicator, ...]:
+    # The base TradingStrategy hook returns None; treat that as no declared series.
+    specs = trading_strategy.get_chart_indicators() or ()
+    return tuple(ChartIndicator(spec.key, pane=spec.pane, label=spec.label, color=spec.color) for spec in specs)
 
 
 def _validate_input_frame(frame: pd.DataFrame, is_builtin: bool) -> pd.DataFrame:
@@ -245,7 +253,13 @@ def backtest(
         metrics = registry.get_performance_metrics(initial_capital=float(initial_capital))
         trades = trades_to_frame(registry)
         equity = build_equity_curve(registry, clean_data.index, float(initial_capital))
-        return BacktestResult(metrics=metrics, trades=trades, equity=equity, data=clean_data)
+        return BacktestResult(
+            metrics=metrics,
+            trades=trades,
+            equity=equity,
+            data=clean_data,
+            indicators=_chart_indicators(trading_strategy),
+        )
 
     return _execute_backtest(
         engine=engine,
@@ -298,4 +312,10 @@ def _execute_backtest(
     metrics = registry.get_performance_metrics(initial_capital=initial_capital)
     trades = trades_to_frame(registry)
     equity = build_equity_curve(registry, clean_data.index, initial_capital)
-    return BacktestResult(metrics=metrics, trades=trades, equity=equity, data=clean_data)
+    return BacktestResult(
+        metrics=metrics,
+        trades=trades,
+        equity=equity,
+        data=clean_data,
+        indicators=_chart_indicators(trading_strategy),
+    )
