@@ -1,6 +1,6 @@
 # Q-104: Stop, target and lazy intrabar exits in research backtests
 
-**Status:** revised spec awaiting human review; the [Q project board](https://github.com/users/GuilhermeFortuna/projects/2) is the status of record.
+**Status:** In Progress; core extension published as `v2026.10.08.3`; the [Q project board](https://github.com/users/GuilhermeFortuna/projects/2) is the status of record.
 **Batch:** 18 — Stop and target orders in research backtests
 **Depends on:** Q-102, Q-103
 **Implementation plan:** [Plan](../plans/Q-104-stop-and-target-orders-in-research-backtests-plan.md)
@@ -160,12 +160,13 @@ The rule is the candle kernel's (Q-102) and is restated in the guide:
 ### Research only
 
 - Only `q_backend.research.backtest` passes levels and a price source to the kernel. Stack backtest jobs, optimisation, walk-forward and the forward evaluator call it as before and their results do not change.
-- The current pin `v2026.10.08.2` includes protective execution and position-aware
-  callbacks, but its callback runs after whole-bar protective execution. Q-104
-  requires an additive `q_core`/PyO3 extension for lazy screen/tick callbacks and
-  runtime entry-level transport, followed by a published release and backend pin.
-  Preserve existing callback signatures and golden results. Q-102 remains Done;
-  Q-103's existing `trade_prices` accessor is sufficient for replay.
+- The previous pin `v2026.10.08.2` includes protective execution and
+  position-aware callbacks, but its callback runs after whole-bar protective
+  execution. Q-104's additive `q_core`/PyO3 extension is published as
+  `v2026.10.08.3`, providing lazy screen/tick callbacks and runtime entry-level
+  transport. Backend adoption uses that published tag. Preserve existing
+  callback signatures and golden results. Q-102 remains Done; Q-103's existing
+  `trade_prices` accessor is sufficient for replay.
 
 ## Documentation
 

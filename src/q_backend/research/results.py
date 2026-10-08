@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from datetime import datetime
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
+from q_backend.backtesting.candle_kernel import ChunkRun
 from q_backend.backtesting.models import OrderAction, Trade, TradeStatus
 from q_backend.backtesting.registry import TradeRegistry
 from q_backend.market_data.timezone import BRASILIA_TZ
@@ -29,7 +31,12 @@ TRADE_COLUMNS = [
     "commission",
     "point_value",
     "exit_reason",
+    "exit_tick_time",
+    "stop_loss",
+    "take_profit",
 ]
+
+REJECTED_COLUMNS = ["time", "side", "fill_price", "stop_loss", "take_profit"]
 
 
 @dataclass(frozen=True)
@@ -44,6 +51,7 @@ class BacktestResult:
     config: Mapping[str, Any] = MappingProxyType({})
     _closed_trades: tuple[Trade, ...] = ()
     _strategy: Any = None
+    rejected_entries: pd.DataFrame = field(default_factory=lambda: empty_rejected_frame())
 
     def publish(
         self,
@@ -80,9 +88,42 @@ def empty_trades_frame() -> pd.DataFrame:
         "commission": "float64",
         "point_value": "float64",
         "exit_reason": "object",
+        "exit_tick_time": "datetime64[ns, America/Sao_Paulo]",
+        "stop_loss": "float64",
+        "take_profit": "float64",
     }
     df = pd.DataFrame({col: pd.Series(dtype=dt) for col, dt in dtypes.items()})
     return df[TRADE_COLUMNS]
+
+
+def empty_rejected_frame() -> pd.DataFrame:
+    dtypes = {
+        "time": "datetime64[ns, America/Sao_Paulo]",
+        "side": "object",
+        "fill_price": "float64",
+        "stop_loss": "float64",
+        "take_profit": "float64",
+    }
+    df = pd.DataFrame({col: pd.Series(dtype=dt) for col, dt in dtypes.items()})
+    return df[REJECTED_COLUMNS]
+
+
+def rejected_entries_frame(run: ChunkRun, index: pd.DatetimeIndex) -> pd.DataFrame:
+    """Entries refused because a level was already on the wrong side of the fill."""
+    rejected = run.rejected
+    if len(rejected["bar"]) == 0:
+        return empty_rejected_frame()
+    times = [index[int(bar)] for bar in rejected["bar"]]
+    df = pd.DataFrame(
+        {
+            "time": pd.array(times, dtype="datetime64[ns, America/Sao_Paulo]"),
+            "side": ["long" if side == 1 else "short" for side in rejected["side"]],
+            "fill_price": rejected["fill_price"].astype(np.float64),
+            "stop_loss": rejected["stop_price"].astype(np.float64),
+            "take_profit": rejected["target_price"].astype(np.float64),
+        }
+    )
+    return df[REJECTED_COLUMNS]
 
 
 def trades_to_frame(registry: TradeRegistry) -> pd.DataFrame:
@@ -130,13 +171,23 @@ def trades_to_frame(registry: TradeRegistry) -> pd.DataFrame:
                 "commission": float(t.commission),
                 "point_value": float(getattr(t, "point_value", 1.0)),
                 "exit_reason": t.exit_reason,
+                "exit_tick_time": _brasilia_or_nat(t.exit_tick_time),
+                "stop_loss": np.nan if t.stop_loss is None else float(t.stop_loss),
+                "take_profit": np.nan if t.take_profit is None else float(t.take_profit),
             }
         )
 
     df = pd.DataFrame(rows)
-    for column in ("entry_time", "exit_time"):
+    for column in ("entry_time", "exit_time", "exit_tick_time"):
         df[column] = pd.array([row[column] for row in rows], dtype="datetime64[ns, America/Sao_Paulo]")
     return df[TRADE_COLUMNS]
+
+
+def _brasilia_or_nat(value: datetime | None) -> pd.Timestamp:
+    if value is None:
+        return pd.NaT
+    ts = pd.Timestamp(value)
+    return ts.tz_localize(BRASILIA_TZ) if ts.tzinfo is None else ts.tz_convert(BRASILIA_TZ)
 
 
 def build_equity_curve(

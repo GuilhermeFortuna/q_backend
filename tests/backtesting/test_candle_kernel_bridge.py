@@ -76,3 +76,12 @@ def test_check_engine_names_missing_function_and_version() -> None:
         check_engine(types.SimpleNamespace(**values))
     assert "DecisionStep" in str(exc_info.value)
     assert "0.0.0" in str(exc_info.value)
+
+
+def test_check_engine_requires_protective_and_callback_capabilities() -> None:
+    from q_backend.backtesting.candle_kernel import REQUIRED_ENGINE_FUNCTIONS, check_engine
+
+    values = {name: object() for name in REQUIRED_ENGINE_FUNCTIONS}
+    values["version"] = lambda: "0.0.0"
+    with pytest.raises(ImportError, match="PROTECTIVE_ORDERS"):
+        check_engine(types.SimpleNamespace(**values))
