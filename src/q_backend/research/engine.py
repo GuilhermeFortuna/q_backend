@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from numbers import Integral, Real
+from types import MappingProxyType
 from typing import Any
 
 import numpy as np
@@ -30,6 +31,45 @@ from q_backend.research.results import BacktestResult, build_equity_curve, trade
 from q_backend.research.strategy import ResearchStrategy
 
 _INTERNAL_COLUMNS = frozenset((*SIGNAL_COLUMNS, BAR_INDEX))
+
+
+def _is_json_scalar(val: Any) -> bool:
+    if val is None or isinstance(val, (bool, str, int, np.integer)):
+        return True
+    if isinstance(val, (float, np.floating)):
+        return math.isfinite(val)
+    return False
+
+
+def _normalize_scalar(val: Any) -> Any:
+    if isinstance(val, bool) or val is None:
+        return val
+    if isinstance(val, (int, np.integer)):
+        return int(val)
+    if isinstance(val, (float, np.floating)):
+        return float(val)
+    return val
+
+
+def _extract_strategy_params(strategy: Any) -> dict[str, Any]:
+    params: dict[str, Any] = {}
+    attr_names: list[str] = list(vars(strategy).keys()) if hasattr(strategy, "__dict__") else []
+    for name in dir(strategy):
+        if name not in attr_names:
+            attr_names.append(name)
+
+    for name in attr_names:
+        if name.startswith("_"):
+            continue
+        try:
+            val = getattr(strategy, name)
+        except Exception:  # noqa: BLE001
+            continue
+        if callable(val):
+            continue
+        if _is_json_scalar(val):
+            params[name] = _normalize_scalar(val)
+    return params
 
 
 def _chart_indicators(trading_strategy: TradingStrategy) -> tuple[ChartIndicator, ...]:
@@ -246,6 +286,32 @@ def backtest(
         costs=costs,
     )
 
+    timeframe = frame.attrs.get("q_research", {}).get("timeframe") if hasattr(frame, "attrs") else None
+    if isinstance(strategy, str):
+        strat_name = strategy
+        strat_params = dict(strategy_params or {})
+    else:
+        strat_name = type(strategy).__name__
+        strat_params = _extract_strategy_params(strategy)
+
+    config_dict: dict[str, Any] = {
+        "symbol": symbol,
+        "strategy": strat_name,
+        "strategy_params": strat_params,
+        "quantity": quantity,
+        "point_value": float(point_value),
+        "initial_capital": float(initial_capital),
+        "costs": costs,
+        "exit_params": dict(exit_params) if exit_params is not None else None,
+        "day_trade": day_trade,
+        "day_trade_start_time": day_trade_start_time,
+        "day_trade_end_time": day_trade_end_time,
+        "day_trade_close_time": day_trade_close_time,
+        "force_close_at_end": force_close_at_end,
+        "timeframe": timeframe,
+    }
+    read_only_config = MappingProxyType(config_dict)
+
     if validated_frame.empty:
         # There are no bars to prepare; user hooks need not handle empty history.
         clean_data = validated_frame.copy()
@@ -259,6 +325,8 @@ def backtest(
             equity=equity,
             data=clean_data,
             indicators=_chart_indicators(trading_strategy),
+            config=read_only_config,
+            _closed_trades=tuple(registry.get_closed_trades()),
         )
 
     return _execute_backtest(
@@ -267,6 +335,7 @@ def backtest(
         validated_frame=validated_frame,
         initial_capital=float(initial_capital),
         force_close_at_end=force_close_at_end,
+        config=read_only_config,
     )
 
 
@@ -276,6 +345,7 @@ def _execute_backtest(
     validated_frame: pd.DataFrame,
     initial_capital: float,
     force_close_at_end: bool,
+    config: Mapping[str, Any],
 ) -> BacktestResult:
     # If trading_strategy is ResearchStrategyAdapter, cache its augmented data
     # so subsequent call inside engine._run_single_chunk reuses it.
@@ -318,4 +388,6 @@ def _execute_backtest(
         equity=equity,
         data=clean_data,
         indicators=_chart_indicators(trading_strategy),
+        config=config,
+        _closed_trades=tuple(registry.get_closed_trades()),
     )

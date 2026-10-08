@@ -32,10 +32,10 @@
 **Files:** Modify `src/q_backend/research/engine.py`, `src/q_backend/research/results.py` and `tests/research/test_backtest.py`.
 **Interfaces:** `BacktestResult.config`; private closed-trade records on the result.
 
-- [ ] Add failing tests for spec acceptance item 1, including a registered strategy, a frame without timeframe metadata and a strategy with a non-scalar attribute.
-- [ ] Run `uv run pytest tests/research/test_backtest.py -q` and confirm the new cases fail.
-- [ ] Implement on the normal and empty-frame paths; re-run until green.
-- [ ] Commit this unit.
+- [x] Add failing tests for spec acceptance item 1, including a registered strategy, a frame without timeframe metadata and a strategy with a non-scalar attribute.
+- [x] Run `uv run pytest tests/research/test_backtest.py -q` and confirm the new cases fail.
+- [x] Implement on the normal and empty-frame paths; re-run until green.
+- [x] Commit this unit.
 
 ### 2. Build and send the import request
 

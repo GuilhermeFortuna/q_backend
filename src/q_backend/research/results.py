@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from q_backend.backtesting.models import OrderAction, TradeStatus
+from q_backend.backtesting.models import OrderAction, Trade, TradeStatus
 from q_backend.backtesting.registry import TradeRegistry
 from q_backend.market_data.timezone import BRASILIA_TZ
 from q_backend.research.charting import ChartIndicator
@@ -39,6 +41,8 @@ class BacktestResult:
     equity: pd.DataFrame
     data: pd.DataFrame
     indicators: tuple[ChartIndicator, ...] = ()
+    config: Mapping[str, Any] = MappingProxyType({})
+    _closed_trades: tuple[Trade, ...] = ()
 
 
 def empty_trades_frame() -> pd.DataFrame:
