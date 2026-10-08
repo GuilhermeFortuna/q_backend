@@ -24,9 +24,9 @@ Each was read from the code on 2026-10-08.
 
 | Task | Repository | Depends on | Specification | Implementation plan |
 | --- | --- | --- | --- | --- |
-| Q-102 — Intrabar stop and target orders in the candle kernel | q_core | none | `q_core/docs/development/specs/Q-102-intrabar-stop-and-target-orders-in-the-candle-kernel-spec.md` | `q_core/docs/development/plans/Q-102-intrabar-stop-and-target-orders-in-the-candle-kernel-plan.md` |
-| Q-103 — Research tick store | q_backend | none | [Spec](../specs/Q-103-research-tick-store-spec.md) | [Plan](../plans/Q-103-research-tick-store-plan.md) |
-| Q-104 — Stop and target orders in research backtests | q_backend | Q-102, Q-103 | [Spec](../specs/Q-104-stop-and-target-orders-in-research-backtests-spec.md) | [Plan](../plans/Q-104-stop-and-target-orders-in-research-backtests-plan.md) |
+| [Q-102](https://github.com/GuilhermeFortuna/q_core/issues/14) — Intrabar stop and target orders in the candle kernel | q_core | none | `q_core/docs/development/specs/Q-102-intrabar-stop-and-target-orders-in-the-candle-kernel-spec.md` | `q_core/docs/development/plans/Q-102-intrabar-stop-and-target-orders-in-the-candle-kernel-plan.md` |
+| [Q-103](https://github.com/GuilhermeFortuna/q_backend/issues/38) — Research tick store | q_backend | none | [Spec](../specs/Q-103-research-tick-store-spec.md) | [Plan](../plans/Q-103-research-tick-store-plan.md) |
+| [Q-104](https://github.com/GuilhermeFortuna/q_backend/issues/39) — Stop and target orders in research backtests | q_backend | Q-102, Q-103 | [Spec](../specs/Q-104-stop-and-target-orders-in-research-backtests-spec.md) | [Plan](../plans/Q-104-stop-and-target-orders-in-research-backtests-plan.md) |
 
 Q-102 and Q-103 have no prerequisite and can run in parallel. Q-104 starts when both are Done; it pins the `q_core` tag that `./work finish Q-102` publishes.
 
