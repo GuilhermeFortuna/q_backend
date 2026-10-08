@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
+import pytest
 
 from tests.gateway.conftest import http_get, running_gateway_server
 
@@ -37,6 +38,28 @@ _TICK_DTYPE = [
 
 def _epoch(dt: datetime) -> int:
     return int(dt.replace(tzinfo=timezone.utc).timestamp())
+
+
+@pytest.mark.parametrize("partial", [False, True])
+def test_ohlcv_scan_limit_never_returns_incomplete_success(gateway, fake_mt5, monkeypatch, partial):
+    monkeypatch.setattr(gateway, "_MAX_HISTORY_CHUNKS", 1)
+    if partial:
+        fake_mt5._state["rates_queue"] = [
+            np.array([(_epoch(datetime(2026, 1, 1)), 100, 101, 99, 100, 10, 0, 0)], dtype=_RATE_DTYPE)
+        ]
+    with pytest.raises(gateway.GatewayError, match="history scan.*narrower range") as error:
+        gateway._fetch_ohlcv_chunked("WIN$N", fake_mt5.TIMEFRAME_M1, datetime(2026, 1, 1), datetime(2026, 2, 1))
+    assert error.value.status == 500
+    assert error.value.code == "internal_error"
+
+
+def test_ohlcv_final_scan_chunk_can_complete(gateway, fake_mt5, monkeypatch):
+    monkeypatch.setattr(gateway, "_MAX_HISTORY_CHUNKS", 1)
+    rates, truncated = gateway._fetch_ohlcv_chunked(
+        "WIN$N", fake_mt5.TIMEFRAME_M1, datetime(2026, 1, 1), datetime(2026, 1, 2)
+    )
+    assert len(rates) == 0
+    assert truncated is False
 
 
 def test_health_reports_schema_and_connection(gateway, fake_mt5):

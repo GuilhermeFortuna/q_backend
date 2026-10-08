@@ -450,6 +450,13 @@ def _fetch_ohlcv_chunked(symbol: str, mt5_timeframe: int, start: datetime, end: 
                 truncated = True
             break
 
+    if cursor <= end and not truncated:
+        raise GatewayError(
+            500,
+            "internal_error",
+            "OHLCV history scan could not finish the requested interval; request a narrower range.",
+        )
+
     if not chunks:
         return np.empty(0, dtype=_OHLCV_BASE_DTYPE), truncated
     all_rates = np.concatenate(chunks) if len(chunks) > 1 else chunks[0]

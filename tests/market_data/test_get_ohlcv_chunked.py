@@ -2,6 +2,7 @@ from datetime import datetime
 from unittest.mock import patch
 
 import numpy as np
+import pytest
 
 from q_backend.market_data.clients import metatrader as mt_module
 from q_backend.market_data.clients.metatrader import MetaTraderClient
@@ -21,6 +22,32 @@ _RATE_DTYPE = [
 
 def _rate(time: int) -> tuple:
     return (time, 40.0, 41.0, 39.0, 40.5, 1000, 1, 0)
+
+
+@pytest.mark.parametrize("partial", [False, True])
+@patch("q_backend.market_data.clients.metatrader.mt5")
+def test_get_ohlcv_scan_limit_raises_instead_of_returning_partial_data(mock_mt5, monkeypatch, partial):
+    monkeypatch.setattr(mt_module, "_MAX_HISTORY_CHUNKS", 1)
+    mock_mt5.TIMEFRAME_D1 = 16408
+    mock_mt5.symbol_select.return_value = True
+    mock_mt5.copy_rates_range.return_value = np.array([_rate(1_600_000_000)] if partial else [], dtype=_RATE_DTYPE)
+    mock_mt5.last_error.return_value = (1, "no data")
+    client = MetaTraderClient()
+    client._is_initialized = True
+    with pytest.raises(RuntimeError, match="history scan.*narrower range"):
+        client.get_ohlcv("PETR4", "D1", datetime(2020, 1, 1), datetime(2026, 1, 1))
+
+
+@patch("q_backend.market_data.clients.metatrader.mt5")
+def test_get_ohlcv_final_scan_chunk_can_complete(mock_mt5, monkeypatch):
+    monkeypatch.setattr(mt_module, "_MAX_HISTORY_CHUNKS", 1)
+    mock_mt5.TIMEFRAME_D1 = 16408
+    mock_mt5.symbol_select.return_value = True
+    mock_mt5.copy_rates_range.return_value = np.array([], dtype=_RATE_DTYPE)
+    mock_mt5.last_error.return_value = (1, "no data")
+    client = MetaTraderClient()
+    client._is_initialized = True
+    assert client.get_ohlcv("PETR4", "D1", datetime(2026, 1, 1), datetime(2026, 1, 2)) == []
 
 
 @patch("q_backend.market_data.clients.metatrader.mt5")

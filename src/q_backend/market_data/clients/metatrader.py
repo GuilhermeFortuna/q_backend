@@ -401,6 +401,9 @@ class MetaTraderClient:
             else:
                 cursor = chunk_end + timedelta(seconds=1)
 
+        if cursor <= end:
+            raise RuntimeError("OHLCV history scan could not finish the requested interval; request a narrower range.")
+
         if not chunks:
             return []
 
