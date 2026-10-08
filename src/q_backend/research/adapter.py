@@ -15,6 +15,7 @@ from q_backend.backtesting.signal_columns import (
 )
 from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy
 from q_backend.research.orders import TradeOrder
+from q_backend.research.frame import FRAME_COLUMNS
 from q_backend.research.strategy import ResearchStrategy
 
 _RESERVED_COLUMNS = frozenset((*SIGNAL_COLUMNS, BAR_INDEX))
@@ -44,6 +45,9 @@ class ResearchStrategyAdapter(TradingStrategy):
         if not isinstance(data, pd.DataFrame):
             raise TypeError(f"Expected DataFrame, got {type(data).__name__}")
 
+        if data.columns.has_duplicates:
+            raise ValueError("Input DataFrame contains duplicate column names")
+
         # Check reserved columns on input frame
         for col in _RESERVED_COLUMNS:
             if col in data.columns:
@@ -51,6 +55,18 @@ class ResearchStrategyAdapter(TradingStrategy):
 
         orig_index = data.index
         orig_len = len(data)
+
+        if orig_len == 0:
+            empty = data.copy()
+            empty.attrs = {}
+            return write_signal_columns(
+                empty,
+                entry_long=pd.Series(dtype=bool, index=empty.index),
+                entry_short=pd.Series(dtype=bool, index=empty.index),
+                exit_long=pd.Series(dtype=bool, index=empty.index),
+                exit_short=pd.Series(dtype=bool, index=empty.index),
+                strategy_name=type(self.research_strategy).__name__,
+            )
 
         # 1. Call compute_indicators once on an owned copy
         data_copy = data.copy()
@@ -83,25 +99,12 @@ class ResearchStrategyAdapter(TradingStrategy):
                 )
 
         # Check market columns were not modified/mutated
-        for col in ("open", "high", "low", "close"):
+        for col in (*FRAME_COLUMNS, "volume"):
             if col in data.columns:
                 if col not in augmented.columns:
                     raise ValueError(f"Missing original market column {col!r} after compute_indicators")
-                orig_vals = data[col].to_numpy(dtype=np.float64, copy=False)
-                new_vals = augmented[col].to_numpy(dtype=np.float64, copy=False)
-                if not np.array_equal(orig_vals, new_vals, equal_nan=True):
+                if not data[col].equals(augmented[col]):
                     raise ValueError(f"Market column {col!r} was modified in compute_indicators")
-
-        if orig_len == 0:
-            # Empty frame: empty signal columns
-            return write_signal_columns(
-                augmented,
-                entry_long=pd.Series(dtype=bool, index=augmented.index),
-                entry_short=pd.Series(dtype=bool, index=augmented.index),
-                exit_long=pd.Series(dtype=bool, index=augmented.index),
-                exit_short=pd.Series(dtype=bool, index=augmented.index),
-                strategy_name=type(self.research_strategy).__name__,
-            )
 
         # 2. Iterate bar by bar: evaluate exit_strategy then entry_strategy on owned prefix
         entry_long = np.zeros(orig_len, dtype=bool)

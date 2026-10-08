@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
+from numbers import Integral, Real
 from typing import Any
 
 import numpy as np
@@ -11,7 +12,7 @@ import pandas as pd
 
 from q_backend.backtesting.costs import TransactionCostConfig
 from q_backend.backtesting.engine import BacktestEngine
-from q_backend.backtesting.exit_rules.registry import all_param_specs, required_columns as registry_required_columns
+from q_backend.backtesting.exit_rules.registry import all_param_specs
 from q_backend.backtesting.factory import build_strategy
 from q_backend.backtesting.indicator_frame import augment_indicator_frame
 from q_backend.backtesting.position_sizing import FixedQuantitySizer
@@ -32,6 +33,13 @@ _INTERNAL_COLUMNS = frozenset((*SIGNAL_COLUMNS, BAR_INDEX))
 def _validate_input_frame(frame: pd.DataFrame, is_builtin: bool) -> pd.DataFrame:
     if not isinstance(frame, pd.DataFrame):
         raise TypeError(f"Expected DataFrame, got {type(frame).__name__}")
+
+    if frame.columns.has_duplicates:
+        raise ValueError("Input DataFrame contains duplicate column names")
+
+    for column in _INTERNAL_COLUMNS:
+        if column in frame.columns:
+            raise ValueError(f"Input DataFrame contains reserved column {column!r}")
 
     if not isinstance(frame.index, pd.DatetimeIndex):
         raise ValueError(
@@ -91,6 +99,25 @@ def _validate_session_times(start: str, end: str, close: str) -> None:
         )
 
 
+def _validate_exit_params(params: Mapping[str, Any]) -> None:
+    specs = {spec.name: spec for spec in all_param_specs()}
+    for name, value in params.items():
+        if name not in specs:
+            raise ValueError(f"Unknown exit_param: {name!r}")
+        spec = specs[name]
+        if spec.type == "categorical":
+            if value not in (spec.choices or []):
+                raise ValueError(f"{name} must be one of {spec.choices!r}")
+            continue
+        expected_type = Integral if spec.type == "int" else Real
+        if isinstance(value, bool) or not isinstance(value, expected_type) or not math.isfinite(value):
+            raise ValueError(f"{name} must be a finite {spec.type}, got {value!r}")
+        if spec.min is not None and value < spec.min:
+            raise ValueError(f"{name} must be >= {spec.min}, got {value!r}")
+        if spec.max is not None and value > spec.max:
+            raise ValueError(f"{name} must be <= {spec.max}, got {value!r}")
+
+
 def backtest(
     frame: pd.DataFrame,
     *,
@@ -140,12 +167,8 @@ def backtest(
     if day_trade:
         _validate_session_times(day_trade_start_time, day_trade_end_time, day_trade_close_time)
 
-    # Validate exit_params against known exit specs
-    valid_exit_names = {spec.name for spec in all_param_specs()}
     if exit_params is not None:
-        for k in exit_params:
-            if k not in valid_exit_names:
-                raise ValueError(f"Unknown exit_param: {k!r}")
+        _validate_exit_params(exit_params)
 
     is_builtin = isinstance(strategy, str)
     validated_frame = _validate_input_frame(frame, is_builtin=is_builtin)
@@ -192,6 +215,8 @@ def backtest(
 
         merged_params = dict(strat_p)
         merged_params.update(exit_p)
+        exit_names = {spec.name for spec in all_param_specs()}
+        _validate_exit_params({name: value for name, value in merged_params.items() if name in exit_names})
 
         trading_strategy = build_strategy(strategy, merged_params, symbol=symbol)
     else:
@@ -214,10 +239,8 @@ def backtest(
     )
 
     if validated_frame.empty:
-        # Augment empty frame to get prepared columns
-        augmented_data = augment_indicator_frame(trading_strategy, validated_frame.copy())
-        # Drop internal columns
-        clean_data = augmented_data.drop(columns=[col for col in _INTERNAL_COLUMNS if col in augmented_data.columns])
+        # There are no bars to prepare; user hooks need not handle empty history.
+        clean_data = validated_frame.copy()
         registry = engine.run(validated_frame, force_close_at_end=force_close_at_end)
         metrics = registry.get_performance_metrics(initial_capital=float(initial_capital))
         trades = trades_to_frame(registry)

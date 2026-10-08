@@ -108,6 +108,8 @@ def trades_to_frame(registry: TradeRegistry) -> pd.DataFrame:
         )
 
     df = pd.DataFrame(rows)
+    for column in ("entry_time", "exit_time"):
+        df[column] = pd.array([row[column] for row in rows], dtype="datetime64[ns, America/Sao_Paulo]")
     return df[TRADE_COLUMNS]
 
 

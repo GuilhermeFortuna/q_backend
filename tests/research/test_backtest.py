@@ -263,8 +263,14 @@ def test_empty_input_and_results_schema() -> None:
     )
 
     class Dummy(ResearchStrategy):
+        def compute_indicators(self, frame: pd.DataFrame) -> pd.DataFrame:
+            raise AssertionError("Empty inputs must not invoke strategy hooks")
+
         def entry_strategy(self, frame: pd.DataFrame) -> TradeOrder | None:
-            return None
+            raise AssertionError("Empty inputs must not invoke strategy hooks")
+
+        def exit_strategy(self, frame: pd.DataFrame) -> TradeOrder | None:
+            raise AssertionError("Empty inputs must not invoke strategy hooks")
 
     res = backtest(empty_df, strategy=Dummy(), symbol="WIN$")
     assert res.metrics["total_trades"] == 0
@@ -273,6 +279,57 @@ def test_empty_input_and_results_schema() -> None:
     assert len(res.equity) == 0
     assert "realized_equity" in res.equity.columns
     assert len(res.data) == 0
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"stop_loss_pct": -0.02},
+        {"stop_loss_pct": float("nan")},
+        {"stop_loss_pct": float("inf")},
+        {"stop_loss_pct": 0.51},
+        {"stop_loss_pct": True},
+        {"stop_loss_pct": "0.02"},
+        {"atr_period": 1},
+        {"atr_period": 2.5},
+        {"atr_period": True},
+    ],
+)
+@pytest.mark.parametrize("builtin", [False, True])
+def test_invalid_exit_values_rejected_before_strategy_hooks(ohlcv_5m, params, builtin):
+    class NoHooks(ResearchStrategy):
+        def compute_indicators(self, frame):
+            raise AssertionError("Invalid configuration must fail before hooks")
+
+        def entry_strategy(self, frame):
+            raise AssertionError("Invalid configuration must fail before hooks")
+
+    strategy = "MACrossover" if builtin else NoHooks()
+    with pytest.raises(ValueError, match=next(iter(params))):
+        backtest(ohlcv_5m, strategy=strategy, symbol="WIN$N", exit_params=params)
+
+
+def test_invalid_exit_values_in_builtin_strategy_params_rejected(ohlcv_5m):
+    with pytest.raises(ValueError, match="stop_loss_pct"):
+        backtest(
+            ohlcv_5m,
+            strategy="MACrossover",
+            symbol="WIN$N",
+            strategy_params={"stop_loss_pct": float("nan")},
+        )
+
+
+@pytest.mark.parametrize("column", ["bar_index", "q_signal_entry"])
+def test_empty_input_still_rejects_reserved_columns(ohlcv_5m, column):
+    with pytest.raises(ValueError, match="reserved column"):
+        backtest(ohlcv_5m.iloc[:0].assign(**{column: []}), strategy=CrossoverHelper(), symbol="WIN$N")
+
+
+def test_empty_input_rejects_duplicate_columns(ohlcv_5m):
+    empty = ohlcv_5m.iloc[:0].assign(extra=0)
+    empty = pd.concat([empty, empty[["extra"]]], axis=1)
+    with pytest.raises(ValueError, match="duplicate column names"):
+        backtest(empty, strategy=CrossoverHelper(), symbol="WIN$N")
 
 
 def test_realized_equity_equals_initial_capital_plus_closed_pnl(ohlcv_5m: pd.DataFrame) -> None:
@@ -325,6 +382,8 @@ def test_open_trade_and_unforced_vs_forced_close(ohlcv_5m: pd.DataFrame) -> None
     assert pd.isna(t_open["exit_time"])
     assert pd.isna(t_open["exit_price"])
     assert pd.isna(t_open["pnl"])
+    assert str(res_open.trades["exit_time"].dt.tz) == "America/Sao_Paulo"
+    assert res_open.trades["exit_time"].dt.tz_convert("UTC").isna().all()
     assert res_open.metrics["total_trades"] == 0  # metrics reflect closed trades
 
     # 2. force_close_at_end=True: trade is closed at the final bar
@@ -334,6 +393,7 @@ def test_open_trade_and_unforced_vs_forced_close(ohlcv_5m: pd.DataFrame) -> None
     assert t_closed["status"] == "closed"
     assert not pd.isna(t_closed["exit_time"])
     assert not pd.isna(t_closed["pnl"])
+    assert res_open.trades["exit_time"].dtype == res_closed.trades["exit_time"].dtype
     assert res_closed.metrics["total_trades"] == 1
 
 

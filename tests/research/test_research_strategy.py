@@ -114,6 +114,9 @@ def test_scripted_strategy_lifecycle_and_isolation(sample_bars: pd.DataFrame) ->
 
 def test_empty_frame_handling() -> None:
     class EmptyTestStrategy(ResearchStrategy):
+        def compute_indicators(self, frame: pd.DataFrame) -> pd.DataFrame:
+            raise AssertionError("Should not be called for empty frame")
+
         def entry_strategy(self, frame: pd.DataFrame) -> TradeOrder | None:
             raise AssertionError("Should not be called for empty frame")
 
@@ -127,6 +130,38 @@ def test_empty_frame_handling() -> None:
     assert SIGNAL_EXIT_LONG in res.columns
     assert SIGNAL_EXIT_SHORT in res.columns
     assert SIGNAL_STRENGTH in res.columns
+
+
+@pytest.mark.parametrize("column", ["tick_volume", "real_volume", "spread", "volume"])
+@pytest.mark.parametrize("drop", [False, True])
+def test_original_market_columns_preserved(sample_bars, column, drop):
+    bars = sample_bars.assign(**{column: [100, 110, 120, 130, 140]})
+
+    class CorruptMarket(ResearchStrategy):
+        def compute_indicators(self, frame):
+            if drop:
+                return frame.drop(columns=[column])
+            frame[column] = -123
+            return frame
+
+        def entry_strategy(self, frame):
+            return None
+
+    adapter = ResearchStrategyAdapter(CorruptMarket(), symbol="WIN$N")
+    with pytest.raises(ValueError, match=column):
+        adapter.compute_indicators(bars)
+
+
+def test_empty_adapter_input_rejects_duplicate_columns(sample_bars):
+    class NoEntry(ResearchStrategy):
+        def entry_strategy(self, frame):
+            return None
+
+    empty = sample_bars.iloc[:0].assign(extra=0)
+    empty = pd.concat([empty, empty[["extra"]]], axis=1)
+    adapter = ResearchStrategyAdapter(NoEntry(), symbol="WIN$N")
+    with pytest.raises(ValueError, match="duplicate column names"):
+        adapter.compute_indicators(empty)
 
 
 def test_invalid_return_and_action_types(sample_bars: pd.DataFrame) -> None:
