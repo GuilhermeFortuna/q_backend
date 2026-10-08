@@ -52,9 +52,9 @@
 
 **Files:** Extend `tests/api/test_backtest_import.py`.
 
-- [ ] Add a test that routes `publish()` to the API test client and reads the result back, per spec acceptance item 6.
-- [ ] Run `uv run pytest tests/api/test_backtest_import.py -q`.
-- [ ] Commit this unit.
+- [x] Add a test that routes `publish()` to the API test client and reads the result back, per spec acceptance item 6.
+- [x] Run `uv run pytest tests/api/test_backtest_import.py -q`.
+- [x] Commit this unit.
 
 ### 4. Document
 
