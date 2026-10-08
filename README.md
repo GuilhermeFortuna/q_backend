@@ -234,6 +234,8 @@ Postgres stores **metadata and lake pointers** (`lake_path`, `lake_paths`, `resu
 
 Completed runs from `POST /api/v1/backtest/run` write these files and store relative paths in `BacktestRun.lake_paths`. `market_data.parquet` holds the bars the run used plus every indicator column the strategy and its exit rules computed (for the tick engine: the display bars with each indicator series sampled at bar closes).
 
+`POST /api/v1/backtests/import` records a finished backtest produced outside the stack (for example by a research script) as a completed run with `origin: "script"`. It writes the same four files (`result.json`, `trades.parquet`, `equity.parquet`, `market_data.parquet`) and the same ledger row, so every history, artifact and export endpoint serves it. Script runs are reviewable only: the stack does not re-run them, and they are not eligible as ML filter sources. Each import creates a new run.
+
 **Walk-forward artifact layout:**
 
 ```
@@ -910,10 +912,13 @@ uv run python examples/research/mt5_backtest.py --symbol 'WIN$N' --timeframe M5 
   * *Candle request (JSON):* `{"symbol": "WIN$", "timeframe": "M5", "start": "2026-01-01T00:00:00Z", "end": "2026-06-01T00:00:00Z", "initial_capital": 100000.0, "point_value": 0.2, "strategy": "MACrossover", "strategy_params": {"short_period": 9, "long_period": 21}}`
   * *Tick request (JSON):* `{"symbol": "WIN$", "engine": "tick", "display_timeframe": "M1", "tick_flags": "all", "start": "2026-01-01T00:00:00Z", "end": "2026-01-02T00:00:00Z", "initial_capital": 100000.0, "point_value": 0.2, "strategy": "TickMaBreakout", "strategy_params": {"short_period": 50, "long_period": 200, "sl_points": 10.0, "tp_points": 20.0}}` — SL/TP live in `strategy_params` (not top-level fields). Tick runs persist with `timeframe: "TICK"` in history; `display_timeframe` only controls chart resampling (`M1`, `M5`, `H1`, …).
   * *Response:* `metrics`, `trades` (exact tick fill prices/times for tick runs), resampled `bars`, `indicators` aligned to bars, optional `run_id`. Strategies tagged `engine: "tick"` or `engine: "candle"` on `GET /api/v1/strategies`.
+* **`POST /api/v1/backtests/import`**
+  * *Description:* Record a finished backtest from outside the stack as a completed `script` run. Synchronous; returns `201` with `{"run_id": "..."}`. Invalid bars, indicators, trades or configuration return `422` and store nothing.
+  * *Request:* `{"config": <BacktestRequest with engine "candle">, "result": {"metrics", "trades", "bars", "indicators"}, "provenance": {"script", "strategy_class", ...}}`
 * **`GET /api/v1/backtests`**
   * *Description:* Paginated list of persisted backtest runs, newest first.
-  * *Parameters:* `limit` (default 50), `offset` (default 0), optional `symbol`.
-  * *Response:* `{"items": [{"run_id": "...", "symbol": "WIN$", "strategy": "MACrossover", "timeframe": "M5", "status": "completed", "created_at": "2026-06-09T12:00:00Z", "summary": {...}}], "total": 42, "limit": 50, "offset": 0}`
+  * *Parameters:* `limit` (default 50), `offset` (default 0), optional `symbol`, optional `origin` (`stack` or `script`; omitted returns both).
+  * *Response:* `{"items": [{"run_id": "...", "symbol": "WIN$", "strategy": "MACrossover", "timeframe": "M5", "status": "completed", "origin": "stack", "created_at": "2026-06-09T12:00:00Z", "summary": {...}}], "total": 42, "limit": 50, "offset": 0}`
 * **`GET /api/v1/backtests/{run_id}`**
   * *Description:* Full metadata for a single persisted backtest run (config + metrics summary). Does not include trades/bars/indicators.
   * *Response:* `{"run_id": "...", "symbol": "WIN$", "strategy": "MACrossover", "timeframe": "M5", "status": "completed", "config": {...}, "result_summary": {...}, "error_message": null, "started_at": "...", "finished_at": "...", "created_at": "..."}`
