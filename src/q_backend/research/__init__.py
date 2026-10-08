@@ -13,6 +13,7 @@ __all__ = (
     "indicators",
     "TradeOrder",
     "ResearchStrategy",
+    "ChartIndicator",
     "backtest",
     "BacktestResult",
 )
@@ -20,6 +21,7 @@ __all__ = (
 if TYPE_CHECKING:
     from q_backend.research import indicators
     from q_backend.research.backtest import backtest
+    from q_backend.research.charting import ChartIndicator
     from q_backend.research.data import load_bars
     from q_backend.research.data import load_ticks, resample_ticks
     from q_backend.research.errors import AdjustedSeriesWarning, NoMarketDataError
@@ -57,6 +59,10 @@ def __getattr__(name: str):
         from q_backend.research.orders import TradeOrder
 
         return TradeOrder
+    if name == "ChartIndicator":
+        from q_backend.research.charting import ChartIndicator
+
+        return ChartIndicator
     if name == "ResearchStrategy":
         from q_backend.research.strategy import ResearchStrategy
 

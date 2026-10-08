@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 
 import pandas as pd
 
+from q_backend.research.charting import ChartIndicator
 from q_backend.research.orders import TradeOrder
 
 
@@ -23,6 +25,14 @@ class ResearchStrategy(ABC):
     Hooks observe only closed-bar history up to the current bar, have no fill or position state,
     and must not keep evolving state or assume order execution.
     """
+
+    def chart_indicators(self) -> Sequence[ChartIndicator]:
+        """Declare the computed columns the Trade Chart draws, in order.
+
+        Optional. Columns must exist in the frame returned by ``compute_indicators``.
+        Called once per backtest; it does not receive the frame.
+        """
+        return ()
 
     def compute_indicators(self, frame: pd.DataFrame) -> pd.DataFrame:
         """Compute indicator columns over the historical frame.
