@@ -92,8 +92,8 @@
 
 **Files:** Modify `docs/mt5-wine-gateway.md`.
 
-- [ ] Add the "History depth" section and the troubleshooting row from the spec. Unless a human has confirmed the steps on the target machine, say in the section that it records expected MetaTrader 5 behaviour and give the `/v1/available_range` command that confirms it.
-- [ ] Commit the note.
+- [x] Add the "History depth" section and the troubleshooting row from the spec. Unless a human has confirmed the steps on the target machine, say in the section that it records expected MetaTrader 5 behaviour and give the `/v1/available_range` command that confirms it.
+- [x] Commit the note.
 
 ## Verification and handoff
 
