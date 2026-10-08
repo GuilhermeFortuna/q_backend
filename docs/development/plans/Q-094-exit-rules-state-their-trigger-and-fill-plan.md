@@ -49,7 +49,7 @@
 
 ## Verification and handoff
 
-- [ ] Run `uv run pytest tests/backtesting/test_exit_rules.py tests/backtesting/test_exit_strategy.py tests/backtesting/test_goldens.py tests/api/test_strategies_endpoint.py tests/api/test_strategy_builder_capabilities.py tests/research/test_backtest.py -q` and confirm no outcome changed.
-- [ ] Run `uv run ruff check src/q_backend/backtesting/exit_rules tests/backtesting/test_exit_rules.py tests/api/test_strategies_endpoint.py` and `uv run black --check` on the same paths.
-- [ ] Record the commands actually run and their results in this plan, including which pinned behaviours were already covered; do not claim unrun checks passed.
+- [x] Run `uv run pytest tests/backtesting/test_exit_rules.py tests/backtesting/test_exit_strategy.py tests/backtesting/test_goldens.py tests/api/test_strategies_endpoint.py tests/api/test_strategy_builder_capabilities.py tests/research/test_backtest.py -q` and confirm no outcome changed. Result: 174 passed. Also `uv run pytest tests/backtesting tests/api -q`: 1122 passed, 12 skipped, 4 errors/failures in `tests/api/test_stream_replay.py` that need PostgreSQL on port 5434, which is not running in this environment; unrelated to this change.
+- [x] Run `uv run ruff check src/q_backend/backtesting/exit_rules tests/backtesting/test_exit_rules.py tests/api/test_strategies_endpoint.py` and `uv run black --check` on the same paths. Result: both pass.
+- [x] Record the commands actually run and their results in this plan, including which pinned behaviours were already covered; do not claim unrun checks passed.
 - [ ] Use `./work board set Q-094 in-review -m "<changes; checks and results; follow-ups>"`. Note in the message that `q_frontend`'s offline mock keeps the old strings.
