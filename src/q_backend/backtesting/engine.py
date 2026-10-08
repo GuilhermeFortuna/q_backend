@@ -1,4 +1,5 @@
 import datetime
+from collections.abc import Callable
 from typing import List, Optional
 import pandas as pd
 from enum import Enum
@@ -10,6 +11,7 @@ from q_backend.backtesting.position_sizing import PositionSizer
 from q_backend.backtesting.indicator_frame import augment_indicator_frame
 from q_backend.backtesting.signal_columns import signal_arrays
 from q_backend.backtesting.candle_kernel import (
+    ChunkRun,
     ledger_to_registry,
     parse_day_trade_times,
     run_chunk,
@@ -39,6 +41,7 @@ class BacktestEngine:
         day_trade_end_time: str = "16:00",
         day_trade_close_time: str = "17:00",
         costs: Optional[TransactionCostConfig] = None,
+        intrabar_factory: Optional[Callable[[pd.DataFrame], Callable[[int], tuple]]] = None,
     ):
         self.strategy = strategy
         self.sizer = sizer
@@ -49,6 +52,7 @@ class BacktestEngine:
         self.day_trade_end_time = day_trade_end_time
         self.day_trade_close_time = day_trade_close_time
         self.costs = costs
+        self.intrabar_factory = intrabar_factory
         self.kernel_sizing = sizer_to_kernel(sizer)
 
     def run(
@@ -123,7 +127,26 @@ class BacktestEngine:
         """
         if data.empty:
             return TradeRegistry()
-        return self._run_single_chunk(data, force_close_at_end, trade_start, prepared=True)
+        registry, _run = self._run_prepared_chunk(data, force_close_at_end, trade_start)
+        return registry
+
+    def run_prepared_detailed(
+        self,
+        data: pd.DataFrame,
+        *,
+        force_close_at_end: bool = False,
+        trade_start: Optional[datetime.datetime] = None,
+    ) -> tuple[TradeRegistry, ChunkRun]:
+        """Like run_prepared, also returning the kernel run with its rejected entries."""
+        return self._run_prepared_chunk(data, force_close_at_end, trade_start)
+
+    def _run_prepared_chunk(
+        self,
+        data: pd.DataFrame,
+        force_close_at_end: bool,
+        trade_start: Optional[datetime.datetime] = None,
+    ) -> tuple[TradeRegistry, ChunkRun]:
+        return self._run_chunk(data, force_close_at_end, trade_start, prepared=True)
 
     def _run_single_chunk(
         self,
@@ -133,6 +156,17 @@ class BacktestEngine:
         *,
         prepared: bool = False,
     ) -> TradeRegistry:
+        registry, _run = self._run_chunk(chunk, force_close_at_end, trade_start, prepared=prepared)
+        return registry
+
+    def _run_chunk(
+        self,
+        chunk: pd.DataFrame,
+        force_close_at_end: bool,
+        trade_start: Optional[datetime.datetime] = None,
+        *,
+        prepared: bool = False,
+    ) -> tuple[TradeRegistry, ChunkRun]:
         # 1. Compute indicators (vectorized, no lookahead bias)
         if not prepared:
             chunk = augment_indicator_frame(self.strategy, chunk)
@@ -142,6 +176,7 @@ class BacktestEngine:
             if self.day_trade
             else None
         )
+        intrabar = None if self.intrabar_factory is None else self.intrabar_factory(chunk)
         run = run_chunk(
             self.strategy,
             chunk,
@@ -153,10 +188,12 @@ class BacktestEngine:
             day_trade_us=day_trade_us,
             force_close_at_end=force_close_at_end,
             trade_start=trade_start,
+            intrabar=intrabar,
         )
-        return ledger_to_registry(
+        registry = ledger_to_registry(
             run,
             signals.index,
             symbol=self.strategy.symbol,
             point_value=self.point_values.get(self.strategy.symbol, 1.0),
         )
+        return registry, run

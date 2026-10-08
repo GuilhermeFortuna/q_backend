@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import datetime
+import inspect
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Final
 
 import numpy as np
 import pandas as pd
-import inspect
 
 import q_core
 
@@ -24,6 +25,7 @@ from q_backend.backtesting.models import Order, OrderAction, OrderType, Signal, 
 from q_backend.backtesting.registry import TradeRegistry
 from q_backend.backtesting.signal_columns import SignalArrays
 from q_backend.backtesting.strategy import TradingStrategy
+from q_backend.market_data.timezone import BRASILIA_TZ
 
 REQUIRED_ENGINE_FUNCTIONS: Final = ("run_candle", "DecisionStep", "size_entry", "required_columns")
 REQUIRED_ENGINE_CAPABILITIES: Final = ("PROTECTIVE_ORDERS",)
@@ -127,6 +129,7 @@ def wall_clock_us(index: pd.DatetimeIndex) -> np.ndarray:
 class ChunkRun:
     trades: dict[str, np.ndarray]
     exit_reason_text: list[str | None]
+    rejected: dict[str, np.ndarray]
 
 
 def _column(frame: pd.DataFrame, name: str) -> np.ndarray | None:
@@ -292,8 +295,13 @@ def run_chunk(
     day_trade_us: tuple[int, int, int] | None,
     force_close_at_end: bool,
     trade_start: datetime.datetime | None,
+    intrabar: Callable[[int], tuple[np.ndarray, np.ndarray]] | None = None,
 ) -> ChunkRun:
-    """Run one already-augmented candle chunk through q_core without row objects."""
+    """Run one already-augmented candle chunk through q_core without row objects.
+
+    ``intrabar`` supplies a candle's trade prices when the kernel must confirm a stop, target
+    or custom exit inside it. Runtime decisions come from ``strategy.runtime_callback``.
+    """
     from q_backend.backtesting.exit_rules.registry import all_param_specs
 
     source_params = getattr(getattr(strategy, "exit_strategy", None), "params", strategy.parameters)
@@ -303,13 +311,25 @@ def run_chunk(
     }
     tradable = None if trade_start is None else np.ascontiguousarray(~(chunk.index < trade_start), dtype=bool)
     runtime_factory = getattr(strategy, "runtime_callback", None)
-    callback = runtime_factory(chunk) if runtime_factory is not None else None
-    if callback is not None and "strategy_callback" not in inspect.signature(engine.run_candle).parameters:
-        raise ImportError(
-            "Position-aware research strategies require a q_core release with candle strategy_callback support; "
-            "install the reviewed core wheel or update the q-core release pin after publication."
-        )
-    callback_args = {} if callback is None else {"strategy_callback": callback}
+    runtime = runtime_factory(chunk, intrabar) if runtime_factory is not None else None
+    level_args: dict[str, object] = {}
+    if runtime is None:
+        decided_stop = signals.stop_price
+        decided_target = signals.target_price
+        if decided_stop is not None:
+            level_args = {
+                "stop_price": np.ascontiguousarray(decided_stop),
+                "target_price": np.ascontiguousarray(decided_target),
+            }
+    else:
+        decided_stop = runtime.stop_price
+        decided_target = runtime.target_price
+        level_args = {"strategy_callback": runtime.strategy}
+        if runtime.screen is not None:
+            level_args["exit_screen_callback"] = runtime.screen
+            level_args["exit_tick_callback"] = runtime.tick
+    if intrabar is not None:
+        level_args["intrabar"] = intrabar
     result = engine.run_candle(
         time_us=np.ascontiguousarray(wall_clock_us(signals.index)),
         open=_column(chunk, "open"),
@@ -333,15 +353,39 @@ def run_chunk(
         exit_params=exit_params,
         day_trade_us=day_trade_us,
         force_close_at_end=force_close_at_end,
-        **callback_args,
+        **level_args,
     )
-    return ChunkRun(
-        {
-            name: np.asarray(result[name])
-            for name in ("entry_bar", "exit_bar", "side", "quantity", "entry_price", "exit_price", "commission", "pnl")
-        },
-        list(result["exit_reason_text"]),
-    )
+    entry_bar = np.asarray(result["entry_bar"], dtype=np.int64)
+    queued = entry_bar - 1
+    queued_ok = queued >= 0
+
+    def levels_of(decided: np.ndarray | None) -> np.ndarray:
+        out = np.full(len(entry_bar), np.nan)
+        if decided is not None:
+            out[queued_ok] = decided[queued[queued_ok]]
+        return out
+
+    trades = {
+        name: np.asarray(result[name])
+        for name in (
+            "entry_bar",
+            "exit_bar",
+            "side",
+            "quantity",
+            "entry_price",
+            "exit_price",
+            "commission",
+            "pnl",
+            "exit_time_us",
+        )
+    }
+    trades["stop_loss"] = levels_of(decided_stop)
+    trades["take_profit"] = levels_of(decided_target)
+    rejected = {
+        name: np.asarray(result[f"rejected_{name}"])
+        for name in ("bar", "side", "fill_price", "stop_price", "target_price")
+    }
+    return ChunkRun(trades, list(result["exit_reason_text"]), rejected)
 
 
 def ledger_to_registry(run: ChunkRun, index: pd.DatetimeIndex, *, symbol: str, point_value: float) -> TradeRegistry:
@@ -364,6 +408,8 @@ def ledger_to_registry(run: ChunkRun, index: pd.DatetimeIndex, *, symbol: str, p
             entry_price=float(run.trades["entry_price"][i]),
             point_value=point_value,
             commission=float(run.trades["commission"][i]),
+            stop_loss=_level(run.trades["stop_loss"][i]),
+            take_profit=_level(run.trades["take_profit"][i]),
         )
         registry.register_trade(trade)
         exit_bar = int(run.trades["exit_bar"][i])
@@ -373,7 +419,14 @@ def ledger_to_registry(run: ChunkRun, index: pd.DatetimeIndex, *, symbol: str, p
             )
             assert closed is not None
             assert closed.pnl == float(run.trades["pnl"][i]), "q_core and TradeRegistry PnL diverged"
+            tick_us = int(run.trades["exit_time_us"][i])
+            if tick_us >= 0:
+                closed.exit_tick_time = pd.Timestamp(tick_us, unit="us").tz_localize(BRASILIA_TZ)
     return registry
+
+
+def _level(value: float) -> float | None:
+    return None if np.isnan(value) else float(value)
 
 
 def reference_decisions(

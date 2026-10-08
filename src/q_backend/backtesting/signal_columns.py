@@ -19,6 +19,9 @@ SIGNAL_EXIT_SHORT: Final = "q_signal_exit_short"
 SIGNAL_STRENGTH: Final = "q_signal_strength"
 SIGNAL_COLUMNS: Final = (SIGNAL_ENTRY, SIGNAL_EXIT_LONG, SIGNAL_EXIT_SHORT, SIGNAL_STRENGTH)
 BAR_INDEX: Final = "bar_index"
+SIGNAL_STOP_PRICE: Final = "q_signal_stop_price"
+SIGNAL_TARGET_PRICE: Final = "q_signal_target_price"
+LEVEL_COLUMNS: Final = (SIGNAL_STOP_PRICE, SIGNAL_TARGET_PRICE)
 
 
 class SignalContractError(ValueError):
@@ -144,6 +147,8 @@ class SignalArrays:
     strength: np.ndarray
     bar_index: np.ndarray | None
     holding_period_bars: int | None
+    stop_price: np.ndarray | None = None
+    target_price: np.ndarray | None = None
 
 
 def signal_arrays(strategy: TradingStrategy, frame: pd.DataFrame) -> SignalArrays:
@@ -157,6 +162,7 @@ def signal_arrays(strategy: TradingStrategy, frame: pd.DataFrame) -> SignalArray
     bar_index = None
     if holding is not None:
         bar_index = frame[BAR_INDEX].to_numpy(dtype=np.int64, copy=False)
+    has_levels = SIGNAL_STOP_PRICE in frame.columns
     return SignalArrays(
         index=pd.DatetimeIndex(frame.index),
         entry=frame[SIGNAL_ENTRY].to_numpy(dtype=np.int8, copy=False),
@@ -165,4 +171,6 @@ def signal_arrays(strategy: TradingStrategy, frame: pd.DataFrame) -> SignalArray
         strength=frame[SIGNAL_STRENGTH].to_numpy(dtype=np.float64, copy=False),
         bar_index=bar_index,
         holding_period_bars=holding,
+        stop_price=frame[SIGNAL_STOP_PRICE].to_numpy(dtype=np.float64, copy=False) if has_levels else None,
+        target_price=frame[SIGNAL_TARGET_PRICE].to_numpy(dtype=np.float64, copy=False) if has_levels else None,
     )

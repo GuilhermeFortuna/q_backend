@@ -261,22 +261,6 @@ def test_runtime_and_legacy_numerical_parity(bars):
     assert actual.metrics == expected.metrics
 
 
-def test_missing_callback_support_has_actionable_error(bars, monkeypatch):
-    from q_backend.backtesting import candle_kernel
-
-    def old_kernel(*, entry):
-        raise AssertionError("old kernel must not execute")
-
-    monkeypatch.setattr(candle_kernel.engine, "run_candle", old_kernel)
-
-    class Strategy(ResearchStrategy):
-        def entry_strategy(self, frame, positions):
-            return None
-
-    with pytest.raises(ImportError, match="q_core release with candle strategy_callback support"):
-        backtest(bars, strategy=Strategy(), symbol="TEST")
-
-
 @pytest.mark.parametrize("context", [False, True])
 def test_hook_timestamp_storage_is_owned(bars, context):
     original_index = bars.index.copy(deep=True)

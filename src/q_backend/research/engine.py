@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from numbers import Integral, Real
 from types import MappingProxyType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
@@ -17,7 +17,7 @@ from q_backend.backtesting.exit_rules.registry import all_param_specs
 from q_backend.backtesting.factory import build_strategy
 from q_backend.backtesting.indicator_frame import augment_indicator_frame
 from q_backend.backtesting.position_sizing import FixedQuantitySizer
-from q_backend.backtesting.signal_columns import BAR_INDEX, SIGNAL_COLUMNS
+from q_backend.backtesting.signal_columns import BAR_INDEX, LEVEL_COLUMNS, SIGNAL_COLUMNS
 from q_backend.backtesting.strategy import TradingStrategy
 from q_backend.backtesting.strategy_registry import (
     UnsupportedStrategyWorkflowError,
@@ -27,10 +27,19 @@ from q_backend.market_data.timezone import BRASILIA_TZ
 from q_backend.research.adapter import ResearchStrategyAdapter
 from q_backend.research.charting import ChartIndicator
 from q_backend.research.frame import _validate_prices
-from q_backend.research.results import BacktestResult, build_equity_curve, trades_to_frame
+from q_backend.research.results import (
+    BacktestResult,
+    build_equity_curve,
+    empty_rejected_frame,
+    rejected_entries_frame,
+    trades_to_frame,
+)
 from q_backend.research.strategy import ResearchStrategy
 
-_INTERNAL_COLUMNS = frozenset((*SIGNAL_COLUMNS, BAR_INDEX))
+if TYPE_CHECKING:
+    from q_backend.research.tick_store import TickStore
+
+_INTERNAL_COLUMNS = frozenset((*SIGNAL_COLUMNS, *LEVEL_COLUMNS, BAR_INDEX))
 
 
 def _is_json_scalar(val: Any) -> bool:
@@ -182,8 +191,13 @@ def backtest(
     day_trade_end_time: str = "16:00",
     day_trade_close_time: str = "17:00",
     force_close_at_end: bool = False,
+    ticks: TickStore | None = None,
 ) -> BacktestResult:
-    """Run a synchronous research backtest with Q engine execution semantics."""
+    """Run a synchronous research backtest with Q engine execution semantics.
+
+    ``ticks`` is the TickStore that confirms stop, target and phase-aware exits inside
+    their candles. The frame must have been built from the same store with ``TickStore.bars``.
+    """
     # 1. Validate scalar arguments
     if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity <= 0:
         raise ValueError(f"quantity must be a positive integer, got {quantity!r}")
@@ -218,6 +232,9 @@ def backtest(
     if exit_params is not None:
         _validate_exit_params(exit_params)
 
+    if ticks is not None and ticks.symbol != symbol:
+        raise ValueError(f"ticks is a store for {ticks.symbol!r}, but the backtest symbol is {symbol!r}")
+
     is_builtin = isinstance(strategy, str)
     validated_frame = _validate_input_frame(frame, is_builtin=is_builtin)
 
@@ -230,7 +247,13 @@ def backtest(
             research_strategy=strategy,
             symbol=symbol,
             exit_params=exit_params,
+            ticks_available=ticks is not None,
         )
+        if trading_strategy.requires_ticks and ticks is None:
+            raise ValueError(
+                f"{type(strategy).__name__} has a phase-aware exit_strategy, which requires ticks; "
+                "pass a TickStore as ticks= to backtest()"
+            )
     elif isinstance(strategy, str):
         # Built-in strategy
         try:
@@ -284,6 +307,7 @@ def backtest(
         day_trade_end_time=day_trade_end_time,
         day_trade_close_time=day_trade_close_time,
         costs=costs,
+        intrabar_factory=None if ticks is None else _tick_replay_factory(ticks),
     )
 
     timeframe = frame.attrs.get("q_research", {}).get("timeframe") if hasattr(frame, "attrs") else None
@@ -328,6 +352,7 @@ def backtest(
             config=read_only_config,
             _closed_trades=tuple(registry.get_closed_trades()),
             _strategy=strategy,
+            rejected_entries=empty_rejected_frame(),
         )
 
     return _execute_backtest(
@@ -341,6 +366,12 @@ def backtest(
     )
 
 
+def _tick_replay_factory(ticks: TickStore) -> Callable[[pd.DataFrame], Callable[[int], tuple]]:
+    from q_backend.research.intrabar import TickReplay
+
+    return lambda chunk: TickReplay(ticks, chunk)
+
+
 def _execute_backtest(
     engine: BacktestEngine,
     trading_strategy: Any,
@@ -352,7 +383,7 @@ def _execute_backtest(
 ) -> BacktestResult:
     # Prepare once, then reuse explicitly for execution and result data.
     augmented_data = augment_indicator_frame(trading_strategy, validated_frame)
-    registry = engine.run_prepared(augmented_data, force_close_at_end=force_close_at_end)
+    registry, run = engine.run_prepared_detailed(augmented_data, force_close_at_end=force_close_at_end)
 
     # Clean data (omit internal columns)
     clean_data = augmented_data.drop(columns=[col for col in _INTERNAL_COLUMNS if col in augmented_data.columns])
@@ -369,4 +400,5 @@ def _execute_backtest(
         config=config,
         _closed_trades=tuple(registry.get_closed_trades()),
         _strategy=strategy,
+        rejected_entries=rejected_entries_frame(run, augmented_data.index),
     )

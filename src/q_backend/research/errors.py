@@ -18,10 +18,12 @@ class NoMarketDataError(ValueError):
         source: str,
         start: str,
         end: str,
+        hint: str = "",
     ) -> None:
         self.symbol = symbol
         self.timeframe = timeframe
         self.source = source
         self.start = start
         self.end = end
-        super().__init__(f"No market data for {symbol} {timeframe} from {source} between {start} and {end}")
+        message = f"No market data for {symbol} {timeframe} from {source} between {start} and {end}"
+        super().__init__(f"{message}. {hint}" if hint else message)

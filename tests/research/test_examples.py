@@ -351,3 +351,41 @@ def test_mt5_example_publish_flag(capsys: pytest.CaptureFixture[str]) -> None:
         mock_result.publish.assert_called_once()
         out = capsys.readouterr().out
         assert "Published backtest run to the Research stack: published-run-uuid-999" in out
+
+
+def _breakout_session(root: Path) -> None:
+    from datetime import date
+
+    from tests.research.test_stop_target_backtest import _write_session
+
+    rows: list[tuple[str, float]] = []
+    prices = [(100.0, 101.0, 99.0, 100.0)] * 25
+    prices += [(100.0, 108.0, 99.0, 107.0), (107.0, 112.0, 106.0, 111.0), (111.0, 113.0, 109.0, 112.0)]
+    prices += [(112.0, 112.0, 100.0, 101.0), (101.0, 102.0, 98.0, 99.0)] + [(99.0, 100.0, 97.0, 98.0)] * 6
+    for index, (open_, high, low, close) in enumerate(prices):
+        minute = index * 10
+        clock = f"{10 + minute // 60:02d}:{minute % 60:02d}"
+        rows += [
+            (f"{clock}:00", open_),
+            (f"{clock}:03", high),
+            (f"{clock}:06", low),
+            (f"{clock}:09", close),
+        ]
+    _write_session(root, rows, day=date(2026, 10, 5))
+
+
+def test_stop_target_backtest_example_runs_over_a_store(tmp_path: Path) -> None:
+    from examples.research.stop_target_backtest import run_stop_target_backtest
+    from q_backend.research import TickStore
+
+    root = tmp_path / "ticks"
+    _breakout_session(root)
+    store = TickStore("WDO$N", root=root)
+    result = run_stop_target_backtest(store, symbol="WDO$N", start="2026-10-05")
+
+    trade = result.trades.iloc[0]
+    assert trade["exit_reason"] == "SIGNAL"
+    assert trade["exit_price"] == 98.0
+    assert trade["exit_tick_time"] == pd.Timestamp("2026-10-05 14:50:06", tz=BRASILIA_TZ)
+    assert trade["stop_loss"] < 98.0 < trade["take_profit"]
+    assert result.rejected_entries.empty
