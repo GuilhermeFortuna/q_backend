@@ -1,6 +1,6 @@
 # Batch 17 — Research script runs in the Research stack
 
-**Status:** written task specs and plans await human review. The [Q project board](https://github.com/users/GuilhermeFortuna/projects/2) is the status of record.
+**Status:** issues published on 2026-10-08; written task specs and plans await human review. The [Q project board](https://github.com/users/GuilhermeFortuna/projects/2) is the status of record.
 **Owner:** q_backend, with a contract task in q_contracts and a desktop task in q_frontend.
 
 ## Outcome
@@ -23,15 +23,15 @@ Each was read from the code on 2026-10-08.
 
 | Task | Repository | Depends on | Specification | Implementation plan |
 | --- | --- | --- | --- | --- |
-| Q-097 — Imported backtest runs in the control API | q_contracts | none | `q_contracts/docs/development/specs/Q-097-imported-backtest-runs-in-the-control-api-spec.md` | `q_contracts/docs/development/plans/Q-097-imported-backtest-runs-in-the-control-api-plan.md` |
-| Q-098 — Chart indicator declarations for research strategies | q_backend | none | [Spec](../specs/Q-098-chart-indicator-declarations-for-research-strategies-spec.md) | [Plan](../plans/Q-098-chart-indicator-declarations-for-research-strategies-plan.md) |
-| Q-099 — Backtest run import endpoint | q_backend | Q-097 | [Spec](../specs/Q-099-backtest-run-import-endpoint-spec.md) | [Plan](../plans/Q-099-backtest-run-import-endpoint-plan.md) |
-| Q-100 — Publish research backtests to the Research stack | q_backend | Q-098, Q-099 | [Spec](../specs/Q-100-publish-research-backtests-to-the-research-stack-spec.md) | [Plan](../plans/Q-100-publish-research-backtests-to-the-research-stack-plan.md) |
-| Q-101 — Stored and script runs open from Backtests history | q_frontend | Q-097, Q-099 | `q_frontend/docs/development/specs/Q-101-stored-and-script-runs-open-from-backtests-history-spec.md` | `q_frontend/docs/development/plans/Q-101-stored-and-script-runs-open-from-backtests-history-plan.md` |
+| [Q-097](https://github.com/GuilhermeFortuna/q_contracts/issues/15) — Imported backtest runs in the control API | q_contracts | none | `q_contracts/docs/development/specs/Q-097-imported-backtest-runs-in-the-control-api-spec.md` | `q_contracts/docs/development/plans/Q-097-imported-backtest-runs-in-the-control-api-plan.md` |
+| [Q-098](https://github.com/GuilhermeFortuna/q_backend/issues/35) — Chart indicator declarations for research strategies | q_backend | none | [Spec](../specs/Q-098-chart-indicator-declarations-for-research-strategies-spec.md) | [Plan](../plans/Q-098-chart-indicator-declarations-for-research-strategies-plan.md) |
+| [Q-099](https://github.com/GuilhermeFortuna/q_backend/issues/36) — Backtest run import endpoint | q_backend | Q-097 | [Spec](../specs/Q-099-backtest-run-import-endpoint-spec.md) | [Plan](../plans/Q-099-backtest-run-import-endpoint-plan.md) |
+| [Q-100](https://github.com/GuilhermeFortuna/q_backend/issues/37) — Publish research backtests to the Research stack | q_backend | Q-098, Q-099 | [Spec](../specs/Q-100-publish-research-backtests-to-the-research-stack-spec.md) | [Plan](../plans/Q-100-publish-research-backtests-to-the-research-stack-plan.md) |
+| [Q-101](https://github.com/GuilhermeFortuna/q_frontend/issues/8) — Stored and script runs open from Backtests history | q_frontend | Q-097, Q-099 | `q_frontend/docs/development/specs/Q-101-stored-and-script-runs-open-from-backtests-history-spec.md` | `q_frontend/docs/development/plans/Q-101-stored-and-script-runs-open-from-backtests-history-plan.md` |
 
 Implement Q-097, then Q-099, then Q-100. Q-098 has no prerequisite and can run at any point before Q-100. Q-101 can start once Q-099 is Done and runs alongside Q-100.
 
-Q-098 and Q-100 both change `research/results.py`, `research/engine.py` and `docs/research-library.md`; serializing them keeps each branch free of overlapping edits. Q-096, still in progress in Batch 16, also edits `docs/research-library.md`, so Q-098 should start after it is Done.
+Q-098 and Q-100 both change `research/results.py`, `research/engine.py` and `docs/research-library.md`; serializing them keeps each branch free of overlapping edits. Both build on the guide as Q-096 left it.
 
 ## Shared decisions
 
