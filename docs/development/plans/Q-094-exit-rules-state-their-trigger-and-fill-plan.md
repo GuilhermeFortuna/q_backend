@@ -41,11 +41,11 @@
 **Files:** Modify `src/q_backend/backtesting/exit_rules/base.py` (shared sentence) and `legacy.py`, `breakeven.py`, `chandelier.py`, `donchian_stop.py`, `parabolic_sar.py`, `profit_target_ratchet.py`, `time_stop.py`; modify `tests/backtesting/test_exit_rules.py` and `tests/api/test_strategies_endpoint.py`.
 **Interfaces:** A module-level constant in `exit_rules/base.py` holds the shared fill sentence. Each rule's `description` names its trigger basis and ends with that constant.
 
-- [ ] Add a failing catalog test: every item from `list_exit_rules()` has a description ending with the shared sentence, and each stop, target and time rule names the bar value it reads. Extend `test_exit_rules_catalog_endpoint` to assert one rewritten description arrives through the route function.
-- [ ] Run `uv run pytest tests/backtesting/test_exit_rules.py tests/api/test_strategies_endpoint.py -q` and confirm the new assertions fail on the old text.
-- [ ] Rewrite the eleven descriptions and the Donchian period hint in plain sentences. Keep each description to two sentences: the trigger, then the shared fill sentence.
-- [ ] Run the same command and confirm it passes.
-- [ ] Commit this unit.
+- [x] Add a failing catalog test: every item from `list_exit_rules()` has a description ending with the shared sentence, and each stop, target and time rule names the bar value it reads. Extend `test_exit_rules_catalog_endpoint` to assert one rewritten description arrives through the route function.
+- [x] Run `uv run pytest tests/backtesting/test_exit_rules.py tests/api/test_strategies_endpoint.py -q` and confirm the new assertions fail on the old text.
+- [x] Rewrite the eleven descriptions and the Donchian period hint in plain sentences. Keep each description to two sentences: the trigger, then the shared fill sentence.
+- [x] Run the same command and confirm it passes.
+- [x] Commit this unit.
 
 ## Verification and handoff
 

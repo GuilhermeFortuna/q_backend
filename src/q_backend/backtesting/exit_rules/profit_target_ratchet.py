@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from q_backend.backtesting.candle_kernel import enabled_rule_ids
-from q_backend.backtesting.exit_rules.base import ExitRule
+from q_backend.backtesting.exit_rules.base import NEXT_OPEN_FILL_SENTENCE, ExitRule
 from q_backend.backtesting.strategy_registry import StrategyParamSpec
 
 
@@ -11,7 +11,11 @@ class ProfitTargetRatchetRule(ExitRule):
     id = "profit_target_ratchet"
     exit_group = "target"
     label = "Profit Target Ratchet"
-    description = "Arms a trailing profit floor once price reaches entry plus or minus an ATR multiple."
+    description = (
+        "Triggers when a completed bar's low (long) or high (short) reaches the trailing profit "
+        "floor, armed once price reaches entry plus or minus an ATR multiple. "
+        f"{NEXT_OPEN_FILL_SENTENCE}"
+    )
     enable_param = "target_ratchet_atr"
     enable_value = 2.0
 

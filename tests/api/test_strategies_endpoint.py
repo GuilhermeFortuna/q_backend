@@ -1,4 +1,5 @@
 from q_backend.api.routers.strategies import list_exit_rules_catalog, list_strategies
+from q_backend.backtesting.exit_rules.base import NEXT_OPEN_FILL_SENTENCE
 from q_backend.backtesting.strategy_registry import StrategyCategory
 
 
@@ -136,6 +137,9 @@ def test_exit_rules_catalog_endpoint():
     assert len(response["exit_rules"]) == 11
     assert response["shared_exit_params"] == ["atr_period"]
     assert len(response["exit_presets"]) == 6
+
+    fixed_sl = next(item for item in response["exit_rules"] if item.id == "fixed_sl")
+    assert fixed_sl.description.endswith(NEXT_OPEN_FILL_SENTENCE)
 
     chandelier = next(item for item in response["exit_rules"] if item.id == "chandelier")
     assert chandelier.label == "Chandelier Exit"

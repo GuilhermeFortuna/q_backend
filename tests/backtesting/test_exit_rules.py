@@ -13,6 +13,7 @@ from q_backend.backtesting.exit_rules.registry import (
     required_columns,
     shared_exit_params,
 )
+from q_backend.backtesting.exit_rules.base import NEXT_OPEN_FILL_SENTENCE
 from q_backend.backtesting.exit_rules.presets import EXIT_PRESETS
 from q_backend.backtesting.engine import BacktestEngine, ParallelMode
 from q_backend.backtesting.signal_columns import write_signal_columns
@@ -751,3 +752,28 @@ def test_time_stop_exits_at_open_of_nth_bar_after_entry_bar():
     assert (entry_idx, exit_idx) == (1, 4)
     assert trade.exit_reason == "time_stop"
     assert trade.exit_price == 100.3
+
+
+STOP_RULE_IDS = {
+    "fixed_sl",
+    "atr_sl",
+    "trailing",
+    "chandelier",
+    "breakeven",
+    "psar",
+    "profit_target_ratchet",
+    "donchian_stop",
+}
+TARGET_RULE_IDS = {"fixed_tp", "atr_tp"}
+
+
+def test_exit_rule_descriptions_name_trigger_basis_and_end_with_shared_fill_sentence():
+    for rule in EXIT_RULES:
+        assert rule.description.endswith(NEXT_OPEN_FILL_SENTENCE), rule.id
+        if rule.id in STOP_RULE_IDS:
+            assert "completed bar's low (long) or high (short)" in rule.description, rule.id
+        elif rule.id in TARGET_RULE_IDS:
+            assert "completed bar's high (long) or low (short)" in rule.description, rule.id
+        else:
+            assert rule.id == "time_stop"
+            assert "completed bars" in rule.description, rule.id
