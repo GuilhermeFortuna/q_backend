@@ -45,9 +45,22 @@ def load_encoder_from_artifact_payload(payload: dict[str, Any]) -> NeuralEncoder
     return loader(config, state)
 
 
+def _build_autoencoder(config: EncoderConfig) -> NeuralEncoder:
+    # Imported on first use: torch is slow and memory-hungry to load, and most processes
+    # that import the registry never build an autoencoder.
+    from q_backend.neural.torch_autoencoder import TorchAutoencoder
+
+    return TorchAutoencoder(config)
+
+
+def _load_autoencoder(config: EncoderConfig, state: dict[str, Any]) -> NeuralEncoder:
+    from q_backend.neural.torch_autoencoder import TorchAutoencoder
+
+    return TorchAutoencoder.load_from_artifact_state(config, state)
+
+
 def _register_builtin_encoders() -> None:
     from q_backend.neural.pca_encoder import PCAEncoder
-    from q_backend.neural.torch_autoencoder import TorchAutoencoder
 
     register_encoder_kind(
         "pca",
@@ -56,8 +69,8 @@ def _register_builtin_encoders() -> None:
     )
     register_encoder_kind(
         "autoencoder",
-        build=TorchAutoencoder,
-        load=TorchAutoencoder.load_from_artifact_state,
+        build=_build_autoencoder,
+        load=_load_autoencoder,
     )
 
 

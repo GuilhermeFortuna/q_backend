@@ -81,3 +81,20 @@ def test_chart_indicator_is_public_export() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_research_backtests_do_not_load_torch() -> None:
+    script = textwrap.dedent("""
+        import sys
+        from q_backend.research import backtest
+        assert callable(backtest)
+        assert "torch" not in sys.modules
+        """)
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        cwd=str(Path(__file__).resolve().parents[2]),
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
