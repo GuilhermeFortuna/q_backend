@@ -6,7 +6,7 @@ import math
 from collections.abc import Callable, Mapping
 from numbers import Integral, Real
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -27,6 +27,7 @@ from q_backend.market_data.timezone import BRASILIA_TZ
 from q_backend.research.adapter import ResearchStrategyAdapter
 from q_backend.research.charting import ChartIndicator
 from q_backend.research.frame import _validate_prices
+from q_backend.research.progress import backtest_progress
 from q_backend.research.results import (
     BacktestResult,
     build_equity_curve,
@@ -35,6 +36,7 @@ from q_backend.research.results import (
     trades_to_frame,
 )
 from q_backend.research.strategy import ResearchStrategy
+from q_backend.research.tick_phase import resolve_workers
 
 if TYPE_CHECKING:
     from q_backend.research.tick_store import TickStore
@@ -202,11 +204,18 @@ def backtest(
     day_trade_close_time: str = "17:00",
     force_close_at_end: bool = False,
     ticks: TickStore | None = None,
+    workers: int | Literal["auto"] = 1,
+    progress: bool | None = None,
 ) -> BacktestResult:
     """Run a synchronous research backtest with Q engine execution semantics.
 
     ``ticks`` is the TickStore that confirms stop, target and phase-aware exits inside
     their candles. The frame must have been built from the same store with ``TickStore.bars``.
+
+    ``workers`` spreads the tick phase of a phase-aware exit over that many processes
+    (``"auto"`` uses every available CPU). The strategy must then be picklable and its hooks
+    free of side effects. ``progress`` shows a progress bar on stderr; by default only when
+    stderr is a terminal.
     """
     # 1. Validate scalar arguments
     if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity <= 0:
@@ -242,11 +251,17 @@ def backtest(
     if exit_params is not None:
         _validate_exit_params(exit_params)
 
+    worker_count = resolve_workers(workers)
+    if progress is not None and not isinstance(progress, bool):
+        raise TypeError(f"progress must be a bool or None, got {type(progress).__name__}")
+
     if ticks is not None and ticks.symbol != symbol:
         raise ValueError(f"ticks is a store for {ticks.symbol!r}, but the backtest symbol is {symbol!r}")
 
     is_builtin = isinstance(strategy, str)
     validated_frame = _validate_input_frame(frame, is_builtin=is_builtin)
+    timeframe = frame.attrs.get("q_research", {}).get("timeframe") if hasattr(frame, "attrs") else None
+    reporter = backtest_progress(progress, " ".join(part for part in (symbol, timeframe) if part))
 
     # 2. Strategy instantiation
     if isinstance(strategy, ResearchStrategy):
@@ -258,6 +273,8 @@ def backtest(
             symbol=symbol,
             exit_params=exit_params,
             ticks_available=ticks is not None,
+            workers=worker_count,
+            progress=reporter,
         )
         if trading_strategy.requires_ticks and ticks is None:
             raise ValueError(
@@ -320,7 +337,6 @@ def backtest(
         intrabar_factory=None if ticks is None else _tick_replay_factory(ticks),
     )
 
-    timeframe = frame.attrs.get("q_research", {}).get("timeframe") if hasattr(frame, "attrs") else None
     if isinstance(strategy, str):
         strat_name = strategy
         strat_params = dict(strategy_params or {})
@@ -365,15 +381,22 @@ def backtest(
             rejected_entries=empty_rejected_frame(),
         )
 
-    return _execute_backtest(
-        engine=engine,
-        trading_strategy=trading_strategy,
-        validated_frame=validated_frame,
-        initial_capital=float(initial_capital),
-        force_close_at_end=force_close_at_end,
-        config=read_only_config,
-        strategy=strategy,
-    )
+    try:
+        with reporter:
+            result = _execute_backtest(
+                engine=engine,
+                trading_strategy=trading_strategy,
+                validated_frame=validated_frame,
+                initial_capital=float(initial_capital),
+                force_close_at_end=force_close_at_end,
+                config=read_only_config,
+                strategy=strategy,
+            )
+            reporter.finish(len(result.trades))
+    finally:
+        if isinstance(trading_strategy, ResearchStrategyAdapter):
+            trading_strategy.close()
+    return result
 
 
 def _tick_replay_factory(ticks: TickStore) -> Callable[[pd.DataFrame], Callable[[int], tuple]]:

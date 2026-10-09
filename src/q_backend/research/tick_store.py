@@ -47,6 +47,7 @@ _DTYPE_MAP = {
     "flags": np.int32,
 }
 _TRADE_FLAG_MASK = 32 | 64
+_EPOCH = datetime(1970, 1, 1)
 
 
 def _project_root() -> Path:
@@ -103,6 +104,15 @@ def _day_bounds(day: date) -> tuple[datetime, datetime]:
     start = datetime(day.year, day.month, day.day, 0, 0, 0)
     end = start + timedelta(days=1)
     return start, end
+
+
+def _naive_local_to_time_msc(moment: datetime) -> int:
+    """First stored ``time_msc`` at or after a naive Brasília wall-clock instant.
+
+    Inverse of ``_time_msc_to_naive_local``: MT5 stores ticks so that the UTC wall clock of
+    the epoch reads as broker-local time.
+    """
+    return -((_EPOCH - moment) // timedelta(milliseconds=1))
 
 
 def _sort_columnar(arrays: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
@@ -247,7 +257,7 @@ class TickStore:
         self._root = _resolve_root(root)
         self._slug = _slug_symbol(sym)
         self._trade_prices_cache_day: date | None = None
-        self._trade_prices_cache: dict[str, np.ndarray] | None = None
+        self._trade_prices_cache: tuple[np.ndarray, np.ndarray] | None = None
 
     @property
     def symbol(self) -> str:
@@ -261,6 +271,10 @@ class TickStore:
 
     def _m1_cache_path(self, day: date) -> Path:
         return self._symbol_dir() / "bars_M1" / f"{day.isoformat()}.parquet"
+
+    def has_session(self, day: date) -> bool:
+        """Whether ticks for one exchange calendar day are on disk."""
+        return self._day_path(day).is_file()
 
     def sessions(self) -> list[date]:
         directory = self._symbol_dir()
@@ -507,13 +521,21 @@ class TickStore:
             requested_end=end_ts,
         )
 
-    def _ensure_trade_prices_session(self, day: date) -> dict[str, np.ndarray]:
+    def _ensure_trade_prices_session(self, day: date) -> tuple[np.ndarray, np.ndarray]:
+        """One session's positive trade prices as time-ordered ``(time_msc, last)`` arrays."""
         if self._trade_prices_cache_day == day and self._trade_prices_cache is not None:
             return self._trade_prices_cache
         arrays = _read_day_columnar(self._day_path(day))
+        time_msc = arrays["time_msc"]
+        last = arrays["last"]
+        valid = np.isfinite(last) & (last > 0)
+        time_msc, last = time_msc[valid], last[valid]
+        if time_msc.size > 1 and np.any(time_msc[1:] < time_msc[:-1]):
+            order = np.argsort(time_msc, kind="stable")
+            time_msc, last = time_msc[order], last[order]
         self._trade_prices_cache_day = day
-        self._trade_prices_cache = arrays
-        return arrays
+        self._trade_prices_cache = (time_msc, last)
+        return self._trade_prices_cache
 
     def trade_prices(self, start: str | datetime, end: str | datetime) -> tuple[np.ndarray, np.ndarray]:
         start_ts = parse_query_bound(start)
@@ -521,7 +543,7 @@ class TickStore:
         if start_ts >= end_ts:
             raise ValueError("start must be < end for trade_prices half-open interval")
         day = start_ts.tz_convert(BRASILIA_TZ).date()
-        if day not in self.sessions():
+        if not self.has_session(day):
             raise NoMarketDataError(
                 symbol=self._symbol,
                 timeframe="ticks",
@@ -529,21 +551,12 @@ class TickStore:
                 start=start_ts.isoformat(),
                 end=end_ts.isoformat(),
             )
-        arrays = self._ensure_trade_prices_session(day)
-        from q_backend.market_data.clients.shared import _time_msc_to_naive_local
-
-        times: list[int] = []
-        prices: list[float] = []
+        time_msc, last = self._ensure_trade_prices_session(day)
         start_naive, end_naive = bounds_to_brasilia_naive(start_ts, end_ts)
-        for time_msc, last in zip(arrays["time_msc"], arrays["last"], strict=True):
-            if not (np.isfinite(last) and last > 0):
-                continue
-            tick_dt = _time_msc_to_naive_local(int(time_msc))
-            if tick_dt < start_naive or tick_dt >= end_naive:
-                continue
-            times.append(int(time_msc) * 1000)
-            prices.append(float(last))
-        return np.asarray(times, dtype=np.int64), np.asarray(prices, dtype=np.float64)
+        first, stop = np.searchsorted(
+            time_msc, [_naive_local_to_time_msc(start_naive), _naive_local_to_time_msc(end_naive)]
+        )
+        return time_msc[first:stop] * 1000, last[first:stop].copy()
 
 
 def sync_ticks(

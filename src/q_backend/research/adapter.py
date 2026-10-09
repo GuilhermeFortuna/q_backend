@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Mapping
@@ -23,9 +22,12 @@ from q_backend.backtesting.signal_columns import (
 from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy
 from q_backend.research.charting import ChartIndicator
 from q_backend.research.frame import FRAME_COLUMNS
+from q_backend.research.hooks import detect_hook_call, invoke_hook
 from q_backend.research.orders import TradeOrder
 from q_backend.research.positions import ResearchPosition
+from q_backend.research.progress import BacktestProgress
 from q_backend.research.strategy import ResearchStrategy
+from q_backend.research.tick_phase import TickDecisions, TickEvaluator, TickWorkerPool
 
 _RESERVED_COLUMNS = frozenset((*SIGNAL_COLUMNS, *LEVEL_COLUMNS, BAR_INDEX))
 _MARKET_COLUMNS = ("open", "high", "low", "close")
@@ -40,22 +42,24 @@ def _owned_prefix(frame: pd.DataFrame, end: int) -> pd.DataFrame:
     return prefix
 
 
-@dataclass(frozen=True)
-class _HookCall:
-    """How a hook accepts ``positions`` and ``phase``, detected from its signature."""
-
-    positions: str
-    phase: bool
-
-
 @dataclass
-class _PartialCandle:
+class _TickPlan:
+    """Tick-phase decisions for one screened candle.
+
+    ``pending`` lists the ticks that are evaluated: the first, and every later one that moves
+    the forming candle's high, low or close. The others repeat a frame that already declined
+    to exit, apart from its tick count. Decisions hold for one position snapshot.
+    """
+
     bar: int
-    open: float
-    high: float
-    low: float
-    close: float
-    count: int
+    prices: np.ndarray
+    candles: np.ndarray
+    pending: np.ndarray
+    positions: tuple
+    cursor: int = 0
+    decided: int = 0
+    exit_tick: int = -1
+    next_tick: int = 0
 
 
 class _RuntimeHooks:
@@ -66,13 +70,21 @@ class _RuntimeHooks:
     that queued the entry, which opens on the following bar.
     """
 
-    def __init__(self, adapter: ResearchStrategyAdapter, chunk: pd.DataFrame, history_positions: np.ndarray) -> None:
+    def __init__(
+        self,
+        adapter: ResearchStrategyAdapter,
+        chunk: pd.DataFrame,
+        history_positions: np.ndarray,
+        intrabar: Callable[[int], tuple[np.ndarray, np.ndarray]] | None,
+    ) -> None:
         self._adapter = adapter
         self._chunk = chunk
         self._history_positions = history_positions
+        self._intrabar = intrabar
+        self._progress = adapter.progress
         self.stop_price = np.full(len(chunk), np.nan)
         self.target_price = np.full(len(chunk), np.nan)
-        self._partial: _PartialCandle | None = None
+        self._plan: _TickPlan | None = None
         self.screen: Callable[[int, tuple], bool] | None = self._screen if adapter._phased_exit else None
         self.tick: Callable[[int, int, int, float, tuple], bool] | None = self._tick if adapter._phased_exit else None
 
@@ -92,6 +104,7 @@ class _RuntimeHooks:
             self.stop_price[bar] = stop
             self.target_price[bar] = target
         exit_flag = exit_decision is not None
+        self._progress.bar(bar + 1, self._chunk.index[bar], _position_label(positions))
         return entry, exit_flag, exit_flag, 1.0 if entry else 0.0, stop, target
 
     def _screen(self, bar: int, raw_positions: tuple) -> bool:
@@ -106,28 +119,60 @@ class _RuntimeHooks:
         return decision is not None
 
     def _tick(self, bar: int, tick: int, time_us: int, price: float, raw_positions: tuple) -> bool:
-        partial = self._advance(bar, tick, price)
-        frame = self._adapter._tick_frame(int(self._history_positions[bar]), partial)
-        decision = self._adapter._invoke_hook(
-            "exit_strategy",
-            frame,
-            self._positions(raw_positions),
-            phase="tick",
-            detail=f" tick {tick}",
-        )
-        return decision is not None
-
-    def _advance(self, bar: int, tick: int, price: float) -> _PartialCandle:
+        plan = self._plan
         if tick == 0:
-            self._partial = _PartialCandle(bar=bar, open=price, high=price, low=price, close=price, count=0)
-        partial = self._partial
-        if partial is None or partial.bar != bar or partial.count != tick:
+            plan = self._plan = self._new_plan(bar, raw_positions)
+        if plan is None or plan.bar != bar or plan.next_tick != tick or plan.prices[tick] != price:
             raise RuntimeError(f"Tick replay for bar {bar} arrived out of order at tick {tick}")
-        partial.high = max(partial.high, price)
-        partial.low = min(partial.low, price)
-        partial.close = price
-        partial.count += 1
-        return partial
+        plan.next_tick += 1
+        if raw_positions != plan.positions:
+            # Decisions were taken for other positions: start over from this tick.
+            plan.positions = raw_positions
+            plan.pending = np.concatenate(([tick], plan.pending[plan.pending > tick]))
+            plan.cursor = plan.decided = 0
+            plan.exit_tick = -1
+        if plan.cursor >= len(plan.pending) or plan.pending[plan.cursor] != tick:
+            return False
+        if plan.cursor >= plan.decided:
+            self._decide(plan, raw_positions)
+        plan.cursor += 1
+        return plan.exit_tick == tick
+
+    def _new_plan(self, bar: int, raw_positions: tuple) -> _TickPlan:
+        if self._intrabar is None:
+            raise RuntimeError("Tick replay requires the candle price source")
+        _times, prices = self._intrabar(bar)
+        high = np.maximum.accumulate(prices)
+        low = np.minimum.accumulate(prices)
+        candles = np.column_stack((np.full(len(prices), prices[0]), high, low, prices))
+        # A new high or low is also a new close, so a changed price marks every changed candle.
+        moved = np.flatnonzero(prices[1:] != prices[:-1]) + 1
+        return _TickPlan(
+            bar=bar,
+            prices=prices,
+            candles=candles,
+            pending=np.concatenate(([0], moved)),
+            positions=raw_positions,
+        )
+
+    def _decide(self, plan: _TickPlan, raw_positions: tuple) -> None:
+        """Decide the next wave of pending ticks, stopping at the first exit."""
+        decisions = self._adapter._tick_decisions
+        if decisions is None:
+            raise RuntimeError("Research indicators must be prepared before tick replay")
+        wave = plan.pending[plan.decided : plan.decided + decisions.wave_size]
+        hit = decisions.first_exit(
+            int(self._history_positions[plan.bar]), wave, plan.candles[wave], self._positions(raw_positions)
+        )
+        if hit is None:
+            plan.decided += len(wave)
+            exhausted = plan.decided >= len(plan.pending)
+            replayed = len(plan.prices) if exhausted else int(plan.pending[plan.decided])
+        else:
+            plan.exit_tick = int(wave[hit])
+            plan.decided = len(plan.pending)
+            replayed = plan.exit_tick + 1
+        self._progress.replay(self._chunk.index[plan.bar], replayed, len(plan.prices))
 
     def _positions(self, raw_positions: tuple) -> tuple[ResearchPosition, ...]:
         chunk = self._chunk
@@ -143,6 +188,13 @@ class _RuntimeHooks:
         )
 
 
+def _position_label(positions: tuple[ResearchPosition, ...]) -> str:
+    if not positions:
+        return "flat"
+    quantity = sum(position.quantity for position in positions)
+    return f"{positions[0].side} {quantity:g}"
+
+
 class ResearchStrategyAdapter(TradingStrategy):
     """Private adapter compiling ResearchStrategy hooks into candle engine signals."""
 
@@ -153,6 +205,8 @@ class ResearchStrategyAdapter(TradingStrategy):
         exit_params: Mapping[str, Any] | None = None,
         *,
         ticks_available: bool = False,
+        workers: int = 1,
+        progress: BacktestProgress | None = None,
     ) -> None:
         if not isinstance(research_strategy, ResearchStrategy):
             raise TypeError(f"Expected ResearchStrategy instance, got {type(research_strategy).__name__}")
@@ -165,7 +219,11 @@ class ResearchStrategyAdapter(TradingStrategy):
         self.exit_strategy = ExitStrategy(self.parameters)
         self._chart_indicators: tuple[ChartIndicator, ...] = ()
         self._ticks_available = ticks_available
-        self._hook_calls = {name: self._hook_call(name) for name in ("exit_strategy", "entry_strategy")}
+        self._workers = workers
+        self.progress = progress if progress is not None else BacktestProgress()
+        self._hook_calls = {
+            name: detect_hook_call(research_strategy, name) for name in ("exit_strategy", "entry_strategy")
+        }
         self._uses_positions = any(
             call.positions != "legacy" and getattr(type(research_strategy), name) is not getattr(ResearchStrategy, name)
             for name, call in self._hook_calls.items()
@@ -173,7 +231,13 @@ class ResearchStrategyAdapter(TradingStrategy):
         self._phased_exit = self._hook_calls["exit_strategy"].phase
         self._uses_runtime = self._uses_positions or self._phased_exit
         self._decision_frame: pd.DataFrame | None = None
-        self._raw_history: pd.DataFrame | None = None
+        self._tick_decisions: TickDecisions | None = None
+
+    def close(self) -> None:
+        """Release tick worker processes, if any were started."""
+        if self._tick_decisions is not None:
+            self._tick_decisions.close()
+            self._tick_decisions = None
 
     @property
     def requires_ticks(self) -> bool:
@@ -257,8 +321,13 @@ class ResearchStrategyAdapter(TradingStrategy):
         if self._uses_runtime:
             self._decision_frame = augmented.copy()
             self._decision_frame.attrs = {}
-            self._raw_history = data.copy()
-            self._raw_history.attrs = {}
+            if self._phased_exit:
+                raw_history = data.copy()
+                raw_history.attrs = {}
+                self.close()
+                evaluator = TickEvaluator(self.research_strategy, raw_history, self._hook_calls["exit_strategy"])
+                self._tick_decisions = evaluator if self._workers == 1 else TickWorkerPool(evaluator, self._workers)
+            self.progress.start(orig_len)
             return write_signal_columns(
                 augmented,
                 entry_long=pd.Series(entry_long, index=augmented.index, dtype=bool),
@@ -270,6 +339,7 @@ class ResearchStrategyAdapter(TradingStrategy):
 
         stop_price = np.full(orig_len, np.nan)
         target_price = np.full(orig_len, np.nan)
+        self.progress.start(orig_len)
         for i in range(orig_len):
             timestamp = augmented.index[i]
 
@@ -323,6 +393,7 @@ class ResearchStrategyAdapter(TradingStrategy):
                         f"returned illegal action {entry_decision.action!r}; only 'buy' or 'sell' is permitted"
                     )
                 stop_price[i], target_price[i] = self._levels_of(entry_decision, timestamp)
+            self.progress.bar(i + 1, timestamp)
 
         # Write signal columns onto augmented frame
         result_df = write_signal_columns(
@@ -349,37 +420,11 @@ class ResearchStrategyAdapter(TradingStrategy):
             )
         return stop, target
 
-    def _hook_call(self, name: str) -> _HookCall:
-        """Detect how a hook takes ``positions`` and ``phase``; only explicit parameters count."""
-        hook = getattr(self.research_strategy, name)
-        keyword_kinds = (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
-        try:
-            signature = inspect.signature(hook)
-            parameters = signature.parameters
-            phase_param = parameters.get("phase")
-            phase = name == "exit_strategy" and phase_param is not None and phase_param.kind in keyword_kinds
-            extra: dict[str, object] = {"phase": "bar"} if phase else {}
-            positions_param = parameters.get("positions")
-            if positions_param is None or positions_param.kind in (
-                inspect.Parameter.VAR_POSITIONAL,
-                inspect.Parameter.VAR_KEYWORD,
-            ):
-                signature.bind(object(), **extra)
-                mode = "legacy"
-            elif positions_param.kind == inspect.Parameter.POSITIONAL_ONLY:
-                signature.bind(object(), (), **extra)
-                mode = "positional"
-            else:
-                signature.bind(object(), positions=(), **extra)
-                mode = "keyword"
-        except (TypeError, ValueError) as exc:
-            raise TypeError(
-                f"{type(self.research_strategy).__name__}.{name} has an incompatible signature; "
-                "expected (frame), (frame, positions), or either with a keyword-only phase"
-            ) from exc
-        return _HookCall(positions=mode, phase=phase)
-
-    def runtime_callback(self, chunk: pd.DataFrame, intrabar: object | None = None) -> _RuntimeHooks | None:
+    def runtime_callback(
+        self,
+        chunk: pd.DataFrame,
+        intrabar: Callable[[int], tuple[np.ndarray, np.ndarray]] | None = None,
+    ) -> _RuntimeHooks | None:
         """Bind one prepared chunk to its original, isolated indicator history."""
         if not self._uses_runtime:
             return None
@@ -389,32 +434,7 @@ class ResearchStrategyAdapter(TradingStrategy):
         history_positions = history.index.get_indexer(chunk.index)
         if (history_positions < 0).any():
             raise ValueError("Runtime chunk is not part of the prepared research frame")
-        return _RuntimeHooks(self, chunk, history_positions)
-
-    def _tick_frame(self, position: int, partial: _PartialCandle) -> pd.DataFrame:
-        """Recompute indicators on the raw history with the candle observed so far as its last row."""
-        raw = self._raw_history
-        if raw is None:
-            raise RuntimeError("Research indicators must be prepared before tick replay")
-        row = pd.DataFrame(np.nan, index=raw.index[[position]], columns=raw.columns, dtype="float64")
-        row["open"] = partial.open
-        row["high"] = partial.high
-        row["low"] = partial.low
-        row["close"] = partial.close
-        if "tick_volume" in row.columns:
-            row["tick_volume"] = float(partial.count)
-        frame = pd.concat([raw.iloc[:position], row])
-        frame.index = frame.index.copy(deep=True)
-        frame.attrs = {}
-        name = type(self.research_strategy).__name__
-        try:
-            augmented = self.research_strategy.compute_indicators(frame)
-        except Exception as exc:
-            raise RuntimeError(f"Error in {name}.compute_indicators during tick replay: {exc}") from exc
-        if not isinstance(augmented, pd.DataFrame) or not augmented.index.equals(frame.index):
-            raise ValueError(f"{name}.compute_indicators modified row count or index during tick replay")
-        augmented.attrs = {}
-        return augmented
+        return _RuntimeHooks(self, chunk, history_positions, intrabar)
 
     def _invoke_hook(
         self,
@@ -423,32 +443,8 @@ class ResearchStrategyAdapter(TradingStrategy):
         positions: tuple[ResearchPosition, ...],
         *,
         phase: str | None = None,
-        detail: str = "",
     ) -> TradeOrder | None:
-        call = self._hook_calls[name]
-        hook = getattr(self.research_strategy, name)
-        timestamp = prefix.index[-1]
-        suffix = f" (phase {phase}{detail})" if phase is not None else ""
-        label = f"{type(self.research_strategy).__name__}.{name} at bar {timestamp}{suffix}"
-        args: tuple[Any, ...] = (prefix,)
-        kwargs: dict[str, Any] = {}
-        if call.positions == "positional":
-            args = (prefix, positions)
-        elif call.positions == "keyword":
-            kwargs["positions"] = positions
-        if call.phase and phase is not None:
-            kwargs["phase"] = phase
-        try:
-            decision = hook(*args, **kwargs)
-        except Exception as exc:
-            raise RuntimeError(f"Error in {label}: {exc}") from exc
-        if decision is not None:
-            if not isinstance(decision, TradeOrder):
-                raise TypeError(f"{label} returned {type(decision).__name__}, expected TradeOrder or None")
-            allowed = ("close",) if name == "exit_strategy" else ("buy", "sell")
-            if decision.action not in allowed:
-                raise ValueError(f"{label} returned illegal action {decision.action!r}; permitted actions: {allowed}")
-        return decision
+        return invoke_hook(self.research_strategy, self._hook_calls[name], name, prefix, positions, phase=phase)
 
     def _declare_chart_indicators(self, augmented: pd.DataFrame) -> tuple[ChartIndicator, ...]:
         name = type(self.research_strategy).__name__

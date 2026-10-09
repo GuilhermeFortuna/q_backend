@@ -26,12 +26,16 @@ class TickReplay:
         self._high = chunk["high"].to_numpy(dtype=np.float64)
         self._low = chunk["low"].to_numpy(dtype=np.float64)
         self._close = chunk["close"].to_numpy(dtype=np.float64)
+        self._last: tuple[int, np.ndarray, np.ndarray] | None = None
 
     def __call__(self, bar: int) -> tuple[np.ndarray, np.ndarray]:
+        # The kernel and the tick-phase hooks ask for the same candle back to back.
+        if self._last is not None and self._last[0] == bar:
+            return self._last[1], self._last[2]
         start = self._index[bar]
         end = self._interval_end(bar)
         session = start.tz_convert(BRASILIA_TZ).date()
-        if session not in set(self._store.sessions()):
+        if not self._store.has_session(session):
             raise NoMarketDataError(
                 symbol=self._store.symbol,
                 timeframe="ticks",
@@ -51,6 +55,7 @@ class TickReplay:
                 hint=f"No stored trade prices for bar {bar} ({start.isoformat()}); run TickStore.sync.",
             )
         self._check_matches_bar(bar, prices)
+        self._last = (bar, times, prices)
         return times, prices
 
     def _interval_end(self, bar: int) -> pd.Timestamp:

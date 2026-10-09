@@ -32,6 +32,7 @@ dependencies = [
     "duckdb>=1.5.5",
     "q-core",
     "lightgbm==4.6.0",
+    "rich>=15.0.0",
 ]
 
 [project.scripts]

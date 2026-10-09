@@ -308,9 +308,11 @@ class RSIReversion(ResearchStrategy):
 - `TradeOrder.buy(*, stop_loss=None, take_profit=None)` and `TradeOrder.sell(...)` attach price levels fixed at entry. A buy's stop lies below its target and a sell's above it; levels must be finite and positive. `TradeOrder.close()` takes no levels. Invalid levels raise `ValueError` when the order is built.
 - An exit that declares `phase` is called three times per candle with open positions:
   - `phase="screen"` on the whole candle after queued fills. Return `TradeOrder.close()` to ask for the candle's ticks, not to exit. Screen with the candle's full high and low so that a crossing that reverses before the close still qualifies. Flat candles are never screened.
-  - `phase="tick"` for each trade price of a screened candle, in stored order. The frame ends with the candle observed so far: its `open` is the first trade price, `high` and `low` the extremes so far, `close` the current price and `tick_volume` the count of prices. Other columns of that row are `NaN`, and the indicators are recomputed on the raw history with that row, so they never see the completed candle. Returning `TradeOrder.close()` exits at that tick's trade price.
+  - `phase="tick"` for the trade prices of a screened candle, in stored order. The frame ends with the candle observed so far: its `open` is the first trade price, `high` and `low` the extremes so far, `close` the current price and `tick_volume` the count of prices. Other columns of that row are `NaN`, and the indicators are recomputed on the raw history with that row, so they never see the completed candle. Returning `TradeOrder.close()` exits at that tick's trade price.
+  - The tick call runs for the candle's first price and then only when the price changes. A print at an unchanged price leaves the forming candle's `open`, `high`, `low` and `close` as they were, so the exit is not asked again; `tick_volume` still counts every print. An exit rule that depends only on `tick_volume` growing at an unchanged price is therefore decided at the next price change.
   - `phase="bar"` is the ordinary closed-bar call after intrabar execution. A close here fills at the next bar's open.
 - Hooks must be deterministic. Nothing computed in a screen call is carried into tick calls, and later information never justifies an earlier fill. A screen that qualifies but is not confirmed by any tick does not fill.
+- With `workers` above 1 in `backtest()`, tick calls run in other processes and may be evaluated ahead of the tick that finally exits. The strategy must be picklable (a class defined at module level, or in a script guarded by `if __name__ == "__main__":`), and its hooks must not rely on side effects such as counters or recorded calls.
 - A strategy with a phase-aware exit needs `ticks=` in `backtest()`.
 
 ```python
@@ -471,6 +473,23 @@ print(result.equity)
 | `day_trade_close_time` | `str` | `"17:00"` | Mandatory session close time (`HH:MM`). |
 | `force_close_at_end` | `bool` | `False` | Whether to force-close any open position at the final bar of the dataset. |
 | `ticks` | `TickStore` | `None` | Store that confirms stop, target and phase-aware exits inside their candles. Its symbol must equal `symbol`. Required for those strategies; see [Stop and target orders](#stop-and-target-orders). |
+| `workers` | `int \| "auto"` | `1` | Processes that share the tick phase of a phase-aware exit. `1` runs in-process. `"auto"` uses every CPU available to the process, limited to one worker per GiB of free memory. Results do not depend on the value; see [Performance and progress](#performance-and-progress). |
+| `progress` | `bool` | `None` | Shows a progress bar on stderr. `None` shows it only when stderr is a terminal; `True` and `False` force it on or off. |
+
+### Performance and progress
+
+A phase-aware exit recomputes `compute_indicators` on the full history for every decided tick, so tick replay dominates the run time of a tick-confirmed backtest. Two things keep it short:
+
+- Prints at an unchanged price are not decided again (see [Entry levels and phase-aware exits](#entry-levels-and-phase-aware-exits)), which usually removes most of a candle's ticks.
+- `workers` spreads the remaining decisions of a candle over worker processes in waves and takes the earliest exit, so the trades are the same as with one process.
+
+```python
+result = backtest(bars, strategy=TrailingStop(), symbol="WDO$N", point_value=10.0, ticks=store, workers="auto")
+```
+
+Workers start on the first replayed candle and stop when `backtest()` returns. They share the imported libraries with one another, so each adds little memory beyond its copy of the history. Pass an explicit number to leave CPUs free for other work. Keep `compute_indicators` light: it is the unit of work that is repeated.
+
+The progress bar shows bars decided out of the total, the current bar, the open position, the number of candles replayed from ticks, elapsed time and an estimate of the time left. A second line follows the ticks of the candle being replayed. A one-line summary remains when the run ends.
 
 ### Backtest results (`BacktestResult`)
 
