@@ -135,6 +135,36 @@ def test_sync_reports_failed_day_and_continues(
     assert report.stored == [tue]
 
 
+@patch("q_backend.research.tick_store._exchange_now", return_value=_frozen_now())
+@patch("q_backend.research.tick_store.RemoteMt5Client")
+@patch("q_backend.research.tick_store.resolve_gateway_url", return_value="http://gw.test")
+@patch("q_backend.research.tick_store.tick_sync_progress")
+def test_sync_reports_progress_for_each_weekday_considered(
+    progress_factory: MagicMock,
+    _url: object,
+    client_cls: MagicMock,
+    _now: object,
+    tmp_path,
+) -> None:
+    mon = date(2026, 10, 5)
+    tue = date(2026, 10, 6)
+    gateway = ScriptedGateway({mon: [2, 2], tue: [0, 0]})
+    client_cls.return_value.is_supported.return_value = True
+    client_cls.return_value.get_ticks_columnar.side_effect = gateway.get_ticks_columnar
+    reporter = progress_factory.return_value.__enter__.return_value
+
+    store = TickStore("WIN$", root=tmp_path)
+    store.sync(start="2026-10-05", end="2026-10-06", progress=True)
+
+    progress_factory.assert_called_once_with(True, "WIN$")
+    reporter.start.assert_called_once_with(2)
+    assert reporter.advance.call_args_list == [
+        ((1, mon, "stored 2 ticks"),),
+        ((2, tue, "empty"),),
+    ]
+    reporter.finish.assert_called_once_with()
+
+
 def test_interrupted_write_leaves_no_final_day_file(tmp_path) -> None:
     day = date(2026, 10, 5)
     path = tmp_path / "ticks" / "2026-10-05.parquet"

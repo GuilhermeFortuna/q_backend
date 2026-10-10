@@ -28,6 +28,7 @@ from q_backend.research.frame import (
     parse_query_bound,
     validate_bars_frame,
 )
+from q_backend.research.progress import tick_sync_progress
 from q_backend.research.providers import resolve_gateway_token, resolve_gateway_url
 
 TICK_STORE_SOURCE = "tick_store"
@@ -335,6 +336,7 @@ class TickStore:
         end: str | datetime | None = None,
         gateway_url: str | None = None,
         gateway_token: str | None = None,
+        progress: bool | None = None,
     ) -> TickSyncReport:
         """
         Synchronize tick data for missing weekday sessions from MetaTrader 5.
@@ -352,6 +354,9 @@ class TickStore:
             Override for ``Q_MT5_GATEWAY_URL``.
         gateway_token : str, optional
             Override for ``Q_MT5_GATEWAY_TOKEN``.
+        progress : bool, optional
+            Show per-day sync progress with elapsed time and estimated remaining
+            time on stderr. Defaults to showing it on a terminal.
 
         Returns
         -------
@@ -377,45 +382,53 @@ class TickStore:
         unsettled: list[date] = []
         failed: list[date] = []
 
-        for day in _iter_weekdays(start_day, end_day):
-            if day >= today:
-                continue
-            path = self._day_path(day)
-            if path.is_file():
-                already_present.append(day)
-                continue
-            day_start, day_end = _day_bounds(day)
-            try:
-                first = client.get_ticks_columnar(
-                    self._symbol,
-                    day_start,
-                    day_end,
-                    flags=COPY_TICKS_ALL,
-                    use_cache=False,
-                )
-                second = client.get_ticks_columnar(
-                    self._symbol,
-                    day_start,
-                    day_end,
-                    flags=COPY_TICKS_ALL,
-                    use_cache=False,
-                )
-            except Exception:  # noqa: BLE001 - per-day gateway failure must not stop sync
-                failed.append(day)
-                continue
-            count_first = int(first["time_msc"].size)
-            count_second = int(second["time_msc"].size)
-            if count_first == 0 and count_second == 0:
-                empty.append(day)
-                continue
-            if count_first != count_second:
-                unsettled.append(day)
-                continue
-            if count_second == 0:
-                empty.append(day)
-                continue
-            _write_day_atomic(path, second)
-            stored.append(day)
+        days = [day for day in _iter_weekdays(start_day, end_day) if day < today]
+        with tick_sync_progress(progress, self._symbol) as reporter:
+            reporter.start(len(days))
+            for done, day in enumerate(days, start=1):
+                path = self._day_path(day)
+                if path.is_file():
+                    already_present.append(day)
+                    reporter.advance(done, day, "already present")
+                    continue
+                day_start, day_end = _day_bounds(day)
+                try:
+                    first = client.get_ticks_columnar(
+                        self._symbol,
+                        day_start,
+                        day_end,
+                        flags=COPY_TICKS_ALL,
+                        use_cache=False,
+                    )
+                    second = client.get_ticks_columnar(
+                        self._symbol,
+                        day_start,
+                        day_end,
+                        flags=COPY_TICKS_ALL,
+                        use_cache=False,
+                    )
+                except Exception:  # noqa: BLE001 - per-day gateway failure must not stop sync
+                    failed.append(day)
+                    reporter.advance(done, day, "failed")
+                    continue
+                count_first = int(first["time_msc"].size)
+                count_second = int(second["time_msc"].size)
+                if count_first == 0 and count_second == 0:
+                    empty.append(day)
+                    reporter.advance(done, day, "empty")
+                    continue
+                if count_first != count_second:
+                    unsettled.append(day)
+                    reporter.advance(done, day, "unsettled")
+                    continue
+                if count_second == 0:
+                    empty.append(day)
+                    reporter.advance(done, day, "empty")
+                    continue
+                _write_day_atomic(path, second)
+                stored.append(day)
+                reporter.advance(done, day, f"stored {count_second:,} ticks")
+            reporter.finish()
 
         return TickSyncReport(
             stored=stored,

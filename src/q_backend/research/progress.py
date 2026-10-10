@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime
+from datetime import date, datetime
 from types import TracebackType
 
 import pandas as pd
@@ -200,3 +200,59 @@ def tick_import_progress(enabled: bool | None, label: str, *, console: Console |
     target = console if console is not None else Console(stderr=True)
     visible = target.is_terminal if enabled is None else enabled
     return TickImportProgress(label, target, enabled=visible)
+
+
+class TickSyncProgress:
+    """Per-session progress for a tick store sync; one step per weekday considered."""
+
+    def __init__(self, label: str, console: Console, *, enabled: bool) -> None:
+        self._console = console
+        self._enabled = enabled
+        self._label = f"{label} sync"
+        self._progress = Progress(
+            SpinnerColumn(),
+            TextColumn("{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TextColumn("{task.fields[status]}"),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            console=console,
+            disable=not enabled,
+        )
+        self._task: TaskID | None = None
+        self._started = time.perf_counter()
+
+    def __enter__(self) -> TickSyncProgress:
+        self._progress.start()
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        if exc_type is not None and self._task is not None:
+            self._progress.update(self._task, status="failed; sync incomplete")
+        self._progress.stop()
+
+    def start(self, total: int) -> None:
+        self._started = time.perf_counter()
+        self._task = self._progress.add_task(self._label, total=total, status="")
+
+    def advance(self, done: int, day: date, outcome: str) -> None:
+        if self._task is not None:
+            self._progress.update(self._task, completed=done, status=f"{day.isoformat()} {outcome}")
+
+    def finish(self) -> None:
+        if self._task is not None:
+            self._progress.update(self._task, status="complete")
+        self._progress.stop()
+        if self._enabled and self._task is not None:
+            total = int(self._progress.tasks[self._task].total or 0)
+            self._console.print(
+                f"{self._label}: {total} weekday(s) considered in {time.perf_counter() - self._started:.1f}s"
+            )
+
+
+def tick_sync_progress(enabled: bool | None, label: str, *, console: Console | None = None) -> TickSyncProgress:
+    """Show per-day sync progress and ETA; default to visibility only on a terminal."""
+    target = console if console is not None else Console(stderr=True)
+    visible = target.is_terminal if enabled is None else enabled
+    return TickSyncProgress(label, target, enabled=visible)
