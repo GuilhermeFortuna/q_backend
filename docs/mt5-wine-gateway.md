@@ -28,6 +28,14 @@ calls retain the 120-second limit. A call exceeding its limit stops its worker a
 reports `503 <lane>_timeout`; the next request starts a new worker. The Linux client
 allows **660 seconds** for history responses, covering the worker limit, lane queue,
 and response transfer, while connection attempts remain bounded to 5 seconds.
+
+A client that closes its connection mid-request (for example Ctrl+C in a script) cancels
+the call: the gateway stops that lane's worker within a fraction of a second and the
+next request starts a new one, so an abandoned call never holds a lane until its limit.
+
+`ohlcv` first asks MT5 for a single bar at or before the range end. When there is none,
+`last_error()` decides the answer before any range walk starts: "no history" returns
+`404 range_unavailable`; any other failure returns `503 history_unavailable`.
 `RemoteMt5Client(history_timeout=...)` overrides the history read timeout.
 Restart the gateway after updating its code (`./dev restart gateway` from the workspace
 root). `/v1/health` asks

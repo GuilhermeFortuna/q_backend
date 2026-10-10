@@ -177,7 +177,8 @@ def make_fake_mt5() -> types.ModuleType:
         "rates_default": np.empty(0, dtype=_RATE_DTYPE),
         "rates_from_pos": None,
         "last_rates_from_pos": None,
-        "rates_from": None,
+        "rates_from": np.zeros(1, dtype=_RATE_DTYPE),
+        "last_error": (-1, "fake error"),
         "ticks_queue": [],
         "ticks_default": np.empty(0, dtype=_TICK_DTYPE),
         "ticks_source": None,
@@ -223,7 +224,7 @@ def make_fake_mt5() -> types.ModuleType:
         return None
 
     def last_error():
-        return (-1, "fake error")
+        return state["last_error"]
 
     def symbol_select(symbol, _enable):
         return symbol in state["known_symbols"]

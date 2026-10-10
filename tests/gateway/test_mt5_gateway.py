@@ -5,10 +5,13 @@ from __future__ import annotations
 import io
 import json
 import multiprocessing
+import socket
 import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
+from urllib.parse import urlencode, urlparse
 
 import numpy as np
 import pytest
@@ -712,3 +715,50 @@ def test_native_call_timeout_restarts_the_lane_worker(gateway, fake_mt5, monkeyp
     assert retry_status == 200
     assert spawned[0].terminated is True
     assert len(spawned) == 4
+
+
+def _lane_recovers(base: str) -> bool:
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if http_get(base, "/v1/symbol_info", {"symbol": "WIN$"})[0] == 200:
+            return True
+    return False
+
+
+def test_client_disconnect_cancels_the_blocked_call_and_frees_the_lane(gateway, fake_mt5, monkeypatch):
+    entered, release = _block_recent_bars(fake_mt5, monkeypatch)
+    monkeypatch.setattr(gateway, "_CANCEL_POLL_S", 0.05)
+    with _running_lane_server(gateway, timeout_s=600.0) as (base, spawned):
+        host, port = urlparse(base).hostname, urlparse(base).port
+        try:
+            with socket.create_connection((host, port), timeout=5) as client:
+                client.sendall(f"GET /v1/ohlcv/recent?{urlencode(_RECENT)} HTTP/1.1\r\nHost: {host}\r\n\r\n".encode())
+                assert entered.wait(5)
+            recovered = _lane_recovers(base)
+        finally:
+            release.set()
+
+    assert recovered
+    assert spawned[0].terminated is True
+
+
+@pytest.mark.parametrize(
+    ("last_error", "status", "code"),
+    [
+        ((-4, "No history"), 404, "range_unavailable"),
+        ((-10005, "IPC timeout"), 503, "history_unavailable"),
+    ],
+)
+def test_ohlcv_fails_fast_when_the_symbol_has_no_history(gateway, fake_mt5, last_error, status, code):
+    fake_mt5._state.update(rates_from=None, last_error=last_error)
+    fake_mt5._state["rates_queue"] = [AssertionError("range walk must not start")]
+    with _running_lane_server(gateway) as (base, _spawned):
+        got_status, _h, body = http_get(
+            base,
+            "/v1/ohlcv",
+            {"symbol": "WIN$", "timeframe": "D1", "start": "2026-01-01T00:00:00", "end": "2026-10-01T00:00:00"},
+        )
+
+    assert got_status == status
+    assert json.loads(body)["code"] == code
+    assert len(fake_mt5._state["rates_queue"]) == 1

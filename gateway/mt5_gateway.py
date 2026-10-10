@@ -78,6 +78,7 @@ Errors
 - Worker lane occupied            -> 503 ``<lane>_busy`` (retryable)
 - Native MT5 call never returned  -> 503 ``<lane>_timeout`` (the lane's worker restarts)
 - Worker process lost             -> 503 ``<lane>_unavailable`` (retryable)
+- Client closed the connection    -> no response; the lane's worker restarts at once
 
 Process model
 =============
@@ -115,7 +116,9 @@ import json
 import logging
 import multiprocessing
 import os
+import select
 import signal
+import socket
 import threading
 import time
 import uuid
@@ -157,6 +160,10 @@ _NATIVE_CALL_TIMEOUT_S = 120.0
 # worker recovery, while giving history imports more time than live trade calls.
 _HISTORY_CALL_TIMEOUT_S = 600.0
 _HISTORY_METHODS = frozenset({"ohlcv", "recent_ohlcv", "ticks", "ticks_page", "available_range"})
+# How often a waiting request checks whether its client is still connected.
+_CANCEL_POLL_S = 0.25
+# MetaTrader5.last_error() code documented as "no history".
+_RES_E_NOT_FOUND = -4
 _MAX_TICK_PAGE_ROWS = 1_000_000
 _DEFAULT_TICK_PAGE_ROWS = 250_000
 
@@ -795,6 +802,7 @@ class GatewayApp:
             self._require_ready()
             if not mt5.symbol_select(symbol, True):
                 raise GatewayError(404, "symbol_not_found", f"Symbol '{symbol}' is not selectable.")
+            _require_history(symbol, mt5_timeframe, timeframe, end)
             rates, truncated = _fetch_ohlcv_chunked(symbol, mt5_timeframe, start, end)
         meta = {
             "truncated": bool(truncated),
@@ -901,12 +909,20 @@ class GatewayApp:
                 raise
 
 
+class ClientDisconnected(Exception):
+    """The HTTP client went away while its native MT5 call was still running."""
+
+
+# Per-request hook the HTTP handler installs so a lane can tell when its caller left.
+_request = threading.local()
+
+
 class Mt5Worker:
     """Run one lane's MT5 calls in a spawned process with its own MT5 IPC connection.
 
     One call runs at a time. A caller queues up to ``wait_s`` for the lane and then
-    gets a retryable 503; a native call that never returns stops the process, and the
-    next call starts a new one.
+    gets a retryable 503; a native call that never returns, or whose client disconnects
+    (e.g. Ctrl+C), stops the process, and the next call starts a new one.
     """
 
     def __init__(self, lane: str, wait_s: float, timeout_s: float | None = None, spawn=None):
@@ -933,7 +949,7 @@ class Mt5Worker:
             timeout_s = self._timeout_s
             if timeout_s is None:
                 timeout_s = _HISTORY_CALL_TIMEOUT_S if method in _HISTORY_METHODS else _NATIVE_CALL_TIMEOUT_S
-            if not self._connection.poll(timeout_s):
+            if not self._wait_for_result(timeout_s):
                 self._stop_process()
                 raise self._error("timeout", "timed out waiting for MetaTrader 5.")
             status, code, result = self._connection.recv()
@@ -944,6 +960,20 @@ class Mt5Worker:
             raise self._error("unavailable", "process disconnected.") from exc
         finally:
             self._lock.release()
+
+    def _wait_for_result(self, timeout_s: float) -> bool:
+        client_gone = getattr(_request, "client_gone", None)
+        if client_gone is None:
+            return self._connection.poll(timeout_s)
+        deadline = time.monotonic() + timeout_s
+        while not self._connection.poll(_CANCEL_POLL_S):
+            if client_gone():
+                # Nobody will read the result; free the lane instead of finishing the call.
+                self._stop_process()
+                raise ClientDisconnected(self._lane)
+            if time.monotonic() >= deadline:
+                return False
+        return True
 
     @property
     def busy(self) -> bool:
@@ -1027,6 +1057,21 @@ def _terminal_build() -> int | None:
 # ---------------------------------------------------------------------------
 # available_range probing — mirrors MetaTraderClient (call under the MT5 lock).
 # ---------------------------------------------------------------------------
+def _require_history(symbol: str, mt5_timeframe: int, timeframe: str, until: datetime) -> None:
+    """Fail fast unless MT5 holds a bar at or before ``until``.
+
+    One bounded request settles it before any range walk: ``last_error()`` tells a
+    symbol without history (404) apart from a terminal that failed to answer (503).
+    """
+    rates = mt5.copy_rates_from(symbol, mt5_timeframe, until, 1)
+    if rates is not None and len(rates) > 0:
+        return
+    code, detail = _safe_last_error()
+    if rates is None and code not in (1, _RES_E_NOT_FOUND):
+        raise GatewayError(503, "history_unavailable", f"MT5 history request failed ({code}): {detail}")
+    raise GatewayError(404, "range_unavailable", f"No OHLCV history available for '{symbol}' {timeframe}.")
+
+
 def _probe_latest_bar(symbol: str, mt5_timeframe: int) -> datetime | None:
     rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, 1)
     if rates is None or len(rates) == 0:
@@ -1099,14 +1144,29 @@ class _GatewayHandler(BaseHTTPRequestHandler):
             handler = self._ROUTES.get(parsed.path)
             if handler is None:
                 raise GatewayError(404, "not_found", f"Unknown endpoint '{parsed.path}'.")
-            handler(self, params)
+            _request.client_gone = self._client_gone
+            try:
+                handler(self, params)
+            finally:
+                _request.client_gone = None
         except GatewayError as exc:
             self._send_json(exc.status, {"error": exc.message, "code": exc.code})
+        except ClientDisconnected as exc:
+            self.close_connection = True
+            logger.info("client disconnected; cancelled %s on the %s lane", self.path, exc)
         except BrokenPipeError:
             logger.debug("client disconnected before response was sent")
         except Exception as exc:  # noqa: BLE001 - top-level guard: report, never crash
             logger.exception("unhandled error serving %s", self.path)
             self._send_json(500, {"error": str(exc), "code": "internal_error"})
+
+    def _client_gone(self) -> bool:
+        """Whether the client closed its side of the connection mid-request."""
+        try:
+            readable, _, _ = select.select([self.connection], [], [], 0)
+            return bool(readable) and self.connection.recv(1, socket.MSG_PEEK) == b""
+        except OSError:
+            return True
 
     # -- routing ------------------------------------------------------------
     def _route_health(self, _params) -> None:
