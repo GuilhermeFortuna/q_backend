@@ -777,6 +777,7 @@ class GatewayApp:
             if not mt5.symbol_select(symbol, True):
                 raise GatewayError(404, "symbol_not_found", f"Symbol '{symbol}' is not selectable.")
 
+            _require_history(symbol, mt5_timeframe, timeframe, datetime.now() + timedelta(days=1))
             earliest = _probe_earliest_bar(symbol, mt5_timeframe)
             latest = _probe_latest_bar(symbol, mt5_timeframe)
             if earliest is None or latest is None:

@@ -749,16 +749,17 @@ def test_client_disconnect_cancels_the_blocked_call_and_frees_the_lane(gateway, 
         ((-10005, "IPC timeout"), 503, "history_unavailable"),
     ],
 )
-def test_ohlcv_fails_fast_when_the_symbol_has_no_history(gateway, fake_mt5, last_error, status, code):
+def test_history_reads_fail_fast_when_the_symbol_has_no_history(gateway, fake_mt5, last_error, status, code):
     fake_mt5._state.update(rates_from=None, last_error=last_error)
     fake_mt5._state["rates_queue"] = [AssertionError("range walk must not start")]
+    ohlcv = {"symbol": "WIN$", "timeframe": "D1", "start": "2026-01-01T00:00:00", "end": "2026-10-01T00:00:00"}
     with _running_lane_server(gateway) as (base, _spawned):
-        got_status, _h, body = http_get(
-            base,
-            "/v1/ohlcv",
-            {"symbol": "WIN$", "timeframe": "D1", "start": "2026-01-01T00:00:00", "end": "2026-10-01T00:00:00"},
-        )
+        responses = [
+            http_get(base, "/v1/ohlcv", ohlcv),
+            http_get(base, "/v1/available_range", {"symbol": "WIN$", "timeframe": "D1"}),
+        ]
 
-    assert got_status == status
-    assert json.loads(body)["code"] == code
+    for got_status, _h, body in responses:
+        assert got_status == status
+        assert json.loads(body)["code"] == code
     assert len(fake_mt5._state["rates_queue"]) == 1

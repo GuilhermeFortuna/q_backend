@@ -33,7 +33,7 @@ A client that closes its connection mid-request (for example Ctrl+C in a script)
 the call: the gateway stops that lane's worker within a fraction of a second and the
 next request starts a new one, so an abandoned call never holds a lane until its limit.
 
-`ohlcv` first asks MT5 for a single bar at or before the range end. When there is none,
+`ohlcv` and `available_range` first ask MT5 for a single bar at or before the range end. When there is none,
 `last_error()` decides the answer before any range walk starts: "no history" returns
 `404 range_unavailable`; any other failure returns `503 history_unavailable`.
 `RemoteMt5Client(history_timeout=...)` overrides the history read timeout.
