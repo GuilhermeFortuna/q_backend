@@ -1,88 +1,96 @@
-========================
-10 Minutes to Q Research
-========================
+===================
+Your first backtest
+===================
 
-This quickstart guides you through loading market data, enriching it with indicators, implementing a custom trading strategy, running a local backtest, and analyzing results.
+This walkthrough loads bars, builds a small RSI strategy, and reads its results.
+Run the snippets in order in the environment from :doc:`install`.
+The dates and instrument are examples; choose a range available from your broker.
 
-1. Fetching Historical Bars
----------------------------
-
-Fetch 5-minute bars for the unadjusted Mini-Ibovespa future (``WIN$N``):
+Load price data
+---------------
 
 .. code-block:: python
 
    from q_backend.research import load_bars
 
    bars = load_bars("WIN$N", timeframe="M5", start="2026-09-01")
-   print(bars.tail())
+   print(bars[["open", "high", "low", "close"]].tail())
 
-The returned object is a standard pandas :class:`pandas.DataFrame` indexed by timezone-aware Brasília timestamps (``America/Sao_Paulo``).
+Each row is a completed five-minute candle. The index records the candle's
+opening time in ``America/Sao_Paulo``. ``WIN$N`` is an unadjusted continuous
+future; :doc:`price_series` explains the alternatives.
 
-2. Adding Technical Indicators
-------------------------------
+**Already have data?** Skip the gateway request and use your own DataFrame.
+It must have numeric ``open``, ``high``, ``low``, and ``close`` columns and a
+sorted, unique, timezone-aware :class:`pandas.DatetimeIndex`.
+Use ``tz_localize`` for naive timestamps in their original timezone, or
+``tz_convert`` for timestamps that already have a timezone.
 
-Enrich the dataframe with Rust-backed technical indicators:
+Try an indicator
+----------------
 
 .. code-block:: python
 
    from q_backend.research import indicators
 
-   # Calculate 14-period RSI and 21-period EMA
-   bars["rsi"] = indicators.rsi(bars["close"], period=14)
-   bars["ema_21"] = indicators.ma(bars["close"], period=21, kind="ema")
+   rsi = indicators.rsi(bars["close"], period=14)
+   print(rsi.tail())
 
-   # Calculate Bollinger Bands
-   upper, middle, lower = indicators.bollinger(bars["close"], period=20, num_std=2.0)
-   bars = bars.assign(bb_upper=upper, bb_middle=middle, bb_lower=lower)
+The returned Series aligns with the input index. Initial values are ``NaN``
+while the indicator warms up. The strategy below computes its own RSI column.
 
-All indicators guarantee exact index preservation, immutability of input objects, and proper NaN warm-up periods.
+Write entry and exit rules
+--------------------------
 
-3. Defining a Strategy
-----------------------
-
-Subclass :class:`~q_backend.research.ResearchStrategy` to define decision rules:
+This example buys when RSI crosses back above 30 and sells when it crosses back
+below 70. It closes a long when RSI reaches 50, or a short when RSI falls to 50.
+It holds at most one position at a time.
 
 .. code-block:: python
 
-   from q_backend.research import ResearchStrategy, TradeOrder, indicators
+   from q_backend.research import ResearchStrategy, TradeOrder
 
    class RSIReversion(ResearchStrategy):
-       def __init__(self, period: int = 14):
+       def __init__(self, period=14):
            self.period = period
 
        def compute_indicators(self, frame):
            frame = frame.copy()
-           frame["rsi"] = indicators.rsi(frame["close"], self.period)
+           frame["rsi"] = indicators.rsi(frame["close"], period=self.period)
            return frame
 
        def entry_strategy(self, frame, positions=()):
            if positions or len(frame) < 2:
                return None
-           prev_rsi, curr_rsi = frame["rsi"].iloc[-2:]
-           if prev_rsi <= 30 and curr_rsi > 30:
+           previous, current = frame["rsi"].iloc[-2:]
+           if previous <= 30 and current > 30:
                return TradeOrder.buy()
-           if prev_rsi >= 70 and curr_rsi < 70:
+           if previous >= 70 and current < 70:
                return TradeOrder.sell()
            return None
 
        def exit_strategy(self, frame, positions=()):
            if not positions:
                return None
-           curr_rsi = frame["rsi"].iloc[-1]
-           for pos in positions:
-               if pos.side == "long" and curr_rsi >= 50:
-                   return TradeOrder.close()
-               if pos.side == "short" and curr_rsi <= 50:
-                   return TradeOrder.close()
+           current = frame["rsi"].iloc[-1]
+           position = positions[0]
+           if position.side == "long" and current >= 50:
+               return TradeOrder.close()
+           if position.side == "short" and current <= 50:
+               return TradeOrder.close()
            return None
 
-4. Running a Local Backtest
----------------------------
+``compute_indicators`` runs once over the full frame. Decision hooks then see
+only the history through the current completed candle. ``positions`` contains
+filled open positions. Returning ``None`` means no action; comparisons with
+warm-up ``NaN`` values do not generate entries in this example.
 
-Execute the strategy through Q's deterministic kernel:
+Run the backtest
+----------------
 
 .. code-block:: python
 
+   from q_backend.backtesting.costs import TransactionCostConfig
    from q_backend.research import backtest
 
    result = backtest(
@@ -92,21 +100,34 @@ Execute the strategy through Q's deterministic kernel:
        quantity=1,
        point_value=0.20,
        initial_capital=10_000.0,
+       costs=TransactionCostConfig(cost_per_contract=1.00),
+       force_close_at_end=True,
    )
 
-   print("Total Trades:", result.metrics["total_trades"])
-   print("Total PnL:   ", result.metrics["total_pnl"])
-   print("Win Rate:    ", result.metrics["win_rate"])
-   print(result.trades.head())
+``point_value`` converts one price point into account currency per contract.
+The cost here is an **illustrative R$1.00 per contract per side**; replace it
+with your assumptions. ``force_close_at_end=True`` closes any remaining position
+at the last candle's close.
 
-5. Publishing to the Desktop UI
--------------------------------
+For these unpriced orders, a decision at a candle's close fills at the **next
+candle's open**. See :doc:`../user_guide/execution` for other fill models.
 
-Publish your backtest run to the Q Research desktop application for visual inspection:
+Read the results
+----------------
 
 .. code-block:: python
 
-   run_id = result.publish()
-   print(f"Published run: {run_id}")
+   print(result.metrics)
+   print(result.trades[["side", "entry_price", "exit_price", "pnl"]].head())
+   print(result.equity.tail())
 
-The trade list, equity curves, drawdown series, and chart indicators will be instantly accessible in the desktop terminal.
+``trades`` contains the execution log. ``equity`` tracks realized equity;
+it does not mark open positions to market. A strategy may produce no trades
+for your chosen range. :doc:`../user_guide/backtesting` explains the result fields.
+
+Next steps
+----------
+
+* Add chart series and position-aware rules: :doc:`../user_guide/strategy`.
+* Replay stops and targets from stored ticks: :doc:`../user_guide/execution`.
+* Publish this result for visual review: :doc:`../user_guide/publishing`.

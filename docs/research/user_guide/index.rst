@@ -1,8 +1,8 @@
 ==========
-User Guide
+User guide
 ==========
 
-The User Guide covers the architecture, statistical methods, and mechanics of Q Research in depth.
+The User guide covers the architecture, statistical methods, and mechanics of Q Research in depth.
 
 .. toctree::
    :maxdepth: 2

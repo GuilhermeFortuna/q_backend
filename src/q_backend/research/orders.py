@@ -31,7 +31,8 @@ class TradeOrder:
     take_profit : float, optional
         Fixed take-profit exit level.
     price : float, optional
-        Limit fill price for same-bar execution. If unset, order fills at next bar open.
+        Entry fill price for same-bar execution; no limit/stop order type is assigned.
+        If unset, the entry fills at the next bar's open.
 
     Notes
     -----

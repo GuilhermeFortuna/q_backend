@@ -39,7 +39,13 @@ autodoc_typehints = "none"
 
 # PyData Theme settings
 html_theme = "pydata_sphinx_theme"
-html_title = "Q Research Documentation"
+html_title = "Q Research"
+templates_path = ["_templates"]
+html_static_path = ["_static"]
+html_css_files = ["research.css"]
+html_show_sourcelink = False
+html_last_updated_fmt = None
+html_context = {"default_mode": "dark"}
 
 html_theme_options = {
     "github_url": "https://github.com/GuilhermeFortuna/q_backend",
@@ -47,6 +53,9 @@ html_theme_options = {
     "navbar_start": ["navbar-logo"],
     "navbar_center": ["navbar-nav"],
     "navbar_end": ["theme-switcher", "navbar-icon-links"],
+    "footer_start": ["copyright"],
+    "footer_end": ["sphinx-version", "theme-version"],
+    "show_toc_level": 2,
     "secondary_sidebar_items": ["page-toc"],
     "navigation_with_keys": True,
 }
@@ -62,4 +71,8 @@ intersphinx_mapping = {
 myst_enable_extensions = ["colon_fence", "deflist", "dollarmath"]
 
 # Exclude patterns
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+exclude_patterns = ["_build", "README.md", "Thumbs.db", ".DS_Store"]
+
+# Keep copied examples executable when the API reference uses Python prompts.
+copybutton_prompt_text = r">>> |\.\.\. "
+copybutton_prompt_is_regexp = True

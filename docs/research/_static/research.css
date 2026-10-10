@@ -1,0 +1,190 @@
+/* Reading refinements over the PyData theme, in both light and dark modes. */
+html {
+  --pst-font-size-base: 17px;
+  --pst-font-family-base: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --pst-font-family-heading: var(--pst-font-family-base);
+}
+
+
+/* Q identity, mirrored from q_frontend/src/styles/globals.css:
+   carbon surfaces, brass accents, cream code, and smoked-silver text.
+   Light mode uses deeper brass for readable links on warm white. */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --pst-color-primary: #f0b429;
+  --pst-color-primary-bg: #2b220f;
+  --pst-color-secondary: #ffca47;
+  --pst-color-secondary-bg: #2b220f;
+  --pst-color-accent: #ffca47;
+  --pst-color-accent-bg: #2b220f;
+  --pst-color-background: #0a0b0c;
+  --pst-color-on-background: #111315;
+  --pst-color-surface: #181b1f;
+  --pst-color-on-surface: #e8eaed;
+  --pst-color-text-base: #c5c9d0;
+  --pst-color-text-muted: #9aa1ac;
+  --pst-color-heading: #e8eaed;
+  --pst-color-border: #373124;
+  --pst-color-border-muted: #2e333b;
+  --pst-color-inline-code: #f0e6d0;
+  --pst-color-link-higher-contrast: #ffca47;
+  --pst-color-target: #2b220f;
+  --pst-color-info: #c9b896;
+  --pst-color-info-bg: #1f1d17;
+  --pst-color-warning: #f0b429;
+  --pst-color-warning-bg: #2b220f;
+  --pst-color-table: #c5c9d0;
+  --pst-color-table-heading-bg: #181613;
+  --pst-color-table-row-hover-bg: #252118;
+  --pst-color-table-inner-border: #2e333b;
+  --q-code-keyword: #ffca47;
+  --q-code-string: #a9cf9b;
+  --q-code-number: #f0e6d0;
+  --q-code-comment: #9aa1ac;
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+  --pst-color-primary: #704d10;
+  --pst-color-primary-bg: #f3e7c9;
+  --pst-color-secondary: #946714;
+  --pst-color-secondary-bg: #f3e7c9;
+  --pst-color-accent: #946714;
+  --pst-color-accent-bg: #f3e7c9;
+  --pst-color-background: #faf8f3;
+  --pst-color-on-background: #fffdf8;
+  --pst-color-surface: #f0ece3;
+  --pst-color-on-surface: #22262c;
+  --pst-color-text-base: #22262c;
+  --pst-color-text-muted: #57534b;
+  --pst-color-heading: #111315;
+  --pst-color-border: #d9cfbb;
+  --pst-color-border-muted: #e3dccc;
+  --pst-color-inline-code: #704d10;
+  --pst-color-link-higher-contrast: #704d10;
+  --pst-color-target: #f3e7c9;
+  --pst-color-info: #704d10;
+  --pst-color-info-bg: #f3eddf;
+  --pst-color-warning: #704d10;
+  --pst-color-warning-bg: #f3e7c9;
+  --pst-color-table: #22262c;
+  --pst-color-table-row-hover-bg: #f3e7c9;
+  --pst-color-table-inner-border: #e3dccc;
+  --q-code-keyword: #704d10;
+  --q-code-string: #315c37;
+  --q-code-number: #6b4819;
+  --q-code-comment: #57534b;
+}
+
+html[data-theme] .bd-header .search-button-field {
+  background: var(--pst-color-surface);
+  color: var(--pst-color-text-muted);
+  border-color: var(--pst-color-border);
+}
+
+html[data-theme] .bd-header .search-button-field:hover {
+  color: var(--pst-color-primary);
+}
+
+.bd-header {
+  border-bottom: 1px solid var(--pst-color-border);
+}
+
+.navbar-brand,
+.navbar-brand .logo__title {
+  color: var(--pst-color-primary);
+  font-weight: 600;
+}
+
+::selection {
+  background: var(--pst-color-primary-bg);
+  color: var(--pst-color-heading);
+}
+
+html[data-theme] .highlight {
+  background: var(--pst-color-on-background);
+}
+
+html[data-theme] .highlight :is(.k, .kn, .kd, .kc, .nb) {
+  color: var(--q-code-keyword);
+}
+
+html[data-theme] .highlight :is(.s, .s1, .s2, .sa, .sb, .sc, .sd, .se, .si, .sr, .ss) {
+  color: var(--q-code-string);
+}
+
+html[data-theme] .highlight :is(.m, .mi, .mf, .mh, .mo) {
+  color: var(--q-code-number);
+}
+
+html[data-theme] .highlight :is(.c, .c1, .cm, .cs) {
+  color: var(--q-code-comment);
+}
+
+.bd-main .bd-content .bd-article-container {
+  max-width: 76ch;
+}
+
+.bd-article {
+  line-height: 1.7;
+}
+
+.bd-article h1 {
+  color: var(--pst-color-heading);
+  font-size: clamp(2rem, 4vw, 2.7rem);
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+  margin-bottom: 1.2rem;
+}
+
+.bd-article h2 {
+  color: var(--pst-color-heading);
+  font-size: 1.65rem;
+  line-height: 1.3;
+  margin-top: 2.6rem;
+  margin-bottom: 0.9rem;
+}
+
+.bd-article h3 {
+  font-size: 1.25rem;
+  margin-top: 1.8rem;
+}
+
+.bd-article a {
+  text-underline-offset: 0.18em;
+}
+
+.bd-article pre {
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.bd-article .sd-card {
+  border-radius: 0.75rem;
+}
+
+.bd-article .sd-card-title {
+  font-size: 1.1rem;
+}
+
+.bd-article table {
+  font-size: 0.92rem;
+  line-height: 1.55;
+  font-variant-numeric: tabular-nums;
+}
+
+.bd-article table th,
+.bd-article table td {
+  padding: 0.75rem;
+}
+
+.bd-article dt.sig {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 575.98px) {
+  .bd-article h2 {
+    font-size: 1.4rem;
+    margin-top: 2rem;
+  }
+}

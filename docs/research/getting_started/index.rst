@@ -1,12 +1,14 @@
 ===============
-Getting Started
+Getting started
 ===============
 
-New to Q Research? This section guides you through connecting to MetaTrader 5, fetching your first market data series, and running an end-to-end backtest.
+Start here if you are new to the library. You will set up Python, choose market
+data, and run a strategy locally. Familiarity with pandas is helpful; no running
+Q API or worker is needed for the backtest itself.
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
 
    install
-   price_series
    quickstart
+   price_series

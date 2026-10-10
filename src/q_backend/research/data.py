@@ -206,6 +206,8 @@ def load_bars(
 
     Examples
     --------
+    Requires a connected gateway. The prices shown are illustrative.
+
     >>> from q_backend.research import load_bars
     >>> bars = load_bars("WIN$N", timeframe="M5", start="2026-09-01")
     >>> bars[["open", "high", "low", "close"]].head(2)

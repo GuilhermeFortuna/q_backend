@@ -1,19 +1,19 @@
 ====================
-Technical Indicators
+Technical indicators
 ====================
 
 The :mod:`q_backend.research.indicators` module provides functional helpers backed by Q's high-performance Rust calculations (``q_core``).
 
-Design Principles
+Design principles
 -----------------
 
-1. **Exact Index Preservation**: All returned Series share the exact index, timezone, and name of the input.
+1. **Exact Index Preservation**: Returned Series align with the input index, including its timezone.
 2. **Immutability**: Input Series and DataFrames are never mutated.
 3. **Strict Causality**: Calculations depend only on rows at or prior to the current bar.
 4. **NaN Warm-Up**: Initial lookback bars contain ``NaN``. No forward-filling or zero-filling is applied.
 5. **No Service Dependencies**: Pure functional operations requiring no gateway, database, or Redis.
 
-Supported Indicators
+Supported indicators
 --------------------
 
 .. list-table::
@@ -48,17 +48,37 @@ Supported Indicators
      - :class:`pandas.Series`
      - Minimum variance Yang-Zhang (2000) historical volatility.
 
-Mathematical Formulation of Yang-Zhang (2000)
----------------------------------------------
+Add indicators to a frame
+-------------------------
 
-Yang-Zhang historical volatility handles both continuous price drift and overnight jump openings:
+.. code-block:: python
 
-.. math::
+   from q_backend.research import indicators
 
-   \sigma^2 = \sigma_o^2 + k \cdot \sigma_c^2 + (1 - k) \cdot \sigma_{rs}^2
+   bars = bars.assign(
+       ema_21=indicators.ma(bars["close"], period=21, kind="ema"),
+       atr_14=indicators.atr(bars, period=14),
+   )
+   upper, middle, lower = indicators.bollinger(bars["close"], period=20)
+   bars = bars.assign(bb_upper=upper, bb_middle=middle, bb_lower=lower)
 
-where :math:`k = \frac{0.34}{1.34 + \frac{n + 1}{n - 1}}`, :math:`\sigma_o` is overnight jump volatility, :math:`\sigma_c` is open-to-close volatility, and :math:`\sigma_{rs}` is the Rogers-Satchell variance estimator:
+Price-only functions take a Series; ATR, Donchian, and Yang-Zhang take a
+DataFrame with the required price columns. See :doc:`../reference/indicators`
+for each function's inputs and output order.
 
-.. math::
+Handle warm-up values
+---------------------
 
-   \sigma_{rs}^2 = \frac{1}{n} \sum \left( u(u - c) + d(d - c) \right)
+Early rows can contain ``NaN`` until enough observations are available. Leave
+those values in place and guard decisions that need a valid indicator. Filling
+with future values introduces lookahead; filling with zero changes the signal.
+The required warm-up depends on the indicator and its parameters.
+
+Choose volatility units
+-----------------------
+
+``realized_vol`` uses close-to-close log returns. ``yang_zhang`` also accounts for
+open-to-close moves and overnight gaps. Both accept ``periods_per_year`` to
+annualize volatility; the default is 252. For intraday bars, choose a value that
+matches the number of observations in your assumed trading year rather than
+using the daily default unchanged.

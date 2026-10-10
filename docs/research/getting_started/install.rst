@@ -2,33 +2,59 @@
 Installation
 ============
 
-Environment Setup
------------------
+Q Research is part of ``q_backend``, imported as ``q_backend.research``.
+Use the backend's managed Python environment rather than a separate package.
 
-The Q research library lives in ``q_backend.research``. It uses the Python environment of the ``q_backend`` workspace.
+Set up Python
+-------------
 
-From the workspace root, sync the backend dependencies:
+From the Q workspace root:
 
 .. code-block:: bash
 
    cd q_backend
    uv sync
+   uv run python
 
-Gateway Configuration
----------------------
+Run the Python examples in this interpreter, or save them in a script and run
+``uv run python your_script.py`` from ``q_backend``.
 
-Q Research accesses live and historical market data from MetaTrader 5 via Q's lightweight MT5 Gateway.
+Choose what you need to run
+---------------------------
 
-1. Ensure MetaTrader 5 is connected to your broker.
-2. Launch the gateway service (or run ``./dev gateway`` from the workspace root).
-3. Set the gateway URL and optional token in your environment:
+.. list-table::
+   :header-rows: 1
+   :widths: 45 55
+
+   * - Task
+     - Required services
+   * - Compute indicators or backtest an existing DataFrame
+     - None
+   * - Read sessions already saved in a TickStore
+     - None
+   * - Fetch bars or ticks, or sync a TickStore
+     - MT5 gateway with a connected terminal
+   * - Publish a result to the desktop
+     - Research stack; see :doc:`../user_guide/publishing`
+
+Connect the MT5 gateway
+-----------------------
+
+From the **Q workspace root**, launch the gateway and wait for connectivity:
+
+.. code-block:: bash
+
+   ./dev gateway
+
+The default gateway address is ``http://127.0.0.1:18812``. To use another gateway,
+set its address in the shell where you run your research script:
 
 .. code-block:: bash
 
    export Q_MT5_GATEWAY_URL="http://127.0.0.1:18812"
-   export Q_MT5_GATEWAY_TOKEN="your-optional-token"
 
-The gateway can run locally under Wine or on a dedicated remote machine.
+Set ``Q_MT5_GATEWAY_TOKEN`` only if your gateway requires authentication. The
+terminal must be connected to your broker and have the requested symbol's history.
 
-.. note::
-   Pure quantitative analysis, indicator calculations, tick-store reads, and local backtests require neither PostgreSQL, Redis, nor a running API/worker. The MT5 gateway is only queried when requesting fresh data via :func:`~q_backend.research.load_bars` or synchronizing ticks via :class:`~q_backend.research.TickStore`.
+Continue with the :doc:`quickstart`. For B3 futures, also read
+:doc:`price_series` before interpreting point-based profit and loss.

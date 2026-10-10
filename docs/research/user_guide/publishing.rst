@@ -1,22 +1,52 @@
-===================
-Desktop Publishing
-===================
+=====================
+Review in the desktop
+=====================
 
-Visualizing Backtests in Q Research
------------------------------------
+Publishing saves a completed local backtest in the Research stack. Open it in
+Backtests history to inspect the Trade Chart, Performance, Monthly breakdown,
+and Trade List views.
 
-Completed research backtests can be published directly to the Q Research desktop application for visual exploration and review:
+Start the Research stack
+------------------------
+
+From the **Q workspace root**:
+
+.. code-block:: bash
+
+   ./dev research
+
+Local backtesting needs no API, database, or worker. Publishing uses the
+Research API and its storage, so the stack must be running for this step.
+
+Publish a finished result
+-------------------------
+
+After running the :doc:`../getting_started/quickstart`:
 
 .. code-block:: python
 
-   result = backtest(bars, strategy=MyStrategy(), symbol="WIN$N")
-   run_id = result.publish(name="RSI-Mean-Reversion")
-   print(f"Run ID: {run_id}")
+   run_id = result.publish(name="RSI reversion")
+   print(f"Published run: {run_id}")
 
-Features Populated in the Desktop UI
-------------------------------------
+The API address defaults to ``http://127.0.0.1:8001``. Set ``Q_API_URL`` before
+starting your script, or pass ``api_url=`` to
+:meth:`~q_backend.research.BacktestResult.publish`.
 
-1. **Trade Chart**: Interactive candlestick chart displaying executed entry and exit arrows, stop-loss / take-profit levels, and custom indicators declared via :meth:`~q_backend.research.ResearchStrategy.chart_indicators`.
-2. **Performance Metrics**: Sharpe ratio, win rate, profit factor, max drawdown, and average trade duration.
-3. **Monthly Breakdown**: Heatmap of returns grouped by year and month.
-4. **Trade List**: Sortable, filterable list of all trades with entry/exit timestamps, reasons, and individual PnL.
+The timeframe comes from ``bars.attrs["q_research"]["timeframe"]``. For a custom
+DataFrame without that metadata, provide it explicitly:
+
+.. code-block:: python
+
+   run_id = result.publish(name="RSI reversion", timeframe="M5")
+
+To display custom indicators, declare them in
+:meth:`~q_backend.research.ResearchStrategy.chart_indicators`; see
+:doc:`strategy` for an example.
+
+What publishing does
+--------------------
+
+* Stores a run marked as originating from a script, without changing ``result``.
+* Creates a new run on each call; it does not retry automatically.
+* Saves results for review. Custom script strategies cannot be rerun or optimized
+  from the desktop.

@@ -1,5 +1,5 @@
 =============
-API Reference
+API reference
 =============
 
 This section documents the public API of the Q research library.

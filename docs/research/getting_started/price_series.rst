@@ -1,17 +1,20 @@
 =======================
-Choosing a Price Series
+Choosing a price series
 =======================
 
-When conducting research on B3 futures (such as Mini-Ibovespa ``WIN`` or Mini-DÃ³lar ``WDO``), MetaTrader 5 provides each continuous contract in three forms:
+A continuous future joins successive contracts into one history. The way it
+adjusts prices at a contract roll matters because Q computes PnL in price points.
+For the B3 series used in these examples, the suffix identifies the adjustment:
+
 
 .. list-table::
    :header-rows: 1
    :widths: 15 25 30 30
 
    * - Suffix
-     - Broker Description
-     - Price Formulation
-     - Preservation Property
+     - Adjustment
+     - How prices change
+     - What it preserves
    * - ``$N`` (e.g. ``WIN$N``)
      - Sem Ajustes
      - As traded; price gap at each contract roll
@@ -25,7 +28,7 @@ When conducting research on B3 futures (such as Mini-Ibovespa ``WIN`` or Mini-DÃ
      - Multiplied by roll factor at each roll
      - Cumulative percentage returns only
 
-Impact on Point-Based Backtesting
+Impact on point-based backtesting
 ---------------------------------
 
 :func:`~q_backend.research.backtest` evaluates profit and loss in point differences:
@@ -34,7 +37,10 @@ Impact on Point-Based Backtesting
 
    \text{PnL} = \Delta \text{Price} \times \text{Quantity} \times \text{Point Value} - \text{Costs}
 
-On proportionally adjusted series (``$``), historical price moves are scaled down while per-contract fixed costs remain constant, severely distorting backtests. Furthermore, proportional adjustment causes price levels to fall off exchange tick grids.
+Proportional adjustment rescales historical price moves while fixed per-contract
+costs stay unchanged. A point-based backtest on that series can therefore change
+with the adjustment rather than the strategy. Rescaled prices can also fall off
+the exchange tick grid.
 
 Recommendations
 ---------------
@@ -43,7 +49,7 @@ Recommendations
 - **Multi-day swing strategies:** Use difference-adjusted series (``$D``) to preserve point-based PnL across rolls.
 - **Percentage-return analysis only:** Use proportional adjustment (``$``) only if ignoring contract multipliers and fixed costs.
 
-Tick Grid Verification
+Tick grid verification
 ----------------------
 
 :func:`~q_backend.research.load_bars` performs an automated tick-grid validation check. If more than 1% of prices are not integer multiples of the instrument's ``trade_tick_size``, it emits :class:`~q_backend.research.AdjustedSeriesWarning`.
