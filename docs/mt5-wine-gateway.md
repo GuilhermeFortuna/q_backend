@@ -38,6 +38,14 @@ The market publisher runs trade capture on a dedicated thread, while its main lo
 publishes quotes and candles. Trade failures retain the existing explicit coverage and
 retry behavior; they do not pause chart updates.
 
+Tick history scans advance by the requested calendar window, rather than requesting
+the empty interval after its last tick again. Each native range call logs its symbol,
+bounds, returned tick count, and elapsed time; response compression logs its duration
+and byte count separately. Follow `./dev logs gateway` from the workspace root to
+distinguish broker history waits from payload processing. Native MT5 errors propagate
+as `503 ticks_unavailable` with the MT5 error code and description, rather than being
+treated as empty history.
+
 The backend treats a configured gateway that misses its health probe as an outage:
 `/api/v1/market/ohlcv/{symbol}` answers `503` (retryable) rather than `404`, and the
 failed probe is retried after 2 seconds instead of the 30 seconds a healthy result is

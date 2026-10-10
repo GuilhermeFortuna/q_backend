@@ -32,3 +32,16 @@ def test_tick_import_is_quiet_when_redirected_and_stops_on_error():
     assert output.getvalue() == ""
     assert not reporter._progress.live.is_started
     assert reporter._progress.tasks[0].fields["status"] == "failed; import incomplete"
+
+
+def test_eta_retains_samples_from_slow_history_chunks():
+    reporter = tick_import_progress(False, "WDO$")
+    clock = [0.0]
+    reporter._progress.get_time = lambda: clock[0]
+    with reporter:
+        reporter.start(10)
+        clock[0] = 80.0
+        reporter.advance(1, 100)
+        clock[0] = 160.0
+        reporter.advance(2, 200)
+        assert reporter._progress.tasks[0].time_remaining == 640

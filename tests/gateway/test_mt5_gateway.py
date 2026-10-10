@@ -277,6 +277,38 @@ def test_ticks_default_flags_all(gateway, fake_mt5):
     assert fake_mt5._state["last_flags"] == fake_mt5.COPY_TICKS_ALL
 
 
+def test_tick_fetch_does_not_probe_empty_tail_after_completed_range(gateway, fake_mt5):
+    start, end = datetime(2026, 10, 1), datetime(2026, 10, 1, 23, 59, 59, 999000)
+    epoch = _epoch(datetime(2026, 10, 1, 18))
+    fake_mt5._state["ticks_queue"] = [
+        np.array(
+            [
+                (epoch, 100.0, 101.0, 100.5, 1.0, epoch * 1000, 6),
+                (epoch, 100.0, 101.0, 100.5, 1.0, epoch * 1000, 6),
+            ],
+            dtype=_TICK_DTYPE,
+        )
+    ]
+    arrays = gateway._fetch_ticks_chunked("WDO$", start, end, fake_mt5.COPY_TICKS_ALL)
+    assert len(arrays["time_msc"]) == 2
+    assert fake_mt5._state["tick_range_calls"] == [(start, end, fake_mt5.COPY_TICKS_ALL)]
+
+
+def test_tick_fetch_advances_over_calendar_chunks_even_when_empty(gateway, fake_mt5):
+    start, end = datetime(2026, 10, 1), datetime(2026, 10, 9)
+    gateway._fetch_ticks_chunked("WDO$", start, end, fake_mt5.COPY_TICKS_ALL)
+    calls = fake_mt5._state["tick_range_calls"]
+    assert len(calls) == 2
+    assert calls[0][:2] == (start, datetime(2026, 10, 8) - timedelta(milliseconds=1))
+    assert calls[1][:2] == (datetime(2026, 10, 8), end)
+
+
+def test_tick_fetch_reports_native_failure_instead_of_empty_history(gateway, fake_mt5):
+    fake_mt5._state["ticks_queue"] = [None]
+    with pytest.raises(gateway.GatewayError, match="MT5 tick history request failed"):
+        gateway._fetch_ticks_chunked("WDO$", datetime(2026, 10, 1), datetime(2026, 10, 2), fake_mt5.COPY_TICKS_ALL)
+
+
 def test_invalid_timeframe_returns_400(gateway, fake_mt5):
     with running_gateway_server(gateway) as base:
         status, _headers, body = http_get(

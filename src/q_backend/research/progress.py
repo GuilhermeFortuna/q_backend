@@ -151,6 +151,8 @@ class TickImportProgress:
             TimeRemainingColumn(),
             console=console,
             disable=not enabled,
+            # Keep enough samples to estimate ETA even when chunks take minutes.
+            speed_estimate_period=1200.0,
         )
         self._task: TaskID | None = None
         self._started = time.perf_counter()

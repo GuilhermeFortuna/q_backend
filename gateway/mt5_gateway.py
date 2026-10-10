@@ -114,6 +114,7 @@ import multiprocessing
 import os
 import signal
 import threading
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -481,8 +482,15 @@ def _fetch_ticks_chunked(symbol: str, start: datetime, end: datetime, flags: int
         if cursor > end:
             break
 
-        chunk_end = min(cursor + timedelta(days=_TICK_RANGE_FETCH_DAYS), end)
+        chunk_end = min(cursor + timedelta(days=_TICK_RANGE_FETCH_DAYS) - timedelta(milliseconds=1), end)
+        started = time.monotonic()
+        logger.info("Fetching MT5 ticks: %s %s to %s", symbol, cursor.isoformat(), chunk_end.isoformat())
         ticks = mt5.copy_ticks_range(symbol, cursor, chunk_end, flags)
+
+        if ticks is None:
+            code, detail = _safe_last_error()
+            raise GatewayError(503, "ticks_unavailable", f"MT5 tick history request failed ({code}): {detail}")
+        logger.info("Fetched %s MT5 ticks for %s in %.3fs", len(ticks), symbol, time.monotonic() - started)
 
         if ticks is not None and len(ticks) > 0:
             chunk_len = len(ticks)
@@ -497,19 +505,10 @@ def _fetch_ticks_chunked(symbol: str, start: datetime, end: datetime, flags: int
             chunks.append(ticks)
             total_ticks += chunk_len
 
-            names = ticks.dtype.names or ()
-            if "time_msc" in names:
-                last_msc = int(ticks["time_msc"][-1])
-                next_cursor = _msc_to_naive(last_msc) + timedelta(milliseconds=1)
-            else:
-                last_sec = int(ticks["time"][-1])
-                next_cursor = _epoch_to_naive(last_sec) + timedelta(seconds=1)
-
-            if next_cursor <= cursor:
-                break
-            cursor = next_cursor
-        else:
-            cursor = chunk_end + timedelta(seconds=1)
+        # copy_ticks_range returns the whole range, not a page. Advancing from
+        # the last event probes the empty post-session tail and can start another
+        # slow broker synchronization. Advance over the requested time window.
+        cursor = chunk_end + timedelta(milliseconds=1)
 
         if total_ticks >= _MAX_TICKS:
             break
@@ -757,7 +756,15 @@ class GatewayApp:
             if not mt5.symbol_select(symbol, True):
                 raise GatewayError(404, "symbol_not_found", f"Symbol '{symbol}' is not selectable.")
             columnar = _fetch_ticks_chunked(symbol, start, end, flags)
-        return _savez_bytes(columnar)
+        started = time.monotonic()
+        content = _savez_bytes(columnar)
+        logger.info(
+            "Compressed %s ticks into %s bytes in %.3fs",
+            len(columnar["time_msc"]),
+            len(content),
+            time.monotonic() - started,
+        )
+        return content
 
     @_in_lane(_TRADES_LANE)
     def trades(self, symbol: str, start_utc: datetime, end_utc: datetime) -> bytes:
@@ -877,6 +884,8 @@ def _spawn_worker():
 
 
 def _worker_main(connection) -> None:
+    # Spawned Windows workers do not inherit the HTTP process's logging setup.
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     app = GatewayApp()
     try:
         while True:
