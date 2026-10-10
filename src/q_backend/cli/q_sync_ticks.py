@@ -49,7 +49,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     else:
         print("\nNo sessions stored yet for this symbol.")
-    return 0
+    return 1 if report.failed else 0
 
 
 if __name__ == "__main__":

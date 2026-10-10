@@ -214,14 +214,19 @@ class TickSyncProgress:
             TextColumn("{task.description}"),
             BarColumn(),
             MofNCompleteColumn(),
+            TextColumn("{task.fields[interval]}"),
+            TextColumn("{task.fields[throughput]}"),
+            TextColumn("{task.fields[session]}"),
             TextColumn("{task.fields[status]}"),
             TimeElapsedColumn(),
             TimeRemainingColumn(),
             console=console,
             disable=not enabled,
+            speed_estimate_period=1200.0,
         )
         self._task: TaskID | None = None
         self._started = time.perf_counter()
+        self._rows = 0
 
     def __enter__(self) -> TickSyncProgress:
         self._progress.start()
@@ -234,11 +239,27 @@ class TickSyncProgress:
 
     def start(self, total: int) -> None:
         self._started = time.perf_counter()
-        self._task = self._progress.add_task(self._label, total=total, status="")
+        self._task = self._progress.add_task(
+            self._label, total=total, interval="", throughput="", session="", status="preparing tick history"
+        )
+
+    def waiting(self, start: date, end: date) -> None:
+        if self._task is not None:
+            self._progress.update(self._task, interval=f"{start}–{end}", status="downloading / synchronizing MT5")
+
+    def received(self, rows: int) -> None:
+        self._rows = rows
+        elapsed = max(time.perf_counter() - self._started, 0.001)
+        if self._task is not None:
+            self._progress.update(
+                self._task,
+                throughput=f"{rows:,} ticks · {rows / elapsed:,.0f}/s",
+                status="downloading / writing sessions",
+            )
 
     def advance(self, done: int, day: date, outcome: str) -> None:
         if self._task is not None:
-            self._progress.update(self._task, completed=done, status=f"{day.isoformat()} {outcome}")
+            self._progress.update(self._task, completed=done, session=f"{day.isoformat()} {outcome}")
 
     def finish(self) -> None:
         if self._task is not None:

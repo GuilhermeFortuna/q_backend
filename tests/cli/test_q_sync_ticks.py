@@ -22,3 +22,14 @@ def test_main_syncs_the_requested_range_and_prints_the_report(tmp_path, capsys) 
     output = capsys.readouterr().out
     assert "stored: 2026-10-05" in output
     assert "No sessions stored yet for this symbol." in output
+
+
+def test_failed_sync_returns_nonzero_and_prints_reason(capsys):
+    day = date(2026, 10, 5)
+    report = TickSyncReport(
+        stored=[], already_present=[], empty=[], unsettled=[], failed=[day], errors={day: "broker disconnected"}
+    )
+    with patch.object(TickStore, "sync", return_value=report):
+        code = q_sync_ticks.main(["--symbol", "WIN$", "--start", "2026-10-05"])
+    assert code == 1
+    assert "broker disconnected" in capsys.readouterr().out

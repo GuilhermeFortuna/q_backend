@@ -612,7 +612,25 @@ CLI (from `q_backend`):
 uv run q-sync-ticks --symbol 'WDO$N' --start 2025-10-01
 ```
 
-- `sync` / `sync_ticks` / `bars(..., sync=True)` walk weekdays from `start` through `end` (default end: yesterday in Brasília), skip days already on disk, and never store the current session. Each call needs the MT5 gateway (`Q_MT5_GATEWAY_URL`, optional `Q_MT5_GATEWAY_TOKEN`). Each missing day is fetched twice; a day is written only when both responses return the same row count. An empty pair is reported as **empty** (no file) and retried on the next sync. A mismatched pair is **unsettled**. Gateway errors are **failed** for that day only.
+- `sync` / `sync_ticks` / `bars(..., sync=True)` consider weekdays from `start` through `end` (default end: yesterday in Brasília), skip sessions already on disk, and never store the current session. An entirely stored interval returns locally without a gateway. Missing intervals require `Q_MT5_GATEWAY_URL` and optional `Q_MT5_GATEWAY_TOKEN`.
+- Missing intervals stream once through `/v1/ticks/page`, starting with 250,000-tick batches. The first request triggers MT5 history synchronization and supplies usable data. Cursors follow actual ticks across empty dates; they do not request each empty day separately. Timestamp groups are kept intact, including duplicate ticks. One producer thread downloads while the caller writes incremental Parquet row groups; at most two pages queue ahead, with one additional page held by the producer and one by the consumer. Native requests remain serialized.
+- A daily file is committed atomically only after a successful cursor passes that day's end. An empty scanned weekday is **empty** (no file) and retried next time. On error, completed days remain stored; the unfinished day and remaining dates in that interval are **failed**, with reasons in `report.errors`. Temporary files are removed before draining any outstanding download, bounded by the existing transport timeout. Independent missing intervals continue after that producer terminates. `q-sync-ticks` exits with status 1 if any session failed. `unsettled` remains for compatibility and is always empty. `first_msc`, `last_msc`, and `ticks_received` report received data, including any unfinished day; they do not certify global broker retention.
+- Progress shows preparation/download intervals, ticks received, throughput, writes, and completed sessions. Cold synchronization can still wait inside MT5. Native errors never become confirmed empty history. An older gateway raises an actionable update/restart error: restart the updated gateway with `./dev restart gateway` from the workspace root.
+
+To compare the former daily double-fetch loop with streaming using temporary stores:
+
+```bash
+uv run python examples/research/benchmark_tick_sync.py \
+  --symbol 'WDO$N' --start 2026-10-01 --end 2026-10-07 \
+  --gateway-url http://127.0.0.1:18812 --output /tmp/tick-sync-benchmark.json
+```
+
+Use closed sessions with known ticks; `--empty-day YYYY-MM-DD` adds a known-empty case.
+`--optimized-first` reverses execution order to reveal cache bias. The benchmark
+compares every tick and reports wall time, HTTP, decoding, disk writes, requests,
+bytes and cumulative process peak RSS (not separate memory peaks per case). The gateway logs native-fetch and encoding
+times separately. It retains terminal caches, so these runs do not claim a
+controlled cold-cache comparison. Neither path changes existing tick-store files.
 - `ticks` returns the same frame as `load_ticks` for stored sessions. `bars` builds `load_bars`-shaped OHLCV from positive `last` trade prices only, per session, with no overnight bar synthesis. History is limited to synced sessions; use `sessions()` to see what is on disk.
 - One-minute bars per session are cached under `<slug>/bars_M1/` the first time a session is read; coarser timeframes aggregate from that cache.
 - Broker tick history is short and old sessions can stop being served after the terminal drops them. Sync regularly while the gateway still has the sessions you need.

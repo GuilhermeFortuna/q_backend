@@ -22,22 +22,36 @@ Data is organized as partitioned zstandard-compressed Apache Parquet files:
            ├── 2026-09-01.parquet
            └── 2026-09-02.parquet
 
-Two-pass verification
+Single-pass streaming
 ---------------------
 
 When syncing sessions with :func:`~q_backend.research.sync_ticks` or
 :meth:`~q_backend.research.TickStore.sync`:
 
-1. Every missing date is fetched twice sequentially from the gateway.
-2. The session file is written only if both calls return identical tick counts.
-3. If counts differ, the day is marked as **unsettled** and skipped until the next sync.
-4. If both return zero, the report marks the day as **empty**; no file is written.
-   Empty sessions are retried on the next sync.
-5. Gateway errors mark only that day as **failed**.
+1. Existing sessions are checked locally. A fully stored interval needs no gateway.
+2. Missing intervals stream forward through bounded tick pages. The first page
+   triggers terminal synchronization; subsequent cursors follow actual ticks,
+   skipping empty stretches without daily requests. Each response is used once.
+3. A producer thread downloads while the caller writes incremental Parquet row
+   groups. The queue holds at most two pages; producer and consumer can each hold
+   one additional page. Native requests are serialized.
+4. A daily file appears atomically only after a successful cursor passes its end.
+   Repeated ticks, including equal timestamps, retain their original order.
+5. Scanned days with no ticks are **empty** and are retried next time. Failed or
+   interrupted downloads leave completed days intact and remove unfinished files.
+   Remaining dates in the failed interval are **failed**, with reasons in
+   ``report.errors``; independent missing intervals continue.
 
 Sync skips sessions already on disk and never stores the current exchange day.
-Matching counts are a settlement check; they do not prove that tick contents or
-broker history are complete.
+``unsettled`` remains a compatibility field and is always empty. ``first_msc``,
+``last_msc`` and ``ticks_received`` describe received data, including unfinished
+days; they are not a global broker-retention guarantee. Empty native responses
+with an error never certify missing history. Cold synchronization may still wait
+inside MT5, but progress shows the active interval and received pages.
+
+The gateway must support ``/v1/ticks/page``. After updating it, run
+``./dev restart gateway`` from the workspace root. An older gateway raises an
+update/restart error rather than reverting to the slow daily loop.
 
 Python usage
 ------------

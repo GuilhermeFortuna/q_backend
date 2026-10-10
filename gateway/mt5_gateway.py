@@ -30,6 +30,7 @@ Endpoint                                                  Method  Response
 ``/v1/ohlcv/recent?symbol=&timeframe=&count=``             GET     recent bars as ``.npz``
 ``/v1/ohlcv?symbol=&timeframe=&start=&end=``              GET     ``.npz`` (application/octet-stream)
 ``/v1/ticks?symbol=&start=&end=&flags=``                  GET     ``.npz`` (application/octet-stream)
+``/v1/ticks/page?symbol=&start_msc=&end_msc=&limit=``      GET     bounded forward ticks + cursor metadata
 ``/v1/trades?symbol=&start_utc=&end_utc=``                GET     eligible trades as ``.npz`` (application/octet-stream)
 ========================================================  ======  ==========================================================
 
@@ -85,7 +86,9 @@ call, and a call may block for a minute or more while the terminal downloads his
 from the broker. When launched through ``main()`` the HTTP process therefore never
 calls MT5: each request is forwarded to one of three spawned worker processes
 (``chart``, ``ticks``, ``trades``), each with its own MT5 IPC connection, so a slow
-download in one lane cannot freeze ``/v1/health`` or the other lanes.
+download cannot hold the HTTP interpreter lock. The terminal may still serialize
+IPC across connections; health probes reuse established state while a data lane
+is occupied rather than entering another native call.
 - Missing token (when configured) -> 401 ``unauthorized``
 
 Launch command (WO186 installs this via a systemd user unit)
@@ -153,7 +156,9 @@ _NATIVE_CALL_TIMEOUT_S = 120.0
 # First-session history synchronization can take several minutes. Keep bounded
 # worker recovery, while giving history imports more time than live trade calls.
 _HISTORY_CALL_TIMEOUT_S = 600.0
-_HISTORY_METHODS = frozenset({"ohlcv", "recent_ohlcv", "ticks", "available_range"})
+_HISTORY_METHODS = frozenset({"ohlcv", "recent_ohlcv", "ticks", "ticks_page", "available_range"})
+_MAX_TICK_PAGE_ROWS = 1_000_000
+_DEFAULT_TICK_PAGE_ROWS = 250_000
 
 # Mirrors MetaTraderClient.TIMEFRAME_NAMES.
 TIMEFRAME_NAMES = (
@@ -581,6 +586,65 @@ def _in_lane(lane: str):
     return decorate
 
 
+def _fetch_tick_page(symbol: str, start_msc: int, end_msc: int, limit: int) -> bytes:
+    """Forward scan, withholding the last timestamp group of a saturated batch.
+
+    Python's MT5 binding accepts seconds, so replay the cursor's second and filter
+    its prefix. Expanding a batch is bounded and only needed when that prefix or
+    one dense timestamp group would otherwise prevent cursor progress.
+    """
+    count = limit
+    while True:
+        started = time.monotonic()
+        ticks = mt5.copy_ticks_from(symbol, start_msc // 1000, count, mt5.COPY_TICKS_ALL)
+        code, detail = _safe_last_error()
+        logger.info(
+            "Tick page %s cursor=%s count=%s rows=%s native=%.3fs error=%s",
+            symbol,
+            start_msc,
+            count,
+            None if ticks is None else len(ticks),
+            time.monotonic() - started,
+            code,
+        )
+        if ticks is None or code != 1:
+            raise GatewayError(503, "ticks_unavailable", f"MT5 tick page failed ({code}): {detail}")
+        times = ticks["time_msc"]
+        if np.any(times[1:] < times[:-1]):
+            raise GatewayError(503, "ticks_unavailable", "MT5 tick page is not ordered.")
+        exhausted = len(ticks) < count or bool(len(times) and times[-1] >= end_msc)
+        selected = ticks[(times >= start_msc) & (times < end_msc)]
+        if exhausted:
+            cursor = None
+            break
+        if len(selected):
+            cursor = int(selected[-1]["time_msc"])
+            selected = selected[selected["time_msc"] < cursor]
+            if len(selected) and cursor > start_msc:
+                break
+        if count >= _MAX_TICK_PAGE_ROWS:
+            raise GatewayError(503, "tick_page_no_progress", "Tick page cannot make safe cursor progress.")
+        count = min(count * 2, _MAX_TICK_PAGE_ROWS)
+    columns = _ticks_structured_to_columnar(selected)
+    metadata = {
+        "next_cursor_msc": cursor,
+        "exhausted": exhausted,
+        "first_msc": int(selected[0]["time_msc"]) if len(selected) else None,
+        "last_msc": int(selected[-1]["time_msc"]) if len(selected) else None,
+        "row_count": len(selected),
+    }
+    started = time.monotonic()
+    content = _savez_bytes({**columns, "metadata": np.array(json.dumps(metadata))})
+    logger.info(
+        "Encoded tick page %s rows=%s bytes=%s encode=%.3fs",
+        symbol,
+        len(selected),
+        len(content),
+        time.monotonic() - started,
+    )
+    return content
+
+
 class GatewayApp:
     """Holds MT5 connection state and serializes every ``mt5.*`` call.
 
@@ -601,6 +665,7 @@ class GatewayApp:
         self._initialized = False
         self._cached_connected = False
         self._cached_terminal_build: int | None = None
+        self._tick_symbols: set[str] = set()
         self.lanes: dict[str, Mt5Worker] = {}
         self.provider_id = os.environ.get("MT5_GATEWAY_PROVIDER_ID", "").strip() or "mt5"
         # Identifies this gateway process; the publisher owns session source generations.
@@ -631,6 +696,7 @@ class GatewayApp:
             if self._initialized:
                 mt5.shutdown()
                 self._initialized = False
+                self._tick_symbols.clear()
                 logger.info("MetaTrader5 shut down.")
 
     # -- endpoints ----------------------------------------------------------
@@ -638,6 +704,10 @@ class GatewayApp:
         """``(connected, terminal_build)``, or ``None`` while MT5 is busy with a call."""
         worker = self.lanes.get(_CHART_LANE)
         if worker is not None:
+            # Separate Python workers do not prevent the terminal itself from
+            # serializing IPC. Reuse established health during bulk/live reads.
+            if any(lane != _CHART_LANE and active.busy for lane, active in self.lanes.items()):
+                return None
             try:
                 return worker.call("connection_state", wait_s=0.0)
             except GatewayError:
@@ -814,6 +884,22 @@ class GatewayApp:
             meta.update(range_complete=False, coverage_reason="invalid_trade_records")
         return _savez_trades(arrays, meta)
 
+    @_in_lane(_TICKS_LANE)
+    def ticks_page(self, symbol: str, start_msc: int, end_msc: int, limit: int) -> bytes:
+        if not 0 < start_msc < end_msc or not 1 <= limit <= _MAX_TICK_PAGE_ROWS:
+            raise GatewayError(400, "invalid_range", "Invalid tick page bounds or limit.")
+        with self._lock:
+            self._require_ready()
+            if symbol not in self._tick_symbols:
+                if not mt5.symbol_select(symbol, True):
+                    raise GatewayError(404, "symbol_not_found", f"Symbol '{symbol}' is not selectable.")
+                self._tick_symbols.add(symbol)
+            try:
+                return _fetch_tick_page(symbol, start_msc, end_msc, limit)
+            except GatewayError:
+                self._tick_symbols.discard(symbol)
+                raise
+
 
 class Mt5Worker:
     """Run one lane's MT5 calls in a spawned process with its own MT5 IPC connection.
@@ -858,6 +944,11 @@ class Mt5Worker:
             raise self._error("unavailable", "process disconnected.") from exc
         finally:
             self._lock.release()
+
+    @property
+    def busy(self) -> bool:
+        """Whether a native request currently owns this lane."""
+        return self._lock.locked()
 
     def close(self) -> None:
         self._stopping = True
@@ -1071,6 +1162,16 @@ class _GatewayHandler(BaseHTTPRequestHandler):
             raise GatewayError(400, "invalid_range", "'end_utc' must be after 'start_utc'.")
         self._send_npz(self.app.trades(symbol, start, end))
 
+    def _route_tick_page(self, params) -> None:
+        symbol = _require_param(params, "symbol")
+        try:
+            start = int(_require_param(params, "start_msc"))
+            end = int(_require_param(params, "end_msc"))
+            limit = int(_optional_param(params, "limit") or _DEFAULT_TICK_PAGE_ROWS)
+        except ValueError as exc:
+            raise GatewayError(400, "invalid_range", "Tick page bounds and limit must be integers.") from exc
+        self._send_npz(self.app.ticks_page(symbol, start, end, limit))
+
     _ROUTES = {
         "/v1/health": _route_health,
         "/v1/symbol_info": _route_symbol_info,
@@ -1079,6 +1180,7 @@ class _GatewayHandler(BaseHTTPRequestHandler):
         "/v1/ohlcv/recent": _route_recent_ohlcv,
         "/v1/ohlcv": _route_ohlcv,
         "/v1/ticks": _route_ticks,
+        "/v1/ticks/page": _route_tick_page,
         "/v1/trades": _route_trades,
     }
 

@@ -29,6 +29,19 @@ class OhlcvAvailableRange:
     bar_count: int
 
 
+class TickPagingUnsupportedError(RuntimeError):
+    """The configured gateway predates the forward tick paging contract."""
+
+
+@dataclass(frozen=True)
+class TickPage:
+    """One validated forward tick batch; timestamps retain raw MT5 epoch values."""
+
+    columns: dict[str, np.ndarray]
+    next_cursor_msc: int | None
+    exhausted: bool
+
+
 TRADE_COLUMNS = ("time_msc", "price", "volume", "volume_real", "raw_flags", "occurrence")
 
 

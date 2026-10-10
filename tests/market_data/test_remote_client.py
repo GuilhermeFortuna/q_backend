@@ -28,7 +28,9 @@ from q_backend.market_data.clients.remote import RemoteMt5Client
 from q_backend.market_data.timezone import unix_seconds_to_brasilia_naive
 
 
-@pytest.mark.parametrize("path", ["/v1/ohlcv", "/v1/ohlcv/recent", "/v1/ticks", "/v1/available_range"])
+@pytest.mark.parametrize(
+    "path", ["/v1/ohlcv", "/v1/ohlcv/recent", "/v1/ticks", "/v1/ticks/page", "/v1/available_range"]
+)
 def test_history_requests_allow_slow_first_sync(monkeypatch, path):
     observed = []
 

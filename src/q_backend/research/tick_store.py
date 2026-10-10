@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import re
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
 import numpy as np
@@ -14,7 +14,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from q_backend.market_data.clients.remote import RemoteMt5Client
-from q_backend.market_data.clients.shared import COPY_TICKS_ALL
+from q_backend.market_data.clients.shared import TickPagingUnsupportedError
 from q_backend.market_data.timezone import BRASILIA_TZ
 from q_backend.research.data import _resample_frequency, _ticks_frame_from_columnar
 from q_backend.research.errors import NoMarketDataError
@@ -236,11 +236,17 @@ class TickSyncReport:
     already_present : list of datetime.date
         Dates already present on disk and skipped.
     empty : list of datetime.date
-        Dates that returned zero ticks on two consecutive fetches.
+        Dates without ticks in a successful forward scan; retried on the next sync.
     unsettled : list of datetime.date
-        Dates where two consecutive fetches returned mismatched tick counts.
+        Compatibility field; always empty for single-pass synchronization.
     failed : list of datetime.date
         Dates where the gateway returned an error.
+    errors : dict of datetime.date to str
+        Failure reasons for dates whose complete session could not be stored.
+    first_msc, last_msc : int or None
+        First and last received raw MT5 tick epochs, including unfinished days.
+    ticks_received : int
+        Number of received ticks; completed stored days are listed separately.
     """
 
     stored: list[date]
@@ -248,6 +254,10 @@ class TickSyncReport:
     empty: list[date]
     unsettled: list[date]
     failed: list[date]
+    errors: dict[date, str] = field(default_factory=dict)
+    first_msc: int | None = None
+    last_msc: int | None = None
+    ticks_received: int = 0
 
     def __str__(self) -> str:
         lines: list[str] = []
@@ -263,6 +273,7 @@ class TickSyncReport:
         _line("empty", self.empty)
         _line("unsettled", self.unsettled)
         _line("failed", self.failed)
+        lines.extend(f"{day.isoformat()}: {reason}" for day, reason in sorted(self.errors.items()))
         return "\n".join(lines) if lines else "no days processed"
 
 
@@ -341,8 +352,9 @@ class TickStore:
         """
         Synchronize tick data for missing weekday sessions from MetaTrader 5.
 
-        Fetches each missing session twice sequentially and commits to disk only
-        when both responses match row counts. Never syncs the current active session.
+        Streams bounded forward tick pages once, overlapping downloads and daily
+        Parquet writes. Commits a day only after a successful scan passes its end.
+        Never syncs the current active session.
 
         Parameters
         ----------
@@ -368,75 +380,70 @@ class TickStore:
         start_day = _resolve_sync_start(start)
         end_day = _resolve_sync_end(end, now=captured_now)
         today = captured_now.date()
-        resolved_url = resolve_gateway_url(gateway_url)
-        if not resolved_url:
-            raise ValueError("MT5 gateway URL is not configured. Set Q_MT5_GATEWAY_URL or pass gateway_url=.")
-        resolved_token = resolve_gateway_token(gateway_token)
-        client = RemoteMt5Client(base_url=resolved_url, token=resolved_token)
-        if not client.is_supported():
-            raise ValueError("MT5 gateway URL is not configured. Set Q_MT5_GATEWAY_URL or pass gateway_url=.")
-
-        stored: list[date] = []
-        already_present: list[date] = []
-        empty: list[date] = []
-        unsettled: list[date] = []
-        failed: list[date] = []
+        from q_backend.research.tick_sync import write_interval
 
         days = [day for day in _iter_weekdays(start_day, end_day) if day < today]
+        report = TickSyncReport(stored=[], already_present=[], empty=[], unsettled=[], failed=[])
+        intervals: list[list[date]] = []
+        run: list[date] = []
+        for day in days:
+            if self.has_session(day):
+                report.already_present.append(day)
+                if run:
+                    intervals.append(run)
+                    run = []
+            else:
+                run.append(day)
+        if run:
+            intervals.append(run)
+
         with tick_sync_progress(progress, self._symbol) as reporter:
             reporter.start(len(days))
-            for done, day in enumerate(days, start=1):
-                path = self._day_path(day)
-                if path.is_file():
-                    already_present.append(day)
-                    reporter.advance(done, day, "already present")
-                    continue
-                day_start, day_end = _day_bounds(day)
-                try:
-                    first = client.get_ticks_columnar(
-                        self._symbol,
-                        day_start,
-                        day_end,
-                        flags=COPY_TICKS_ALL,
-                        use_cache=False,
-                    )
-                    second = client.get_ticks_columnar(
-                        self._symbol,
-                        day_start,
-                        day_end,
-                        flags=COPY_TICKS_ALL,
-                        use_cache=False,
-                    )
-                except Exception:  # noqa: BLE001 - per-day gateway failure must not stop sync
-                    failed.append(day)
-                    reporter.advance(done, day, "failed")
-                    continue
-                count_first = int(first["time_msc"].size)
-                count_second = int(second["time_msc"].size)
-                if count_first == 0 and count_second == 0:
-                    empty.append(day)
-                    reporter.advance(done, day, "empty")
-                    continue
-                if count_first != count_second:
-                    unsettled.append(day)
-                    reporter.advance(done, day, "unsettled")
-                    continue
-                if count_second == 0:
-                    empty.append(day)
-                    reporter.advance(done, day, "empty")
-                    continue
-                _write_day_atomic(path, second)
-                stored.append(day)
-                reporter.advance(done, day, f"stored {count_second:,} ticks")
-            reporter.finish()
+            done = 0
+            for day in report.already_present:
+                done += 1
+                reporter.advance(done, day, "already present")
+            if not intervals:
+                reporter.finish()
+                return report
+            resolved_url = resolve_gateway_url(gateway_url)
+            if not resolved_url:
+                raise ValueError("MT5 gateway URL is not configured. Set Q_MT5_GATEWAY_URL or pass gateway_url=.")
+            client = RemoteMt5Client(base_url=resolved_url, token=resolve_gateway_token(gateway_token))
 
-        return TickSyncReport(
-            stored=stored,
-            already_present=already_present,
-            empty=empty,
-            unsettled=unsettled,
-            failed=failed,
-        )
+            def completed(day: date, rows: int) -> None:
+                nonlocal done
+                (report.stored if rows else report.empty).append(day)
+                done += 1
+                reporter.advance(done, day, f"stored {rows:,} ticks" if rows else "empty")
+
+            def received(page) -> None:
+                times = page.columns["time_msc"]
+                report.ticks_received += len(times)
+                if len(times):
+                    if report.first_msc is None:
+                        report.first_msc = int(times[0])
+                    report.last_msc = int(times[-1])
+                reporter.received(report.ticks_received)
+
+            for interval in intervals:
+                reporter.waiting(interval[0], interval[-1])
+                try:
+                    remaining = write_interval(client, self._symbol, interval, self._day_path, completed, received)
+                    if remaining:
+                        raise ConnectionError("Tick stream ended before the requested interval was scanned.")
+                except TickPagingUnsupportedError:
+                    raise
+                except Exception as exc:  # noqa: BLE001 - preserve completed days and continue independent intervals
+                    for day in interval:
+                        if day in report.stored or day in report.empty:
+                            continue
+                        report.failed.append(day)
+                        report.errors[day] = str(exc)
+                        done += 1
+                        reporter.advance(done, day, f"failed: {exc}")
+            reporter.finish()
+        return report
 
     def _resolve_read_bounds(
         self,

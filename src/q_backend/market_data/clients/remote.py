@@ -45,6 +45,8 @@ from q_backend.market_data.clients.shared import (
     OhlcvAvailableRange,
     TRADE_COLUMNS,
     TradeRange,
+    TickPage,
+    TickPagingUnsupportedError,
     _RECENT_TICKS_WINDOWS,
     _empty_ticks_columnar,
 )
@@ -341,6 +343,60 @@ class RemoteMt5Client:
         return result
 
     # -- trades ---------------------------------------------------------------
+
+    def get_tick_page(self, symbol: str, start_msc: int, end_msc: int, *, limit: int = 250_000) -> TickPage:
+        """Read a bounded, lossless cursor page without the whole-range disk cache."""
+        try:
+            content = self._get_npz(
+                "/v1/ticks/page",
+                {
+                    "symbol": symbol,
+                    "start_msc": start_msc,
+                    "end_msc": end_msc,
+                    "limit": limit,
+                },
+            )
+        except _GatewayNotFound as exc:
+            if exc.code == "symbol_not_found":
+                raise ConnectionError(str(exc)) from exc
+            raise TickPagingUnsupportedError(
+                "The MT5 gateway does not support tick paging. Update and restart mt5-gateway.service."
+            ) from exc
+        try:
+            with np.load(io.BytesIO(content), allow_pickle=False) as archive:
+                columns = _npz_to_columnar(archive)
+                meta = json.loads(str(archive["metadata"]))
+            times = columns["time_msc"]
+            count = len(times)
+            cursor = meta["next_cursor_msc"]
+            exhausted = meta["exhausted"]
+            valid = (
+                times.ndim == 1
+                and count < 1_000_000
+                and all(array.ndim == 1 and len(array) == count for array in columns.values())
+                and type(meta["row_count"]) is int
+                and meta["row_count"] == count
+                and type(exhausted) is bool
+                and np.all(times[1:] >= times[:-1])
+                and (not count or (times[0] >= start_msc and times[-1] < end_msc))
+                and meta["first_msc"] == (int(times[0]) if count else None)
+                and meta["last_msc"] == (int(times[-1]) if count else None)
+                and (
+                    (exhausted and cursor is None)
+                    or (
+                        not exhausted
+                        and count > 0
+                        and type(cursor) is int
+                        and max(start_msc, int(times[-1])) < cursor < end_msc
+                    )
+                )
+            )
+            if not valid:
+                raise ValueError("inconsistent columns or cursor metadata")
+        except (ValueError, KeyError, TypeError, IndexError, OSError) as exc:
+            raise ConnectionError(f"Invalid tick page from MT5 gateway: {exc}") from exc
+        return TickPage(columns, cursor, exhausted)
+
     def get_trades(self, symbol: str, start_utc: datetime, end_utc: datetime) -> TradeRange:
         """Eligible trades in the half-open UTC range ``[start_utc, end_utc)``.
 
@@ -420,6 +476,7 @@ class RemoteMt5Client:
                     "/v1/ohlcv",
                     "/v1/ohlcv/recent",
                     "/v1/ticks",
+                    "/v1/ticks/page",
                     "/v1/available_range",
                 }
                 else self._timeout

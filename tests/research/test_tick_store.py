@@ -11,6 +11,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from q_backend.market_data.timezone import BRASILIA_TZ
+from q_backend.market_data.clients.shared import TickPage
 from q_backend.research import NoMarketDataError, TickStore, load_ticks, resample_ticks
 from q_backend.research.tick_store import TickSyncReport, _slug_symbol, _write_day_atomic
 
@@ -46,22 +47,21 @@ class ScriptedGateway:
         self.calls: list[date] = []
         self._call_index: dict[date, int] = {}
 
-    def get_ticks_columnar(
-        self, symbol: str, start: datetime, end: datetime, **kwargs: object
-    ) -> dict[str, np.ndarray]:
-        day = start.date()
-        self.calls.append(day)
-        entry = self.script[day]
-        idx = self._call_index.get(day, 0)
-        self._call_index[day] = idx + 1
-        if idx >= len(entry):
-            return _columnar_for_day(day, [])
-        value = entry[idx]
-        if isinstance(value, Exception):
-            raise value
-        count = value
-        rows = [(i, 100.0 + i, 32) for i in range(count)]
-        return _columnar_for_day(day, rows)
+    def get_tick_page(self, symbol, start, end, **kwargs):
+        chunks = []
+        for day in sorted(self.script):
+            epoch = _ms_at(day, 0, 0)
+            if not start <= epoch < end:
+                continue
+            self.calls.append(day)
+            idx = self._call_index.get(day, 0)
+            self._call_index[day] = idx + 1
+            value = self.script[day][idx]
+            if isinstance(value, Exception):
+                raise value
+            chunks.append(_columnar_for_day(day, [(i, 100.0 + i, 32) for i in range(value)]))
+        columns = {key: np.concatenate([chunk[key] for chunk in chunks]) for key in chunks[0]}
+        return TickPage(columns, None, True)
 
 
 @patch("q_backend.research.tick_store._exchange_now", return_value=_frozen_now())
@@ -89,35 +89,35 @@ def test_sync_stores_weekdays_and_reports_states(
         }
     )
     client_cls.return_value.is_supported.return_value = True
-    client_cls.return_value.get_ticks_columnar.side_effect = gateway.get_ticks_columnar
+    client_cls.return_value.get_tick_page.side_effect = gateway.get_tick_page
 
     store = TickStore("WDO$N", root=tmp_path)
     report = store.sync(start="2026-10-05", end="2026-10-08")
 
-    assert report.stored == [mon]
+    assert report.stored == [mon, wed]
     assert report.already_present == []
     assert report.empty == [tue]
-    assert report.unsettled == [wed]
+    assert report.unsettled == []
     assert report.failed == []
     assert thu not in gateway.calls
     slug = _slug_symbol("WDO$N")
     assert (tmp_path / slug / "2026-10-05.parquet").is_file()
     assert not (tmp_path / slug / "2026-10-06.parquet").exists()
-    assert not (tmp_path / slug / "2026-10-07.parquet").exists()
+    assert (tmp_path / slug / "2026-10-07.parquet").exists()
 
     calls_before = len(gateway.calls)
     report2 = store.sync(start="2026-10-05", end="2026-10-07")
-    assert report2.already_present == [mon]
+    assert report2.already_present == [mon, wed]
     assert report2.stored == []
     assert report2.empty == [tue]
-    assert report2.unsettled == [wed]
-    assert len(gateway.calls) == calls_before + 4
+    assert report2.unsettled == []
+    assert len(gateway.calls) == calls_before + 1
 
 
 @patch("q_backend.research.tick_store._exchange_now", return_value=_frozen_now())
 @patch("q_backend.research.tick_store.RemoteMt5Client")
 @patch("q_backend.research.tick_store.resolve_gateway_url", return_value="http://gw.test")
-def test_sync_reports_failed_day_and_continues(
+def test_sync_reports_failed_interval_for_retry(
     _url: object,
     client_cls: MagicMock,
     _now: object,
@@ -127,12 +127,13 @@ def test_sync_reports_failed_day_and_continues(
     tue = date(2026, 10, 6)
     gateway = ScriptedGateway({mon: [ConnectionError("down")], tue: [1, 1]})
     client_cls.return_value.is_supported.return_value = True
-    client_cls.return_value.get_ticks_columnar.side_effect = gateway.get_ticks_columnar
+    client_cls.return_value.get_tick_page.side_effect = gateway.get_tick_page
 
     store = TickStore("WIN$", root=tmp_path)
     report = store.sync(start="2026-10-05", end="2026-10-06")
-    assert report.failed == [mon]
-    assert report.stored == [tue]
+    assert report.failed == [mon, tue]
+    assert report.stored == []
+    assert "down" in report.errors[mon]
 
 
 @patch("q_backend.research.tick_store._exchange_now", return_value=_frozen_now())
@@ -150,7 +151,7 @@ def test_sync_reports_progress_for_each_weekday_considered(
     tue = date(2026, 10, 6)
     gateway = ScriptedGateway({mon: [2, 2], tue: [0, 0]})
     client_cls.return_value.is_supported.return_value = True
-    client_cls.return_value.get_ticks_columnar.side_effect = gateway.get_ticks_columnar
+    client_cls.return_value.get_tick_page.side_effect = gateway.get_tick_page
     reporter = progress_factory.return_value.__enter__.return_value
 
     store = TickStore("WIN$", root=tmp_path)
