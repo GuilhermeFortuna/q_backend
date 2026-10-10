@@ -145,7 +145,6 @@ _MAX_TICKS = 50_000_000
 _TICK_RANGE_FETCH_DAYS = 7
 # A /v1/trades response above this many eligible rows is reported as truncated, never cut.
 _MAX_TRADE_ROWS = 500_000
-_HISTORY_ANCHOR = datetime(1990, 1, 1)
 
 # Worker lanes (see "Process model"). A lane runs one native call at a time.
 _CHART_LANE = "chart"
@@ -777,16 +776,15 @@ class GatewayApp:
             if not mt5.symbol_select(symbol, True):
                 raise GatewayError(404, "symbol_not_found", f"Symbol '{symbol}' is not selectable.")
 
-            _require_history(symbol, mt5_timeframe, timeframe, datetime.now() + timedelta(days=1))
-            earliest = _probe_earliest_bar(symbol, mt5_timeframe)
             latest = _probe_latest_bar(symbol, mt5_timeframe)
-            if earliest is None or latest is None:
+            if latest is None:
+                _require_history(symbol, mt5_timeframe, timeframe, datetime.now() + timedelta(days=1))
                 raise GatewayError(
                     404,
                     "range_unavailable",
                     f"No OHLCV history available for '{symbol}' {timeframe}.",
                 )
-            bar_count = _count_bars_between(symbol, mt5_timeframe, earliest, latest)
+            earliest, bar_count = _scan_history_backward(symbol, mt5_timeframe, latest)
 
         return {
             "symbol": symbol,
@@ -1080,51 +1078,39 @@ def _probe_latest_bar(symbol: str, mt5_timeframe: int) -> datetime | None:
     return _epoch_to_naive(int(rates[0]["time"]))
 
 
-def _probe_earliest_bar(symbol: str, mt5_timeframe: int) -> datetime | None:
-    rates = mt5.copy_rates_from(symbol, mt5_timeframe, _HISTORY_ANCHOR, 1)
-    if rates is not None and len(rates) > 0:
-        return _epoch_to_naive(int(rates[0]["time"]))
+# Scanned history per (symbol, timeframe): (earliest bar, newest bar, bar count).
+_scanned_ranges: dict[tuple[str, int], tuple[datetime, datetime, int]] = {}
 
-    earliest: datetime | None = None
-    cursor = _HISTORY_ANCHOR
-    now = datetime.now()
-    chunk_days = _get_chunk_days(mt5_timeframe)
 
-    while cursor < now:
-        chunk_end = min(cursor + timedelta(days=chunk_days), now)
-        if chunk_end <= cursor:
-            chunk_end = now
+def _scan_history_backward(symbol: str, mt5_timeframe: int, latest: datetime) -> tuple[datetime, int]:
+    """Earliest bar and bar count, walking back from the newest bar.
 
-        rates = mt5.copy_rates_range(symbol, mt5_timeframe, cursor, chunk_end)
-        if rates is not None and len(rates) > 0:
-            chunk_earliest = _epoch_to_naive(int(rates[0]["time"]))
-            earliest = chunk_earliest if earliest is None else min(earliest, chunk_earliest)
+    A request that reaches past the history the terminal holds waits on a broker
+    download before it fails, so the walk stops at the first empty window and the
+    result is kept: later calls only count the bars added since.
+    """
+    key = (symbol, mt5_timeframe)
+    known = _scanned_ranges.get(key)
+    if known is not None:
+        earliest, scanned_to, total = known
+        if latest > scanned_to:
+            rates = mt5.copy_rates_range(symbol, mt5_timeframe, scanned_to + timedelta(seconds=1), latest)
+            total += 0 if rates is None else len(rates)
+        _scanned_ranges[key] = (earliest, latest, total)
+        return earliest, total
 
-        if chunk_end >= now:
+    window = timedelta(days=_get_chunk_days(mt5_timeframe))
+    earliest, total, end = latest, 0, latest
+    for _ in range(_MAX_HISTORY_CHUNKS):
+        rates = mt5.copy_rates_range(symbol, mt5_timeframe, end - window, end)
+        if rates is None or len(rates) == 0:
             break
-        cursor = chunk_end + timedelta(seconds=1)
-
-    return earliest
-
-
-def _count_bars_between(symbol: str, mt5_timeframe: int, start: datetime, end: datetime) -> int:
-    total = 0
-    cursor = start
-    chunk_days = _get_chunk_days(mt5_timeframe)
-
-    while cursor <= end:
-        chunk_end = min(cursor + timedelta(days=chunk_days), end)
-        rates = mt5.copy_rates_range(symbol, mt5_timeframe, cursor, chunk_end)
-        if rates is not None and len(rates) > 0:
-            total += len(rates)
-            cursor = _epoch_to_naive(int(rates[-1]["time"])) + timedelta(seconds=1)
-        else:
-            cursor = chunk_end + timedelta(seconds=1)
-
-        if cursor > end:
-            break
-
-    return total
+        total += len(rates)
+        earliest = _epoch_to_naive(int(rates[0]["time"]))
+        end = earliest - timedelta(seconds=1)
+    total = max(total, 1)
+    _scanned_ranges[key] = (earliest, latest, total)
+    return earliest, total
 
 
 class _GatewayHandler(BaseHTTPRequestHandler):

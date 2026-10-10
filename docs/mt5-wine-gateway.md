@@ -36,6 +36,11 @@ next request starts a new one, so an abandoned call never holds a lane until its
 `ohlcv` and `available_range` first ask MT5 for a single bar at or before the range end. When there is none,
 `last_error()` decides the answer before any range walk starts: "no history" returns
 `404 range_unavailable`; any other failure returns `503 history_unavailable`.
+
+`available_range` walks back from the newest bar and stops at the first empty window,
+because a request that reaches past the history the terminal holds waits on a broker
+download (about 16 seconds) before failing. The scanned range is kept per symbol and
+timeframe for the life of the worker, so only the first call pays that wait.
 `RemoteMt5Client(history_timeout=...)` overrides the history read timeout.
 Restart the gateway after updating its code (`./dev restart gateway` from the workspace
 root). `/v1/health` asks
