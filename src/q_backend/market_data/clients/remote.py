@@ -89,11 +89,13 @@ class RemoteMt5Client:
         health_timeout: float = 1.0,
         health_cache_seconds: float = 30.0,
         health_failure_cache_seconds: float = 2.0,
+        history_timeout: float = 660.0,
     ):
         resolved_url = base_url if base_url is not None else get_remote_gateway_url()
         self._base_url = resolved_url.rstrip("/") if resolved_url else None
         self._token = token if token is not None else get_remote_gateway_token()
         self._timeout = timeout
+        self._history_timeout = history_timeout
         self._health_timeout = health_timeout
         self._health_cache_seconds = health_cache_seconds
         # A missed probe is retried soon, so one slow answer does not hide the gateway.
@@ -411,9 +413,20 @@ class RemoteMt5Client:
         if not self._base_url:
             raise ConnectionError("No remote MT5 gateway URL is configured.")
         try:
+            read_timeout = (
+                self._history_timeout
+                if path
+                in {
+                    "/v1/ohlcv",
+                    "/v1/ohlcv/recent",
+                    "/v1/ticks",
+                    "/v1/available_range",
+                }
+                else self._timeout
+            )
             with httpx.Client(
                 base_url=self._base_url,
-                timeout=self._timeout,
+                timeout=httpx.Timeout(read_timeout, connect=min(5.0, self._timeout)),
                 headers=self._headers(),
             ) as client:
                 resp = client.get(path, params=params)

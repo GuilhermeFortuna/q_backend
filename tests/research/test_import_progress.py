@@ -1,0 +1,34 @@
+"""Tick import display lifecycle and terminal defaults."""
+
+import io
+from datetime import datetime
+
+import pytest
+from rich.console import Console
+
+from q_backend.research.progress import tick_import_progress
+
+
+def test_tick_import_display_reports_rows_and_elapsed_time():
+    output = io.StringIO()
+    console = Console(file=output, force_terminal=False, width=160)
+    with tick_import_progress(True, "WDO$", console=console) as reporter:
+        reporter.start(2)
+        reporter.waiting(datetime(2026, 6, 2), datetime(2026, 6, 2, 23, 59))
+        reporter.advance(1, 1234)
+        reporter.advance(2, 2345)
+        reporter.processing()
+        reporter.finish(2345)
+    assert "WDO$ ticks: 2,345 ticks imported in" in output.getvalue()
+    assert not reporter._progress.live.is_started
+
+
+def test_tick_import_is_quiet_when_redirected_and_stops_on_error():
+    output = io.StringIO()
+    console = Console(file=output, force_terminal=False)
+    with pytest.raises(ConnectionError), tick_import_progress(None, "WDO$", console=console) as reporter:
+        reporter.start(2)
+        raise ConnectionError("gateway unavailable")
+    assert output.getvalue() == ""
+    assert not reporter._progress.live.is_started
+    assert reporter._progress.tasks[0].fields["status"] == "failed; import incomplete"

@@ -1,8 +1,9 @@
-"""Terminal progress for research backtests."""
+"""Terminal progress for research backtests and tick imports."""
 
 from __future__ import annotations
 
 import time
+from datetime import datetime
 from types import TracebackType
 
 import pandas as pd
@@ -131,3 +132,69 @@ def backtest_progress(enabled: bool | None, label: str, *, console: Console | No
     if enabled is None and not target.is_terminal:
         return BacktestProgress()
     return RichBacktestProgress(label, target)
+
+
+class TickImportProgress:
+    """Daily download progress; Rich keeps elapsed time live during blocking HTTP calls."""
+
+    def __init__(self, label: str, console: Console, *, enabled: bool) -> None:
+        self._console = console
+        self._enabled = enabled
+        self._label = f"{label} ticks"
+        self._progress = Progress(
+            SpinnerColumn(),
+            TextColumn("{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TextColumn("{task.fields[status]}"),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            console=console,
+            disable=not enabled,
+        )
+        self._task: TaskID | None = None
+        self._started = time.perf_counter()
+        self._rows = 0
+
+    def __enter__(self) -> TickImportProgress:
+        self._progress.start()
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        if exc_type is not None and self._task is not None:
+            self._progress.update(self._task, status="failed; import incomplete")
+        self._progress.stop()
+
+    def start(self, total: int) -> None:
+        self._started = time.perf_counter()
+        self._task = self._progress.add_task(self._label, total=total, status="waiting for MT5")
+
+    def waiting(self, start: datetime, end: datetime) -> None:
+        if self._task is not None:
+            self._progress.update(
+                self._task,
+                status=f"{self._rows:,} ticks · {start:%Y-%m-%d %H:%M}–{end:%H:%M} · waiting for MT5",
+            )
+
+    def advance(self, done: int, rows: int) -> None:
+        self._rows = rows
+        if self._task is not None:
+            self._progress.update(self._task, completed=done, status=f"{rows:,} ticks received")
+
+    def processing(self) -> None:
+        if self._task is not None:
+            self._progress.update(self._task, status=f"{self._rows:,} ticks · building DataFrame")
+
+    def finish(self, rows: int) -> None:
+        if self._task is not None:
+            self._progress.update(self._task, status="complete")
+        self._progress.stop()
+        if self._enabled:
+            self._console.print(f"{self._label}: {rows:,} ticks imported in {time.perf_counter() - self._started:.1f}s")
+
+
+def tick_import_progress(enabled: bool | None, label: str, *, console: Console | None = None) -> TickImportProgress:
+    """Show elapsed time and a chunk-based ETA; default to visibility only on a terminal."""
+    target = console if console is not None else Console(stderr=True)
+    visible = target.is_terminal if enabled is None else enabled
+    return TickImportProgress(label, target, enabled=visible)

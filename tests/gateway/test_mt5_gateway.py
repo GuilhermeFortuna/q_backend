@@ -8,6 +8,7 @@ import multiprocessing
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -24,6 +25,20 @@ _RATE_DTYPE = [
     ("spread", "i4"),
     ("real_volume", "i8"),
 ]
+
+
+def test_history_worker_waits_for_initial_sync_without_extending_trade_calls(gateway):
+    process, connection = MagicMock(), MagicMock()
+    connection.recv.return_value = (200, "", b"result")
+    worker = gateway.Mt5Worker("chart", 0, spawn=lambda: (process, connection))
+    try:
+        assert worker.call("ohlcv", "WDO$", "M10", datetime(2026, 6, 2), datetime(2026, 6, 3)) == b"result"
+        connection.poll.assert_called_with(600.0)
+        worker.call("trades")
+        connection.poll.assert_called_with(120.0)
+    finally:
+        worker.close()
+
 
 _TICK_DTYPE = [
     ("time", "i8"),

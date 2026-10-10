@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import warnings
-from datetime import datetime
+from datetime import datetime, timedelta
 from numbers import Real
 
 import pandas as pd
@@ -27,6 +27,7 @@ from q_backend.research.frame import (
     validate_bars_frame,
 )
 from q_backend.research.providers import resolve_gateway_token, resolve_gateway_url
+from q_backend.research.progress import tick_import_progress
 
 MT5_SOURCE = "mt5"
 OFF_TICK_WARN_THRESHOLD = 0.01
@@ -265,6 +266,7 @@ def load_ticks(
     flags: int | None = None,
     gateway_url: str | None = None,
     gateway_token: str | None = None,
+    progress: bool | None = None,
 ) -> pd.DataFrame:
     """
     Fetch fresh MT5 ticks indexed by Brasília time with human-readable flag strings.
@@ -283,6 +285,9 @@ def load_ticks(
     flags : int, optional
         Numeric MT5 tick category mask to fetch (e.g., ``COPY_TICKS_ALL``). Defaults
         to all available tick events.
+    progress : bool, optional
+        Show daily-chunk progress, ticks received, elapsed time and estimated
+        remaining download time on stderr. Defaults to showing it on a terminal.
     gateway_url : str, optional
         Override for ``Q_MT5_GATEWAY_URL`` for this call only.
     gateway_token : str, optional
@@ -324,23 +329,49 @@ def load_ticks(
     if not client.is_supported():
         raise ValueError("MT5 gateway URL is not configured. Set Q_MT5_GATEWAY_URL or pass gateway_url=.")
 
-    ticks = client.get_ticks_columnar(
-        sym,
-        start_naive,
-        end_naive,
-        flags=COPY_TICKS_ALL if flags is None else flags,
-        use_cache=False,
-    )
-    frame = _ticks_frame_from_columnar(ticks)
-    frame = filter_index_range(frame, start_ts, end_ts)
-    if frame.empty:
-        raise NoMarketDataError(
-            symbol=sym,
-            timeframe="ticks",
-            source=MT5_SOURCE,
-            start=start_ts.isoformat(),
-            end=end_ts.isoformat(),
+    if progress is not None and not isinstance(progress, bool):
+        raise TypeError("progress must be a bool or None")
+    # Inclusive millisecond bounds avoid overlap without dropping same-ms events.
+    windows = []
+    cursor = start_naive
+    while cursor <= end_naive:
+        midnight = cursor.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        chunk_end = min(end_naive, max(cursor, midnight - timedelta(milliseconds=1)))
+        windows.append((cursor, chunk_end))
+        cursor = midnight
+
+    with tick_import_progress(progress, sym) as reporter:
+        reporter.start(len(windows))
+        chunks = []
+        count = 0
+        for done, (chunk_start, chunk_end) in enumerate(windows, start=1):
+            reporter.waiting(chunk_start, chunk_end)
+            chunk = client.get_ticks_columnar(
+                sym,
+                chunk_start,
+                chunk_end,
+                flags=COPY_TICKS_ALL if flags is None else flags,
+                use_cache=False,
+            )
+            chunks.append(chunk)
+            count += len(chunk["time_msc"])
+            reporter.advance(done, count)
+        reporter.processing()
+        ticks = (
+            chunks[0]
+            if len(chunks) == 1
+            else {key: np.concatenate([chunk[key] for chunk in chunks]) for key in chunks[0]}
         )
+        frame = filter_index_range(_ticks_frame_from_columnar(ticks), start_ts, end_ts)
+        if frame.empty:
+            raise NoMarketDataError(
+                symbol=sym,
+                timeframe="ticks",
+                source=MT5_SOURCE,
+                start=start_ts.isoformat(),
+                end=end_ts.isoformat(),
+            )
+        reporter.finish(len(frame))
     frame.attrs["q_research"] = {
         "symbol": sym,
         "timeframe": "ticks",

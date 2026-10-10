@@ -35,6 +35,51 @@ def _tick_arrays(times: list[int], lasts: list[float]) -> dict[str, np.ndarray]:
     }
 
 
+def test_tick_import_chunks_preserve_boundary_rows_and_report_progress():
+    epoch = lambda dt: int(dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
+    boundary = datetime(2026, 6, 3)
+    client = MagicMock()
+    client.get_ticks_columnar.side_effect = [
+        _tick_arrays([epoch(boundary) - 1], [100.0]),
+        _tick_arrays([epoch(boundary), epoch(boundary)], [101.0, 102.0]),
+    ]
+    reporter = MagicMock()
+    reporter.__enter__.return_value = reporter
+    with (
+        patch("q_backend.research.data.RemoteMt5Client", return_value=client),
+        patch("q_backend.research.data.resolve_gateway_url", return_value="http://gw.test"),
+        patch("q_backend.research.data.resolve_gateway_token", return_value=None),
+        patch("q_backend.research.data.tick_import_progress", return_value=reporter),
+    ):
+        frame = load_ticks("WDO$", start="2026-06-02T12:00", end="2026-06-03T12:00", progress=True)
+    assert frame["last"].tolist() == [100.0, 101.0, 102.0]
+    calls = client.get_ticks_columnar.call_args_list
+    assert len(calls) == 2
+    assert calls[0].args[2] == boundary - timedelta(milliseconds=1)
+    assert calls[1].args[1] == boundary
+    reporter.start.assert_called_once_with(2)
+    assert reporter.advance.call_args_list[0].args == (1, 1)
+    assert reporter.advance.call_args_list[1].args == (2, 3)
+    reporter.finish.assert_called_once_with(3)
+
+
+def test_tick_import_error_closes_progress_without_claiming_completion():
+    client = MagicMock()
+    client.get_ticks_columnar.side_effect = ConnectionError("MT5 unavailable")
+    reporter = MagicMock()
+    reporter.__enter__.return_value = reporter
+    with (
+        patch("q_backend.research.data.RemoteMt5Client", return_value=client),
+        patch("q_backend.research.data.resolve_gateway_url", return_value="http://gw.test"),
+        patch("q_backend.research.data.resolve_gateway_token", return_value=None),
+        patch("q_backend.research.data.tick_import_progress", return_value=reporter),
+        pytest.raises(ConnectionError, match="MT5 unavailable"),
+    ):
+        load_ticks("WDO$", start="2026-06-02", end="2026-06-03", progress=True)
+    reporter.finish.assert_not_called()
+    reporter.__exit__.assert_called_once()
+
+
 def test_load_ticks_returns_ordered_brasilia_frame_and_forwards_flags() -> None:
     # MT5 time_msc stores broker wall time as UTC-shaped epoch milliseconds.
     start_ms = int(datetime(2026, 6, 2, 10, 0, tzinfo=timezone.utc).timestamp() * 1000)

@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 
 import numpy as np
 import pytest
+import httpx
 
 from q_backend.market_data.clients.base import MarketDataProvider
 from q_backend.market_data.clients.metatrader import (
@@ -25,6 +26,24 @@ from q_backend.market_data.clients.metatrader import (
 )
 from q_backend.market_data.clients.remote import RemoteMt5Client
 from q_backend.market_data.timezone import unix_seconds_to_brasilia_naive
+
+
+@pytest.mark.parametrize("path", ["/v1/ohlcv", "/v1/ohlcv/recent", "/v1/ticks", "/v1/available_range"])
+def test_history_requests_allow_slow_first_sync(monkeypatch, path):
+    observed = []
+
+    def handler(request):
+        observed.append(request.extensions["timeout"])
+        return httpx.Response(200, content=b"ok")
+
+    original = httpx.Client
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: original(**kwargs, transport=httpx.MockTransport(handler)))
+    client = RemoteMt5Client(base_url="http://gateway.test")
+    client._get(path, {})
+    assert observed[0]["read"] == 660.0
+    assert observed[0]["connect"] <= 5.0
+    client._get("/v1/symbol_info", {})
+    assert observed[1]["read"] == 30.0
 
 
 def _ohlcv_npz(

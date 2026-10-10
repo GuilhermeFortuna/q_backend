@@ -149,6 +149,10 @@ _TRADES_LANE = "trades"
 _LANE_WAIT_S = {_CHART_LANE: 15.0, _TICKS_LANE: 15.0, _TRADES_LANE: 0.0}
 # MT5 may download broker history before returning; bound it even if IPC never returns.
 _NATIVE_CALL_TIMEOUT_S = 120.0
+# First-session history synchronization can take several minutes. Keep bounded
+# worker recovery, while giving history imports more time than live trade calls.
+_HISTORY_CALL_TIMEOUT_S = 600.0
+_HISTORY_METHODS = frozenset({"ohlcv", "recent_ohlcv", "ticks", "available_range"})
 
 # Mirrors MetaTraderClient.TIMEFRAME_NAMES.
 TIMEFRAME_NAMES = (
@@ -812,7 +816,7 @@ class Mt5Worker:
     next call starts a new one.
     """
 
-    def __init__(self, lane: str, wait_s: float, timeout_s: float = _NATIVE_CALL_TIMEOUT_S, spawn=None):
+    def __init__(self, lane: str, wait_s: float, timeout_s: float | None = None, spawn=None):
         self._lane = lane
         self._wait_s = wait_s
         self._timeout_s = timeout_s
@@ -833,7 +837,10 @@ class Mt5Worker:
                 self._stop_process()
                 self._process, self._connection = self._spawn()
             self._connection.send((method, args))
-            if not self._connection.poll(self._timeout_s):
+            timeout_s = self._timeout_s
+            if timeout_s is None:
+                timeout_s = _HISTORY_CALL_TIMEOUT_S if method in _HISTORY_METHODS else _NATIVE_CALL_TIMEOUT_S
+            if not self._connection.poll(timeout_s):
                 self._stop_process()
                 raise self._error("timeout", "timed out waiting for MetaTrader 5.")
             status, code, result = self._connection.recv()

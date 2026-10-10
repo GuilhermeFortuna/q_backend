@@ -22,8 +22,15 @@ to one of three spawned Windows Python processes, each with its own MT5 IPC conn
 | `trades` | `trades`                                                             | fail immediately         |
 
 A lane runs one native call at a time. A request that cannot enter its lane receives a
-retryable `503 <lane>_busy`. A native call that exceeds 120 seconds stops its worker and
-reports `503 <lane>_timeout`; the next request starts a new worker. `/v1/health` asks
+retryable `503 <lane>_busy`. History calls (`ohlcv`, `ohlcv/recent`, `available_range`,
+and `ticks`) allow **600 seconds** for first-session broker synchronization; other
+calls retain the 120-second limit. A call exceeding its limit stops its worker and
+reports `503 <lane>_timeout`; the next request starts a new worker. The Linux client
+allows **660 seconds** for history responses, covering the worker limit, lane queue,
+and response transfer, while connection attempts remain bounded to 5 seconds.
+`RemoteMt5Client(history_timeout=...)` overrides the history read timeout.
+Restart the gateway after updating its code (`./dev restart gateway` from the workspace
+root). `/v1/health` asks
 the `chart` lane for the connection state and returns the last known state while that
 lane is occupied, so it always answers immediately.
 

@@ -81,6 +81,19 @@ ticks = load_ticks("WIN$N", start="2026-09-01")
 minute_bars = resample_ticks(ticks, timeframe="M1")
 ```
 
+Tick imports fetch consecutive calendar-day chunks without overlapping millisecond
+boundaries. On a terminal, progress displays completed chunks, ticks received, the
+current date range, elapsed time, and estimated remaining download time. The timer
+keeps updating while MT5 synchronizes history; MT5 does not expose progress inside a
+native history call, so the estimate becomes available only after chunks complete
+and may vary with broker downloads. DataFrame construction is shown as a separate
+status. Use `progress=True` to force the display or `progress=False` to silence it.
+
+Both candle and tick history requests allow a 10-minute gateway operation and an
+11-minute client read wait, rather than timing out after 30 seconds during normal
+first-session downloads. A stalled gateway operation still fails with a bounded
+timeout.
+
 `load_ticks` returns a DataFrame indexed by timezone-aware Brasília tick time, with
 `bid`, `ask`, `last`, `volume`, and `flags` columns. Same-millisecond events remain
 separate rows in stable order. It fetches all MT5 tick events by default; pass
