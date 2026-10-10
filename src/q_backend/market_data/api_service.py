@@ -309,6 +309,8 @@ def normalize_market_timeframe(timeframe: str) -> str:
         "M30": "M30",
         "1H": "H1",
         "H1": "H1",
+        "2H": "H2",
+        "H2": "H2",
         "4H": "H4",
         "H4": "H4",
         "1D": "D1",
@@ -407,6 +409,7 @@ def fetch_ohlcv_rows(
         "M15": mt5_client_module._mt5_timeframe("M15"),
         "M30": mt5_client_module._mt5_timeframe("M30"),
         "H1": mt5_client_module._mt5_timeframe("H1"),
+        "H2": mt5_client_module._mt5_timeframe("H2"),
         "H4": mt5_client_module._mt5_timeframe("H4"),
         "D1": mt5_client_module._mt5_timeframe("D1"),
     }

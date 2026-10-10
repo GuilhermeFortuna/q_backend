@@ -149,7 +149,8 @@ def test_market_timeframe_normalizes_ten_minutes():
     assert market_service.normalize_market_timeframe("10m") == "M10"
 
 
-def test_ohlcv_uses_mt5_ten_minute_constant(market_root):
+@pytest.mark.parametrize("timeframe, mt5_constant", [("M10", 10), ("H2", 16386), ("H4", 16388)])
+def test_ohlcv_uses_requested_mt5_constant(market_root, timeframe, mt5_constant):
     mock_rates = MagicMock()
     mock_rates.__len__.return_value = 1
     mock_rates.__iter__.return_value = iter(
@@ -169,7 +170,7 @@ def test_ohlcv_uses_mt5_ten_minute_constant(market_root):
 
     mock_mt5 = MagicMock()
     mock_mt5.symbol_select.return_value = True
-    mock_mt5.TIMEFRAME_M10 = 10
+    setattr(mock_mt5, f"TIMEFRAME_{timeframe}", mt5_constant)
     mock_mt5.copy_rates_from_pos.return_value = mock_rates
 
     with patch.object(market_data_service, "mt5_available", return_value=True):
@@ -178,9 +179,9 @@ def test_ohlcv_uses_mt5_ten_minute_constant(market_root):
             return_value=True,
         ):
             with patch("q_backend.market_data.clients.metatrader.mt5", mock_mt5):
-                market_service.fetch_ohlcv_rows(market_data_service, "PETR4", "M10", count=1, start=None, end=None)
+                market_service.fetch_ohlcv_rows(market_data_service, "PETR4", timeframe, count=1, start=None, end=None)
 
-    mock_mt5.copy_rates_from_pos.assert_called_once_with("PETR4", 10, 0, 1)
+    mock_mt5.copy_rates_from_pos.assert_called_once_with("PETR4", mt5_constant, 0, 1)
 
 
 def test_ohlcv_available_range_uses_remote_client_when_source_is_remote(market_root):
@@ -282,3 +283,9 @@ def test_ohlcv_count_query_without_any_provider_is_not_found(market_root):
             market_service.fetch_ohlcv_rows(market_data_service, "CCMX26", "M5", count=500, start=None, end=None)
 
     assert excinfo.value.status_code == 404
+
+
+@pytest.mark.parametrize("hours", [2, 4])
+def test_market_timeframe_normalizes_multi_hour_bars(hours):
+    for label in (f"{hours}h", f"{hours}H", f"H{hours}"):
+        assert market_service.normalize_market_timeframe(label) == f"H{hours}"

@@ -372,3 +372,14 @@ class TestExogenousConfigValidation:
             }
         )
         assert config.exogenous_series == []
+
+
+@pytest.mark.parametrize("hours", [2, 4])
+def test_multi_hour_context_resampling(hours):
+    assert bar_duration(f"H{hours}") == pd.Timedelta(hours=hours)
+    source = _ohlcv_frame(pd.date_range("2024-01-01", periods=8, freq="1h"), list(range(8)))
+    result = resample_completed_bars(source, source_timeframe="H1", target_timeframe=f"H{hours}")
+    assert result.index.tolist() == list(
+        pd.date_range(pd.Timestamp("2024-01-01") + pd.Timedelta(hours=hours), periods=8 // hours, freq=f"{hours}h")
+    )
+    assert result["close"].tolist() == list(range(hours - 1, 8, hours))
