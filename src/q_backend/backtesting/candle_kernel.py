@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import inspect
+import re
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -32,6 +33,7 @@ REQUIRED_ENGINE_CAPABILITIES: Final = ("PROTECTIVE_ORDERS",)
 REQUIRED_RUN_CANDLE_PARAMETERS: Final = (
     "stop_price",
     "target_price",
+    "entry_price",
     "intrabar",
     "strategy_callback",
     "exit_screen_callback",
@@ -316,53 +318,82 @@ def run_chunk(
     if runtime is None:
         decided_stop = signals.stop_price
         decided_target = signals.target_price
+        decided_entry = signals.entry_price
         if decided_stop is not None:
-            level_args = {
-                "stop_price": np.ascontiguousarray(decided_stop),
-                "target_price": np.ascontiguousarray(decided_target),
-            }
+            level_args["stop_price"] = np.ascontiguousarray(decided_stop)
+            level_args["target_price"] = np.ascontiguousarray(decided_target)
+        if decided_entry is not None:
+            level_args["entry_price"] = np.ascontiguousarray(decided_entry)
     else:
         decided_stop = runtime.stop_price
         decided_target = runtime.target_price
+        decided_entry = runtime.entry_price
         level_args = {"strategy_callback": runtime.strategy}
         if runtime.screen is not None:
             level_args["exit_screen_callback"] = runtime.screen
             level_args["exit_tick_callback"] = runtime.tick
     if intrabar is not None:
         level_args["intrabar"] = intrabar
-    result = engine.run_candle(
-        time_us=np.ascontiguousarray(wall_clock_us(signals.index)),
-        open=_column(chunk, "open"),
-        high=_column(chunk, "high"),
-        low=_column(chunk, "low"),
-        close=_column(chunk, "close"),
-        entry=np.ascontiguousarray(signals.entry),
-        exit_long=np.ascontiguousarray(signals.exit_long),
-        exit_short=np.ascontiguousarray(signals.exit_short),
-        strength=np.ascontiguousarray(signals.strength),
-        bar_index=None if signals.bar_index is None else np.ascontiguousarray(signals.bar_index),
-        volatility=_column(chunk, "volatility") if sizing.needs_volatility else None,
-        tradable=tradable,
-        columns=columns,
-        initial_capital=initial_capital,
-        point_value=point_value,
-        costs=None if costs is None else (costs.cost_per_contract, costs.cost_bps),
-        sizing=sizing.mapping,
-        sizing_point_value=sizing.point_value,
-        holding_period_bars=signals.holding_period_bars,
-        exit_params=exit_params,
-        day_trade_us=day_trade_us,
-        force_close_at_end=force_close_at_end,
-        **level_args,
-    )
+    try:
+        result = engine.run_candle(
+            time_us=np.ascontiguousarray(wall_clock_us(signals.index)),
+            open=_column(chunk, "open"),
+            high=_column(chunk, "high"),
+            low=_column(chunk, "low"),
+            close=_column(chunk, "close"),
+            entry=np.ascontiguousarray(signals.entry),
+            exit_long=np.ascontiguousarray(signals.exit_long),
+            exit_short=np.ascontiguousarray(signals.exit_short),
+            strength=np.ascontiguousarray(signals.strength),
+            bar_index=None if signals.bar_index is None else np.ascontiguousarray(signals.bar_index),
+            volatility=_column(chunk, "volatility") if sizing.needs_volatility else None,
+            tradable=tradable,
+            columns=columns,
+            initial_capital=initial_capital,
+            point_value=point_value,
+            costs=None if costs is None else (costs.cost_per_contract, costs.cost_bps),
+            sizing=sizing.mapping,
+            sizing_point_value=sizing.point_value,
+            holding_period_bars=signals.holding_period_bars,
+            exit_params=exit_params,
+            day_trade_us=day_trade_us,
+            force_close_at_end=force_close_at_end,
+            **level_args,
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        match = re.search(
+            r"entry_price\[(?P<bar>\d+)\]:\s*(?P<side>\w+)\s*price\s*(?P<price>[^\s]+)\s*is outside the bar range \[(?P<low>[^,]+),\s*(?P<high>[^\]]+)\]",
+            msg,
+        )
+        if match:
+            bar_idx = int(match.group("bar"))
+            bar_time = chunk.index[bar_idx]
+            strat_name = type(getattr(strategy, "research_strategy", strategy)).__name__
+            price = match.group("price")
+            low = match.group("low")
+            high = match.group("high")
+            raise ValueError(
+                f"{strat_name} entry price {price} at bar {bar_idx} ({bar_time}) is outside the bar range [{low}, {high}]"
+            ) from exc
+        raise
     entry_bar = np.asarray(result["entry_bar"], dtype=np.int64)
-    queued = entry_bar - 1
-    queued_ok = queued >= 0
 
     def levels_of(decided: np.ndarray | None) -> np.ndarray:
         out = np.full(len(entry_bar), np.nan)
         if decided is not None:
-            out[queued_ok] = decided[queued[queued_ok]]
+            for i, b in enumerate(entry_bar):
+                is_priced = (
+                    decided_entry is not None
+                    and not np.isnan(decided_entry[b])
+                    and (
+                        decided_entry[b] == result["entry_price"][i]
+                        or np.isclose(decided_entry[b], result["entry_price"][i])
+                    )
+                )
+                decided_bar = b if is_priced else b - 1
+                if decided_bar >= 0:
+                    out[i] = decided[decided_bar]
         return out
 
     trades = {

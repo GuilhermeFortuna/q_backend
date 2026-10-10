@@ -15,6 +15,7 @@ from q_backend.backtesting.signal_columns import (
     BAR_INDEX,
     LEVEL_COLUMNS,
     SIGNAL_COLUMNS,
+    SIGNAL_ENTRY_PRICE,
     SIGNAL_STOP_PRICE,
     SIGNAL_TARGET_PRICE,
     write_signal_columns,
@@ -84,11 +85,12 @@ class _RuntimeHooks:
         self._progress = adapter.progress
         self.stop_price = np.full(len(chunk), np.nan)
         self.target_price = np.full(len(chunk), np.nan)
+        self.entry_price = np.full(len(chunk), np.nan)
         self._plan: _TickPlan | None = None
         self.screen: Callable[[int, tuple], bool] | None = self._screen if adapter._phased_exit else None
         self.tick: Callable[[int, int, int, float, tuple], bool] | None = self._tick if adapter._phased_exit else None
 
-    def strategy(self, bar: int, raw_positions: tuple) -> tuple[int, bool, bool, float, float, float]:
+    def strategy(self, bar: int, raw_positions: tuple) -> tuple[int, bool, bool, float, float, float, float]:
         adapter = self._adapter
         positions = self._positions(raw_positions)
         end = int(self._history_positions[bar]) + 1
@@ -98,14 +100,15 @@ class _RuntimeHooks:
         )
         entry_decision = adapter._invoke_hook("entry_strategy", _owned_prefix(adapter._decision_frame, end), positions)
         entry = 0 if entry_decision is None else (1 if entry_decision.action == "buy" else -1)
-        stop = target = np.nan
+        stop = target = price = np.nan
         if entry_decision is not None and entry_decision.action in ("buy", "sell"):
-            stop, target = adapter._levels_of(entry_decision, self._chunk.index[bar])
+            stop, target, price = adapter._levels_of(entry_decision, self._chunk.index[bar])
             self.stop_price[bar] = stop
             self.target_price[bar] = target
+            self.entry_price[bar] = price
         exit_flag = exit_decision is not None
         self._progress.bar(bar + 1, self._chunk.index[bar], _position_label(positions))
-        return entry, exit_flag, exit_flag, 1.0 if entry else 0.0, stop, target
+        return entry, exit_flag, exit_flag, 1.0 if entry else 0.0, stop, target, price
 
     def _screen(self, bar: int, raw_positions: tuple) -> bool:
         adapter = self._adapter
@@ -339,6 +342,7 @@ class ResearchStrategyAdapter(TradingStrategy):
 
         stop_price = np.full(orig_len, np.nan)
         target_price = np.full(orig_len, np.nan)
+        entry_price = np.full(orig_len, np.nan)
         self.progress.start(orig_len)
         for i in range(orig_len):
             timestamp = augmented.index[i]
@@ -392,7 +396,7 @@ class ResearchStrategyAdapter(TradingStrategy):
                         f"{type(self.research_strategy).__name__}.entry_strategy at bar {timestamp} "
                         f"returned illegal action {entry_decision.action!r}; only 'buy' or 'sell' is permitted"
                     )
-                stop_price[i], target_price[i] = self._levels_of(entry_decision, timestamp)
+                stop_price[i], target_price[i], entry_price[i] = self._levels_of(entry_decision, timestamp)
             self.progress.bar(i + 1, timestamp)
 
         # Write signal columns onto augmented frame
@@ -407,18 +411,21 @@ class ResearchStrategyAdapter(TradingStrategy):
         if not (np.isnan(stop_price).all() and np.isnan(target_price).all()):
             result_df[SIGNAL_STOP_PRICE] = stop_price
             result_df[SIGNAL_TARGET_PRICE] = target_price
+        if not np.isnan(entry_price).all():
+            result_df[SIGNAL_ENTRY_PRICE] = entry_price
         return result_df
 
-    def _levels_of(self, decision: TradeOrder, timestamp: pd.Timestamp) -> tuple[float, float]:
-        """Entry levels as floats, NaN where unset; they need ticks to be confirmed intrabar."""
+    def _levels_of(self, decision: TradeOrder, timestamp: pd.Timestamp) -> tuple[float, float, float]:
+        """Entry levels and price as floats, NaN where unset; stop/target need ticks to be confirmed intrabar."""
         stop = np.nan if decision.stop_loss is None else float(decision.stop_loss)
         target = np.nan if decision.take_profit is None else float(decision.take_profit)
+        price = np.nan if decision.price is None else float(decision.price)
         if (decision.stop_loss is not None or decision.take_profit is not None) and not self._ticks_available:
             raise ValueError(
                 f"{type(self.research_strategy).__name__} entry at bar {timestamp} carries stop or take-profit "
                 "levels, which are confirmed from ticks; pass ticks= to backtest()"
             )
-        return stop, target
+        return stop, target, price
 
     def runtime_callback(
         self,

@@ -305,7 +305,7 @@ class RSIReversion(ResearchStrategy):
 
 #### Entry levels and phase-aware exits
 
-- `TradeOrder.buy(*, stop_loss=None, take_profit=None)` and `TradeOrder.sell(...)` attach price levels fixed at entry. A buy's stop lies below its target and a sell's above it; levels must be finite and positive. `TradeOrder.close()` takes no levels. Invalid levels raise `ValueError` when the order is built.
+- `TradeOrder.buy(*, stop_loss=None, take_profit=None, price=None)` and `TradeOrder.sell(...)` attach price levels fixed at entry or a same-bar fill price. A buy's stop lies below its target and a sell's above it; when `price` is set, `stop_loss < price < take_profit` for a buy and `stop_loss > price > take_profit` for a sell; levels and prices must be finite and positive. `TradeOrder.close()` takes no levels or price. Invalid values raise `ValueError` when the order is built.
 - An exit that declares `phase` is called three times per candle with open positions:
   - `phase="screen"` on the whole candle after queued fills. Return `TradeOrder.close()` to ask for the candle's ticks, not to exit. Screen with the candle's full high and low so that a crossing that reverses before the close still qualifies. Flat candles are never screened.
   - `phase="tick"` for the trade prices of a screened candle, in stored order. The frame ends with the candle observed so far: its `open` is the first trade price, `high` and `low` the extremes so far, `close` the current price and `tick_volume` the count of prices. Other columns of that row are `NaN`, and the indicators are recomputed on the raw history with that row, so they never see the completed candle. Returning `TradeOrder.close()` exits at that tick's trade price.
@@ -519,10 +519,32 @@ run_id = result.publish()
 
 ## Execution model
 
-- Strategy hooks see completed bars only. An entry or close decided on a bar fills at the next bar's open.
+- Strategy hooks see completed bars only. An unpriced entry or close decided on a bar fills at the next bar's open; a priced entry fills on the deciding bar (see [Priced entry orders](#priced-entry-orders)).
 - Exit rules follow the catalog text from Q-094: price-level rules evaluate each completed bar against its high or low, while time stops count completed bars. Triggered exits close at the next bar's open, so the exit price can differ from the level. A rule can trigger on the entry bar. Exit parameter values must match the registry's types and bounds; nonfinite values are rejected.
 - One position per symbol under fixed-quantity sizing: repeated entry requests do not stack, and an opposite entry request is skipped while the position cap is full. Returning a close and an opposite entry on the same bar reverses at the next open.
 - Entries with levels fill at the next bar's open. A level already on the wrong side of that fill (a long stop at or above it, a long target at or below it, or the reverse for a short) rejects the entry, which is reported in `rejected_entries`.
+
+#### Priced entry orders
+
+- `TradeOrder.buy(price=...)` and `TradeOrder.sell(price=...)` accept a keyword-only `price`, an optional finite positive number. `TradeOrder.close()` takes none.
+- When `stop_loss` or `take_profit` is set, a buy requires `stop_loss < price < take_profit` and a sell `stop_loss > price > take_profit`. Construction raises `ValueError` otherwise.
+- An order without `price` fills at the next bar's open as before.
+- A priced order fills on the bar whose frame ended with the decision, at exactly `price`, charged the configured per-side cost.
+- No order type is declared. The kernel fills at `price` when `low <= price <= high` of that bar, whether the level lies above the open (breakout) or below it (pullback). A priced entry fills on its deciding bar, so it is never queued for the next one.
+- A price outside the bar's range raises `ValueError` naming the strategy, the bar, the price and the bar's range `[low, high]`. The backtest does not continue.
+- A priced order with `stop_loss` or `take_profit` resolves them from ticks that trade after the touch and therefore needs `ticks=`. A priced order without levels needs no ticks.
+- A rejected entry (levels on the wrong side of the price) is reported in `rejected_entries`.
+- **Research only:** This fill model is for research only. Deployed strategies and the live forward evaluator decide on completed bars and do not reproduce same-bar fills.
+- **Causality caveat:** The hook sees the whole bar. A condition on the bar's close or low combined with a priced fill can use information that was not yet known at the fill time. The kernel checks that the price lies in the bar's range; it cannot check the strategy's causality.
+  The example below shows a causal pattern, checking that the bar traded through the previous high:
+
+```python
+class PreviousHighBreakout(ResearchStrategy):
+    def entry_strategy(self, frame):
+        if len(frame) >= 2 and frame["high"].iloc[-1] > frame["high"].iloc[-2]:
+            return TradeOrder.buy(price=frame["high"].iloc[-2])
+        return None
+```
 
 #### Stop and target orders
 

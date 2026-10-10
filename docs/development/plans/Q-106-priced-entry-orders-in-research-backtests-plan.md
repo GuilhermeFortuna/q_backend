@@ -21,12 +21,12 @@
 
 ## Ordered implementation
 
-- [ ] 1. Add failing tests in `tests/research/` for spec criteria 1 to 6.
-- [ ] 2. `research/orders.py`: `price` field, validation, `buy`/`sell` factories, `close` rejection.
-- [ ] 3. `research/adapter.py`: new signal column beside `SIGNAL_STOP_PRICE`/`SIGNAL_TARGET_PRICE`, set in the batch loop, `_levels_of` and `_RuntimeHooks`; require `ticks` only when levels accompany the price.
-- [ ] 4. `research/engine.py` (and `intrabar.py` if it owns the call): pass `entry_price` to `run_candle`; translate the kernel range error to an exception naming strategy, bar, price and range. Move the `q-core` tag in `pyproject.toml` to the Q-105 release and refresh `uv.lock`.
-- [ ] 5. Update `docs/research-library.md` "Execution model" and `research/strategy.py` docstrings.
-- [ ] 6. Run the focused tests, then `make check`. Commit.
+- [x] 1. Add failing tests in `tests/research/` for spec criteria 1 to 6.
+- [x] 2. `research/orders.py`: `price` field, validation, `buy`/`sell` factories, `close` rejection.
+- [x] 3. `research/adapter.py`: new signal column beside `SIGNAL_STOP_PRICE`/`SIGNAL_TARGET_PRICE`, set in the batch loop, `_levels_of` and `_RuntimeHooks`; require `ticks` only when levels accompany the price.
+- [x] 4. `research/engine.py` (and `intrabar.py` if it owns the call): pass `entry_price` to `run_candle`; translate the kernel range error to an exception naming strategy, bar, price and range. Move the `q-core` tag in `pyproject.toml` to the Q-105 release and refresh `uv.lock`.
+- [x] 5. Update `docs/research-library.md` "Execution model" and `research/strategy.py` docstrings.
+- [x] 6. Run the focused tests, then `make check`. Commit.
 
 ## Review focus
 
