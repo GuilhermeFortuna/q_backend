@@ -207,15 +207,50 @@ def backtest(
     workers: int | Literal["auto"] = 1,
     progress: bool | None = None,
 ) -> BacktestResult:
-    """Run a synchronous research backtest with Q engine execution semantics.
+    """
+    Run a synchronous research backtest with deterministic Q execution semantics.
 
-    ``ticks`` is the TickStore that confirms stop, target and phase-aware exits inside
-    their candles. The frame must have been built from the same store with ``TickStore.bars``.
+    Parameters
+    ----------
+    frame : pandas.DataFrame
+        Historical OHLCV bars indexed by timezone-aware timestamps.
+    strategy : ResearchStrategy or str
+        Custom strategy instance or registered candle strategy name.
+    symbol : str
+        Trading symbol ticker (must match ticks symbol if ticks are provided).
+    strategy_params : Mapping[str, Any], optional
+        Parameter overrides for registered strategies.
+    quantity : int, default 1
+        Fixed order quantity per trade (positive integer).
+    point_value : float, default 1.0
+        Financial value per price point (e.g., 0.20 for WIN, 10.0 for WDO).
+    initial_capital : float, default 100000.0
+        Starting portfolio capital in account currency.
+    costs : TransactionCostConfig, optional
+        Per-contract and basis-point transaction fee model. None models zero cost.
+    exit_params : Mapping[str, Any], optional
+        Configurable stop-loss, take-profit, or trailing rules.
+    day_trade : bool, default False
+        If True, restricts entries to session trading hours and forces session close.
+    day_trade_start_time : str, default '09:00'
+        Earliest allowable entry time (HH:MM).
+    day_trade_end_time : str, default '16:00'
+        Latest allowable entry time (HH:MM).
+    day_trade_close_time : str, default '17:00'
+        Mandatory end-of-day square-off time (HH:MM).
+    force_close_at_end : bool, default False
+        Whether to liquidate any open position on the final bar.
+    ticks : TickStore, optional
+        TickStore providing tick replay for intrabar stop/target confirmation.
+    workers : int or 'auto', default 1
+        Worker process count for parallel intrabar tick resolution.
+    progress : bool, optional
+        Whether to display a progress bar on stderr.
 
-    ``workers`` spreads the tick phase of a phase-aware exit over that many processes
-    (``"auto"`` uses every available CPU). The strategy must then be picklable and its hooks
-    free of side effects. ``progress`` shows a progress bar on stderr; by default only when
-    stderr is a terminal.
+    Returns
+    -------
+    BacktestResult
+        Result container with metrics, trades, equity series, and metadata.
     """
     # 1. Validate scalar arguments
     if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity <= 0:

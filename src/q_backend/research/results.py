@@ -41,7 +41,28 @@ REJECTED_COLUMNS = ["time", "side", "fill_price", "stop_loss", "take_profit"]
 
 @dataclass(frozen=True)
 class BacktestResult:
-    """Synchronous research backtest results."""
+    """
+    Immutable container holding the output of a research backtest run.
+
+    Attributes
+    ----------
+    metrics : dict of str to Any
+        Summary performance statistics (e.g., ``total_pnl``, ``win_rate``,
+        ``profit_factor``, ``max_drawdown_pct``).
+    trades : pandas.DataFrame
+        Detailed trade execution log containing fill prices, timestamps, PnL,
+        commissions, and exit reasons.
+    equity : pandas.DataFrame
+        Time series tracking realized account equity across closed trades.
+    data : pandas.DataFrame
+        Historical price frame augmented with computed user and exit indicators.
+    indicators : tuple of ChartIndicator
+        Indicator series configurations to render on the desktop Trade Chart.
+    config : Mapping of str to Any
+        Read-only dictionary of the arguments used for this backtest.
+    rejected_entries : pandas.DataFrame
+        DataFrame listing entries rejected due to invalid protective price levels.
+    """
 
     metrics: dict[str, Any]
     trades: pd.DataFrame
@@ -61,7 +82,26 @@ class BacktestResult:
         api_url: str | None = None,
         **kwargs: Any,
     ) -> str:
-        """Publish the finished backtest to the Research stack."""
+        """
+        Publish the finished backtest to the Q Research desktop application.
+
+        Sends the backtest run via HTTP to the Research API backend for visual
+        inspection in the Trade Chart, Performance analytics, and Trade List views.
+
+        Parameters
+        ----------
+        name : str, optional
+            Display name for the strategy run. Defaults to the strategy class name.
+        timeframe : str, optional
+            Canonical bar timeframe (e.g. ``'M5'``). Defaults to the frame timeframe.
+        api_url : str, optional
+            Override for the Research API base URL (default: ``http://127.0.0.1:8001``).
+
+        Returns
+        -------
+        str
+            The created run UUID.
+        """
         from q_backend.research.publishing import publish_backtest_result
 
         return publish_backtest_result(

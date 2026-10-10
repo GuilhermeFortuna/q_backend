@@ -1,5 +1,7 @@
 # Using the research library
 
+> **Documentation Notice**: Traditional Pandas-style interactive HTML documentation for the Q research library is available in `docs/research/`. Run `make docs-serve` from `q_backend` to view the full User Guide, tutorial, and API reference.
+
 The public interface lives in `q_backend.research`. This guide covers market-data
 import, tick resampling, and indicator helpers.
 

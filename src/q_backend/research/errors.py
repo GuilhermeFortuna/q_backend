@@ -4,11 +4,19 @@ from __future__ import annotations
 
 
 class AdjustedSeriesWarning(UserWarning):
-    """Loaded OHLCV prices sit off the instrument tick grid (often a proportionally adjusted series)."""
+    """
+    Warning emitted when loaded prices sit off the instrument's official tick grid.
+
+    Typically occurs when loading proportionally adjusted continuous futures series
+    (e.g., ``WIN$`` or ``WDO$``). For point-based PnL backtesting, use unadjusted
+    (``$N``) or difference-adjusted (``$D``) series instead.
+    """
 
 
 class NoMarketDataError(ValueError):
-    """Raised when a bars query returns no rows after normalization and filtering."""
+    """
+    Exception raised when a query returns no bars or ticks in the requested interval.
+    """
 
     def __init__(
         self,

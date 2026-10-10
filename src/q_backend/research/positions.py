@@ -10,10 +10,21 @@ import pandas as pd
 
 @dataclass(frozen=True, slots=True)
 class ResearchPosition:
-    """An actual open position at the current closed-bar decision boundary.
+    """
+    An immutable snapshot of a filled open position at the decision boundary.
 
-    Pending entry and exit requests are not fills. ``entry_time`` uses the
-    research frame timezone; price and quantity include actual engine sizing.
+    Parameters
+    ----------
+    symbol : str
+        Instrument ticker of the position.
+    side : {'long', 'short'}
+        Direction of the open trade.
+    entry_time : pandas.Timestamp
+        Actual entry fill timestamp in the research frame's timezone.
+    entry_price : float
+        Actual execution fill price.
+    quantity : float
+        Filled contract or share quantity.
     """
 
     symbol: str

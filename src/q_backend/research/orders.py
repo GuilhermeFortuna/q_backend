@@ -19,13 +19,25 @@ def _validate_level(name: str, value: float | None) -> None:
 
 @dataclass(frozen=True, slots=True)
 class TradeOrder:
-    """An immutable research decision request.
+    """
+    An immutable trading order request produced by a strategy hook.
 
-    ``stop_loss`` and ``take_profit`` are price levels fixed at entry. They are
-    only meaningful on ``buy`` and ``sell``; a buy's stop lies below its target,
-    a sell's above it. When ``price`` is set, it is the entry fill level for
-    same-bar execution; a buy requires ``stop_loss < price < take_profit`` and a
-    sell ``stop_loss > price > take_profit``.
+    Parameters
+    ----------
+    action : {'buy', 'sell', 'close'}
+        Order action requested.
+    stop_loss : float, optional
+        Fixed stop-loss exit level.
+    take_profit : float, optional
+        Fixed take-profit exit level.
+    price : float, optional
+        Limit fill price for same-bar execution. If unset, order fills at next bar open.
+
+    Notes
+    -----
+    On a buy order, ``stop_loss`` must be strictly below ``price`` (or entry) and
+    ``take_profit`` must be strictly above. On a sell order, the reverse applies.
+    Close orders do not accept price levels.
     """
 
     action: OrderActionLiteral
@@ -86,6 +98,23 @@ class TradeOrder:
         take_profit: float | None = None,
         price: float | None = None,
     ) -> TradeOrder:
+        """
+        Create a long entry order.
+
+        Parameters
+        ----------
+        stop_loss : float, optional
+            Protective stop-loss exit price level below entry.
+        take_profit : float, optional
+            Protective take-profit exit price level above entry.
+        price : float, optional
+            Priced entry fill level for same-bar execution.
+
+        Returns
+        -------
+        TradeOrder
+            Configured buy order instance.
+        """
         return cls("buy", stop_loss=stop_loss, take_profit=take_profit, price=price)
 
     @classmethod
@@ -96,8 +125,33 @@ class TradeOrder:
         take_profit: float | None = None,
         price: float | None = None,
     ) -> TradeOrder:
+        """
+        Create a short entry order.
+
+        Parameters
+        ----------
+        stop_loss : float, optional
+            Protective stop-loss exit price level above entry.
+        take_profit : float, optional
+            Protective take-profit exit price level below entry.
+        price : float, optional
+            Priced entry fill level for same-bar execution.
+
+        Returns
+        -------
+        TradeOrder
+            Configured sell order instance.
+        """
         return cls("sell", stop_loss=stop_loss, take_profit=take_profit, price=price)
 
     @classmethod
     def close(cls) -> TradeOrder:
+        """
+        Create a position close order.
+
+        Returns
+        -------
+        TradeOrder
+            Close order request.
+        """
         return cls("close")

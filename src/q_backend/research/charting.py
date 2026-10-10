@@ -15,7 +15,24 @@ CHART_LINE_STYLES: tuple[str, ...] = ("solid", "dashed", "dotted")
 
 @dataclass(frozen=True)
 class ChartIndicator:
-    """A computed column a research strategy asks the Trade Chart to draw."""
+    """
+    Visual series configuration to render on the Trade Chart in the Q desktop terminal.
+
+    Parameters
+    ----------
+    column : str
+        Column name in the frame computed by ``compute_indicators``.
+    pane : {'price', 'oscillator'}, default 'price'
+        Chart pane to draw the series in.
+    label : str, optional
+        Display legend label. Defaults to the column name.
+    color : str, optional
+        CSS color hex or name (e.g. ``'#4da3ff'``).
+    line_style : {'solid', 'dashed', 'dotted'}, optional
+        Stroke style for line rendering.
+    line_width : float, optional
+        Stroke thickness in pixels (positive finite float).
+    """
 
     column: str
     pane: ChartPane = "price"

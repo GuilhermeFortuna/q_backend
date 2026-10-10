@@ -54,3 +54,22 @@ contracts-check:
 hooks:
 	git config core.hooksPath .githooks
 	@echo "Git hooks enabled from .githooks"
+
+DOCS_DIR = docs/research
+DOCS_BUILD = $(DOCS_DIR)/_build
+
+.PHONY: docs docs-clean docs-serve docs-check
+
+docs:
+	uv run --group docs sphinx-build -b html $(DOCS_DIR) $(DOCS_BUILD)/html
+
+docs-clean:
+	rm -rf $(DOCS_BUILD) $(DOCS_DIR)/reference/api
+
+docs-serve: docs
+	@echo "Serving docs at http://127.0.0.1:8088"
+	uv run python -m http.server 8088 --directory $(DOCS_BUILD)/html
+
+docs-check:
+	uv run --group docs sphinx-build -W --keep-going -b html $(DOCS_DIR) $(DOCS_BUILD)/html
+

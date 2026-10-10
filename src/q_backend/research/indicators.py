@@ -79,9 +79,33 @@ def _validate_positive_float(value: object, name: str) -> float:
 
 
 def ma(close: pd.Series, period: int, kind: str = "sma") -> pd.Series:
-    """Compute moving average on close prices.
+    """
+    Compute moving average on close prices.
 
-    Supported kinds (case-insensitive): sma, ema, wma, smma, hma.
+    Supported kinds (case-insensitive): ``'sma'`` (Simple), ``'ema'`` (Exponential),
+    ``'wma'`` (Weighted), ``'smma'`` (Smoothed), and ``'hma'`` (Hull).
+
+    Parameters
+    ----------
+    close : pandas.Series
+        Numeric price series.
+    period : int
+        Calculation window period. Must be an integer >= 1.
+    kind : str, default 'sma'
+        Type of moving average to compute.
+
+    Returns
+    -------
+    pandas.Series
+        Moving average series sharing the exact index and name of ``close``.
+        Warm-up periods contain NaN.
+
+    Raises
+    ------
+    TypeError
+        If ``close`` is not a Series or ``period`` is not an integer.
+    ValueError
+        If ``kind`` is unrecognized or ``close`` contains infinities.
     """
     s = _validate_series(close, "close")
     p = _validate_window(period, "period", min_val=1)
@@ -99,7 +123,32 @@ def ma(close: pd.Series, period: int, kind: str = "sma") -> pd.Series:
 
 
 def rsi(close: pd.Series, period: int) -> pd.Series:
-    """Compute Relative Strength Index (RSI)."""
+    """
+    Compute Wilder's Relative Strength Index (RSI).
+
+    Measures momentum by evaluating the magnitude of recent price gains versus
+    losses using Wilder's smoothed moving average (RMA).
+
+    Parameters
+    ----------
+    close : pandas.Series
+        Numeric price series.
+    period : int
+        RSI lookback window. Must be an integer >= 1.
+
+    Returns
+    -------
+    pandas.Series
+        Series with values between 0.0 and 100.0, indexed identically to ``close``.
+        The initial ``period`` bars contain NaN during warm-up.
+
+    Raises
+    ------
+    TypeError
+        If ``close`` is not a pandas Series or ``period`` is not an integer.
+    ValueError
+        If ``period < 1`` or ``close`` contains non-finite values.
+    """
     s = _validate_series(close, "close")
     p = _validate_window(period, "period", min_val=1)
     if s.empty:
@@ -108,7 +157,27 @@ def rsi(close: pd.Series, period: int) -> pd.Series:
 
 
 def atr(frame: pd.DataFrame, period: int) -> pd.Series:
-    """Compute Wilder's Average True Range (ATR) on OHLC DataFrame."""
+    """
+    Compute Wilder's Average True Range (ATR) on OHLC bars.
+
+    Parameters
+    ----------
+    frame : pandas.DataFrame
+        DataFrame containing ``'high'``, ``'low'``, and ``'close'`` columns.
+    period : int
+        Smoothing period. Must be an integer >= 1.
+
+    Returns
+    -------
+    pandas.Series
+        Series of ATR values sharing the exact index of ``frame``. Initial
+        ``period`` bars contain NaN during warm-up.
+
+    Raises
+    ------
+    ValueError
+        If ``frame`` is missing required columns or ``period < 1``.
+    """
     df = _validate_frame(frame, "frame", ("high", "low", "close"))
     p = _validate_window(period, "period", min_val=1)
     if df.empty:
@@ -119,7 +188,23 @@ def atr(frame: pd.DataFrame, period: int) -> pd.Series:
 
 
 def bollinger(close: pd.Series, period: int, num_std: float = 2.0) -> tuple[pd.Series, pd.Series, pd.Series]:
-    """Compute Bollinger Bands returning (upper, middle, lower)."""
+    """
+    Compute Bollinger Bands returning (upper, middle, lower).
+
+    Parameters
+    ----------
+    close : pandas.Series
+        Numeric price series.
+    period : int
+        Moving average window. Must be an integer >= 1.
+    num_std : float, default 2.0
+        Standard deviation multiplier for bands. Must be finite and > 0.
+
+    Returns
+    -------
+    tuple of pandas.Series
+        A 3-tuple of ``(upper_band, middle_band, lower_band)`` sharing the index of ``close``.
+    """
     s = _validate_series(close, "close")
     p = _validate_window(period, "period", min_val=1)
     ns = _validate_positive_float(num_std, "num_std")
@@ -135,7 +220,25 @@ def macd(
     slow_period: int = 26,
     signal_period: int = 9,
 ) -> tuple[pd.Series, pd.Series, pd.Series]:
-    """Compute MACD returning (line, signal, histogram)."""
+    """
+    Compute Moving Average Convergence Divergence (MACD).
+
+    Parameters
+    ----------
+    close : pandas.Series
+        Numeric price series.
+    fast_period : int, default 12
+        Fast EMA lookback period (>= 1).
+    slow_period : int, default 26
+        Slow EMA lookback period (>= 1).
+    signal_period : int, default 9
+        Signal line EMA lookback period (>= 1).
+
+    Returns
+    -------
+    tuple of pandas.Series
+        A 3-tuple of ``(macd_line, signal_line, histogram)`` sharing the index of ``close``.
+    """
     s = _validate_series(close, "close")
     fast = _validate_window(fast_period, "fast_period", min_val=1)
     slow = _validate_window(slow_period, "slow_period", min_val=1)
@@ -152,7 +255,21 @@ def macd(
 
 
 def donchian(frame: pd.DataFrame, period: int) -> tuple[pd.Series, pd.Series]:
-    """Compute Donchian Channels returning (upper, lower)."""
+    """
+    Compute Donchian Channels returning (upper, lower).
+
+    Parameters
+    ----------
+    frame : pandas.DataFrame
+        DataFrame containing ``'high'`` and ``'low'`` columns.
+    period : int
+        Lookback window. Must be an integer >= 1.
+
+    Returns
+    -------
+    tuple of pandas.Series
+        A 2-tuple of ``(upper_channel, lower_channel)`` sharing the index of ``frame``.
+    """
     df = _validate_frame(frame, "frame", ("high", "low"))
     p = _validate_window(period, "period", min_val=1)
     if df.empty:
@@ -166,7 +283,23 @@ def donchian(frame: pd.DataFrame, period: int) -> tuple[pd.Series, pd.Series]:
 
 
 def realized_vol(close: pd.Series, window: int, periods_per_year: int = 252) -> pd.Series:
-    """Compute rolling annualized realized volatility from close log returns."""
+    """
+    Compute rolling annualized realized volatility from close log returns.
+
+    Parameters
+    ----------
+    close : pandas.Series
+        Numeric price series.
+    window : int
+        Rolling window in bars. Must be an integer >= 1.
+    periods_per_year : int, default 252
+        Annualization multiplier (e.g., 252 for daily bars).
+
+    Returns
+    -------
+    pandas.Series
+        Annualized volatility series sharing the index of ``close``.
+    """
     s = _validate_series(close, "close")
     w = _validate_window(window, "window", min_val=1)
     ppy = _validate_window(periods_per_year, "periods_per_year", min_val=1)
@@ -176,7 +309,29 @@ def realized_vol(close: pd.Series, window: int, periods_per_year: int = 252) -> 
 
 
 def yang_zhang(frame: pd.DataFrame, window: int, periods_per_year: int = 252) -> pd.Series:
-    """Compute rolling annualized Yang-Zhang (2000) volatility."""
+    """
+    Compute rolling annualized Yang-Zhang (2000) historical volatility.
+
+    Parameters
+    ----------
+    frame : pandas.DataFrame
+        DataFrame containing ``'open'``, ``'high'``, ``'low'``, and ``'close'`` columns.
+    window : int
+        Rolling calculation window. Must be an integer >= 2.
+    periods_per_year : int, default 252
+        Annualization factor (e.g., 252 for daily bars).
+
+    Returns
+    -------
+    pandas.Series
+        Annualized volatility series sharing the exact index of ``frame``.
+
+    Notes
+    -----
+    Yang-Zhang is an OHLC estimator with minimum variance among drift-independent
+    continuous and jump volatility estimators. It combines Rogers-Satchell volatility,
+    open jump volatility, and continuous close-to-open volatility.
+    """
     df = _validate_frame(frame, "frame", ("open", "high", "low", "close"))
     w = _validate_window(window, "window", min_val=2)
     ppy = _validate_window(periods_per_year, "periods_per_year", min_val=1)

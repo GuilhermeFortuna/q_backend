@@ -225,6 +225,23 @@ def _aggregate_bars(m1: pd.DataFrame, timeframe: str) -> pd.DataFrame:
 
 @dataclass
 class TickSyncReport:
+    """
+    Summary report of a tick store synchronization pass.
+
+    Parameters
+    ----------
+    stored : list of datetime.date
+        List of session dates successfully downloaded and written to disk.
+    already_present : list of datetime.date
+        Dates already present on disk and skipped.
+    empty : list of datetime.date
+        Dates that returned zero ticks on two consecutive fetches.
+    unsettled : list of datetime.date
+        Dates where two consecutive fetches returned mismatched tick counts.
+    failed : list of datetime.date
+        Dates where the gateway returned an error.
+    """
+
     stored: list[date]
     already_present: list[date]
     empty: list[date]
@@ -249,6 +266,20 @@ class TickSyncReport:
 
 
 class TickStore:
+    """
+    Persistent on-disk tick and bar store partitioned by instrument and calendar day.
+
+    Maintains zstandard-compressed Parquet session files under ``data/tick_store/``
+    (or ``Q_RESEARCH_TICK_STORE``), with transparent local 1-minute candle caching.
+
+    Parameters
+    ----------
+    symbol : str
+        Trading instrument ticker (e.g., ``'WDO$N'``, ``'WIN$N'``). Must be non-empty.
+    root : str or pathlib.Path, optional
+        Custom storage root directory. Defaults to ``data/tick_store``.
+    """
+
     def __init__(self, symbol: str, *, root: str | Path | None = None) -> None:
         sym = symbol.strip()
         if not sym:
@@ -261,6 +292,7 @@ class TickStore:
 
     @property
     def symbol(self) -> str:
+        """Instrument ticker symbol."""
         return self._symbol
 
     def _symbol_dir(self) -> Path:
@@ -277,6 +309,14 @@ class TickStore:
         return self._day_path(day).is_file()
 
     def sessions(self) -> list[date]:
+        """
+        List all calendar dates currently synchronized on disk.
+
+        Returns
+        -------
+        list of datetime.date
+            Sorted list of available session dates.
+        """
         directory = self._symbol_dir()
         if not directory.is_dir():
             return []
@@ -296,6 +336,29 @@ class TickStore:
         gateway_url: str | None = None,
         gateway_token: str | None = None,
     ) -> TickSyncReport:
+        """
+        Synchronize tick data for missing weekday sessions from MetaTrader 5.
+
+        Fetches each missing session twice sequentially and commits to disk only
+        when both responses match row counts. Never syncs the current active session.
+
+        Parameters
+        ----------
+        start : str or datetime
+            Earliest session date to sync.
+        end : str or datetime, optional
+            Latest session date to sync. Defaults to yesterday.
+        gateway_url : str, optional
+            Override for ``Q_MT5_GATEWAY_URL``.
+        gateway_token : str, optional
+            Override for ``Q_MT5_GATEWAY_TOKEN``.
+
+        Returns
+        -------
+        TickSyncReport
+            Summary report categorizing stored, already-present, empty, unsettled,
+            and failed dates.
+        """
         captured_now = _exchange_now()
         start_day = _resolve_sync_start(start)
         end_day = _resolve_sync_end(end, now=captured_now)
@@ -395,6 +458,27 @@ class TickStore:
         start: str | datetime,
         end: str | datetime | None = None,
     ) -> pd.DataFrame:
+        """
+        Load synchronized ticks from disk across a date range.
+
+        Parameters
+        ----------
+        start : str or datetime
+            Inclusive query start timestamp.
+        end : str or datetime, optional
+            Inclusive query end timestamp. Defaults to current time.
+
+        Returns
+        -------
+        pandas.DataFrame
+            DataFrame indexed by Brasília timestamp with columns ``bid``, ``ask``,
+            ``last``, ``volume``, and ``flags``.
+
+        Raises
+        ------
+        NoMarketDataError
+            If no stored sessions match the queried date range.
+        """
         start_ts, end_ts = self._resolve_read_bounds(start, end)
         days = self._session_days_in_range(start_ts, end_ts)
         frames: list[pd.DataFrame] = []
@@ -463,6 +547,37 @@ class TickStore:
         gateway_url: str | None = None,
         gateway_token: str | None = None,
     ) -> pd.DataFrame:
+        """
+        Aggregate trade ticks into OHLCV bars with automatic M1 caching.
+
+        Parameters
+        ----------
+        timeframe : str
+            Timeframe identifier (e.g. ``'M1'``, ``'M5'``, ``'M10'``, ``'H1'``, ``'D1'``).
+        start : str or datetime
+            Inclusive query start timestamp.
+        end : str or datetime, optional
+            Inclusive query end timestamp.
+        sync : bool, default False
+            If True, automatically downloads any missing sessions from MT5 prior to query.
+        gateway_url : str, optional
+            Override for ``Q_MT5_GATEWAY_URL`` when ``sync=True``.
+        gateway_token : str, optional
+            Override for ``Q_MT5_GATEWAY_TOKEN`` when ``sync=True``.
+
+        Returns
+        -------
+        pandas.DataFrame
+            DataFrame indexed by candle open timestamp with columns ``open``,
+            ``high``, ``low``, ``close``, ``tick_volume``, ``spread``, ``real_volume``.
+
+        Raises
+        ------
+        NoMarketDataError
+            If no synchronized data covers the queried range.
+        ValueError
+            If ``timeframe`` is unsupported.
+        """
         tf = normalize_timeframe(timeframe)
         if tf in ("W1", "MN1"):
             raise ValueError(f"Unsupported timeframe '{timeframe}' for tick store bars")
@@ -568,7 +683,31 @@ def sync_ticks(
     gateway_url: str | None = None,
     gateway_token: str | None = None,
 ) -> TickSyncReport:
-    """Fetch missing weekday sessions for ``symbol`` into the research tick store."""
+    """
+    Fetch missing weekday sessions for an instrument into the research tick store.
+
+    Convenience functional wrapper around :meth:`TickStore.sync`.
+
+    Parameters
+    ----------
+    symbol : str
+        Trading symbol (e.g. ``'WDO$N'``).
+    start : str or datetime
+        Earliest date to sync.
+    end : str or datetime, optional
+        Latest date to sync. Defaults to yesterday.
+    root : str or pathlib.Path, optional
+        Storage root path override.
+    gateway_url : str, optional
+        Override for ``Q_MT5_GATEWAY_URL``.
+    gateway_token : str, optional
+        Override for ``Q_MT5_GATEWAY_TOKEN``.
+
+    Returns
+    -------
+    TickSyncReport
+        Detailed sync summary.
+    """
     return TickStore(symbol, root=root).sync(
         start=start,
         end=end,

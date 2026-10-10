@@ -10,3 +10,7 @@ data/
 __pycache__/
 *.py[cod]
 .cursor/
+
+# Sphinx documentation build output
+docs/research/_build/
+docs/research/reference/api/

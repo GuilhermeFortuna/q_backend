@@ -153,7 +153,67 @@ def load_bars(
     gateway_url: str | None = None,
     gateway_token: str | None = None,
 ) -> pd.DataFrame:
-    """Fetch completed OHLCV bars from the connected MT5 terminal via the Q gateway."""
+    """
+    Fetch completed OHLCV bars from MetaTrader 5 via the Q gateway.
+
+    Requests completed candles for the specified symbol and timeframe, automatically
+    paging through the gateway in 50,000-bar chunks. Excludes the current forming bar.
+
+    Parameters
+    ----------
+    symbol : str
+        Trading symbol name (e.g., ``'WIN$N'``, ``'WDO$N'``). Must be non-empty.
+    timeframe : str
+        Canonical MT5 timeframe identifier (e.g., ``'M1'``, ``'M5'``, ``'H1'``, ``'D1'``).
+        Case-insensitive.
+    start : str or datetime
+        Inclusive start timestamp. Date-only strings (``'YYYY-MM-DD'``) or naive datetimes
+        are interpreted in Brasília exchange time (``America/Sao_Paulo``).
+    end : str or datetime, optional
+        Inclusive end timestamp. Defaults to current exchange time. A date-only string
+        evaluates to midnight at the start of that day.
+    gateway_url : str, optional
+        Override for ``Q_MT5_GATEWAY_URL`` for this call only.
+    gateway_token : str, optional
+        Override for ``Q_MT5_GATEWAY_TOKEN`` for this call only.
+
+    Returns
+    -------
+    pandas.DataFrame
+        DataFrame indexed by timezone-aware Brasília timestamps (``time``) with columns:
+        ``open``, ``high``, ``low``, ``close``, ``tick_volume``, ``spread``, ``real_volume``.
+        Metadata is attached to ``frame.attrs["q_research"]``.
+
+    Raises
+    ------
+    ValueError
+        If ``symbol`` is empty, ``timeframe`` is invalid, or ``start > end``.
+    ConnectionError
+        If the Q MT5 gateway is unreachable.
+    NoMarketDataError
+        If no completed bars exist in the requested interval.
+
+    Warns
+    -----
+    AdjustedSeriesWarning
+        Emitted when more than 1% of prices fall off the symbol's tick grid (typical
+        for proportionally adjusted continuous series like ``WIN$``).
+
+    See Also
+    --------
+    load_ticks : Fetch raw trade and quote ticks from MetaTrader 5.
+    resample_ticks : Resample trade ticks into custom OHLCV bars.
+
+    Examples
+    --------
+    >>> from q_backend.research import load_bars
+    >>> bars = load_bars("WIN$N", timeframe="M5", start="2026-09-01")
+    >>> bars[["open", "high", "low", "close"]].head(2)
+                               open      high       low     close
+    time
+    2026-09-01 09:00:00-03:00  135000.0  135250.0  134950.0  135100.0
+    2026-09-01 09:05:00-03:00  135100.0  135300.0  135050.0  135200.0
+    """
     sym = symbol.strip()
     if not sym:
         raise ValueError("symbol must be non-empty")
@@ -204,10 +264,48 @@ def load_ticks(
     gateway_url: str | None = None,
     gateway_token: str | None = None,
 ) -> pd.DataFrame:
-    """Fetch fresh MT5 ticks indexed by Brasília time, with human-readable flag strings.
+    """
+    Fetch fresh MT5 ticks indexed by Brasília time with human-readable flag strings.
 
-    The ``flags`` argument selects an MT5 tick category numerically. The returned
-    ``flags`` column describes each event's bits, including undocumented bits.
+    Retrieves high-resolution trade and quote events. Consecutive rows maintain
+    stable ordering for same-millisecond timestamps.
+
+    Parameters
+    ----------
+    symbol : str
+        Trading symbol name (e.g., ``'WIN$N'``). Must be non-empty.
+    start : str or datetime
+        Inclusive start timestamp in Brasília time.
+    end : str or datetime, optional
+        Inclusive end timestamp. Defaults to current exchange time.
+    flags : int, optional
+        Numeric MT5 tick category mask to fetch (e.g., ``COPY_TICKS_ALL``). Defaults
+        to all available tick events.
+    gateway_url : str, optional
+        Override for ``Q_MT5_GATEWAY_URL`` for this call only.
+    gateway_token : str, optional
+        Override for ``Q_MT5_GATEWAY_TOKEN`` for this call only.
+
+    Returns
+    -------
+    pandas.DataFrame
+        DataFrame indexed by timezone-aware Brasília timestamps (``time``) with columns:
+        ``bid``, ``ask``, ``last``, ``volume``, ``flags``. The ``flags`` column contains
+        readable strings (e.g., ``'last-price update | volume update | buy trade'``).
+
+    Raises
+    ------
+    ValueError
+        If ``symbol`` is empty or ``start > end``.
+    ConnectionError
+        If the Q MT5 gateway is unreachable.
+    NoMarketDataError
+        If no ticks exist in the requested interval.
+
+    See Also
+    --------
+    load_bars : Fetch completed OHLCV candles.
+    resample_ticks : Resample tick events into candles.
     """
     sym = symbol.strip()
     if not sym:
@@ -268,7 +366,38 @@ def _resample_frequency(timeframe: str) -> str:
 
 
 def resample_ticks(ticks: pd.DataFrame, *, timeframe: str) -> pd.DataFrame:
-    """Aggregate positive last-trade prices into MT5-aligned OHLCV bars."""
+    """
+    Aggregate positive last-trade prices into MT5-aligned OHLCV bars.
+
+    Filters ticks for positive traded prices (excluding quote-only updates),
+    resamples into candle intervals matching MetaTrader 5 frequency rules,
+    and forward-fills empty intervals between the first and last trade.
+
+    Parameters
+    ----------
+    ticks : pandas.DataFrame
+        DataFrame of raw tick events containing a ``'last'`` column and a
+        timezone-aware DatetimeIndex.
+    timeframe : str
+        Canonical MT5 timeframe identifier (e.g., ``'M1'``, ``'M5'``, ``'H1'``).
+
+    Returns
+    -------
+    pandas.DataFrame
+        DataFrame indexed by candle open timestamp with columns:
+        ``open``, ``high``, ``low``, ``close``, and ``tick_volume``.
+
+    Raises
+    ------
+    ValueError
+        If ``ticks`` does not have a timezone-aware DatetimeIndex, lacks a ``'last'``
+        column, or if ``timeframe`` is invalid.
+
+    See Also
+    --------
+    load_ticks : Fetch raw tick events from MetaTrader 5.
+    load_bars : Fetch pre-aggregated completed candles.
+    """
     if not isinstance(ticks.index, pd.DatetimeIndex):
         raise ValueError("ticks must have a DatetimeIndex")
     if ticks.index.tz is None:
