@@ -19,8 +19,8 @@ A `ResearchStrategy` returns `TradeOrder.buy(price=...)` and `backtest()` opens 
 
 | Task | Repository | Depends on | Specification | Implementation plan |
 | --- | --- | --- | --- | --- |
-| Q-105 — Same-bar priced entries in the candle kernel | q_core | Q-102 | `q_core/docs/development/specs/Q-105-same-bar-priced-entries-in-the-candle-kernel-spec.md` | `q_core/docs/development/plans/Q-105-same-bar-priced-entries-in-the-candle-kernel-plan.md` |
-| Q-106 — Priced entry orders in research backtests | q_backend | Q-105 | [Spec](../specs/Q-106-priced-entry-orders-in-research-backtests-spec.md) | [Plan](../plans/Q-106-priced-entry-orders-in-research-backtests-plan.md) |
+| [Q-105](https://github.com/GuilhermeFortuna/q_core/issues/15) — Same-bar priced entries in the candle kernel | q_core | Q-102 | `q_core/docs/development/specs/Q-105-same-bar-priced-entries-in-the-candle-kernel-spec.md` | `q_core/docs/development/plans/Q-105-same-bar-priced-entries-in-the-candle-kernel-plan.md` |
+| [Q-106](https://github.com/GuilhermeFortuna/q_backend/issues/40) — Priced entry orders in research backtests | q_backend | Q-105 | [Spec](../specs/Q-106-priced-entry-orders-in-research-backtests-spec.md) | [Plan](../plans/Q-106-priced-entry-orders-in-research-backtests-plan.md) |
 
 Q-106 starts when Q-105 is Done; it pins the `q_core` tag that `./work finish Q-105` publishes. Batch 18 (Q-102, Q-103, Q-104) must be merged first.
 
