@@ -180,6 +180,8 @@ REGISTRY_RESULTS_SNAPSHOT_KEYS = {
     "best",
     "search_config",
     "lake_paths",
+    "provisional",
+    "artifacts_available",
 }
 
 REGISTRY_SUMMARY_KEYS = {

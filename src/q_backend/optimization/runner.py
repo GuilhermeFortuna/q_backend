@@ -161,6 +161,8 @@ class OptimizationRunner:
             raise optuna.TrialPruned(str(exc)) from exc
         except Exception as exc:
             if not self.config.study.continue_on_trial_error:
+                trial.set_user_attr("status", "error")
+                trial.set_user_attr("error", str(exc))
                 raise
             trial.set_user_attr("status", "error")
             trial.set_user_attr("error", str(exc))
@@ -222,6 +224,7 @@ class OptimizationRunner:
                 trial.set_user_attr("status", "error")
                 trial.set_user_attr("error", worker_result["error"])
                 study.tell(trial, state=optuna.trial.TrialState.FAIL)
+                self._fire_callbacks(study, trial.number, callbacks)
                 raise RuntimeError(worker_result["error"])
 
             trial.set_user_attr("status", "error")
@@ -364,12 +367,18 @@ class OptimizationRunner:
         if use_parallel:
             self._run_parallel(study, trial_budget, callbacks, should_stop)
         else:
-            study.optimize(
-                self._objective,
-                n_trials=trial_budget,
-                catch=(Exception,) if self.config.study.continue_on_trial_error else (),
-                callbacks=callbacks,
-            )
+            try:
+                study.optimize(
+                    self._objective,
+                    n_trials=trial_budget,
+                    catch=(Exception,) if self.config.study.continue_on_trial_error else (),
+                    callbacks=callbacks,
+                )
+            except Exception:  # noqa: BLE001 - record the terminal failed trial before propagating
+                trials = study.get_trials(deepcopy=False)
+                if trials and trials[-1].state == optuna.trial.TrialState.FAIL:
+                    self._fire_callbacks(study, trials[-1].number, callbacks)
+                raise
 
         if self.config.is_multi_objective():
             pareto_trials = study.best_trials

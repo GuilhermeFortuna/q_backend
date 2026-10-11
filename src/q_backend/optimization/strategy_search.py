@@ -551,6 +551,7 @@ def evaluate_candidate(
     progress_callback: Callable[[SearchProgress], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
     run_id: str | None = None,
+    generation: int | None = None,
 ) -> CandidateResult:
     base = CandidateResult(
         candidate_id=candidate.candidate_id,
@@ -589,6 +590,7 @@ def evaluate_candidate(
             ohlcv=ohlcv,
             run_id=run_id,
             candidate_id=candidate.candidate_id,
+            generation=generation,
         ).run(progress_callback=wf_progress, should_stop=should_stop)
     except Exception as exc:  # noqa: BLE001 - per-candidate failure is counted/reported
         # Already-handled: a single candidate's walk-forward blowing up must not

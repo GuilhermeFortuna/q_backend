@@ -165,6 +165,23 @@ High DSR and a passing lock-box are **screening signals, not proof** of live edg
   clamped to `[min_contracts, max_contracts]`. `target_volatility_pct` is annualized (e.g. `10.0` = 10%). Yang–Zhang and close-to-close estimators live in `technical_indicators.py`.
 * **Strategy search (`optimization/strategy_search.py`):** Automatic discovery sweep — for each registered candle strategy, derive an Optuna search space from the registry (WO30), optimize in-sample per walk-forward window, stitch out-of-sample equity, and rank candidates on OOS performance (never in-sample). Walk-forward **gates** flag weak results (too few windows/trades, low IS/OOS efficiency, suspiciously high efficiency). The `CandidateProvider` protocol is the extension seam: `RegistryCandidateProvider` sweeps built-in strategies; `GeneticCandidateProvider` (WO39) evolves composite genomes via `select_search_orchestrator` when `config.genetic` is set. Both reuse the same `evaluate_candidate` path.
 
+Discovery persists each terminal Optuna trial and completed candidate before notifying
+subscribers. Apply Alembic migration `20261010_0028` (`uv run alembic upgrade head`)
+before running the updated API/workers. Trials belong to their run and are deleted
+with it; older runs are not backfilled. `GET /api/v1/strategy-search/{run_id}/trials`
+supports `limit`/`offset`, `candidate_id`, zero-based `generation`/`window_index`,
+`state`, `objective_min`/`objective_max`, parameter search `q`, and whitelisted `sort`
+with `descending`. Trial objectives are in-sample; candidate rankings remain OOS.
+`/results` serves provisional candidates while active and preserves durable partials
+after failure/cancellation. `artifacts_available` identifies final lake artifacts.
+
+Live progress is observational Redis state, separate from scheduling: monotonic
+candidate/window identities count unique terminal trials, then reserve one unit per
+window for OOS completion. Events are emitted on trial, window, candidate and stage
+changes. Finished windows count only completed OOS work. Breeding, validation and
+finalization remain distinct stages, and the UI caps active progress below 100%.
+Database trial/candidate persistence remains independent of Redis availability.
+
   **Exit-preset expansion (WO79, registry sweep only):** optional `exit_presets` on `StrategySearchConfig`:
 
   ```json

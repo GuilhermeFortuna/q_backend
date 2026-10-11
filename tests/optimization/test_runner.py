@@ -116,8 +116,14 @@ def test_continue_on_trial_error_swallows_unexpected():
 def test_unexpected_exception_reraises_without_continue_flag(single_objective_config):
     single_objective_config.study.continue_on_trial_error = False
     runner_stub = StubBacktestRunner(fail_on_call=True)
+    observed = []
     with pytest.raises(RuntimeError, match="unexpected backtest failure"):
-        OptimizationRunner(single_objective_config, runner_stub).run()
+        OptimizationRunner(single_objective_config, runner_stub).run(
+            callbacks=[lambda study, trial: observed.append(trial)]
+        )
+    assert len(observed) == 1
+    assert observed[0].state == optuna.trial.TrialState.FAIL
+    assert observed[0].user_attrs["status"] == "error"
 
 
 def test_multi_objective_returns_pareto_front(multi_objective_config):

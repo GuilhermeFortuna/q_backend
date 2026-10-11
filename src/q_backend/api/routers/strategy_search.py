@@ -1,5 +1,6 @@
 import logging
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -15,7 +16,10 @@ from q_backend.api.schemas.strategy_search import (
     StrategySearchRunListResponse,
     StrategySearchStartResponse,
     StrategySearchStatusResponse,
+    StrategySearchTrialsResponse,
 )
+from q_backend.storage.db.discovery_trials import list_trials
+from q_backend.storage.db.models import StrategySearchRun
 from q_backend.backtesting.run_service import serialize_equity_artifact
 from q_backend.market_data.service import MarketDataService
 from q_backend.optimization.strategy_search import StrategySearchConfig
@@ -66,6 +70,9 @@ def get_strategy_search_status(run_id: str):
 )
 def get_strategy_search_results(run_id: str):
     """Return full strategy search results once the run has finished."""
+    live = strategy_search_jobs.live_results_payload(run_id)
+    if live is not None:
+        return live
     job = strategy_search_jobs.get_job(run_id)
     if job is not None:
         payload = strategy_search_jobs.results_payload(job)
@@ -86,6 +93,47 @@ def get_strategy_search_results(run_id: str):
             )
         raise HTTPException(status_code=404, detail=f"Strategy search run '{run_id}' not found.")
     return payload
+
+
+@router.get("/api/v1/strategy-search/{run_id}/trials", response_model=StrategySearchTrialsResponse)
+def get_strategy_search_trials(
+    run_id: str,
+    session: Session = Depends(get_session),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    candidate_id: str | None = Query(default=None),
+    generation: int | None = Query(default=None, ge=-1),
+    window_index: int | None = Query(default=None, ge=0),
+    state: Literal["completed", "pruned", "error"] | None = Query(default=None),
+    objective_min: float | None = Query(default=None, allow_inf_nan=False),
+    objective_max: float | None = Query(default=None, allow_inf_nan=False),
+    q: str | None = Query(default=None, max_length=200),
+    sort: Literal["finished_at", "trial_number", "objective_value", "candidate_id", "window_index", "state"] = Query(
+        default="finished_at"
+    ),
+    descending: bool = Query(default=True),
+):
+    try:
+        identifier = uuid.UUID(run_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Strategy search run not found.") from None
+    if session.get(StrategySearchRun, identifier) is None:
+        raise HTTPException(status_code=404, detail="Strategy search run not found.")
+    return list_trials(
+        session,
+        identifier,
+        limit=limit,
+        offset=offset,
+        candidate_id=candidate_id,
+        generation=generation,
+        window_index=window_index,
+        state=state,
+        objective_min=objective_min,
+        objective_max=objective_max,
+        q=q,
+        sort=sort,
+        descending=descending,
+    )
 
 
 @router.post(

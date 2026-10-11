@@ -42,6 +42,15 @@ EXPECTED_EXIT_POLICY_META = {
 }
 
 
+@pytest.fixture(autouse=True)
+def observation_redis(monkeypatch):
+    import fakeredis
+    from q_backend.optimization import discovery_observation
+
+    client = fakeredis.FakeRedis(decode_responses=True)
+    monkeypatch.setattr(discovery_observation, "get_redis", lambda: client)
+
+
 def _genetic_request(*, population_size: int) -> StrategySearchConfig:
     return StrategySearchConfig(
         backtest={

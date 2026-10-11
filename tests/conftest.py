@@ -201,11 +201,12 @@ def run_jobs_sync(monkeypatch, tmp_path):
     from q_backend.api import strategy_search_jobs as sj
     from q_backend.api import walkforward_jobs as wj
     from q_backend.optimization.models import StorageConfig
+    from q_backend.optimization import discovery_observation
     from q_backend.tasks import actors, fanin, genetic_staging, staging
 
     # Route every Redis user (fan-in counters, partial staging, progress mirrors,
     # cross-generation genetic state) at one in-memory fakeredis.
-    for module in (fanin, staging, genetic_staging, oj, wj, sj, bj, nj, eaj, dab, arj, stj):
+    for module in (fanin, staging, genetic_staging, discovery_observation, oj, wj, sj, bj, nj, eaj, dab, arj, stj):
         if hasattr(module, "get_redis"):
             monkeypatch.setattr(module, "get_redis", lambda: fake, raising=False)
 
@@ -257,7 +258,7 @@ def run_jobs_sync(monkeypatch, tmp_path):
             session.close()
 
     monkeypatch.setattr("q_backend.storage.db.engine.session_scope", _harness_session_scope)
-    for module in (oj, wj, sj, bj, nj, eaj, dab, arj, stj):
+    for module in (discovery_observation, oj, wj, sj, bj, nj, eaj, dab, arj, stj):
         if hasattr(module, "session_scope"):
             monkeypatch.setattr(module, "session_scope", _harness_session_scope)
     monkeypatch.setattr("q_backend.optimization.genetic_search.session_scope", _harness_session_scope, raising=False)

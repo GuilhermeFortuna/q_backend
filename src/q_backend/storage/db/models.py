@@ -330,9 +330,40 @@ class StrategySearchRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         cascade="all, delete-orphan",
     )
 
+    trials: Mapped[list["StrategySearchTrial"]] = relationship(cascade="all, delete-orphan")
+
     __table_args__ = (
         Index("ix_strategy_search_runs_status", "status"),
         Index("ix_strategy_search_runs_created_at", "created_at"),
+    )
+
+
+class StrategySearchTrial(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "strategy_search_trials"
+
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("strategy_search_runs.id", ondelete="CASCADE"))
+    candidate_id: Mapped[str] = mapped_column(String(128))
+    generation: Mapped[int] = mapped_column(default=-1)
+    window_index: Mapped[int]
+    trial_number: Mapped[int]
+    state: Mapped[str] = mapped_column(String(32))
+    objective_value: Mapped[Optional[float]]
+    parameters: Mapped[dict[str, Any]] = mapped_column(PortableJSON, default=dict)
+    metrics: Mapped[dict[str, Any]] = mapped_column(PortableJSON, default=dict)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    error: Mapped[Optional[str]] = mapped_column(Text)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "candidate_id",
+            "generation",
+            "window_index",
+            "trial_number",
+            name="uq_strategy_search_trial_identity",
+        ),
+        Index("ix_strategy_search_trials_run_state", "run_id", "state"),
     )
 
 

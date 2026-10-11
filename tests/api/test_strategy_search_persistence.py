@@ -135,7 +135,10 @@ def _request(*, n_trials: int = 2, strategies: list[str] | None = None) -> Strat
 
 
 def _start_persisted_job(api_session_scope, *, n_trials: int = 2):
-    with patch("q_backend.api.strategy_search_jobs.session_scope", api_session_scope):
+    with (
+        patch("q_backend.api.strategy_search_jobs.session_scope", api_session_scope),
+        patch("q_backend.optimization.discovery_observation.session_scope", api_session_scope),
+    ):
         return strategy_search_jobs.start_job(_request(n_trials=n_trials))
 
 
@@ -161,6 +164,9 @@ def test_strategy_search_end_to_end_persists_db_and_lake(
     assert run.name == "Discovery WIN$ sweep"
     assert run.status == "completed"
     assert len(run.candidates) == 2
+    from q_backend.storage.db.discovery_trials import list_trials
+
+    assert list_trials(api_db_session, run.id)["total"] > 0
     assert run.lake_paths is not None
     assert (lake_root_path / run.lake_paths["leaderboard"]).is_file()
 

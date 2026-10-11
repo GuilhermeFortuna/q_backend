@@ -11,6 +11,18 @@ class StrategySearchStartResponse(BaseModel):
     status: str
 
 
+class DiscoveryCandidateActivityResponse(BaseModel):
+    candidate_id: str
+    strategy: str
+    generation: Optional[int] = None
+    total_windows: int
+    finished_windows: int
+    window_index: Optional[int] = None
+    phase: str
+    trials: int
+    trial_budget: int
+
+
 class StrategySearchStatusResponse(BaseModel):
     run_id: str
     status: str
@@ -27,6 +39,15 @@ class StrategySearchStatusResponse(BaseModel):
     search_config: Optional[Dict[str, Any]] = None
     backtest_config: Optional[Dict[str, Any]] = None
     logs: Optional[List[str]] = None
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    progress: Optional[float] = None
+    completed_candidates: Optional[int] = None
+    finished_windows: Optional[int] = None
+    planned_windows: Optional[int] = None
+    settled_trials: Optional[int] = None
+    stage: Optional[str] = None
+    active_candidates: List[DiscoveryCandidateActivityResponse] = []
 
 
 class StrategySearchCandidateResponse(BaseModel):
@@ -74,6 +95,29 @@ class StrategySearchResultsResponse(BaseModel):
     best: Optional[StrategySearchCandidateResponse] = None
     search_config: Optional[Dict[str, Any]] = None
     lake_paths: Optional[Dict[str, Any]] = None
+    provisional: bool = False
+    artifacts_available: bool = True
+
+
+class StrategySearchTrialResponse(BaseModel):
+    candidate_id: str
+    generation: int
+    window_index: int
+    trial_number: int
+    state: Literal["completed", "pruned", "error"]
+    objective_value: Optional[float] = None
+    parameters: Dict[str, Any]
+    metrics: Dict[str, Any]
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    error: Optional[str] = None
+
+
+class StrategySearchTrialsResponse(BaseModel):
+    items: List[StrategySearchTrialResponse]
+    total: int
+    limit: int
+    offset: int
 
 
 class StrategySearchRunListItem(BaseModel):

@@ -158,6 +158,7 @@ class WalkForwardRunner:
         ohlcv: pd.DataFrame | None = None,
         run_id: str | None = None,
         candidate_id: str | None = None,
+        generation: int | None = None,
     ):
         if config.is_multi_objective():
             raise ValueError("Walk-forward analysis does not support multi-objective studies")
@@ -174,6 +175,7 @@ class WalkForwardRunner:
         self._ohlcv = ohlcv
         self.run_id = run_id
         self.candidate_id = candidate_id
+        self.generation = generation
 
     def _build_backtest_config(
         self,
@@ -264,6 +266,10 @@ class WalkForwardRunner:
             total_windows=total_windows,
             phase="optimizing",
         )
+        if self.run_id and self.candidate_id:
+            from q_backend.optimization.discovery_observation import observe_window
+
+            observe_window(self.run_id, self.candidate_id, window.index, phase="optimizing")
 
         window_config = self._window_optimization_config(window)
 
@@ -274,6 +280,10 @@ class WalkForwardRunner:
                 from datetime import datetime
 
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
+                if self.candidate_id:
+                    from q_backend.optimization.discovery_observation import record_trial
+
+                    record_trial(self.run_id, self.candidate_id, window.index, trial, generation=self.generation)
 
                 # Check state
                 if trial.state == optuna.trial.TrialState.COMPLETE:
@@ -314,6 +324,8 @@ class WalkForwardRunner:
         opt_result = OptimizationRunner(window_config, backtest_runner).run(callbacks=callbacks)
 
         if opt_result.best_trial is None:
+            if self.run_id and self.candidate_id:
+                observe_window(self.run_id, self.candidate_id, window.index, phase="done")
             return (
                 WalkForwardWindowResult(
                     index=window.index,
@@ -340,6 +352,8 @@ class WalkForwardRunner:
             phase="testing",
         )
 
+        if self.run_id and self.candidate_id:
+            observe_window(self.run_id, self.candidate_id, window.index, phase="testing")
         oos_config = self._build_backtest_config(
             start=window.test_start,
             end=window.test_end,
@@ -349,6 +363,8 @@ class WalkForwardRunner:
         )
         oos_result = backtest_runner.run(oos_config)
         oos_trades = oos_result.trades or []
+        if self.run_id and self.candidate_id:
+            observe_window(self.run_id, self.candidate_id, window.index, phase="done")
 
         return (
             WalkForwardWindowResult(

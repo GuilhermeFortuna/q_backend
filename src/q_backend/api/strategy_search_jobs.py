@@ -14,6 +14,9 @@ from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 
 import pandas as pd
+import redis
+
+from q_backend.optimization import discovery_observation as observation
 
 from q_backend.backtesting.genome.activity import genome_signal_activity
 from q_backend.backtesting.genome.exit_rule_policy import exit_policy_metadata_for_genome
@@ -61,9 +64,9 @@ from q_backend.tasks.serialization import (
 from q_backend.tasks import genetic_staging
 from q_backend.tasks.staging import clear_partials, load_partials, stash_partial
 from q_backend.storage.db.engine import session_scope
+from q_backend.storage.db.discovery_trials import save_candidate
 from q_backend.storage.db.models import RunStatus, StrategySearchRun
 from q_backend.storage.db.repositories import (
-    create_strategy_search_candidate,
     create_strategy_search_run,
     get_strategy_search_run,
     get_strategy_search_candidate,
@@ -145,6 +148,7 @@ def get_job(run_id: str) -> Optional[StrategySearchJob]:
 
 
 def evict_run(run_id: str) -> None:
+    observation.clear(run_id)
     try:
         delete_job_progress(get_redis(), run_id, namespace=PROGRESS_NAMESPACE)
     except Exception:  # noqa: BLE001 - best-effort persistence/lake/progress; logged and degraded
@@ -454,7 +458,7 @@ def _persist_run_finish(job: StrategySearchJob, terminal_status: JobStatus) -> N
                     hyp_req = meta.get("hypothesis_required_features") or hyp_info.get("hypothesis_required_features")
                     hyp_hash = meta.get("hypothesis_template_hash") or hyp_info.get("hypothesis_template_hash")
 
-                    create_strategy_search_candidate(
+                    save_candidate(
                         session,
                         run_id=job.db_run_id,
                         candidate_id=candidate.candidate_id,
@@ -549,6 +553,7 @@ def start_job(
         total_candidates=_resolve_total_candidates(request, provider),
         total_generations=(request.genetic.generations if request.genetic is not None else None),
     )
+    observation.initialize(run_id, job.total_candidates, _walkforward_window_count(request), request.study.n_trials)
     _persist_progress(job)
 
     from q_backend.tasks import actors
@@ -727,9 +732,18 @@ def dispatch_candidates(run_id: str, db_run_id_hex: str, config_json: str) -> No
         clear_error_message=True,
         started_at=_now(),
     )
+    observation.set_stage(run_id, "evaluation")
     # Unsupported candidates need no evaluation — stash them up front.
     for offset, result in enumerate(unsupported):
         stash_partial(run_id, _UNSUPPORTED_OFFSET + offset, candidate_result_to_dict(result))
+        observation.remember_result(run_id, candidate_result_to_dict(result))
+        observation.observe_candidate(
+            run_id,
+            result.candidate_id,
+            strategy=result.strategy,
+            total_windows=_walkforward_window_count(request),
+            state=result.status,
+        )
 
     _persist_progress(
         _progress_job(
@@ -766,6 +780,12 @@ def run_candidate(run_id: str, db_run_id_hex: str, config_json: str, candidate_i
     candidate = candidates[candidate_index]
 
     if not is_cancelled(run_id):
+        observation.observe_candidate(
+            run_id,
+            candidate.candidate_id,
+            strategy=candidate.strategy,
+            total_windows=_walkforward_window_count(request),
+        )
         try:
             result = evaluate_candidate(
                 candidate,
@@ -773,6 +793,7 @@ def run_candidate(run_id: str, db_run_id_hex: str, config_json: str, candidate_i
                 _candidate_runner(request),
                 ohlcv=_candidate_ohlcv(request),
                 run_id=run_id,
+                should_stop=lambda: is_cancelled(run_id),
             )
         except Exception as exc:  # noqa: BLE001 - isolate a single candidate failure
             logger.exception(
@@ -787,6 +808,15 @@ def run_candidate(run_id: str, db_run_id_hex: str, config_json: str, candidate_i
                 error=str(exc),
             )
         stash_partial(run_id, candidate_index, candidate_result_to_dict(result))
+        metadata = provider.candidate_metadata() if hasattr(provider, "candidate_metadata") else {}
+        observation.remember_result(run_id, candidate_result_to_dict(result), metadata.get(result.candidate_id))
+        observation.observe_candidate(
+            run_id,
+            candidate.candidate_id,
+            strategy=candidate.strategy,
+            total_windows=_walkforward_window_count(request),
+            state=result.status,
+        )
 
     remaining = decrement(run_id)
     unsupported_count = len(provider.unsupported_names())
@@ -824,7 +854,9 @@ def _walkforward_window_count(request: StrategySearchConfig) -> int:
     Used to convert the global completed-window counter into a fractional candidate
     count so the progress bar moves on every window, not just on candidate completion.
     """
-    wf_end, _, _ = compute_lockbox_bounds(request.backtest.start, request.backtest.end, request.lockbox)
+    wf_end = request.backtest.end
+    if request.genetic is not None:
+        wf_end, _, _ = compute_lockbox_bounds(request.backtest.start, request.backtest.end, request.lockbox)
     return len(split_windows(request.backtest.start, wf_end, request.walkforward))
 
 
@@ -903,6 +935,7 @@ def _dispatch_generation(
     genetic = request.genetic
     assert genetic is not None
     population = provider.population
+    observation.set_stage(run_id, "evaluation")
     # The stashed state's population *is* this generation — candidate workers read
     # their genome from it by index, and the finalizer reloads it to breed the next.
     genetic_staging.set_provider_state(run_id, provider.export_state())
@@ -934,6 +967,19 @@ def _dispatch_generation(
                 error="pre-screen: no in-sample signals",
             )
             stash_partial(run_id, index, candidate_result_to_dict(dead))
+            observation.remember_result(
+                run_id,
+                candidate_result_to_dict(dead),
+                _genetic_staged_metadata(genome, generation=generation, genetic=genetic),
+            )
+            observation.observe_candidate(
+                run_id,
+                genome.genome_id,
+                strategy="CompositeStrategy",
+                total_windows=_walkforward_window_count(request),
+                state="no_result",
+                generation=generation,
+            )
             genetic_staging.set_candidate_meta(
                 run_id,
                 {
@@ -992,6 +1038,13 @@ def run_genetic_candidate(
         genome = Genome.model_validate(genetic_staging.get_generation_genome(run_id, candidate_index))
         candidate_id = genome.genome_id
         candidate = search_candidate_for_genome(genome, request)
+        observation.observe_candidate(
+            run_id,
+            candidate_id,
+            strategy="CompositeStrategy",
+            total_windows=windows_per_candidate,
+            generation=generation,
+        )
 
         def on_window(progress: SearchProgress) -> None:
             # Each window notifies "optimizing" then "testing"; count once per window
@@ -1017,6 +1070,7 @@ def run_genetic_candidate(
                 progress_callback=on_window,
                 should_stop=lambda: is_cancelled(run_id),
                 run_id=run_id,
+                generation=generation,
             )
         except Exception as exc:  # noqa: BLE001 - isolate a single candidate failure
             logger.exception("Genetic candidate %s failed for run %s", genome.genome_id, run_id)
@@ -1027,6 +1081,19 @@ def run_genetic_candidate(
                 error=str(exc),
             )
         stash_partial(run_id, candidate_index, candidate_result_to_dict(result))
+        observation.remember_result(
+            run_id,
+            candidate_result_to_dict(result),
+            _genetic_staged_metadata(genome, generation=generation, genetic=genetic),
+        )
+        observation.observe_candidate(
+            run_id,
+            candidate_id,
+            strategy="CompositeStrategy",
+            total_windows=windows_per_candidate,
+            generation=generation,
+            state=result.status,
+        )
         genetic_staging.set_candidate_meta(
             run_id,
             {
@@ -1078,6 +1145,7 @@ def finalize_generation(run_id: str, db_run_id_hex: str, config_json: str, gener
     cancelled = is_cancelled(run_id)
     next_generation = generation + 1
     if not cancelled and next_generation < genetic.generations:
+        observation.set_stage(run_id, "breeding")
         provider.report(ordered)
         _dispatch_generation(run_id, db_run_id_hex, config_json, provider, next_generation)
         return
@@ -1116,7 +1184,9 @@ def _finalize_genetic(run_id: str, db_run_id_hex: str, config_json: str, *, canc
         orchestrator = GeneticStrategySearchOrchestrator(request, provider, _candidate_runner(request))
         orchestrator._generations = all_generations
         orchestrator._candidate_metadata = metadata
+        observation.set_stage(run_id, "validation")
         job.result = orchestrator.finalize()
+        observation.set_stage(run_id, "finalizing")
         job.total_candidates = len(job.result.candidates)
         job.lake_paths = _write_lake_artifacts(run_id, job.result)
         if cancelled:
@@ -1145,6 +1215,7 @@ def finalize_discovery(run_id: str, db_run_id_hex: str, config_json: str) -> Non
     job = StrategySearchJob(run_id=run_id, db_run_id=db_run_id, request=request)
 
     terminal_status: JobStatus = "failed"
+    observation.set_stage(run_id, "finalizing")
     try:
         results = [candidate_result_from_dict(p) for p in load_partials(run_id)]
         ranked = _rank_results(results)
@@ -1264,6 +1335,52 @@ def serialize_equity_points(series: pd.Series) -> list[dict[str, Any]]:
     return points
 
 
+def live_results_payload(run_id: str) -> Optional[dict[str, Any]]:
+    status = get_status_payload(run_id)
+    if status is None or status["status"] == "completed":
+        return None
+    if status["status"] in ("cancelled", "failed"):
+        persisted = results_payload_from_db(run_id)
+        if persisted is not None and (persisted.get("summary") or persisted.get("candidates")):
+            return None
+    config = status.get("search_config") or {}
+    if not config.get("objective"):
+        return None
+    try:
+        partials = observation.partial_results(run_id)
+    except (redis.RedisError, ValueError, OSError):
+        logger.warning("Discovery partial results unavailable for %s", run_id, exc_info=True)
+        partials = []
+    if not partials:
+        persisted = results_payload_from_db(run_id)
+        if persisted is not None:
+            return persisted
+    candidates = _rank_results([candidate_result_from_dict(p["result"]) for p in partials])
+    metadata = {p["result"]["candidate_id"]: p["metadata"] for p in partials}
+    from q_backend.optimization.models import ObjectiveMode
+
+    result = StrategySearchResult(
+        candidates=candidates,
+        objective_mode=ObjectiveMode(config["objective"]["mode"]),
+        best=next((c for c in candidates if c.rank == 1), None),
+        candidate_metadata=metadata,
+    )
+    summary = _build_result_summary(result)
+    return {
+        "run_id": run_id,
+        "status": status["status"],
+        "objective_mode": result.objective_mode.value,
+        "summary": summary,
+        "candidates": [_serialize_candidate(c, metadata=metadata.get(c.candidate_id)) for c in candidates],
+        "best": (
+            _serialize_candidate(result.best, metadata=metadata.get(result.best.candidate_id)) if result.best else None
+        ),
+        "search_config": config,
+        "provisional": status["status"] in ("running", "pending"),
+        "artifacts_available": False,
+    }
+
+
 def results_payload(job: StrategySearchJob) -> Optional[dict[str, Any]]:
     result = job.result
     if result is None:
@@ -1292,6 +1409,7 @@ def results_payload(job: StrategySearchJob) -> Optional[dict[str, Any]]:
         ),
         "search_config": _serialize_search_config(job.request),
         "lake_paths": job.lake_paths,
+        "artifacts_available": bool(job.lake_paths),
     }
 
 
@@ -1381,6 +1499,8 @@ def status_payload_from_db(run_id: str) -> dict[str, Any] | None:
         "error": run.error_message,
         "search_config": config,
         "backtest_config": config.get("backtest"),
+        "started_at": run.started_at or run.created_at,
+        "finished_at": run.finished_at,
     }
 
 
@@ -1405,14 +1525,23 @@ def get_status_payload(run_id: str) -> dict[str, Any] | None:
         logger.debug("Redis progress read unavailable for strategy search run %s", run_id)
         cached = None
 
-    # While the run is still active, candidate results aren't in the DB yet (they
-    # are written by the finalizer), so the live Redis snapshot is authoritative.
-    # Once terminal, the DB row is complete and wins.
+    # Redis carries live scheduling/activity details; completed candidates are
+    # persisted incrementally. Once terminal, the durable run status wins.
     if db_payload is None:
         if cached is not None:
+            try:
+                cached.update(observation.snapshot(run_id))
+            except (redis.RedisError, ValueError, OSError):
+                logger.warning("Discovery activity unavailable for %s", run_id, exc_info=True)
             cached["logs"] = _get_redis_logs(run_id)
         return cached
     if db_payload.get("status") in ("pending", "running") and cached is not None:
+        cached["started_at"] = db_payload.get("started_at")
+        cached["finished_at"] = db_payload.get("finished_at")
+        try:
+            cached.update(observation.snapshot(run_id))
+        except (redis.RedisError, ValueError, OSError):
+            logger.warning("Discovery activity unavailable for %s", run_id, exc_info=True)
         cached["logs"] = _get_redis_logs(run_id)
         return cached
     db_payload["logs"] = _get_redis_logs(run_id)
@@ -1462,9 +1591,6 @@ def results_payload_from_db(run_id: str) -> Optional[dict[str, Any]]:
     if run is None:
         return None
 
-    if run.status not in _FINISHED_STATUSES:
-        return None
-
     candidates = sorted(run.candidates, key=lambda item: (item.rank or 10_000, item.candidate_id))
     serialized = [_serialize_db_candidate(candidate, run_id=run_id) for candidate in candidates]
     best = next((item for item in serialized if item.get("rank") == 1), None)
@@ -1472,12 +1598,15 @@ def results_payload_from_db(run_id: str) -> Optional[dict[str, Any]]:
     return {
         "run_id": run_id,
         "status": run.status,
-        "objective_mode": (run.result_summary or {}).get("objective_mode"),
+        "objective_mode": (run.result_summary or {}).get("objective_mode")
+        or (run.config or {}).get("objective", {}).get("mode"),
         "summary": run.result_summary or {},
         "candidates": serialized,
         "best": best,
         "search_config": run.config,
         "lake_paths": run.lake_paths,
+        "artifacts_available": bool(run.lake_paths),
+        "provisional": run.status in ("pending", "running") or not bool(run.result_summary),
     }
 
 
