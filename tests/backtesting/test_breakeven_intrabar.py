@@ -266,3 +266,36 @@ def test_sliced_optimization_runner_uses_the_same_intrabar_stop(monkeypatch, inj
     assert len(result.trades) == 1
     assert result.trades[0].exit_reason == "breakeven_emergency"
     assert result.trades[0].exit_price == 74
+
+
+class FlaggedProvider:
+    def __init__(self, rows):
+        start = pd.Timestamp("2024-01-02 10:00").value // 1_000_000
+        self.times = np.array([start + i * 1000 for i in range(len(rows))], dtype=np.int64)
+        self.last = np.array([price for price, _ in rows], dtype=float)
+        self.flags = np.array([flag for _, flag in rows], dtype=np.int32)
+
+    def get_ticks_columnar(self, symbol, start, end, **kwargs):
+        return {"time_msc": self.times, "last": self.last, "flags": self.flags}
+
+
+def test_market_replay_ignores_quote_updates_that_repeat_the_previous_last():
+    from q_backend.backtesting.intrabar import MarketTickReplay
+
+    # The first quote update carries the previous candle's close (99); only deals count.
+    provider = FlaggedProvider([(99, 2), (100, 8), (74, 8), (103, 4), (103, 24), (102, 8)])
+    _, prices = MarketTickReplay(provider, "TEST", "H1", replay_frame())(0)
+
+    assert prices.tolist() == [100, 74, 103, 102]
+
+
+def test_market_replay_snaps_rounded_terminal_prices_onto_the_tick_grid():
+    from q_backend.backtesting.intrabar import MarketTickReplay
+
+    frame = replay_frame()
+    frame.loc[frame.index[0], ["open", "high", "low", "close"]] = [100.25, 103.75, 74.0, 102.5]
+    provider = FlaggedProvider([(100.3, 8), (74.0, 8), (103.8, 8), (102.5, 8)])
+
+    _, prices = MarketTickReplay(provider, "TEST", "H1", frame, tick_size=0.25)(0)
+
+    assert prices.tolist() == [100.25, 74.0, 103.75, 102.5]

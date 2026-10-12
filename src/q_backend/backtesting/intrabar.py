@@ -18,6 +18,14 @@ from q_backend.backtesting.candle_kernel import _exit_params_from_strategy
 _EMPTY_READ_ATTEMPTS = 3
 _EMPTY_READ_DELAY_SECONDS = 1.0
 
+# MT5 tick flags that mark a deal. Quote-only updates repeat the previous ``last``, so a
+# candle's first "price" would be the prior candle's close instead of its open.
+_TICK_FLAG_LAST = 8
+_TICK_FLAG_VOLUME = 16
+_TICK_FLAG_BUY = 32
+_TICK_FLAG_SELL = 64
+_TRADE_FLAGS = _TICK_FLAG_LAST | _TICK_FLAG_VOLUME | _TICK_FLAG_BUY | _TICK_FLAG_SELL
+
 
 class MarketTickReplay:
     """Read only screened candles, retaining provider tick order at equal timestamps.
@@ -26,8 +34,16 @@ class MarketTickReplay:
     incomplete candles fail instead of inventing an intrabar path from OHLC extremes.
     """
 
-    def __init__(self, service: Any, symbol: str, timeframe: str, frame: pd.DataFrame) -> None:
+    def __init__(
+        self,
+        service: Any,
+        symbol: str,
+        timeframe: str,
+        frame: pd.DataFrame,
+        tick_size: float | None = None,
+    ) -> None:
         self._service = service
+        self._tick_size = tick_size if tick_size is not None and np.isfinite(tick_size) and tick_size > 0 else None
         self._symbol = symbol
         self._duration = bar_duration(timeframe)
         self._frame = frame
@@ -45,9 +61,18 @@ class MarketTickReplay:
             & np.isfinite(prices)
             & (prices > 0)
         )
+        if "flags" in arrays:
+            flags = np.asarray(arrays["flags"], dtype=np.int64)
+            if flags.shape == times.shape:
+                mask &= (flags & _TRADE_FLAGS) != 0
         times, prices = times[mask], prices[mask]
         order = np.argsort(times, kind="stable")
-        return times[order], prices[order]
+        times, prices = times[order], prices[order]
+        if self._tick_size is not None:
+            # Terminal ticks are rounded to the symbol's decimals (4513.25 arrives as
+            # 4513.3); the instrument trades on its tick grid, so snap back onto it.
+            prices = np.round(prices / self._tick_size) * self._tick_size
+        return times, prices
 
     def __call__(self, bar: int) -> tuple[np.ndarray, np.ndarray]:
         if self._last is not None and self._last[0] == bar:
@@ -68,7 +93,8 @@ class MarketTickReplay:
             )
         expected = tuple(float(self._frame.iloc[bar][col]) for col in ("open", "high", "low", "close"))
         observed = (prices[0], prices.max(), prices.min(), prices[-1])
-        if observed != expected:
+        tolerance = 0.0 if self._tick_size is None else self._tick_size * 1e-6
+        if not np.allclose(observed, expected, rtol=0.0, atol=tolerance):
             raise ValueError(
                 f"{self._symbol}: historical trade ticks do not reproduce OHLC for candle {start}: {observed} versus {expected}; use bars and ticks from the same unadjusted history"
             )
@@ -85,15 +111,20 @@ def breakeven_market_inputs(strategy: Any, service: Any, timeframe: str) -> dict
         from q_backend.market_data.service import MarketDataService
 
         service = MarketDataService()
+    lookup = getattr(service, "get_symbol_info", None)
+    grid = None
+    if lookup is not None:
+        info = lookup(strategy.symbol)
+        value = float((info or {}).get("trade_tick_size") or 0.0)
+        grid = value if np.isfinite(value) and value > 0 else None
     tick_size = None
     if float(params["breakeven_emergency_stop_ticks"]) > 0:
-        info = service.get_symbol_info(strategy.symbol)
-        tick_size = float((info or {}).get("trade_tick_size") or 0.0)
-        if not np.isfinite(tick_size) or tick_size <= 0:
+        if grid is None:
             raise ValueError(
                 f"{strategy.symbol}: Breakeven Emergency Stop requires a finite positive instrument trade_tick_size"
             )
+        tick_size = grid
     return {
         "tick_size": tick_size,
-        "intrabar_factory": lambda frame: MarketTickReplay(service, strategy.symbol, timeframe, frame),
+        "intrabar_factory": lambda frame: MarketTickReplay(service, strategy.symbol, timeframe, frame, grid),
     }
