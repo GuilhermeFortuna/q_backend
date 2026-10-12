@@ -1,5 +1,6 @@
 {
   "result": {
+    "artifacts_available": true,
     "best": null,
     "candidates": [
       {
@@ -34,6 +35,7 @@
       "leaderboard": "strategy_search/<NORMALIZED_ID>/leaderboard.parquet"
     },
     "objective_mode": "maximize_net_profit",
+    "provisional": false,
     "run_id": "<NORMALIZED_ID>",
     "search_config": {
       "backtest": {
@@ -138,6 +140,7 @@
     "candidate_id": "MACrossover",
     "current_candidate": 1,
     "error": null,
+    "finished_at": "<NORMALIZED_TIMESTAMP>",
     "logs": [],
     "phase": null,
     "run_id": "<NORMALIZED_ID>",
@@ -203,6 +206,7 @@
         "train_days": 30
       }
     },
+    "started_at": "<NORMALIZED_TIMESTAMP>",
     "status": "completed",
     "strategy": "MACrossover",
     "total_candidates": 1,

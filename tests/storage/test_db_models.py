@@ -14,6 +14,7 @@ EXPECTED_TABLES = {
     "walkforward_windows",
     "strategy_search_runs",
     "strategy_search_candidates",
+    "strategy_search_trials",
     "feature_definitions",
     "feature_versions",
     "evaluation_runs",
