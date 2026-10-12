@@ -13,6 +13,7 @@
 - One task, three repositories. `./work start` creates the task branch in `q_backend`. Create the same-named branch in `q_contracts` and `q_frontend` as worktrees under `.worktrees/<repository>/<branch>`; `./work inspect` and `./work finish` discover every repository that has it.
 - Contracts flow one way. Commit the schema change in `q_contracts` first, set `CONTRACTS_REV` in each consumer to that commit and vendor with `make contracts CONTRACTS_REPO=<path to the q_contracts worktree>`. Never hand-edit vendored code. The pin resolves remotely once the human runs `./work finish Q-107 --push`.
 - Real ticks are used wherever a minute is complete; substitution is per minute and never widens beyond the minutes that need it.
+- On a price-adjusted series a minute's deals are moved onto its M1 bar as the spec states; an adjusted minute is never counted as substituted.
 - Incomplete or inconsistent history never raises. Provider and gateway errors still do.
 - The substitution order, offsets, one-second boundary margin, `exit_resolution` values and the note code are exactly as the spec states.
 - `q_frontend` tests run with `TZ=America/Sao_Paulo`.
@@ -33,45 +34,70 @@
 
 **Files:** Modify `schema/api/openapi.yaml`, the generated outputs and the contract tests that cover `BacktestResponse`.
 
-- [ ] Add `BacktestNote` and the optional `notes` array on `BacktestResponse`; add or extend a test asserting a response with and without `notes` validates.
-- [ ] Regenerate with the repository's generator and run `make check`.
-- [ ] Commit; record the commit hash for the consumers.
+- [x] Add `BacktestNote` and the optional `notes` array on `BacktestResponse`; add or extend a test asserting a response with and without `notes` validates.
+- [x] Regenerate with the repository's generator and run `make check`.
+- [x] Commit; record the commit hash for the consumers.
 
 ### 2. Replay (`q_backend`)
 
 **Files:** Modify `src/q_backend/backtesting/intrabar.py`; extend `tests/backtesting/test_breakeven_intrabar.py`.
 **Interfaces:** `MarketTickReplay.__call__(bar)` keeps its return type. A `ReplayReport` shared by the replays that `breakeven_market_inputs` creates records, per run, the candles replayed, the candles with a substitution, the affected session dates and the substituted timestamps with their resolution. `breakeven_market_inputs` returns it beside `intrabar_factory`.
 
-- [ ] Write failing tests for spec acceptance 1 to 5 and 8 with a fake service that serves M1 bars and deals.
-- [ ] Implement the per-minute assembly: M1 read for the candle, deal read extended to cover the boundary margin and the session-close case, volume-pinned reconciliation, substitution, candle-level fallback, and the report.
-- [ ] Remove the two `ValueError`s and update the class docstring to the new rule.
-- [ ] Run `uv run pytest tests/backtesting -q` and confirm it passes.
-- [ ] Commit this unit.
+- [x] Write failing tests for spec acceptance 1 to 5 and 8 with a fake service that serves M1 bars and deals.
+- [x] Implement the per-minute assembly: M1 read for the candle, deal read extended to cover the boundary margin and the session-close case, volume-pinned reconciliation, substitution, candle-level fallback, and the report.
+- [x] Remove the two `ValueError`s and update the class docstring to the new rule.
+- [x] Run `uv run pytest tests/backtesting -q` and confirm it passes.
+- [x] Commit this unit.
 
 ### 3. Classification and notes (`q_backend`)
 
 **Files:** Modify `src/q_backend/backtesting/models.py`, `src/q_backend/api/backtest_jobs.py`, `CONTRACTS_REV`, the vendored `contracts/`, the response model that mirrors `BacktestResponse`, and their tests. `src/q_backend/ml_filters/evaluation.py` only needs to accept the extra return value.
 **Interfaces:** `Trade.exit_resolution: Optional[str]`. Candle results gain `notes: list[dict]`.
 
-- [ ] Pin and vendor the contract commit; run `make contracts-check CONTRACTS_REPO=<path>`.
-- [ ] Write failing tests for spec acceptance 6 and 7, and for a stored result without `notes`.
-- [ ] Set `exit_resolution` on closed trades from `exit_tick_time` and the report; build the `intrabar_incomplete_ticks` note; add `notes` to the candle payload and an empty list to the tick payload.
-- [ ] Run `uv run pytest tests/backtesting tests/api -q` and confirm it passes.
-- [ ] Commit this unit.
+- [x] Pin and vendor the contract commit; run `make contracts-check CONTRACTS_REPO=<path>`.
+- [x] Write failing tests for spec acceptance 6 and 7, and for a stored result without `notes`.
+- [x] Set `exit_resolution` on closed trades from `exit_tick_time` and the report; build the `intrabar_incomplete_ticks` note; add `notes` to the candle payload and an empty list to the tick payload.
+- [x] Run `uv run pytest tests/backtesting tests/api -q` and confirm it passes. Result: 1181 passed; the remaining 3 failures and 3 errors in `tests/api/test_stream_replay.py` need Postgres on port 5434, which is not running in this environment.
+- [x] Commit this unit.
 
 ### 4. Results view (`q_frontend`)
 
 **Files:** Modify `CONTRACTS_REV`, the vendored contracts, `src/types/backtesting.ts`, `src/components/backtests/BacktestResultsTabs.tsx`, `src/components/backtests/TradeHoverCard.tsx`, the trades table component, `src/mocks/backtest.ts` and their tests. Add a small `BacktestNotes` component beside them.
 
-- [ ] Pin and vendor the contract commit; run `make contracts-check CONTRACTS_REPO=<path>`.
-- [ ] Write failing component tests for spec acceptance 10 and for the exit-resolution label.
-- [ ] Implement the Notes section and the label, following the existing results components and design tokens.
-- [ ] Run the repository's unit tests and type check with `TZ=America/Sao_Paulo`.
-- [ ] Commit this unit.
+- [x] Pin and vendor the contract commit; run `make contracts-check CONTRACTS_REPO=<path>`.
+- [x] Write failing component tests for spec acceptance 10 and for the exit-resolution label.
+- [x] Implement the Notes section and the label, following the existing results components and design tokens.
+- [x] Run the repository's unit tests and type check with `TZ=America/Sao_Paulo`.
+- [x] Commit this unit.
+
+### 5. Adjusted series (`q_backend`)
+
+Added during review: a `WSP$` run substituted 254 of 255 replayed candles because the terminal adjusts the bars of a continuous series and not its deals.
+
+**Files:** Modify `src/q_backend/backtesting/intrabar.py`; extend `tests/backtesting/test_breakeven_intrabar.py`.
+**Interfaces:** `MarketTickReplay` gains `price_digits: int | None`; `breakeven_market_inputs` passes the instrument's `digits`. `ReplayReport` gains `rescaled`, reported as `candles_rescaled` in the note's details.
+
+- [x] Write failing tests for spec acceptance 11 and 12.
+- [x] After the exact match fails, look for a run with the bar's volume that the bar is a shifted or scaled copy of, and contribute its deals interpolated onto the bar.
+- [x] Run `uv run pytest tests/backtesting/test_breakeven_intrabar.py -q` and confirm it passes.
+- [x] Commit this unit.
 
 ## Verification and handoff
 
-- [ ] Run each repository's focused checks listed above plus its lint and format checks on the touched paths.
-- [ ] Record the commands actually run and their results in this plan; do not claim unrun checks passed.
-- [ ] Note in the handoff that `q_contracts` must be pushed with the consumers (`./work finish Q-107 --push`) for remote `contracts-check` to resolve the pin.
+- [x] Run each repository's focused checks listed above plus its lint and format checks on the touched paths.
+- [x] Record the commands actually run and their results in this plan; do not claim unrun checks passed.
+- [x] Note in the handoff that `q_contracts` must be pushed with the consumers (`./work finish Q-107 --push`) for remote `contracts-check` to resolve the pin.
 - [ ] Use `./work board set Q-107 in-review -m "<changes per repository; checks and results; follow-ups>"`.
+
+### Recorded results
+
+- `q_contracts` (`04cd4af`): `make check` passed (251 passed, 7 skipped; black, ruff, validate, generator diff clean).
+- `q_backend` (`17c5c11`): `make contracts-check CONTRACTS_REPO=<q_contracts worktree>` exit 0; `uv run ruff check src` passed; black clean on touched files; `uv run pytest tests/backtesting/test_breakeven_intrabar.py` 28 passed; `tests/backtesting` and `tests/api` 1181 passed. Not passing here: `tests/api/test_stream_replay.py`, and `tests/optimization` (6 tests) which need Postgres on port 5434. The full `./scripts/ci.sh` was not run (it starts disposable Postgres and Redis containers under Docker).
+- `q_frontend` (`99b4e07`): `make contracts-check CONTRACTS_REPO=<q_contracts worktree>` exit 0; `pnpm typecheck` passed; eslint and prettier clean on touched files; `TZ=America/Sao_Paulo pnpm test:run` 219 files, 1074 tests passed.
+- `q_backend` (adjusted series, step 5): `uv run pytest tests/backtesting/test_breakeven_intrabar.py` 34 passed; `uv run pytest tests/backtesting tests/api --deselect tests/api/test_stream_replay.py` 1188 passed, 12 skipped; `uv run ruff check src` passed; black clean on touched files. Against the MT5 gateway, one H1 candle each of `WSP$`, `WSP$D`, `WDO$`, `DOL$`, `BIT$`, `CCM$`, `PETR4` and `VALE3` replayed on real deals with no substituted minute; `WSP$N` was unchanged; `WSP$` on 2026-09-21, which has no ticks, stayed substituted.
+
+### Follow-ups
+
+- `q_contracts` must be pushed with the consumers (`./work finish Q-107 --push`) so the pins in `q_backend` and `q_frontend` resolve remotely.
+- A real deal stamped at exactly a substituted timestamp (to the millisecond) would be labelled with the substitution's resolution; the spec's timestamps are not guarded against real deals.
+

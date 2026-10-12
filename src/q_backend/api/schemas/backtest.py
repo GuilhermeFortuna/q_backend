@@ -64,6 +64,14 @@ class ChartIndicatorSeries(BaseModel):
     values: List[Optional[float]]
 
 
+class BacktestNote(BaseModel):
+    """Run-level message about how a backtest was produced; stable ``code``, free-form ``details``."""
+
+    code: str
+    message: str
+    details: Dict[str, Any] = Field(default_factory=dict)
+
+
 class BacktestResponse(BaseModel):
     metrics: Dict[str, Any]
     trades: List[Dict[str, Any]]
@@ -72,6 +80,7 @@ class BacktestResponse(BaseModel):
     run_id: Optional[str] = None
     ml_filter: Optional[MLFilterConfig] = Field(default=None, exclude_if=lambda value: value is None)
     ml_filter_summary: Optional[Dict[str, Any]] = Field(default=None, exclude_if=lambda value: value is None)
+    notes: List[BacktestNote] = Field(default_factory=list)
 
 
 class BacktestStartResponse(BaseModel):

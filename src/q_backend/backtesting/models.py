@@ -69,6 +69,10 @@ class Trade(BaseModel):
     commission: float = Field(0.0, description="Transaction costs")
     point_value: float = Field(1.0, description="Multiplier representing value per point/contract size")
     exit_reason: Optional[str] = Field(None, description="The reason or strategy that triggered the trade exit")
+    exit_resolution: Optional[str] = Field(
+        None,
+        description="What decided an intrabar exit: 'tick' (real deal), 'minute' or 'candle' (substituted price); null when a closed bar decided it",
+    )
     exit_tick_time: Optional[datetime] = Field(
         None, description="Time of the tick that closed an intrabar exit", exclude=True
     )
