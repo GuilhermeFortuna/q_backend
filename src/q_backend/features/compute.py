@@ -23,11 +23,19 @@ from q_backend.backtesting.session_context.metadata import CONTEXT_NODE_METADATA
 from q_backend.backtesting.moving_averages import compute_ma, normalize_ma_type
 from q_backend.backtesting.technical_indicators import (
     compute_atr,
+    compute_atr_fraction,
     compute_bollinger_bands,
     compute_donchian_channels,
+    compute_ewma_trend_spread,
+    compute_ewma_vol_per_bar,
+    compute_log_return,
     compute_macd,
+    compute_normalized_momentum,
+    compute_per_bar_volatility,
+    compute_price_zscore_log,
     compute_realized_vol,
     compute_rsi,
+    compute_volatility_log_ratio,
     compute_yang_zhang,
 )
 from q_backend.backtesting.transforms import (
@@ -101,6 +109,16 @@ _FEATURE_OUTPUT_PORT: dict[str, str] = {
     "exog_relative_strength": "out",
     "exog_vol_regime": "out",
     "exog_direction_regime": "out",
+    "log_return": "out",
+    "normalized_momentum": "out",
+    "ewma_trend_spread": "out",
+    "price_zscore_log": "out",
+    "per_bar_ewma_vol": "out",
+    "per_bar_realized_vol": "out",
+    "atr_fraction": "out",
+    "volatility_log_ratio": "out",
+    "quote_spread": "out",
+    "spread_vs_volatility": "out",
 }
 
 # In-process LRU: key ``(model_hash, bars_range_hash)`` → full latent frame.
@@ -163,10 +181,20 @@ def clear_model_output_cache() -> None:
     _MODEL_OUTPUT_CACHE.clear()
 
 
-def _warmup_bars(spec: FeatureSpec, params: dict[str, Any]) -> int:
-    if spec.lookback_param is None:
-        return 0
-    return int(params[spec.lookback_param])
+def _leading_nan_bars(series: pd.Series) -> int:
+    values = series.to_numpy(dtype=float, na_value=np.nan)
+    for idx, value in enumerate(values):
+        if not np.isnan(value):
+            return idx
+    return len(values)
+
+
+def _warmup_bars(spec: FeatureSpec, params: dict[str, Any], raw: pd.Series | None = None) -> int:
+    if spec.lookback_param is not None:
+        return int(params[spec.lookback_param])
+    if raw is not None:
+        return _leading_nan_bars(raw)
+    return 0
 
 
 def _oos_warmup_bars(times: pd.Series, train_end: datetime) -> int:
@@ -307,6 +335,74 @@ def _compute_node_outputs(node_kind: str, df: pd.DataFrame, params: dict[str, An
         return {"out": vol}
     if node_kind == "ind.tsmom":
         return _compute_tsmom_outputs(df, params)
+    if node_kind == "ind.log_return":
+        return {"out": compute_log_return(close, int(params["horizon"]))}
+    if node_kind == "ind.normalized_momentum":
+        estimator = str(params["per_bar_vol_estimator"])
+        return {
+            "out": compute_normalized_momentum(
+                close,
+                df["open"],
+                df["high"],
+                df["low"],
+                horizon=int(params["horizon"]),
+                vol_estimator=estimator,
+                vol_window=int(params["vol_window"]) if estimator != "ewma" else None,
+                vol_half_life=float(params["vol_half_life"]) if estimator == "ewma" else None,
+                vol_lag=int(params["vol_lag"]),
+            )
+        }
+    if node_kind == "ind.ewma_trend_spread":
+        return {
+            "out": compute_ewma_trend_spread(
+                close,
+                float(params["fast_half_life"]),
+                float(params["slow_half_life"]),
+            )
+        }
+    if node_kind == "ind.price_zscore_log":
+        return {"out": compute_price_zscore_log(close, int(params["window"]))}
+    if node_kind == "ind.per_bar_vol":
+        estimator = str(params["per_bar_vol_estimator"])
+        return {
+            "out": compute_per_bar_volatility(
+                df["open"],
+                df["high"],
+                df["low"],
+                close,
+                estimator=estimator,
+                window=int(params["window"]) if estimator != "ewma" else None,
+                half_life=float(params["half_life"]) if estimator == "ewma" else None,
+            )
+        }
+    if node_kind == "ind.atr_fraction":
+        return {"out": compute_atr_fraction(df["high"], df["low"], df["close"], int(params["period"]))}
+    if node_kind == "ind.volatility_log_ratio":
+        estimator = str(params["per_bar_vol_estimator"])
+        if estimator == "ewma":
+            sigma_short = compute_ewma_vol_per_bar(close, float(params["short_half_life"]))
+            sigma_long = compute_ewma_vol_per_bar(close, float(params["long_half_life"]))
+        else:
+            sigma_short = compute_per_bar_volatility(
+                df["open"],
+                df["high"],
+                df["low"],
+                close,
+                estimator=estimator,
+                window=int(params["short_window"]),
+                half_life=None,
+            )
+            sigma_long = compute_per_bar_volatility(
+                df["open"],
+                df["high"],
+                df["low"],
+                close,
+                estimator=estimator,
+                window=int(params["long_window"]),
+                half_life=None,
+            )
+        return {"out": compute_volatility_log_ratio(sigma_short, sigma_long)}
+
     if node_kind == "ind.trend_blend":
         l1 = int(params["lookback_1"])
         l2 = int(params["lookback_2"])
@@ -383,10 +479,52 @@ def _compute_node_outputs(node_kind: str, df: pd.DataFrame, params: dict[str, An
     raise ValueError(f"Unsupported feature node kind '{node_kind}'.")
 
 
+def _compute_quote_feature(
+    bars: pd.DataFrame,
+    spec: FeatureSpec,
+    resolved: dict[str, Any],
+    *,
+    symbol: str,
+    tick_store_root: str | None,
+) -> FeatureSeries:
+    from q_backend.market_data.indicator_catalog import catalog_entry
+    from q_backend.market_data.indicator_series import IndicatorRequest, _quote_spread_series, _spread_vs_vol
+
+    frame = bars.sort_values("time").reset_index(drop=True)
+    if frame.empty:
+        empty = pd.Series(dtype=float, index=frame["time"], name=spec.name)
+        return FeatureSeries(feature_id=feature_id(spec, resolved), series=empty, warmup_bars=0, leakage_status="clean")
+
+    entry_id = "quote_spread" if spec.node_kind == "feature.quote_spread" else "spread_vs_volatility"
+    entry = catalog_entry(entry_id)
+    tick_store = None
+    if tick_store_root is not None:
+        from q_backend.research.tick_store import TickStore
+
+        tick_store = TickStore(symbol, root=tick_store_root)
+    if entry_id == "spread_vs_volatility":
+        payload = _spread_vs_vol(entry, frame, resolved, tick_store)
+    else:
+        payload = _quote_spread_series(entry, frame, resolved, tick_store=tick_store)
+    series = pd.Series(payload.values, index=frame["time"], dtype=float, name=spec.name)
+    series = series.replace({None: np.nan})
+    warmup = _leading_nan_bars(series)
+    trimmed = _apply_warmup(series.reset_index(drop=True), warmup)
+    return FeatureSeries(
+        feature_id=feature_id(spec, resolved),
+        series=pd.Series(trimmed.to_numpy(), index=frame["time"], name=spec.name),
+        warmup_bars=warmup,
+        leakage_status="clean",
+    )
+
+
 def compute_feature(
     bars: pd.DataFrame,
     spec: FeatureSpec,
     params: dict[str, Any],
+    *,
+    symbol: str | None = None,
+    tick_store_root: str | None = None,
 ) -> FeatureSeries:
     """Compute a named feature as a causal bar→series mapping."""
     _validate_bars(bars)
@@ -394,13 +532,17 @@ def compute_feature(
         return _compute_neural(bars, spec)
 
     resolved = resolve_params(spec, params)
+    if spec.node_kind in ("feature.quote_spread", "feature.spread_vs_volatility"):
+        if symbol is None:
+            raise ValueError(f"Feature '{spec.name}' requires symbol for tick-store access.")
+        return _compute_quote_feature(bars, spec, resolved, symbol=symbol, tick_store_root=tick_store_root)
     df = bars.sort_values("time").reset_index(drop=True)
 
     port = _output_port(spec.name)
     raw = _compute_node_outputs(spec.node_kind, df, resolved)[port]
 
     meta = CONTEXT_NODE_METADATA.get(spec.node_kind or "")
-    warmup = meta.availability_delay_bars if meta is not None else _warmup_bars(spec, resolved)
+    warmup = meta.availability_delay_bars if meta is not None else _warmup_bars(spec, resolved, raw)
     values = _apply_warmup(raw.reset_index(drop=True), warmup)
     series = pd.Series(values.to_numpy(), index=df["time"], name=spec.name)
 

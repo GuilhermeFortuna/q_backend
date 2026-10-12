@@ -28,6 +28,17 @@ REQUIRED_KERNELS: tuple[str, ...] = (
     "rolling_rank",
     "pct_change",
     "clip",
+    "log_return",
+    "realized_vol_per_bar",
+    "ewma_vol_per_bar",
+    "rogers_satchell",
+    "true_range",
+    "atr_fraction",
+    "price_zscore_log",
+    "ewma_trend_spread",
+    "vol_normalize",
+    "volatility_log_ratio",
+    "quote_spread_bars",
 )
 
 

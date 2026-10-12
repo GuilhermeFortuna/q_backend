@@ -2,12 +2,16 @@ import logging
 from datetime import datetime, timedelta
 from typing import List, Optional
 
+import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from q_backend.api.dependencies import _require_mt5_live, get_market_data_service
 from q_backend.api.schemas.market import (
+    IndicatorCatalogResponse,
     InstrumentInfoResponse,
     InstrumentResponse,
+    MarketIndicatorSeriesRequest,
+    MarketIndicatorSeriesResponse,
     MarketSnapshotResponse,
     MarketSnapshotsResponse,
     MarketTicksResponse,
@@ -15,6 +19,8 @@ from q_backend.api.schemas.market import (
     OhlcvBarResponse,
     TickAvailableRangeResponse,
 )
+from q_backend.market_data.indicator_catalog import catalog_response_entries
+from q_backend.market_data.indicator_series import IndicatorRequest, build_indicator_series
 from q_backend.market_data import api_service as market_service
 from q_backend.market_data.clients.metatrader import _to_naive_local
 from q_backend.market_data.models import OHLCV, Tick
@@ -364,3 +370,32 @@ def get_market_ohlcv_available_range(
         "end": mt5_datetime_to_utc_iso(available_range.end),
         "bar_count": available_range.bar_count,
     }
+
+
+@router.get("/api/v1/market/indicators", response_model=IndicatorCatalogResponse)
+def get_market_indicator_catalog():
+    return {"indicators": catalog_response_entries()}
+
+
+@router.post(
+    "/api/v1/market/indicators/{symbol}/series",
+    response_model=MarketIndicatorSeriesResponse,
+)
+def post_market_indicator_series(
+    symbol: str,
+    body: MarketIndicatorSeriesRequest,
+    mds: MarketDataService = Depends(get_market_data_service),
+):
+    symbol = symbol.upper()
+    start = _to_naive_local(pd.Timestamp(body.start).to_pydatetime())
+    end = _to_naive_local(pd.Timestamp(body.end).to_pydatetime())
+    requests = [IndicatorRequest(id=item.id, parameters=dict(item.parameters)) for item in body.indicators]
+    payload = build_indicator_series(
+        mds,
+        symbol=symbol,
+        timeframe=body.timeframe,
+        start=start,
+        end=end,
+        requests=requests,
+    )
+    return payload

@@ -759,3 +759,18 @@ uv run python examples/research/mt5_backtest.py \
   --strategy custom \
   --cost-per-contract 1.00
 ```
+
+## Market chart indicators (Q-112)
+
+The Market workspace no longer computes indicators in the frontend. The control API
+catalog at `GET /api/v1/market/indicators` lists every chartable kernel (identifier,
+category, parameters, outputs, pane, and required data). The series route
+`POST /api/v1/market/indicators/{symbol}/series` returns bar timestamps for the requested
+range and one value array per output, aligned to those times; missing values are
+`null`, and quote-based indicators mark the whole output unavailable when ticks are
+absent.
+
+Research strategies, discovery, and the feature store use the same `q_core` values
+through the Python wrappers in `q_backend.backtesting.technical_indicators` and the
+genome/feature registries. When validating a chart overlay against a backtest, compare
+against those backend series—not a local TypeScript implementation.
