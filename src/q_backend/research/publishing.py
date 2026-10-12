@@ -65,53 +65,7 @@ def _clean_for_json(val: Any) -> Any:
     return val
 
 
-def _find_git_repo(path: Path) -> tuple[Path | None, str | None, bool | None]:
-    try:
-        proc = subprocess.run(
-            ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if proc.returncode != 0 or not proc.stdout.strip():
-            return None, None, None
-        git_root = Path(proc.stdout.strip()).resolve()
-
-        rev_proc = subprocess.run(
-            ["git", "-C", str(git_root), "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        rev = rev_proc.stdout.strip() if rev_proc.returncode == 0 and rev_proc.stdout.strip() else None
-
-        status_proc = subprocess.run(
-            ["git", "-C", str(git_root), "status", "--porcelain"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        dirty = bool(status_proc.stdout.strip()) if status_proc.returncode == 0 else None
-        return git_root, rev, dirty
-    except Exception:  # noqa: BLE001
-        return None, None, None
-
-
-def _get_script_path() -> Path | None:
-    try:
-        main_mod = sys.modules.get("__main__")
-        main_file = getattr(main_mod, "__file__", None)
-        if main_file:
-            p = Path(main_file)
-            if p.name != "pytest" and not p.name.startswith("pytest-") and p.is_file():
-                return p.resolve()
-        if sys.argv and sys.argv[0]:
-            p = Path(sys.argv[0])
-            if p.name != "pytest" and not p.name.startswith("pytest-") and p.is_file():
-                return p.resolve()
-    except Exception:  # noqa: BLE001, S110 - script path resolution is best-effort and degrades to None
-        pass
-    return None
+from q_backend.research.provenance import find_git_repo as _find_git_repo, get_script_path as _get_script_path
 
 
 def _collect_provenance(strategy: Any) -> BacktestProvenance:

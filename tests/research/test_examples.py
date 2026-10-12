@@ -389,3 +389,55 @@ def test_stop_target_backtest_example_runs_over_a_store(tmp_path: Path) -> None:
     assert trade["exit_tick_time"] == pd.Timestamp("2026-10-05 14:50:06", tz=BRASILIA_TZ)
     assert trade["stop_loss"] < 98.0 < trade["take_profit"]
     assert result.rejected_entries.empty
+
+
+def test_publish_figures_example_with_mocked_http() -> None:
+    import json
+    import httpx
+    from examples.research.publish_figures import (
+        build_parser as figures_build_parser,
+        main as figures_main,
+        publish_synthetic_figures,
+    )
+
+    args = figures_build_parser().parse_args(["--collection", "test_col", "--api-url", "http://127.0.0.1:8001"])
+    assert args.collection == "test_col"
+    assert args.api_url == "http://127.0.0.1:8001"
+
+    captured: list[httpx.Request] = []
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        fig_id = f"fig-{len(captured)}"
+        return httpx.Response(201, json={"figure_id": fig_id, "replaced": False})
+
+    client = httpx.Client(transport=httpx.MockTransport(mock_handler))
+
+    mpl_id, plotly_id = publish_synthetic_figures(
+        collection="test_collection",
+        client=client,
+    )
+
+    assert mpl_id == "fig-1"
+    assert plotly_id == "fig-2"
+    assert len(captured) == 2
+
+    # Matplotlib payload
+    mpl_payload = json.loads(captured[0].content)
+    assert mpl_payload["collection"] == "test_collection"
+    assert mpl_payload["title"] == "Synthetic Strategy Equity & Drawdown"
+    assert mpl_payload["content"]["kind"] == "image"
+    assert mpl_payload["content"]["media_type"] == "image/png"
+
+    # Plotly payload
+    plotly_payload = json.loads(captured[1].content)
+    assert plotly_payload["collection"] == "test_collection"
+    assert plotly_payload["title"] == "Synthetic Daily Returns Time Series"
+    assert plotly_payload["content"]["kind"] == "plotly"
+    assert "data" in plotly_payload["content"]["figure"]
+
+    # Test main with mocked client injection
+    with patch("examples.research.publish_figures.publish_synthetic_figures", return_value=("id1", "id2")) as mock_pub:
+        ret = figures_main(["--collection", "cli_col"])
+        assert ret == 0
+        mock_pub.assert_called_once_with(collection="cli_col", api_url=None)

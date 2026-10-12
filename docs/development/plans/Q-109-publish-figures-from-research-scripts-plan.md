@@ -31,40 +31,40 @@
 
 **Files (`q_contracts`):** `schema/api/openapi.yaml`, generated outputs, a `tests/test_research_figures_contract.py`.
 
-- [ ] Add a failing contract test: the six routes, the `content` discriminator, the metadata shape and the bulk-delete one-of.
-- [ ] Add the paths and schemas, regenerate, run `make check`, commit.
-- [ ] In `q_backend`: update `CONTRACTS_REV`, run `make contracts` against the local clone and `make contracts-check`; commit.
+- [x] Add a failing contract test: the six routes, the `content` discriminator, the metadata shape and the bulk-delete one-of.
+- [x] Add the paths and schemas, regenerate, run `make check`, commit.
+- [x] In `q_backend`: update `CONTRACTS_REV`, run `make contracts` against the local clone and `make contracts-check`; commit.
 
 ### 2. Storage
 
 **Files:** `src/q_backend/storage/db/models.py`, `storage/db/repositories.py`, `storage/lake/artifacts.py`, `storage/settings.py`, a new `alembic/versions/*_research_figures.py`, `tests/storage/`.
 
-- [ ] Add failing tests for create, replace, list with collection counts, delete, atomic content write and extension change on replacement.
-- [ ] Implement the model, migration, repository functions, lake read/write/delete and the `research_figure_max_bytes` setting.
-- [ ] Run the storage tests and the migration upgrade/downgrade check; commit.
+- [x] Add failing tests for create, replace, list with collection counts, delete, atomic content write and extension change on replacement.
+- [x] Implement the model, migration, repository functions, lake read/write/delete and the `research_figure_max_bytes` setting.
+- [x] Run the storage tests and the migration upgrade/downgrade check; commit.
 
 ### 3. Control API
 
 **Files:** new `src/q_backend/api/routers/research_figures.py` and `api/schemas/research_figures.py`, a service module beside `backtesting/run_import.py` conventions, `api/main.py`, `tests/api/`.
 
-- [ ] Add failing tests for spec acceptance items 5–9.
-- [ ] Implement validation, the create/replace transaction, the content response with its headers, and deletion.
-- [ ] Run the API tests; commit.
+- [x] Add failing tests for spec acceptance items 5–9.
+- [x] Implement validation, the create/replace transaction, the content response with its headers, and deletion.
+- [x] Run the API tests; commit.
 
 ### 4. Library
 
 **Files:** new `src/q_backend/research/figures.py`, `research/figure_style.py` and `research/provenance.py`; modify `research/publishing.py`, `research/__init__.py`, `pyproject.toml`, `uv.lock`; `tests/research/test_figures.py`, `tests/research/test_imports.py`.
 
-- [ ] Add failing tests for spec acceptance items 1–4, 10 and 11.
-- [ ] Add the dependencies; implement figure recognition, rendering, defaults, the request and error mapping; export `publish_figure` and `use_figure_style` lazily.
-- [ ] Run `uv run pytest tests/research -q`; commit.
+- [x] Add failing tests for spec acceptance items 1–4, 10 and 11.
+- [x] Add the dependencies; implement figure recognition, rendering, defaults, the request and error mapping; export `publish_figure` and `use_figure_style` lazily.
+- [x] Run `uv run pytest tests/research -q`; commit.
 
 ### 5. Documentation and example
 
 **Files:** `docs/research-library.md`, `README.md`, `examples/research/publish_figures.py`, `tests/research/test_examples.py`.
 
-- [ ] Write the guide section and the route reference; add the example with mocked HTTP coverage.
-- [ ] Commit.
+- [x] Write the guide section and the route reference; add the example with mocked HTTP coverage.
+- [x] Commit.
 
 ## Verification
 

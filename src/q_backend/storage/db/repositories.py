@@ -24,6 +24,7 @@ from q_backend.storage.db.models import (
     MLFilterEvaluation,
     MLFilterModelVersion,
     MLFilterRun,
+    ResearchFigure,
     RunStatus,
     Strategy,
     StrategySearchCandidate,
@@ -1538,3 +1539,193 @@ def list_feature_evidence_for_profile(
             .order_by(FeatureEvidenceRow.feature_name, FeatureEvidenceRow.horizon)
         ).scalars()
     )
+
+
+def create_research_figure(
+    session: Session,
+    *,
+    title: str,
+    collection: str,
+    kind: str,
+    media_type: str,
+    byte_size: int,
+    notes: Optional[str] = None,
+    width: Optional[int] = None,
+    height: Optional[int] = None,
+    provenance: Optional[dict[str, Any]] = None,
+    figure_id: Optional[str | uuid.UUID] = None,
+) -> ResearchFigure:
+    fig_uuid = uuid.UUID(str(figure_id)) if figure_id is not None else uuid.uuid4()
+    figure = ResearchFigure(
+        id=fig_uuid,
+        title=title,
+        collection=collection,
+        notes=notes,
+        kind=kind,
+        media_type=media_type,
+        width=width,
+        height=height,
+        byte_size=byte_size,
+        revision=1,
+        provenance=provenance,
+    )
+    session.add(figure)
+    session.flush()
+    return figure
+
+
+def get_research_figure(
+    session: Session,
+    figure_id: str | uuid.UUID,
+) -> Optional[ResearchFigure]:
+    fig_uuid = uuid.UUID(str(figure_id)) if not isinstance(figure_id, uuid.UUID) else figure_id
+    return session.get(ResearchFigure, fig_uuid)
+
+
+def get_research_figure_by_collection_and_title(
+    session: Session,
+    *,
+    collection: str,
+    title: str,
+) -> Optional[ResearchFigure]:
+    stmt = (
+        select(ResearchFigure)
+        .where(ResearchFigure.collection == collection, ResearchFigure.title == title)
+        .order_by(desc(ResearchFigure.updated_at))
+        .limit(1)
+    )
+    return session.execute(stmt).scalar_one_or_none()
+
+
+def update_research_figure(
+    session: Session,
+    figure_id: str | uuid.UUID,
+    *,
+    kind: str,
+    media_type: str,
+    byte_size: int,
+    notes: Optional[str] = None,
+    width: Optional[int] = None,
+    height: Optional[int] = None,
+    provenance: Optional[dict[str, Any]] = None,
+) -> ResearchFigure:
+    fig = get_research_figure(session, figure_id)
+    if fig is None:
+        raise ValueError(f"Research figure with id '{figure_id}' not found.")
+    fig.kind = kind
+    fig.media_type = media_type
+    fig.byte_size = byte_size
+    fig.notes = notes
+    fig.width = width
+    fig.height = height
+    fig.provenance = provenance
+    fig.revision += 1
+    fig.updated_at = datetime.now(timezone.utc)
+    session.flush()
+    return fig
+
+
+def list_research_figures(
+    session: Session,
+    *,
+    collection: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> tuple[list[ResearchFigure], int]:
+    base_filter = []
+    if collection is not None:
+        base_filter.append(ResearchFigure.collection == collection)
+
+    count_stmt = select(func.count(ResearchFigure.id))
+    if base_filter:
+        count_stmt = count_stmt.where(*base_filter)
+    total = session.execute(count_stmt).scalar() or 0
+
+    query = select(ResearchFigure)
+    if base_filter:
+        query = query.where(*base_filter)
+    query = query.order_by(desc(ResearchFigure.updated_at)).limit(limit).offset(offset)
+    items = list(session.execute(query).scalars().all())
+    return items, total
+
+
+def get_research_figure_collection_summaries(
+    session: Session,
+) -> list[dict[str, Any]]:
+    stmt = (
+        select(
+            ResearchFigure.collection,
+            func.count(ResearchFigure.id),
+            func.max(ResearchFigure.updated_at),
+        )
+        .group_by(ResearchFigure.collection)
+        .order_by(ResearchFigure.collection)
+    )
+    rows = session.execute(stmt).all()
+    return [
+        {
+            "name": row[0],
+            "count": int(row[1]),
+            "updated_at": row[2].isoformat() if row[2] else None,
+        }
+        for row in rows
+    ]
+
+
+def delete_research_figure(
+    session: Session,
+    figure_id: str | uuid.UUID,
+) -> bool:
+    fig = get_research_figure(session, figure_id)
+    if fig is None:
+        return False
+    session.delete(fig)
+    session.flush()
+    return True
+
+
+def bulk_delete_research_figures(
+    session: Session,
+    *,
+    figure_ids: Optional[list[str]] = None,
+    collection: Optional[str] = None,
+) -> tuple[int, list[str], list[str]]:
+    """Delete research figures by ids or by collection.
+
+    Returns (deleted_count, not_found_ids, deleted_ids).
+    """
+    if figure_ids is not None:
+        parsed_uuids: dict[uuid.UUID, str] = {}
+        for raw_id in figure_ids:
+            try:
+                parsed_uuids[uuid.UUID(str(raw_id))] = raw_id
+            except (ValueError, TypeError):
+                pass
+        existing_figures = list(
+            session.execute(select(ResearchFigure).where(ResearchFigure.id.in_(list(parsed_uuids.keys()))))
+            .scalars()
+            .all()
+        )
+        found_uuid_set = {fig.id for fig in existing_figures}
+        not_found = [
+            raw_id
+            for raw_id in figure_ids
+            if raw_id not in {parsed_uuids[uid] for uid in found_uuid_set if uid in parsed_uuids}
+        ]
+        deleted_ids = [str(fig.id) for fig in existing_figures]
+        for fig in existing_figures:
+            session.delete(fig)
+        session.flush()
+        return len(existing_figures), not_found, deleted_ids
+
+    if collection is not None:
+        existing_figures = list(
+            session.execute(select(ResearchFigure).where(ResearchFigure.collection == collection)).scalars().all()
+        )
+        deleted_ids = [str(fig.id) for fig in existing_figures]
+        for fig in existing_figures:
+            session.delete(fig)
+        session.flush()
+        return len(existing_figures), [], deleted_ids
+
+    return 0, [], []

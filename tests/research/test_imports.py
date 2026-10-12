@@ -98,3 +98,25 @@ def test_research_backtests_do_not_load_torch() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_fresh_import_does_not_load_plotting_or_http_libraries() -> None:
+    script = textwrap.dedent("""
+        import sys
+        import q_backend.research as research
+        assert "publish_figure" in research.__all__
+        assert "use_figure_style" in research.__all__
+        assert "matplotlib" not in sys.modules
+        assert "plotly" not in sys.modules
+        assert "httpx" not in sys.modules
+        assert "q_backend.storage" not in sys.modules
+        assert "q_backend.api" not in sys.modules
+        """)
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        cwd=str(Path(__file__).resolve().parents[2]),
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr

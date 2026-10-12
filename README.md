@@ -974,6 +974,25 @@ uv run python examples/research/mt5_backtest.py --symbol 'WIN$N' --timeframe M5 
   * *Description:* The run's closed trades as `text/csv` with columns `trade_id,symbol,side,entry_time,entry_price,exit_time,exit_price,pnl,quantity,commission,point_value,exit_reason`.
   * *Errors:* `404` when the run id is invalid or artifacts were never written.
 
+### Research Figures
+* **`POST /api/v1/research/figures`**
+  * *Description:* Store a Matplotlib image (PNG/SVG) or interactive Plotly figure from a research script. Synchronous; returns `201` with `{"figure_id": "<uuid>", "replaced": <bool>}`.
+  * *Request (image):* `{"title": "...", "collection": "...", "notes": "...", "replace": true, "content": {"kind": "image", "media_type": "image/png" | "image/svg+xml", "data": "<base64>", "width": 800, "height": 600}}`
+  * *Request (plotly):* `{"title": "...", "collection": "...", "notes": "...", "replace": true, "content": {"kind": "plotly", "figure": {"data": [...], "layout": {...}}}}`
+* **`GET /api/v1/research/figures`**
+  * *Description:* Paginated list of figure metadata, ordered newest `updated_at` first.
+  * *Parameters:* `collection` (filter), `limit` (default 100, max 500), `offset` (default 0).
+  * *Response:* `{"items": [<figure_metadata>], "total": 42, "limit": 100, "offset": 0, "collections": [{"name": "...", "count": 10, "updated_at": "..."}]}`
+* **`GET /api/v1/research/figures/{figure_id}`**
+  * *Description:* Full metadata for a single figure.
+  * *Response:* `{"figure_id": "...", "title": "...", "collection": "...", "kind": "image"|"plotly", "media_type": "...", "width": 800, "height": 600, "byte_size": 12345, "revision": 1, ...}`
+* **`GET /api/v1/research/figures/{figure_id}/content`**
+  * *Description:* Direct figure bytes with stored media type, `ETag`, `X-Content-Type-Options: nosniff`, and a sandboxing `Content-Security-Policy`.
+* **`DELETE /api/v1/research/figures/{figure_id}`**
+  * *Description:* Delete a figure and its lake content artifact (`204`).
+* **`POST /api/v1/research/figures/bulk-delete`**
+  * *Description:* Delete multiple figures by id list (`{"figure_ids": ["..."]}`) or entire collection (`{"collection": "..."}`).
+
 ### Optuna Parameter Optimization
 * **`POST /api/v1/optimize`**
   * *Description:* Launch an asynchronous Optuna parameter optimization study.

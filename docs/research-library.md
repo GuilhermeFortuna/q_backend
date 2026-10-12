@@ -532,6 +532,35 @@ run_id = result.publish()
 - **Strategy name and timeframe:** `name` defaults to `result.config["strategy"]` and `timeframe` defaults to `result.config["timeframe"]` (from `bars.attrs["q_research"]["timeframe"]`). Both can be overridden explicitly: `result.publish(name="MyModel", timeframe="H1")`. If the input frame lacks timeframe metadata, `timeframe=` is required.
 - **Run lifecycle:** Publishing never alters the `BacktestResult` and never retries automatically. Each call creates a new run in the stack.
 
+### Publish figures to the Research stack
+
+A research script can publish Matplotlib and Plotly figures to the Research stack, where they are stored in the lake and displayed in the desktop Figures tab:
+
+```python
+from q_backend import research
+
+# Optional: apply Q dark theme to Matplotlib and Plotly
+research.use_figure_style()
+
+# 1. Matplotlib figure (PNG by default, or SVG)
+fig, ax = plt.subplots()
+ax.plot(returns.cumsum())
+fig_id = research.publish_figure(fig, title="Cumulative Return", notes="Strategy run 2026-09")
+
+# 2. Plotly figure (stored as interactive JSON)
+p_fig = go.Figure(data=go.Scatter(x=df.index, y=df["equity"]))
+p_fig.update_layout(title="Interactive Equity Curve")
+fig_id_plotly = research.publish_figure(p_fig)
+```
+
+- **Supported figure types:** A `matplotlib.figure.Figure`, any object with a `.figure` attribute (such as an `Axes` or a seaborn `FacetGrid`), or a `plotly.graph_objects.Figure`. Recognized without importing either library; unsupported objects raise `TypeError`.
+- **Rendering & formats:** Matplotlib figures are rendered via `savefig` at `dpi` (default 200) with a tight bounding box and the figure's own face colour, as `"png"` (default) or `"svg"`. The caller's figure object is neither closed nor resized. Plotly figures are serialized via `fig.to_json()` and served interactively.
+- **Title and collection:** `title` defaults to the figure's own title (`fig._suptitle`, single axes title, or `fig.layout.title.text`). When no title is found, `ValueError` is raised naming `title=`. `collection` groups figures in the desktop and defaults to the script file stem (or `"interactive"` when run in a REPL or notebook).
+- **Replacement:** By default (`replace=True`), publishing a figure with an existing `(collection, title)` replaces the existing figure in place (`replaced: True`, revision incremented, old lake file removed), preventing duplicate accumulation when re-running a research script. Pass `replace=False` to add a new figure each time.
+- **Style helper:** `research.use_figure_style("dark")` applies the Q dark theme (carbon background, silver text, gold/brass accent palette) to Matplotlib `rcParams` and registers the `q_dark` template as default in Plotly. It is opt-in; `publish_figure` never restyles a figure.
+- **Size limit:** Decoded content is capped by `Q_RESEARCH_FIGURE_MAX_BYTES` (default 32 MiB). Exceeding this limit returns HTTP `413` and raises `ValueError`.
+- **API URL and errors:** Like `publish()`, target URL defaults to `Q_API_URL` or `http://127.0.0.1:8001`. An unreachable API raises `ConnectionError` naming `./dev research`. HTTP 422 or 413 raises `ValueError` with the server detail.
+
 ## Execution model
 
 - Strategy hooks see completed bars only. An unpriced entry or close decided on a bar fills at the next bar's open; a priced entry fills on the deciding bar (see [Priced entry orders](#priced-entry-orders)).
