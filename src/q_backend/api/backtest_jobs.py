@@ -207,8 +207,14 @@ def _execute_candle(
     market_data = market_data_frame(augmented)
 
     sizer = build_position_sizer(request.position_sizing, point_value=request.point_value)
-    from q_backend.backtesting.intrabar import breakeven_market_inputs
+    from q_backend.backtesting.intrabar import (
+        ReplayReport,
+        breakeven_market_inputs,
+        classify_exit_resolutions,
+        intrabar_notes,
+    )
 
+    replay_report = ReplayReport()
     engine = BacktestEngine(
         strategy,
         sizer,
@@ -219,12 +225,14 @@ def _execute_candle(
         day_trade_end_time=request.day_trade_end_time,
         day_trade_close_time=request.day_trade_close_time,
         costs=request.costs,
-        **breakeven_market_inputs(strategy, market_data_service, request.timeframe),
+        **breakeven_market_inputs(strategy, market_data_service, request.timeframe, report=replay_report),
     )
     registry = engine.run(df, parallel_mode=ParallelMode.SEQUENTIAL)
 
     metrics = registry.get_performance_metrics(request.initial_capital)
     closed_trade_objects = registry.get_closed_trades()
+    classify_exit_resolutions(closed_trade_objects, replay_report)
+    notes = intrabar_notes(closed_trade_objects, replay_report)
     trades = [t.model_dump(mode="json") for t in closed_trade_objects]
     equity = build_equity_curve(closed_trade_objects, request.initial_capital, start, end)
     equity_df = pd.DataFrame({"time": equity.index, "equity": equity.values})
@@ -234,6 +242,7 @@ def _execute_candle(
         "trades": trades,
         "bars": chart_data["bars"],
         "indicators": chart_data["indicators"],
+        "notes": notes,
     }
     if request.ml_filter is not None and ml_filter_manifest is not None:
         payload["ml_filter"] = request.ml_filter.model_dump(mode="json")
@@ -303,6 +312,7 @@ def _execute_tick(
         "trades": trades,
         "bars": chart_data["bars"],
         "indicators": chart_data["indicators"],
+        "notes": [],
     }
     return payload, closed_trade_objects, equity_df, market_data
 

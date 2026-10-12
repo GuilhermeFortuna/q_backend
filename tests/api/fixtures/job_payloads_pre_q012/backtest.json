@@ -217,6 +217,7 @@
       "win_rate": 0.0,
       "winning_trades": 0
     },
+    "notes": [],
     "run_id": "<NORMALIZED_ID>",
     "trades": [
       {
@@ -226,6 +227,7 @@
         "entry_time": "<NORMALIZED_TIMESTAMP>",
         "exit_price": 102.8012,
         "exit_reason": "SIGNAL",
+        "exit_resolution": null,
         "exit_time": "<NORMALIZED_TIMESTAMP>",
         "id": "<NORMALIZED_ID>",
         "order_id": "<NORMALIZED_ID>",

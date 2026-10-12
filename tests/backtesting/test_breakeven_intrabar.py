@@ -54,14 +54,60 @@ def test_explicit_zero_disables_only_the_emergency_distance():
     }
 
 
+_TRADE_FLAGS = 8 | 16 | 32 | 64
+
+
+def minute_bar(minute, open_, high, low, close, volume):
+    from q_backend.market_data.models import OHLCV
+
+    return OHLCV(
+        time=pd.Timestamp(minute),
+        open=open_,
+        high=high,
+        low=low,
+        close=close,
+        tick_volume=1,
+        real_volume=volume,
+    )
+
+
 class TickProvider:
-    def __init__(self, prices, times=None):
+    """Serves deals and, unless given, M1 bars that the deals themselves reproduce."""
+
+    def __init__(self, prices, times=None, volumes=None, flags=None, bars=None):
         self.prices = prices
         start = pd.Timestamp("2024-01-02 10:00").value // 1_000_000
         self.times = times if times is not None else start + np.arange(len(prices)) * 1000
+        self.volumes = volumes if volumes is not None else [1] * len(prices)
+        self.flags = flags
+        self.bars = bars
 
     def get_ticks_columnar(self, symbol, start, end, **kwargs):
-        return {"last": np.asarray(self.prices, dtype=float), "time_msc": np.asarray(self.times, dtype=np.int64)}
+        arrays = {
+            "last": np.asarray(self.prices, dtype=float),
+            "time_msc": np.asarray(self.times, dtype=np.int64),
+            "volume": np.asarray(self.volumes, dtype=float),
+        }
+        if self.flags is not None:
+            arrays["flags"] = np.asarray(self.flags, dtype=np.int64)
+        return arrays
+
+    def get_ohlcv(self, symbol, timeframe, start, end):
+        if self.bars is not None:
+            return [bar for bar in self.bars if start <= bar.time < end]
+        times = np.asarray(self.times, dtype=np.int64)
+        prices = np.asarray(self.prices, dtype=float)
+        volumes = np.asarray(self.volumes, dtype=float)
+        keep = np.ones(times.size, dtype=bool) if self.flags is None else (np.asarray(self.flags) & _TRADE_FLAGS) != 0
+        order = np.argsort(times[keep], kind="stable")
+        times, prices, volumes = times[keep][order], prices[keep][order], volumes[keep][order]
+        bars = []
+        for minute in np.unique(times // 60_000 * 60_000):
+            chosen = (times // 60_000 * 60_000) == minute
+            px = prices[chosen]
+            bar_time = pd.Timestamp(int(minute), unit="ms")
+            bars.append(minute_bar(bar_time, px[0], px.max(), px.min(), px[-1], int(volumes[chosen].sum())))
+        return [bar for bar in bars if start <= bar.time < end]
 
 
 def replay_frame():
@@ -86,17 +132,6 @@ def test_market_replay_sorts_prices_stably_and_returns_wall_clock_tick_times():
     assert times.tolist() == [start * 1000, (start + 1000) * 1000, (start + 2000) * 1000, (start + 3000) * 1000]
 
 
-@pytest.mark.parametrize("prices", [[], [100, 103, 102]])
-def test_market_replay_rejects_missing_or_mismatched_tick_history(prices, monkeypatch):
-    from q_backend.backtesting import intrabar
-    from q_backend.backtesting.intrabar import MarketTickReplay
-
-    monkeypatch.setattr(intrabar.time, "sleep", lambda _: None)
-    replay = MarketTickReplay(TickProvider(prices), "TEST", "H1", replay_frame())
-    with pytest.raises(ValueError, match="ticks"):
-        replay(0)
-
-
 def test_market_replay_rereads_a_candle_the_provider_first_returned_empty(monkeypatch):
     from q_backend.backtesting import intrabar
     from q_backend.backtesting.intrabar import MarketTickReplay
@@ -109,7 +144,7 @@ def test_market_replay_rereads_a_candle_the_provider_first_returned_empty(monkey
     def cold_then_warm(symbol, start, end, **kwargs):
         reads.append(1)
         if len(reads) == 1:
-            return {"last": np.array([]), "time_msc": np.array([], dtype=np.int64)}
+            return {"last": np.array([]), "time_msc": np.array([], dtype=np.int64), "volume": np.array([])}
         return served(symbol, start, end, **kwargs)
 
     provider.get_ticks_columnar = cold_then_warm
@@ -221,6 +256,9 @@ def test_stack_job_uses_instrument_tick_size_and_returns_intrabar_exit(monkeypat
     assert trades[0].exit_price == 74
     assert trades[0].pnl == -330
     assert payload["metrics"]["total_trades"] == 1
+    # The M1 bar has no real volume, so its prices (which aggregate to the candle) stand in for the minute.
+    assert trades[0].exit_resolution == "minute"
+    assert [note["code"] for note in payload["notes"]] == ["intrabar_incomplete_ticks"]
     assert backtest_jobs._request_config(request)["exit_params"]["breakeven_emergency_stop_ticks"] == 100
 
 
@@ -268,22 +306,11 @@ def test_sliced_optimization_runner_uses_the_same_intrabar_stop(monkeypatch, inj
     assert result.trades[0].exit_price == 74
 
 
-class FlaggedProvider:
-    def __init__(self, rows):
-        start = pd.Timestamp("2024-01-02 10:00").value // 1_000_000
-        self.times = np.array([start + i * 1000 for i in range(len(rows))], dtype=np.int64)
-        self.last = np.array([price for price, _ in rows], dtype=float)
-        self.flags = np.array([flag for _, flag in rows], dtype=np.int32)
-
-    def get_ticks_columnar(self, symbol, start, end, **kwargs):
-        return {"time_msc": self.times, "last": self.last, "flags": self.flags}
-
-
 def test_market_replay_ignores_quote_updates_that_repeat_the_previous_last():
     from q_backend.backtesting.intrabar import MarketTickReplay
 
     # The first quote update carries the previous candle's close (99); only deals count.
-    provider = FlaggedProvider([(99, 2), (100, 8), (74, 8), (103, 4), (103, 24), (102, 8)])
+    provider = TickProvider([99, 100, 74, 103, 103, 102], flags=[2, 8, 8, 4, 24, 8])
     _, prices = MarketTickReplay(provider, "TEST", "H1", replay_frame())(0)
 
     assert prices.tolist() == [100, 74, 103, 102]
@@ -294,8 +321,233 @@ def test_market_replay_snaps_rounded_terminal_prices_onto_the_tick_grid():
 
     frame = replay_frame()
     frame.loc[frame.index[0], ["open", "high", "low", "close"]] = [100.25, 103.75, 74.0, 102.5]
-    provider = FlaggedProvider([(100.3, 8), (74.0, 8), (103.8, 8), (102.5, 8)])
+    bars = [minute_bar("2024-01-02 10:00", 100.25, 103.75, 74.0, 102.5, 4)]
+    provider = TickProvider([100.3, 74.0, 103.8, 102.5], bars=bars)
 
     _, prices = MarketTickReplay(provider, "TEST", "H1", frame, tick_size=0.25)(0)
 
     assert prices.tolist() == [100.25, 74.0, 103.75, 102.5]
+
+
+START = pd.Timestamp("2024-01-02 10:00")
+
+
+def ms(offset_seconds):
+    return (START + pd.Timedelta(seconds=offset_seconds)).value // 1_000_000
+
+
+def three_minute_frame():
+    return pd.DataFrame(
+        {"open": [100.0], "high": [110.0], "low": [74.0], "close": [106.0]},
+        index=pd.DatetimeIndex([START]),
+    )
+
+
+def test_complete_deals_yield_exactly_those_deals_without_substitution():
+    from q_backend.backtesting.intrabar import MarketTickReplay, ReplayReport
+
+    # Minute 10:00: 100, 110, 100 (vol 3, close 100). Minute 10:01: 106, 104 (vol 3, close 104).
+    deal_times = [ms(0), ms(20), ms(40), ms(60), ms(80)]
+    prices = [100, 110, 100, 106, 104]
+    bars = [
+        minute_bar("2024-01-02 10:00", 100, 110, 100, 100, 3),
+        minute_bar("2024-01-02 10:01", 106, 106, 104, 104, 2),
+    ]
+    frame = pd.DataFrame({"open": [100.0], "high": [110.0], "low": [100.0], "close": [104.0]}, index=[START])
+    report = ReplayReport()
+    provider = TickProvider(prices, times=deal_times, volumes=[1, 1, 1, 1, 1], bars=bars)
+
+    times, out = MarketTickReplay(provider, "TEST", "H1", frame, report=report)(0)
+
+    assert out.tolist() == prices
+    assert times.tolist() == [t * 1000 for t in deal_times]
+    assert report.substituted == set()
+    assert report.resolutions == {}
+
+
+def test_a_deal_just_after_a_minute_boundary_belongs_to_the_previous_minute_by_volume():
+    from q_backend.backtesting.intrabar import MarketTickReplay, ReplayReport
+
+    # 10:01:00.300 trades at 105 and closes minute 10:00 (vol 3, last 105); the 10:01 bar follows.
+    deal_times = [ms(0), ms(30), ms(60.3), ms(70), ms(80)]
+    prices = [100, 110, 105, 106, 104]
+    volumes = [1, 1, 1, 2, 1]
+    bars = [
+        minute_bar("2024-01-02 10:00", 100, 110, 100, 105, 3),
+        minute_bar("2024-01-02 10:01", 106, 106, 104, 104, 3),
+    ]
+    report = ReplayReport()
+    provider = TickProvider(prices, times=deal_times, volumes=volumes, bars=bars)
+    frame = pd.DataFrame({"open": [100.0], "high": [110.0], "low": [100.0], "close": [104.0]}, index=[START])
+
+    _, out = MarketTickReplay(provider, "TEST", "H1", frame, report=report)(0)
+
+    assert out.tolist() == prices
+    assert report.resolutions == {}
+
+
+def test_a_closing_auction_deal_minutes_after_the_last_bar_is_assigned_to_it():
+    from q_backend.backtesting.intrabar import MarketTickReplay, ReplayReport
+
+    # The last bar of the day is 10:00; an auction deal at 10:09 at its close belongs to it.
+    deal_times = [ms(0), ms(30), ms(9 * 60)]
+    prices = [100, 110, 105]
+    bars = [minute_bar("2024-01-02 10:00", 100, 110, 100, 105, 3)]
+    frame = pd.DataFrame({"open": [100.0], "high": [110.0], "low": [100.0], "close": [105.0]}, index=[START])
+    report = ReplayReport()
+
+    _, out = MarketTickReplay(TickProvider(prices, times=deal_times, bars=bars), "TEST", "H1", frame, report=report)(0)
+
+    assert out.tolist() == prices
+    assert report.substituted == set()
+
+
+def test_one_missing_minute_is_substituted_in_order_and_the_others_keep_their_deals():
+    from q_backend.backtesting.intrabar import MarketTickReplay, ReplayReport
+
+    # Minute 2 (10:01) has no deals; its bar is 100 open, 90 low, 112 high, 104 close.
+    deal_times = [ms(0), ms(30), ms(120), ms(150)]
+    prices = [100, 108, 106, 105]
+    bars = [
+        minute_bar("2024-01-02 10:00", 100, 108, 100, 108, 2),
+        minute_bar("2024-01-02 10:01", 100, 112, 90, 104, 0),
+        minute_bar("2024-01-02 10:02", 106, 106, 105, 105, 2),
+    ]
+    frame = pd.DataFrame({"open": [100.0], "high": [112.0], "low": [90.0], "close": [105.0]}, index=[START])
+    report = ReplayReport()
+
+    times, out = MarketTickReplay(
+        TickProvider(prices, times=deal_times, bars=bars), "TEST", "H1", frame, report=report
+    )(0)
+
+    # Close 104 >= open 100: open, low, high, close, stamped at 0/15/30/45 s into the minute.
+    assert out.tolist() == [100, 108, 100, 90, 112, 104, 106, 105]
+    assert times.tolist()[2:6] == [ms(60) * 1000, ms(75) * 1000, ms(90) * 1000, ms(105) * 1000]
+    assert report.substituted == {START}
+    assert sorted(report.resolutions.values()) == ["minute"] * 4
+
+
+def test_a_down_minute_substitutes_open_high_low_close():
+    from q_backend.backtesting.intrabar import MarketTickReplay, ReplayReport
+
+    bars = [minute_bar("2024-01-02 10:00", 100, 112, 90, 95, 0)]
+    frame = pd.DataFrame({"open": [100.0], "high": [112.0], "low": [90.0], "close": [95.0]}, index=[START])
+    report = ReplayReport()
+
+    _, out = MarketTickReplay(TickProvider([], bars=bars), "TEST", "H1", frame, report=report)(0)
+
+    assert out.tolist() == [100, 112, 90, 95]
+
+
+def test_with_no_deals_every_minute_is_substituted_and_the_run_completes(monkeypatch):
+    from q_backend.backtesting import intrabar
+    from q_backend.backtesting.intrabar import MarketTickReplay, ReplayReport
+
+    monkeypatch.setattr(intrabar.time, "sleep", lambda _: None)
+    bars = [
+        minute_bar("2024-01-02 10:00", 100, 108, 100, 108, 0),
+        minute_bar("2024-01-02 10:01", 108, 110, 104, 104, 0),
+    ]
+    frame = pd.DataFrame({"open": [100.0], "high": [110.0], "low": [100.0], "close": [104.0]}, index=[START])
+    report = ReplayReport()
+
+    times, out = MarketTickReplay(TickProvider([], times=[], bars=bars), "TEST", "H1", frame, report=report)(0)
+
+    assert out.size == 8
+    assert len(set(times.tolist())) == 8
+    assert out[0] == 100 and out[-1] == 104
+    assert len(report.resolutions) == 8
+    assert set(report.resolutions.values()) == {"minute"}
+
+
+def test_without_usable_m1_bars_the_candle_prices_are_used_and_marked_candle():
+    from q_backend.backtesting.intrabar import MarketTickReplay, ReplayReport
+
+    report = ReplayReport()
+    provider = TickProvider([100, 74, 103, 102], bars=[])
+    times, out = MarketTickReplay(provider, "TEST", "H1", replay_frame(), report=report)(0)
+
+    # Close 102 >= open 100: open, low, high, close, spread over the hour.
+    assert out.tolist() == [100, 74, 103, 102]
+    assert times.tolist() == [(ms(0) + q) * 1000 for q in (0, 900_000, 1_800_000, 2_700_000)]
+    assert set(report.resolutions.values()) == {"candle"}
+
+
+def test_m1_bars_that_do_not_aggregate_to_the_candle_fall_back_to_the_candle():
+    from q_backend.backtesting.intrabar import MarketTickReplay, ReplayReport
+
+    bars = [minute_bar("2024-01-02 10:00", 100, 103, 80, 102, 3)]
+    report = ReplayReport()
+    provider = TickProvider([100, 74, 103, 102], bars=bars)
+
+    _, out = MarketTickReplay(provider, "TEST", "H1", replay_frame(), report=report)(0)
+
+    assert out.tolist() == [100, 74, 103, 102]
+    assert set(report.resolutions.values()) == {"candle"}
+
+
+def test_a_provider_connection_error_still_fails_the_run():
+    from q_backend.backtesting.intrabar import MarketTickReplay
+
+    class Down(TickProvider):
+        def get_ticks_columnar(self, symbol, start, end, **kwargs):
+            raise ConnectionError("gateway unreachable")
+
+    bars = [minute_bar("2024-01-02 10:00", 100, 103, 74, 102, 4)]
+    with pytest.raises(ConnectionError):
+        MarketTickReplay(Down([100], bars=bars), "TEST", "H1", replay_frame())(0)
+
+
+def test_exit_resolution_and_note_follow_the_tick_that_decided_each_exit():
+    from q_backend.backtesting.intrabar import (
+        ReplayReport,
+        classify_exit_resolutions,
+        intrabar_notes,
+    )
+    from q_backend.backtesting.models import SignalAction, Trade
+
+    report = ReplayReport()
+    report.replayed.update({START, START + pd.Timedelta(hours=1)})
+    report.substituted.add(START)
+    substituted_time = pd.Timestamp("2024-01-02 10:00:15")
+    report.resolutions[int(substituted_time.value // 1000)] = "minute"
+
+    def trade(exit_tick_time, pnl):
+        return Trade(
+            id=str(pnl),
+            order_id="o",
+            symbol="TEST",
+            action=SignalAction.BUY,
+            quantity=1,
+            entry_time=START,
+            entry_price=100,
+            exit_time=START,
+            exit_price=100,
+            pnl=pnl,
+            exit_tick_time=exit_tick_time,
+        )
+
+    trades = [
+        trade(None, 5.0),
+        trade(substituted_time.tz_localize("America/Sao_Paulo"), -320.0),
+        trade(pd.Timestamp("2024-01-02 10:00:20").tz_localize("America/Sao_Paulo"), 10.0),
+    ]
+    classify_exit_resolutions(trades, report)
+
+    assert [t.exit_resolution for t in trades] == [None, "minute", "tick"]
+    [note] = intrabar_notes(trades, report)
+    assert note["code"] == "intrabar_incomplete_ticks"
+    assert note["details"]["minute_exits"] == 1
+    assert note["details"]["tick_exits"] == 1
+    assert note["details"]["bar_exits"] == 1
+    assert note["details"]["candles_replayed"] == 2
+    assert note["details"]["candles_substituted"] == 1
+    assert note["details"]["session_dates"] == ["2024-01-02"]
+    assert note["details"]["substituted_net_pnl"] == -320.0
+    assert "R$ -320.00" in note["message"]
+
+
+def test_no_note_when_nothing_was_substituted():
+    from q_backend.backtesting.intrabar import ReplayReport, intrabar_notes
+
+    assert intrabar_notes([], ReplayReport()) == []
