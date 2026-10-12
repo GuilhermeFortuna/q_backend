@@ -485,35 +485,42 @@ def _compute_quote_feature(
     resolved: dict[str, Any],
     *,
     symbol: str,
+    timeframe: str,
     tick_store_root: str | None,
 ) -> FeatureSeries:
-    from q_backend.market_data.indicator_catalog import catalog_entry
-    from q_backend.market_data.indicator_series import (
-        IndicatorRequest,
-        _quote_spread_series,
-        _spread_vs_vol,
-        open_tick_store,
-    )
+    """A tick-store feature: the Market chart's quote indicator of the same name."""
+    from q_backend.market_data.indicator_catalog import catalog_entry, validate_params
+    from q_backend.market_data.quote_spread import open_tick_store, quote_spread, spread_vs_volatility
 
     frame = bars.sort_values("time").reset_index(drop=True)
-    if frame.empty:
-        empty = pd.Series(dtype=float, index=frame["time"], name=spec.name)
-        return FeatureSeries(feature_id=feature_id(spec, resolved), series=empty, warmup_bars=0, leakage_status="clean")
-
-    entry_id = "quote_spread" if spec.node_kind == "feature.quote_spread" else "spread_vs_volatility"
-    entry = catalog_entry(entry_id)
-    tick_store = open_tick_store(symbol, root=tick_store_root)
-    if entry_id == "spread_vs_volatility":
-        payload = _spread_vs_vol(entry, frame, resolved, tick_store)
+    entry = catalog_entry(spec.name)
+    params = validate_params(entry, resolved)
+    quotes = quote_spread(
+        open_tick_store(symbol, root=tick_store_root),
+        symbol,
+        frame["time"],
+        timeframe,
+        max_quote_age_ms=params["max_quote_age_ms"],
+    )
+    if spec.name == "spread_vs_volatility":
+        raw = spread_vs_volatility(
+            frame,
+            quotes.select(params["spread_output"], params["min_coverage"]),
+            vol_estimator=params["vol_estimator"],
+            vol_window=params["vol_window"],
+            vol_half_life=params["vol_half_life"],
+            vol_lag=params["vol_lag"],
+        )
     else:
-        payload = _quote_spread_series(entry, frame, resolved, tick_store=tick_store)
-    series = pd.Series(payload.values, index=frame["time"], dtype=float, name=spec.name)
-    series = series.replace({None: np.nan})
-    warmup = _leading_nan_bars(series)
-    trimmed = _apply_warmup(series.reset_index(drop=True), warmup)
+        raw = pd.Series(quotes.select(params["output"], params["min_coverage"]) * 10_000.0)
+
+    # Warm-up comes from the recipe, never from the data: a bar without ticks is a
+    # missing value, not a reason to move the matrix's first valid row.
+    warmup = entry.warmup_bars(params)
+    values = _apply_warmup(raw.reset_index(drop=True), warmup)
     return FeatureSeries(
         feature_id=feature_id(spec, resolved),
-        series=pd.Series(trimmed.to_numpy(), index=frame["time"], name=spec.name),
+        series=pd.Series(values.to_numpy(), index=frame["time"], name=spec.name),
         warmup_bars=warmup,
         leakage_status="clean",
     )
@@ -525,18 +532,25 @@ def compute_feature(
     params: dict[str, Any],
     *,
     symbol: str | None = None,
+    timeframe: str | None = None,
     tick_store_root: str | None = None,
 ) -> FeatureSeries:
-    """Compute a named feature as a causal bar→series mapping."""
+    """Compute a named feature as a causal bar→series mapping.
+
+    ``symbol`` and ``timeframe`` locate a quote feature's ticks and bound its bars; other
+    sources ignore them.
+    """
     _validate_bars(bars)
     if spec.source == "neural":
         return _compute_neural(bars, spec)
 
     resolved = resolve_params(spec, params)
     if spec.source == "quote":
-        if symbol is None:
-            raise ValueError(f"Feature '{spec.name}' requires symbol for tick-store access.")
-        return _compute_quote_feature(bars, spec, resolved, symbol=symbol, tick_store_root=tick_store_root)
+        if symbol is None or timeframe is None:
+            raise ValueError(f"Feature '{spec.name}' requires symbol and timeframe for tick-store access.")
+        return _compute_quote_feature(
+            bars, spec, resolved, symbol=symbol, timeframe=timeframe, tick_store_root=tick_store_root
+        )
     df = bars.sort_values("time").reset_index(drop=True)
 
     port = _output_port(spec.name)

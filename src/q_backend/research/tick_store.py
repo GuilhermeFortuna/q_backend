@@ -107,7 +107,7 @@ def _day_bounds(day: date) -> tuple[datetime, datetime]:
     return start, end
 
 
-def _naive_local_to_time_msc(moment: datetime) -> int:
+def naive_local_to_time_msc(moment: datetime) -> int:
     """First stored ``time_msc`` at or after a naive Brasília wall-clock instant.
 
     Inverse of ``_time_msc_to_naive_local``: MT5 stores ticks so that the UTC wall clock of
@@ -672,6 +672,31 @@ class TickStore:
         self._trade_prices_cache = (time_msc, last)
         return self._trade_prices_cache
 
+    def quotes(self, day: date) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """One session's ticks as time-ordered ``(time_msc, bid, ask, flags)`` arrays.
+
+        ``time_msc`` keeps the stored MT5 convention (see ``naive_local_to_time_msc``);
+        equal times keep their source order.
+        """
+        path = self._day_path(day)
+        if not path.is_file():
+            raise NoMarketDataError(
+                symbol=self._symbol,
+                timeframe="ticks",
+                source=TICK_STORE_SOURCE,
+                start=day.isoformat(),
+                end=day.isoformat(),
+            )
+        table = pq.read_table(path, columns=["time_msc", "bid", "ask", "flags"])
+        time_msc = table["time_msc"].to_numpy(zero_copy_only=False).astype(np.int64, copy=False)
+        bid = table["bid"].to_numpy(zero_copy_only=False).astype(np.float64, copy=False)
+        ask = table["ask"].to_numpy(zero_copy_only=False).astype(np.float64, copy=False)
+        flags = table["flags"].to_numpy(zero_copy_only=False).astype(np.int64, copy=False)
+        if time_msc.size > 1 and np.any(time_msc[1:] < time_msc[:-1]):
+            order = np.argsort(time_msc, kind="stable")
+            time_msc, bid, ask, flags = time_msc[order], bid[order], ask[order], flags[order]
+        return time_msc, bid, ask, flags
+
     def trade_prices(self, start: str | datetime, end: str | datetime) -> tuple[np.ndarray, np.ndarray]:
         start_ts = parse_query_bound(start)
         end_ts = parse_query_bound(end)
@@ -689,7 +714,7 @@ class TickStore:
         time_msc, last = self._ensure_trade_prices_session(day)
         start_naive, end_naive = bounds_to_brasilia_naive(start_ts, end_ts)
         first, stop = np.searchsorted(
-            time_msc, [_naive_local_to_time_msc(start_naive), _naive_local_to_time_msc(end_naive)]
+            time_msc, [naive_local_to_time_msc(start_naive), naive_local_to_time_msc(end_naive)]
         )
         return time_msc[first:stop] * 1000, last[first:stop].copy()
 

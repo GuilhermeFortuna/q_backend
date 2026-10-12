@@ -770,6 +770,26 @@ range and one value array per output, aligned to those times; missing values are
 `null`, and quote-based indicators mark the whole output unavailable when ticks are
 absent.
 
+- **Timestamps** are the UTC instants the OHLCV route returns for the same bars, so a
+  client can join a series to its bars by timestamp.
+- **Warm-up is loaded in bars.** Each catalog entry declares how many bars it needs before
+  its first value; the service widens its lookback across overnight, weekend and holiday
+  gaps until that many bars precede the range, or history runs out. A value therefore does
+  not depend on where the requested range starts. A recursive average (EMA, SMMA, RSI, ATR,
+  MACD) never fully forgets its seed: its warm-up ends when the seed weighs at most 1%, the
+  rule `q_core` uses for half-life kernels.
+- **Parameters are bounded.** Unknown names, non-integer periods, non-finite numbers and
+  values outside the catalog's minimum and maximum return 422 naming the parameter.
+- **Quoted spread** is aggregated by `q_backend.market_data.quote_spread`, which the feature
+  store's `quote_spread` and `spread_vs_volatility` features also use. A bar covers
+  `[open, open + timeframe)` on the tick store's clock, where the UTC wall clock of
+  `time_msc` reads as Brasília local time. Each bar is aggregated from the ticks of its own
+  calendar day, which is its session key, and a quote is carried for at most
+  `max_quote_age_ms` (one hour at most), so no value depends on another day. A day without
+  stored ticks gives missing values; the output is marked unavailable only when no day of
+  the range has ticks. In the feature store a missing quote is a missing value and never
+  moves a matrix's `valid_from`.
+
 Research strategies, discovery, and the feature store use the same `q_core` values
 through the Python wrappers in `q_backend.backtesting.technical_indicators` and the
 genome/feature registries. When validating a chart overlay against a backtest, compare

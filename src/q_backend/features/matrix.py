@@ -254,7 +254,7 @@ def build_feature_matrix(
             spec,
             request.params,
             symbol=symbol,
-            tick_store_root=None,
+            timeframe=timeframe,
         )
         columns[fid] = computed.series
         union_warmup = max(union_warmup, computed.warmup_bars)
