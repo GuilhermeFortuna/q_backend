@@ -35,16 +35,16 @@
 
 **Files:** Modify `schema/api/openapi.yaml`, the generated outputs and the contract tests that cover `BacktestStatusResponse`.
 
-- [ ] Add the nine optional fields, with `phase` as a closed enumeration; add or extend a test asserting a status with and without them validates and an unknown phase is rejected.
-- [ ] Regenerate with the repository's generator and run `make check`.
-- [ ] Commit; record the commit hash for the consumers.
+- [x] Add the nine optional fields, with `phase` as a closed enumeration; add or extend a test asserting a status with and without them validates and an unknown phase is rejected.
+- [x] Regenerate with the repository's generator and run `make check`.
+- [x] Commit; record the commit hash for the consumers.
 
 ### 2. Reporter and job phases (`q_backend`)
 
 **Files:** Add `src/q_backend/api/backtest_progress.py` and `tests/api/test_backtest_progress.py`. Modify `src/q_backend/api/backtest_jobs.py`, `src/q_backend/api/schemas/backtest.py`, `CONTRACTS_REV`, the vendored `contracts/` and the status tests.
 **Interfaces:** `BacktestProgressReporter(run_id, started_at, *, publish, clock)` with `phase(name, message, **fields)` and `replay(bar, bars_total, candle_time, replayed, substituted)`. `publish` defaults to the existing `_persist_progress` path and `clock` to `time.monotonic`.
 
-- [ ] Pin and vendor the contract commit; run `make contracts-check CONTRACTS_REPO=<path>`.
+- [x] Pin and vendor the contract commit; run `make contracts-check CONTRACTS_REPO=<path>`.
 - [x] Write failing tests for spec acceptance 1, 2, 5, 6, 7 and 8 with a fake Redis client and an injected clock.
 - [x] Implement the reporter: payload assembly, the throttle, non-decreasing `progress`, and the preserved `started_at`.
 - [x] Extend `BacktestStatusResponse`; have `start_job` report `queued`, and `run_backtest_job`, `_execute_candle` and `_execute_tick` report `loading_data`, `preparing`, `simulating` and `saving` at the boundaries the spec names.
@@ -65,28 +65,28 @@
 
 **Files:** Add `src/components/backtests/BacktestRunProgress.tsx` and its test. Modify `CONTRACTS_REV`, the vendored contracts, `src/api/queries/backtests.ts`, `src/hooks/useActiveJobs.ts`, `src/components/backtests/focus/BacktestFocusWorkbench.tsx`, `src/components/backtests/focus/CollapsedResultsTeaser.tsx`, `src/mocks/handlers.ts` and their tests.
 
-- [ ] Pin and vendor the contract commit; run `make contracts-check CONTRACTS_REPO=<path>`.
-- [ ] Write failing tests for spec acceptance 10, 11 and 12, using fake timers for the elapsed time and the stall line.
-- [ ] Expose the running status from `useBacktestJob`; implement `BacktestRunProgress` and use it in the expanded results area; update the teaser and `useActiveJobs`.
-- [ ] Step the mock run through the phases in `src/mocks/handlers.ts`.
-- [ ] Run the repository's unit tests and type check with `TZ=America/Sao_Paulo`.
+- [x] Pin and vendor the contract commit; run `make contracts-check CONTRACTS_REPO=<path>`.
+- [x] Write failing tests for spec acceptance 10, 11 and 12, using fake timers for the elapsed time and the stall line.
+- [x] Expose the running status from `useBacktestJob`; implement `BacktestRunProgress` and use it in the expanded results area; update the teaser and `useActiveJobs`.
+- [x] Step the mock run through the phases in `src/mocks/handlers.ts`.
+- [x] Run the repository's unit tests and type check with `TZ=America/Sao_Paulo`.
 - [x] Commit this unit.
 
 ## Verification and handoff
 
-- [ ] Run each repository's focused checks listed above plus its lint and format checks on the touched paths.
-- [ ] Record the commands actually run and their results in this plan; do not claim unrun checks passed.
+- [x] Run each repository's focused checks listed above plus its lint and format checks on the touched paths.
+- [x] Record the commands actually run and their results in this plan; do not claim unrun checks passed.
 
-**Backend record (`q_backend`, commits `40dcc92`, `5e10460`):**
+**Record (commits `40dcc92`, `5e10460`, `bb4476f` in `q_backend`; `37f4e6c` in `q_contracts`; `7252a44` in `q_frontend`):**
 
-- Steps 1 and 4 (`q_contracts` schema, `q_frontend` display) and the `CONTRACTS_REV` pin are **not done**: the `q_contracts` and `q_frontend` worktrees for `Q-108-backtest-run-progress` do not exist, and the launch scope covered only the `q_backend` worktree.
-- `BacktestStatusResponse` is hand-written in `q_backend` (`src/q_backend/api/schemas/backtest.py`) and is not vendored from contracts, so the backend fields do not depend on the pin.
+- The sibling worktrees `q_contracts` and `q_frontend` on `Q-108-backtest-run-progress` were created after the first blocked attempt, at `.worktrees/q_contracts/…` and `.worktrees/q_frontend/…`, branched from `development`.
+- `q_contracts`: `BacktestStatusResponse` gained the nine optional fields in `schema/api/openapi.yaml`; `generated/rust/api.rs` and `generated/typescript/api.ts` regenerated; `tests/test_backtest_status_contract.py` added. `make check` passed (264 passed, 7 skipped).
+- `q_backend`: `CONTRACTS_REV` pinned to `37f4e6c13a097c76736a87018cbd07cd78ebb73e`; `make contracts` vendored with no change to the vendored Python; `make contracts-check CONTRACTS_REPO=<local q_contracts worktree>` exits 0. `BacktestStatusResponse` in `q_backend` is hand-written, so the backend fields match the contract by review, not by generation.
+- `q_frontend`: `CONTRACTS_REV` pinned and `contracts/api.ts` vendored; `pnpm exec vitest` full suite 1091 passed (`TZ=America/Sao_Paulo`); `pnpm typecheck`, `pnpm lint`, `prettier --check .` clean; `CONTRACTS_REPO=<local q_contracts worktree> ./scripts/ci.sh` exits 0 (contracts drift, typecheck, lint, format, tests, build and Rust tests).
+- `q_backend` backend, earlier run: `pytest -m "not integration"`: 2700 passed, 15 skipped, 7 failed. The 7 failures are `Connection refused` on the local Postgres port 5434 (environment, not this change). Focused suites after the final backend change: 132 passed. `ruff` and `black` clean.
 - Tests were written alongside the implementation in the same unit, not observed failing first.
-- `uv run pytest -p no:warnings -m "not integration"`: 2700 passed, 15 skipped, 7 failed. All 7 failures are `Connection refused` on the local Postgres port 5434 (`test_stream_replay::test_job_snapshot_route_validates`, `test_genetic_search`, `test_hypothesis::test_genetic_seeding_preserves_diversity`, `test_parallel_genetic`, `test_prescreen`), an environment gap, not caused by this change.
-- Streaming integration tests (`tests/streaming`, `tests/storage` marked integration) need the isolated CI Postgres and Redis and were not run here; `./scripts/ci.sh` (the pre-push hook) was not run.
-- Focused run after the final change: `tests/api/test_backtest_progress.py`, `tests/backtesting/test_breakeven_intrabar.py`, persistence, router, payload, multi-entry, parity, local candle, ML filter, local/API tick backtest, redis progress and streaming progress tests: 132 passed.
-- `make contracts-check`: exit 0 against the unchanged `CONTRACTS_REV`.
-- `ruff check` (`src`, touched tests) and `black --check` / `ruff format --check` on touched files: clean.
-- Remaining: `q_contracts` commit and pin (step 1), the `q_frontend` display (step 4), and the handoff note that `q_contracts` must be pushed with the consumers (`./work finish Q-108 --push`).
-- [ ] Note in the handoff that `q_contracts` must be pushed with the consumers (`./work finish Q-108 --push`) for remote `contracts-check` to resolve the pin.
+- Not run: `q_backend` integration tests and `./scripts/ci.sh` (need the isolated Postgres and Redis); `q_backend` `make check` does not exist, so `ruff`/`black` were run directly.
+- Handoff: `q_contracts` commit `37f4e6c` must be pushed with the consumers (`./work finish Q-108 --push`) before the remote `contracts-check` resolves the pin in `q_backend` and `q_frontend`.
+
+- [x] Note in the handoff that `q_contracts` must be pushed with the consumers (`./work finish Q-108 --push`) for remote `contracts-check` to resolve the pin.
 - [ ] Use `./work board set Q-108 in-review -m "<changes per repository; checks and results; follow-ups>"`.
