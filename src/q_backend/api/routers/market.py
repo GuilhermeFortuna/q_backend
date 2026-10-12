@@ -13,6 +13,7 @@ from q_backend.api.schemas.market import (
     MarketTicksResponse,
     OhlcvAvailableRangeResponse,
     OhlcvBarResponse,
+    TickAvailableRangeResponse,
 )
 from q_backend.market_data import api_service as market_service
 from q_backend.market_data.clients.metatrader import _to_naive_local
@@ -292,6 +293,39 @@ def get_market_ohlcv(
         )
 
     return [market_service.ohlcv_to_bar_response(row) for row in ohlcv_data]
+
+
+@router.get(
+    "/api/v1/market/ticks/{symbol}/available-range",
+    response_model=TickAvailableRangeResponse,
+)
+def get_market_tick_available_range(
+    symbol: str,
+    mds: MarketDataService = Depends(get_market_data_service),
+):
+    """
+    Returns the tick history the active data provider can serve for a symbol.
+
+    ``start`` is the earliest tick the gateway/terminal serves (or the local lake's
+    envelope in local mode); ``end`` is the present for live providers.
+    """
+    symbol = symbol.upper()
+    try:
+        available_range = mds.get_available_tick_range(symbol)
+    except ConnectionError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("Error probing tick history for %s: %s", symbol, exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    if available_range is None:
+        raise HTTPException(status_code=404, detail=f"No tick history found for symbol '{symbol}'.")
+
+    return {
+        "symbol": available_range.symbol,
+        "start": mt5_datetime_to_utc_iso(available_range.start),
+        "end": mt5_datetime_to_utc_iso(available_range.end),
+    }
 
 
 @router.get(

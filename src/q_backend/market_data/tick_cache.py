@@ -82,6 +82,10 @@ def load(key: str) -> dict[str, np.ndarray] | None:
         for col in COLUMNAR_TICK_KEYS:
             arr = table[col].to_numpy(zero_copy_only=False)
             result[col] = arr.astype(_TICK_DTYPE_MAP[col], copy=False)
+        if len(result["time_msc"]) == 0:
+            # Empty reads are never authoritative (MT5 answers empty for history it has
+            # not synchronized yet); treat entries written by older versions as a miss.
+            return None
         return result
     except Exception as exc:  # noqa: BLE001 - best-effort tick-cache read; logged, returns None
         logger.warning("Failed to load tick cache %s: %s", path, exc)
@@ -89,6 +93,8 @@ def load(key: str) -> dict[str, np.ndarray] | None:
 
 
 def store(key: str, arrays: dict[str, np.ndarray]) -> None:
+    if len(arrays["time_msc"]) == 0:
+        return
     data = {col: arrays[col] for col in COLUMNAR_TICK_KEYS}
     table = pa.table(data)
     cache_dir().mkdir(parents=True, exist_ok=True)

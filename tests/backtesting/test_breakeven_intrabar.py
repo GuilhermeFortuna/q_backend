@@ -87,12 +87,36 @@ def test_market_replay_sorts_prices_stably_and_returns_wall_clock_tick_times():
 
 
 @pytest.mark.parametrize("prices", [[], [100, 103, 102]])
-def test_market_replay_rejects_missing_or_mismatched_tick_history(prices):
+def test_market_replay_rejects_missing_or_mismatched_tick_history(prices, monkeypatch):
+    from q_backend.backtesting import intrabar
     from q_backend.backtesting.intrabar import MarketTickReplay
 
+    monkeypatch.setattr(intrabar.time, "sleep", lambda _: None)
     replay = MarketTickReplay(TickProvider(prices), "TEST", "H1", replay_frame())
     with pytest.raises(ValueError, match="ticks"):
         replay(0)
+
+
+def test_market_replay_rereads_a_candle_the_provider_first_returned_empty(monkeypatch):
+    from q_backend.backtesting import intrabar
+    from q_backend.backtesting.intrabar import MarketTickReplay
+
+    monkeypatch.setattr(intrabar.time, "sleep", lambda _: None)
+    provider = TickProvider([100, 74, 103, 102])
+    served = provider.get_ticks_columnar
+    reads = []
+
+    def cold_then_warm(symbol, start, end, **kwargs):
+        reads.append(1)
+        if len(reads) == 1:
+            return {"last": np.array([]), "time_msc": np.array([], dtype=np.int64)}
+        return served(symbol, start, end, **kwargs)
+
+    provider.get_ticks_columnar = cold_then_warm
+    _, prices = MarketTickReplay(provider, "TEST", "H1", replay_frame())(0)
+
+    assert prices.tolist() == [100, 74, 103, 102]
+    assert len(reads) == 2
 
 
 def test_market_replay_excludes_the_next_bar_boundary():

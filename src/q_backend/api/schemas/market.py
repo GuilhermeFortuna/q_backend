@@ -70,6 +70,12 @@ class OhlcvBarResponse(BaseModel):
     volume: int
 
 
+class TickAvailableRangeResponse(BaseModel):
+    symbol: str
+    start: str
+    end: str
+
+
 class OhlcvAvailableRangeResponse(BaseModel):
     symbol: str
     timeframe: str

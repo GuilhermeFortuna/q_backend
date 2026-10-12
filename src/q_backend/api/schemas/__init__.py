@@ -19,6 +19,7 @@ from q_backend.api.schemas.market import (
     MarketTicksResponse,
     OhlcvAvailableRangeResponse,
     OhlcvBarResponse,
+    TickAvailableRangeResponse,
 )
 from q_backend.api.schemas.system import (
     DataSourceResponse,
@@ -47,6 +48,7 @@ __all__ = [
     "MarketTicksResponse",
     "OhlcvAvailableRangeResponse",
     "OhlcvBarResponse",
+    "TickAvailableRangeResponse",
     "StorageServiceStatus",
     "StorageStatusResponse",
     "SystemHealthResponse",

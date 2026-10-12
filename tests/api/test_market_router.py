@@ -26,6 +26,7 @@ MARKET_ROUTES: list[tuple[str, str]] = [
     ("GET", "/api/v1/market/instrument-info/{symbol}"),
     ("GET", "/api/v1/market/ohlcv/{symbol}"),
     ("GET", "/api/v1/market/ohlcv/{symbol}/available-range"),
+    ("GET", "/api/v1/market/ticks/{symbol}/available-range"),
 ]
 
 MARKET_OPENAPI_PATHS: list[str] = [
@@ -40,6 +41,7 @@ MARKET_OPENAPI_PATHS: list[str] = [
     "/api/v1/market/instrument-info/{symbol}",
     "/api/v1/market/ohlcv/{symbol}",
     "/api/v1/market/ohlcv/{symbol}/available-range",
+    "/api/v1/market/ticks/{symbol}/available-range",
 ]
 
 

@@ -1,5 +1,6 @@
 import logging
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any, Union, Callable, TypeVar
 
@@ -669,6 +670,27 @@ class MetaTraderClient:
                 return []
 
             return _map_tick_rows(ticks)
+
+        return self._run_locked(_fetch)
+
+    def get_first_tick_time(self, symbol: str, attempts: int = 2) -> Optional[datetime]:
+        """Earliest tick MT5 can serve for ``symbol`` (naive Brasília), else ``None``.
+
+        An empty answer is retried because MT5 returns an empty array while it is still
+        synchronizing history it has not served before.
+        """
+
+        def _fetch() -> Optional[datetime]:
+            self._ensure_connected()
+            if not mt5.symbol_select(symbol, True):
+                return None
+            for attempt in range(attempts):
+                ticks = mt5.copy_ticks_from(symbol, datetime(2000, 1, 1), 1, _default_copy_ticks_all())
+                if ticks is not None and len(ticks):
+                    return _time_msc_to_naive_local(int(ticks[0]["time_msc"]))
+                if attempt + 1 < attempts:
+                    time.sleep(1.0)
+            return None
 
         return self._run_locked(_fetch)
 

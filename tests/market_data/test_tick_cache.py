@@ -53,3 +53,22 @@ def test_load_returns_none_for_corrupt_file(tmp_path, monkeypatch):
     corrupt.write_text("not parquet", encoding="utf-8")
 
     assert load("bad") is None
+
+
+def test_empty_reads_are_not_cached(tmp_path, monkeypatch):
+    monkeypatch.setenv("Q_TICK_CACHE_DIR", str(tmp_path))
+
+    store("empty_key", _sample_arrays(0))
+
+    assert load("empty_key") is None
+    assert list(tmp_path.glob("*.parquet")) == []
+
+
+def test_previously_cached_empty_entries_are_a_miss(tmp_path, monkeypatch):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    monkeypatch.setenv("Q_TICK_CACHE_DIR", str(tmp_path))
+    pq.write_table(pa.table(_sample_arrays(0)), tmp_path / "stale_key.parquet")
+
+    assert load("stale_key") is None

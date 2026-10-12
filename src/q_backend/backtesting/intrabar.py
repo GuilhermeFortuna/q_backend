@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import numpy as np
@@ -11,6 +12,11 @@ from q_backend.market_data.clients.metatrader import _naive_local_to_time_msc, _
 from q_backend.market_data.clients.shared import COPY_TICKS_ALL
 from q_backend.market_data.exogenous_context import bar_duration
 from q_backend.backtesting.candle_kernel import _exit_params_from_strategy
+
+# MT5 answers an empty array for history it has not synchronized yet and serves the
+# same request moments later, so an empty candle is re-read before it is reported.
+_EMPTY_READ_ATTEMPTS = 3
+_EMPTY_READ_DELAY_SECONDS = 1.0
 
 
 class MarketTickReplay:
@@ -27,13 +33,7 @@ class MarketTickReplay:
         self._frame = frame
         self._last: tuple[int, np.ndarray, np.ndarray] | None = None
 
-    def __call__(self, bar: int) -> tuple[np.ndarray, np.ndarray]:
-        if self._last is not None and self._last[0] == bar:
-            return self._last[1], self._last[2]
-        start = _to_naive_local(self._frame.index[bar].to_pydatetime())
-        end = start + self._duration.to_pytimedelta()
-        if bar + 1 < len(self._frame):
-            end = min(end, _to_naive_local(self._frame.index[bar + 1].to_pydatetime()))
+    def _read_trades(self, start: Any, end: Any) -> tuple[np.ndarray, np.ndarray]:
         arrays = self._service.get_ticks_columnar(self._symbol, start, end, flags=COPY_TICKS_ALL)
         times = np.asarray(arrays["time_msc"], dtype=np.int64)
         prices = np.asarray(arrays["last"], dtype=np.float64)
@@ -47,7 +47,21 @@ class MarketTickReplay:
         )
         times, prices = times[mask], prices[mask]
         order = np.argsort(times, kind="stable")
-        times, prices = times[order], prices[order]
+        return times[order], prices[order]
+
+    def __call__(self, bar: int) -> tuple[np.ndarray, np.ndarray]:
+        if self._last is not None and self._last[0] == bar:
+            return self._last[1], self._last[2]
+        start = _to_naive_local(self._frame.index[bar].to_pydatetime())
+        end = start + self._duration.to_pytimedelta()
+        if bar + 1 < len(self._frame):
+            end = min(end, _to_naive_local(self._frame.index[bar + 1].to_pydatetime()))
+        times, prices = self._read_trades(start, end)
+        for _ in range(_EMPTY_READ_ATTEMPTS - 1):
+            if prices.size:
+                break
+            time.sleep(_EMPTY_READ_DELAY_SECONDS)
+            times, prices = self._read_trades(start, end)
         if prices.size == 0:
             raise ValueError(
                 f"{self._symbol}: no historical trade ticks for candle {start}; load tick history before running intrabar Breakeven Stop"

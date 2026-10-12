@@ -49,6 +49,7 @@ from q_backend.market_data.clients.shared import (
     TickPagingUnsupportedError,
     _RECENT_TICKS_WINDOWS,
     _empty_ticks_columnar,
+    _time_msc_to_naive_local,
 )
 from q_backend.market_data.columnar import columnar_to_ticks
 from q_backend.market_data.models import OHLCV, Tick
@@ -341,6 +342,23 @@ class RemoteMt5Client:
         if use_cache and cache_key is not None:
             store_tick_cache(cache_key, result)
         return result
+
+    def get_first_tick_time(self, symbol: str, attempts: int = 2) -> Optional[datetime]:
+        """Earliest tick the gateway can serve for ``symbol`` (naive Brasília), else ``None``.
+
+        MT5 answers a first request for unsynchronized history with an empty array and
+        serves it on a retry, so an empty page is retried before concluding there is none.
+        """
+        start_msc = int(datetime(2000, 1, 1, tzinfo=timezone.utc).timestamp() * 1000)
+        end_msc = int(datetime.now(timezone.utc).timestamp() * 1000)
+        for attempt in range(attempts):
+            page = self.get_tick_page(symbol, start_msc, end_msc, limit=1)
+            times = page.columns["time_msc"]
+            if len(times):
+                return _time_msc_to_naive_local(int(times[0]))
+            if attempt + 1 < attempts:
+                time.sleep(1.0)
+        return None
 
     # -- trades ---------------------------------------------------------------
 

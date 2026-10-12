@@ -29,6 +29,13 @@ class OhlcvAvailableRange:
     bar_count: int
 
 
+@dataclass(frozen=True)
+class TickAvailableRange:
+    symbol: str
+    start: datetime
+    end: datetime
+
+
 class TickPagingUnsupportedError(RuntimeError):
     """The configured gateway predates the forward tick paging contract."""
 

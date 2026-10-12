@@ -1,6 +1,6 @@
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Literal, Optional, Union
 from pathlib import Path
 
@@ -13,6 +13,8 @@ from q_backend.market_data.clients.metatrader import (
     OhlcvAvailableRange,
 )
 from q_backend.market_data.clients.remote import RemoteMt5Client
+from q_backend.market_data.clients.shared import TickAvailableRange
+from q_backend.market_data.timezone import to_brasilia_naive
 from q_backend.market_data.models import OHLCV, Tick
 from q_backend.market_data.coverage import envelope_covers, plan_ohlcv_read
 from q_backend.market_data.routing import resolve_ohlcv_source
@@ -299,6 +301,27 @@ class MarketDataService:
         if provider is self._remote_client and len(arrays.get("time_msc", [])) > 0:
             self._fetch_through_ticks(symbol, arrays)
         return arrays
+
+    def get_available_tick_range(self, symbol: str) -> Optional[TickAvailableRange]:
+        """Tick history the active provider can serve, not what is cached locally.
+
+        The local lake only holds ticks fetched before (remote reads write through),
+        so its envelope understates what a gateway or terminal can serve.
+        """
+        provider = self._resolve_provider()
+        if provider is self._local_client:
+            entry = local_store.tick_available_range(symbol)
+            if entry is None:
+                return None
+            return TickAvailableRange(
+                symbol=symbol,
+                start=datetime.fromisoformat(entry["start"]),
+                end=datetime.fromisoformat(entry["end"]),
+            )
+        first = provider.get_first_tick_time(symbol)
+        if first is None:
+            return None
+        return TickAvailableRange(symbol=symbol, start=first, end=to_brasilia_naive(datetime.now(timezone.utc)))
 
     def get_recent_ticks(self, symbol: str, limit: int = 200) -> List[Tick]:
         return self._resolve_provider().get_recent_ticks(symbol, limit)
