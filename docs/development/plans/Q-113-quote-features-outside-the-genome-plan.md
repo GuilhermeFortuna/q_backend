@@ -29,10 +29,10 @@
 
 **Files:** `src/q_backend/backtesting/genome/node_specs.py`, `src/q_backend/features/registry.py`, `tests/features/test_feature_registry.py`, `tests/backtesting/genome/`.
 
-- [ ] Add failing tests for spec acceptance items 1 and 2, including the two feature identifiers pinned as literals taken from `5a71e95`.
-- [ ] Remove the two `NodeSpec` entries. Declare the quote recipes' parameter keys and defaults in the feature registry and build both specs with source `quote`.
-- [ ] Extend `assert_catalog_consistent` with the `quote` rules from the spec.
-- [ ] Run `uv run pytest tests/features/test_feature_registry.py tests/backtesting/genome tests/api/test_strategy_builder_prompt.py -q`. The four node-causality failures, the pool failure and the prompt budget failure are gone. If the budget still fails, apply acceptance item 7. Commit.
+- [x] Add failing tests for spec acceptance items 1 and 2, including the two feature identifiers pinned as literals taken from `5a71e95`.
+- [x] Remove the two `NodeSpec` entries. Declare the quote recipes' parameter keys and defaults in the feature registry and build both specs with source `quote`.
+- [x] Extend `assert_catalog_consistent` with the `quote` rules from the spec.
+- [x] Run `uv run pytest tests/features/test_feature_registry.py tests/backtesting/genome tests/api/test_strategy_builder_prompt.py -q`. The four node-causality failures, the pool failure and the prompt budget failure are gone. If the budget still fails, apply acceptance item 7. Commit.
 
 ### 2. Computation
 

@@ -111,6 +111,34 @@ def _make_spec(
     )
 
 
+def _make_quote_spec(
+    name: str,
+    *,
+    category: FeatureCategory,
+    node_kind: str,
+    param_keys: frozenset[str],
+    default_params: dict[str, Any],
+    output_type: OutputType,
+    description: str,
+) -> FeatureSpec:
+    return FeatureSpec(
+        name=name,
+        version=1,
+        category=category,
+        node_kind=node_kind,
+        param_keys=param_keys,
+        default_params=default_params,
+        lookback_param=None,
+        forward_window=0,
+        output_type=output_type,
+        leakage_status="clean",
+        description=description,
+        source="quote",
+        model_hash=None,
+        latent_index=None,
+    )
+
+
 def _build_feature_specs() -> dict[str, FeatureSpec]:
     specs = [
         _make_spec(
@@ -557,23 +585,31 @@ def _build_feature_specs() -> dict[str, FeatureSpec]:
                 "long_half_life": 32.0,
             },
         ),
-        _make_spec(
+        _make_quote_spec(
             "quote_spread",
             category="liquidity",
             node_kind="feature.quote_spread",
-            lookback_param=None,
+            param_keys=frozenset({"output", "max_quote_age_ms", "min_coverage"}),
+            default_params={"output": "time_weighted_mean", "max_quote_age_ms": 60_000, "min_coverage": 0.0},
             output_type="oscillator",
             description="Time-weighted mean quoted spread in basis points.",
-            default_overrides={"output": "time_weighted_mean", "max_quote_age_ms": 60_000, "min_coverage": 0.0},
         ),
-        _make_spec(
+        _make_quote_spec(
             "spread_vs_volatility",
             category="liquidity",
             node_kind="feature.spread_vs_volatility",
-            lookback_param=None,
-            output_type="oscillator",
-            description="Quoted spread normalized by per-bar volatility.",
-            default_overrides={
+            param_keys=frozenset(
+                {
+                    "spread_output",
+                    "max_quote_age_ms",
+                    "min_coverage",
+                    "vol_estimator",
+                    "vol_window",
+                    "vol_half_life",
+                    "vol_lag",
+                }
+            ),
+            default_params={
                 "spread_output": "time_weighted_mean",
                 "max_quote_age_ms": 60_000,
                 "min_coverage": 0.0,
@@ -582,6 +618,8 @@ def _build_feature_specs() -> dict[str, FeatureSpec]:
                 "vol_half_life": 32.0,
                 "vol_lag": 1,
             },
+            output_type="oscillator",
+            description="Quoted spread normalized by per-bar volatility.",
         ),
         _make_spec(
             "exog_close",
@@ -710,6 +748,22 @@ def assert_catalog_consistent() -> None:
                 )
             if spec.node_kind is not None:
                 raise AssertionError(f"Neural feature '{catalog_key}' must have node_kind=None.")
+            continue
+
+        if spec.source == "quote":
+            if spec.node_kind is None or spec.node_kind in NODE_SPECS:
+                raise AssertionError(
+                    f"Quote feature '{spec.name}' must reference a recipe that is absent from NODE_SPECS."
+                )
+            if set(spec.default_params) - spec.param_keys:
+                raise AssertionError(
+                    f"Quote feature '{spec.name}' default_params has keys outside param_keys: "
+                    f"{sorted(set(spec.default_params) - spec.param_keys)}."
+                )
+            if spec.forward_window != 0:
+                raise AssertionError(
+                    f"Quote feature '{spec.name}' has forward_window={spec.forward_window}; features must be causal."
+                )
             continue
 
         node = NODE_SPECS.get(spec.node_kind)
