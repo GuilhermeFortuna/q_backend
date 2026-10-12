@@ -758,6 +758,47 @@ def test_stack_job_reports_replayed_candles_while_it_simulates(monkeypatch):
     assert simulating[0]["message"] == "Simulating 2 candles"
     assert replays, "the breakeven replay must report at least one candle"
     assert {payload["bars_total"] for payload in replays} == {2}
-    assert {payload["progress"] for payload in replays} <= {0.0, 0.5}
+    assert {payload["progress"] for payload in replays} <= {0.5, 1.0}
     assert replays[-1]["simulated_until"] == pd.Timestamp("2024-01-02 10:00").isoformat()
     assert replays[-1]["candles_replayed"] >= 1
+
+
+def test_replay_completion_follows_reads_and_is_not_repeated_for_cached_candle():
+    from contextlib import contextmanager
+
+    events = []
+
+    @contextmanager
+    def observe(kind, start, end):
+        events.append(("before", kind))
+        yield
+        events.append(("after", kind))
+
+    replay = MarketTickReplay(
+        TickProvider([100, 101, 103, 74, 102]),
+        "TEST",
+        "H1",
+        replay_frame(),
+        read_context=observe,
+        on_replay_completed=lambda *args: events.append(("completed", args[0])),
+    )
+    replay(0)
+    replay(0)
+    assert events[0] == ("before", "reading_m1")
+    assert ("before", "reading_ticks") in events
+    assert events[-1] == ("completed", 0)
+    assert events.count(("completed", 0)) == 1
+
+
+def test_failed_replay_never_reports_completion():
+    class Down(TickProvider):
+        def get_ohlcv(self, *args):
+            raise ConnectionError("provider unavailable")
+
+    completed = []
+    replay = MarketTickReplay(
+        Down([]), "TEST", "H1", replay_frame(), on_replay_completed=lambda *args: completed.append(args)
+    )
+    with pytest.raises(ConnectionError):
+        replay(0)
+    assert completed == []

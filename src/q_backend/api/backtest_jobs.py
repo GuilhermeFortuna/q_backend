@@ -200,7 +200,8 @@ def _execute_candle(
 ) -> tuple[dict[str, Any], list, pd.DataFrame, pd.DataFrame]:
     reporter = reporter or BacktestProgressReporter.silent()
     reporter.phase("loading_data", f"Loading {request.timeframe} candles for {request.symbol}")
-    ohlcv_data = market_data_service.get_ohlcv(request.symbol, request.timeframe, start, end)
+    with reporter.read("loading_candles", start, end):
+        ohlcv_data = market_data_service.get_ohlcv(request.symbol, request.timeframe, start, end)
     if not ohlcv_data:
         raise ValueError("No market data found for the given parameters.")
 
@@ -264,7 +265,12 @@ def _execute_candle(
         day_trade_close_time=request.day_trade_close_time,
         costs=request.costs,
         **breakeven_market_inputs(
-            strategy, market_data_service, request.timeframe, report=replay_report, on_replay=on_replay
+            strategy,
+            market_data_service,
+            request.timeframe,
+            report=replay_report,
+            on_replay_completed=on_replay,
+            read_context=reporter.read,
         ),
     )
     reporter.phase("simulating", f"Simulating {len(df)} candles", bars_total=len(df))
@@ -323,9 +329,10 @@ def _execute_tick(
 
     reporter = reporter or BacktestProgressReporter.silent()
     reporter.phase("loading_data", f"Loading ticks for {request.symbol}")
-    arrays = market_data_service.get_ticks_columnar(
-        request.symbol, start, end, flags=resolve_tick_flags(request.tick_flags)
-    )
+    with reporter.read("loading_ticks", start, end):
+        arrays = market_data_service.get_ticks_columnar(
+            request.symbol, start, end, flags=resolve_tick_flags(request.tick_flags)
+        )
     if len(arrays["time_msc"]) == 0:
         raise ValueError("No tick data found for the given parameters.")
     reporter.phase("preparing", "Preparing strategy and indicators")

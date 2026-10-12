@@ -91,6 +91,22 @@ class BacktestStartResponse(BaseModel):
 BacktestPhase = Literal["queued", "loading_data", "preparing", "simulating", "saving"]
 
 
+BacktestActivityKind = Literal["loading_candles", "loading_ticks", "computing", "reading_m1", "reading_ticks", "saving"]
+
+
+class BacktestActivity(BaseModel):
+    kind: BacktestActivityKind
+    started_at: datetime
+    range_start: Optional[datetime] = None
+    range_end: Optional[datetime] = None
+
+
+class BacktestPhaseTiming(BaseModel):
+    phase: BacktestPhase
+    started_at: datetime
+    finished_at: Optional[datetime] = None
+
+
 class BacktestStatusResponse(BaseModel):
     run_id: str
     status: str
@@ -105,6 +121,8 @@ class BacktestStatusResponse(BaseModel):
     bars_total: Optional[int] = None
     candles_replayed: Optional[int] = None
     candles_substituted: Optional[int] = None
+    activity: Optional[BacktestActivity] = None
+    phase_history: Optional[List[BacktestPhaseTiming]] = None
 
 
 BacktestOrigin = Literal["stack", "script"]

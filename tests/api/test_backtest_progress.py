@@ -64,6 +64,8 @@ def test_queued_phase_carries_the_start_time_and_null_progress():
             "bars_total": None,
             "candles_replayed": 0,
             "candles_substituted": 0,
+            "activity": None,
+            "phase_history": [{"phase": "queued", "started_at": STARTED.isoformat(), "finished_at": None}],
         }
     ]
 
@@ -81,7 +83,7 @@ def test_replay_reports_are_throttled_to_one_per_interval():
     clock.now = 1.0
     reporter.replay(4, 10, CANDLE_TIME, replayed=5, substituted=1)  # published with the latest state
 
-    assert [payload["progress"] for payload in published] == [None, 0.2, 0.4]
+    assert [payload["progress"] for payload in published] == [None, 0.3, 0.5]
     assert published[-1]["candles_replayed"] == 5
     assert published[-1]["candles_substituted"] == 1
 
@@ -108,7 +110,7 @@ def test_progress_never_decreases_within_a_run():
     clock.now = 2.0
     reporter.replay(3, 10, CANDLE_TIME, replayed=7, substituted=0)
 
-    assert published[-1]["progress"] == 0.5
+    assert published[-1]["progress"] == 0.6
     assert published[-1]["candles_replayed"] == 7
 
 
@@ -127,6 +129,67 @@ def test_a_silent_reporter_accepts_every_call_without_publishing():
 
     reporter.phase("simulating", "Simulating 10 candles", bars_total=10)
     reporter.replay(1, 10, CANDLE_TIME, replayed=2, substituted=0)
+
+
+def test_read_boundaries_do_not_claim_pending_history_is_completed():
+    reporter, published, clock = make_reporter()
+    reporter.phase("simulating", "Simulating 10 candles", bars_total=10)
+    clock.now = 1.0
+    with reporter.read("reading_ticks", STARTED, STARTED + timedelta(hours=1)):
+        assert published[-1]["activity"]["kind"] == "reading_ticks"
+        assert published[-1]["activity"]["range_start"] == STARTED.isoformat()
+        assert published[-1]["simulated_until"] is None
+        assert published[-1]["candles_replayed"] == 0
+        clock.now = 20.0
+    assert published[-1]["activity"]["kind"] == "computing"
+    reporter.replay(0, 10, CANDLE_TIME, replayed=1, substituted=0)
+    clock.now = 21.0
+    reporter.replay(0, 10, CANDLE_TIME, replayed=1, substituted=0)
+    assert published[-1]["progress"] == 0.1
+
+
+def test_read_failure_preserves_last_completed_replay():
+    reporter, published, clock = make_reporter()
+    reporter.phase("simulating", "Simulating 10 candles", bars_total=10)
+    clock.now = 1.0
+    reporter.replay(0, 10, CANDLE_TIME, replayed=1, substituted=0)
+    with pytest.raises(ConnectionError):
+        with reporter.read("reading_m1", STARTED, STARTED + timedelta(hours=1)):
+            raise ConnectionError("provider unavailable")
+    assert published[-1]["activity"]["kind"] == "reading_m1"
+    assert published[-1]["candles_replayed"] == 1
+    assert published[-1]["simulated_until"] == CANDLE_TIME.isoformat()
+
+
+def test_phase_history_includes_queue_time_and_completed_phase_durations():
+    reporter, published, clock = make_reporter()
+    clock.now = 8.0
+    reporter.phase("loading_data", "Loading candles")
+    clock.now = 20.0
+    reporter.phase("preparing", "Preparing strategy")
+    assert published[-1]["phase_history"] == [
+        {
+            "phase": "queued",
+            "started_at": STARTED.isoformat(),
+            "finished_at": (STARTED + timedelta(seconds=8)).isoformat(),
+        },
+        {
+            "phase": "loading_data",
+            "started_at": (STARTED + timedelta(seconds=8)).isoformat(),
+            "finished_at": (STARTED + timedelta(seconds=20)).isoformat(),
+        },
+        {"phase": "preparing", "started_at": (STARTED + timedelta(seconds=20)).isoformat(), "finished_at": None},
+    ]
+
+
+def test_progress_publication_failure_does_not_fail_a_read():
+    def unavailable(payload):
+        raise ConnectionError("redis unavailable")
+
+    reporter = BacktestProgressReporter("run-1", started_at=STARTED, publish=unavailable)
+    reporter.phase("loading_data", "Loading candles")
+    with reporter.read("loading_candles", STARTED, STARTED + timedelta(days=1)):
+        pass
 
 
 def test_status_without_progress_fields_validates_with_them_null():
@@ -220,7 +283,8 @@ def test_candle_run_reports_its_phases_in_order_before_completion(
 ):
     run_id, _ = run_async_backtest(REQUEST_BODY, api_session_scope=api_session_scope, sample_ohlcv=sample_ohlcv)
 
-    assert [payload.get("phase") for payload in published_progress] == [
+    phases = [payload.get("phase") for payload in published_progress]
+    assert [phase for index, phase in enumerate(phases) if index == 0 or phase != phases[index - 1]] == [
         "queued",
         "loading_data",
         "preparing",
@@ -229,7 +293,7 @@ def test_candle_run_reports_its_phases_in_order_before_completion(
         None,
     ]
     assert published_progress[-1] == {"run_id": run_id, "status": "completed", "error": None}
-    simulating = published_progress[3]
+    simulating = next(payload for payload in published_progress if payload.get("phase") == "simulating")
     assert simulating["progress"] is None
     assert simulating["bars_total"] == len(sample_ohlcv)
     assert simulating["message"] == f"Simulating {len(sample_ohlcv)} candles"
@@ -249,3 +313,20 @@ def test_a_failing_progress_store_leaves_the_run_result_unchanged(
     assert run_id is not None
     assert degraded["metrics"] == healthy["metrics"]
     assert degraded["trades"] == healthy["trades"]
+
+
+def test_status_endpoint_preserves_activity_and_phase_history(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from q_backend.api.routers.backtest import router
+
+    reporter, published, _ = make_reporter()
+    reporter.phase("loading_data", "Loading candles")
+    app = FastAPI()
+    app.include_router(router)
+    monkeypatch.setattr(backtest_jobs, "get_status_payload", lambda run_id: published[-1])
+    with reporter.read("loading_candles", STARTED, STARTED + timedelta(days=1)):
+        response = TestClient(app).get("/api/v1/backtest/run-1")
+    assert response.status_code == 200
+    assert response.json()["activity"]["kind"] == "loading_candles"
+    assert [entry["phase"] for entry in response.json()["phase_history"]] == ["queued", "loading_data"]
