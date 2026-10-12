@@ -31,17 +31,17 @@
 
 **Files (`q_contracts`):** `schema/api/openapi.yaml`, generated outputs, a `tests/test_research_figures_contract.py`.
 
-- [ ] Add a failing contract test: the six routes, the `content` discriminator, the metadata shape and the bulk-delete one-of.
-- [ ] Add the paths and schemas, regenerate, run `make check`, commit.
-- [ ] In `q_backend`: update `CONTRACTS_REV`, run `make contracts` against the local clone and `make contracts-check`; commit.
+- [x] Add a failing contract test: the six routes, the `content` discriminator, the metadata shape and the bulk-delete one-of.
+- [x] Add the paths and schemas, regenerate, run `make check`, commit.
+- [x] In `q_backend`: update `CONTRACTS_REV`, run `make contracts` against the local clone and `make contracts-check`; commit.
 
 ### 2. Storage
 
 **Files:** `src/q_backend/storage/db/models.py`, `storage/db/repositories.py`, `storage/lake/artifacts.py`, `storage/settings.py`, a new `alembic/versions/*_research_figures.py`, `tests/storage/`.
 
-- [ ] Add failing tests for create, replace, list with collection counts, delete, atomic content write and extension change on replacement.
-- [ ] Implement the model, migration, repository functions, lake read/write/delete and the `research_figure_max_bytes` setting.
-- [ ] Run the storage tests and the migration upgrade/downgrade check; commit.
+- [x] Add failing tests for create, replace, list with collection counts, delete, atomic content write and extension change on replacement.
+- [x] Implement the model, migration, repository functions, lake read/write/delete and the `research_figure_max_bytes` setting.
+- [x] Run the storage tests and the migration upgrade/downgrade check; commit.
 
 ### 3. Control API
 

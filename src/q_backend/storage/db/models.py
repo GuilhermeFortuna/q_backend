@@ -658,3 +658,23 @@ class DataIngestionRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_data_ingestion_runs_symbol_dataset", "symbol", "dataset_type"),
         Index("ix_data_ingestion_runs_status", "status"),
     )
+
+
+class ResearchFigure(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "research_figures"
+
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    collection: Mapped[str] = mapped_column(String(120), nullable=False)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    media_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    width: Mapped[Optional[int]] = mapped_column(nullable=True)
+    height: Mapped[Optional[int]] = mapped_column(nullable=True)
+    byte_size: Mapped[int] = mapped_column(nullable=False)
+    revision: Mapped[int] = mapped_column(nullable=False, default=1, server_default="1")
+    provenance: Mapped[Optional[dict[str, Any]]] = mapped_column(PortableJSON, nullable=True)
+
+    __table_args__ = (
+        Index("ix_research_figures_collection_title", "collection", "title"),
+        Index("ix_research_figures_updated_at", "updated_at"),
+    )

@@ -623,3 +623,51 @@ def read_neural_model_manifest(model_hash: str) -> dict[str, Any]:
     if not manifest_path.is_file():
         raise FileNotFoundError(f"Neural model manifest not found for hash '{model_hash}'.")
     return json.loads(manifest_path.read_text(encoding="utf-8"))
+
+
+def figure_lake_dir(figure_id: str) -> Path:
+    return lake_root() / "research_figures" / str(figure_id)
+
+
+def write_research_figure_content(figure_id: str, extension: str, data: bytes) -> Path:
+    import uuid
+
+    ext = extension.lstrip(".")
+    fig_dir = figure_lake_dir(figure_id)
+    fig_dir.mkdir(parents=True, exist_ok=True)
+
+    temp_file = fig_dir / f".tmp_{uuid.uuid4().hex}.{ext}"
+    target_file = fig_dir / f"content.{ext}"
+
+    try:
+        temp_file.write_bytes(data)
+        for old_file in fig_dir.glob("content.*"):
+            if old_file.name != f"content.{ext}":
+                old_file.unlink(missing_ok=True)
+        temp_file.replace(target_file)
+    except Exception:
+        temp_file.unlink(missing_ok=True)
+        raise
+    return target_file
+
+
+def read_research_figure_content(figure_id: str) -> tuple[bytes, str]:
+    fig_dir = figure_lake_dir(figure_id)
+    if not fig_dir.is_dir():
+        raise FileNotFoundError(f"Research figure content not found for id '{figure_id}'.")
+    content_files = [f for f in fig_dir.glob("content.*") if f.is_file()]
+    if not content_files:
+        raise FileNotFoundError(f"Research figure content not found for id '{figure_id}'.")
+    target_file = content_files[0]
+    if not target_file.resolve().is_relative_to(fig_dir.resolve()):
+        raise PermissionError(f"Access to '{target_file}' denied.")
+    ext = target_file.suffix.lstrip(".")
+    return target_file.read_bytes(), ext
+
+
+def delete_research_figure_content(figure_id: str) -> bool:
+    fig_dir = figure_lake_dir(figure_id)
+    if not fig_dir.exists():
+        return False
+    shutil.rmtree(fig_dir, ignore_errors=True)
+    return True
