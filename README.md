@@ -337,6 +337,14 @@ uv run ruff check src
 
 ### Golden backtest regressions (backtest↔live parity lock-down)
 
+Bollinger Reversion candle backtests using a single entry and the default OR manager
+preserve native entry and exit signals, matching standalone optimization trials.
+That includes closing at the next open after a middle-band crossing and accepting
+a later band excursion in the same direction. Configured stops and targets still
+apply. Other strategies and multi-strategy combinations retain their manager's
+stance-based signals. Existing saved results are not recalculated automatically;
+rerun a backtest to apply the corrected behavior.
+
 The backtest engine's numbers are the foundation every other system (optimization, discovery,
 research acceptance, paper trading) builds on. A subtle change to indicator warm-up, exit-evaluation
 order, sizing, or cost handling would pass the rest of the suite while silently shifting every

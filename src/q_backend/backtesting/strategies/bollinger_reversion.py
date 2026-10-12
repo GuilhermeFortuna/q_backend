@@ -9,6 +9,8 @@ from q_backend.backtesting.technical_indicators import compute_bollinger_bands
 
 
 class BollingerReversionStrategy(TradingStrategy):
+    preserve_single_entry_signals = True
+
     def __init__(
         self,
         period: int = 20,

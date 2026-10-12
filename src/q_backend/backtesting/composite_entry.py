@@ -8,6 +8,7 @@ import pandas as pd
 from q_backend.backtesting.exit_strategy import ExitStrategy
 from q_backend.backtesting.signal_columns import (
     BAR_INDEX,
+    LEVEL_COLUMNS,
     SIGNAL_COLUMNS,
     SIGNAL_ENTRY,
     write_signal_columns,
@@ -71,9 +72,12 @@ class CompositeEntryStrategy(TradingStrategy):
     def compute_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
         df = data.copy()
         stance_columns: list[str] = []
+        native_signals: pd.DataFrame | None = None
 
         for slot_id, _name, sub in self._instances:
             sub_df, buy, sell = self._instance_edge_columns(sub, data)
+            if len(self._instances) == 1 and self.manager.id == "or" and sub.preserve_single_entry_signals:
+                native_signals = sub_df
             df[f"{slot_id}__stance"] = derive_stance(buy, sell)
 
             for column in sub_df.columns:
@@ -97,17 +101,28 @@ class CompositeEntryStrategy(TradingStrategy):
         df["net_short_signal"] = (net_series == Stance.SHORT) & (prev_net != Stance.SHORT)
         df["buy_signal"] = df["net_long_signal"]
         df["sell_signal"] = df["net_short_signal"]
-        df = write_signal_columns(
-            df,
-            entry_long=df["net_long_signal"],
-            entry_short=df["net_short_signal"],
-            exit_long=(net_series == Stance.SHORT).astype(bool),
-            exit_short=(net_series == Stance.LONG).astype(bool),
-            strategy_name=type(self).__name__,
-        )
+        if native_signals is not None:
+            # A single OR entry is the strategy itself, not a persistent vote.
+            # Preserve native exits (e.g. Bollinger's middle band) and subsequent
+            # same-direction entries so standalone optimization can be replayed.
+            df["net_long_signal"] = df["buy_signal"] = buy
+            df["net_short_signal"] = df["sell_signal"] = sell
+            for column in (*SIGNAL_COLUMNS, *LEVEL_COLUMNS):
+                if column in native_signals:
+                    df[column] = native_signals[column]
+        else:
+            df = write_signal_columns(
+                df,
+                entry_long=df["net_long_signal"],
+                entry_short=df["net_short_signal"],
+                exit_long=(net_series == Stance.SHORT).astype(bool),
+                exit_short=(net_series == Stance.LONG).astype(bool),
+                strategy_name=type(self).__name__,
+            )
 
-        for slot_id, _name, sub in self._instances:
-            df = sub.filter_entry_signals(df, indicator_prefix=f"{slot_id}__")
+        if native_signals is None:
+            for slot_id, _name, sub in self._instances:
+                df = sub.filter_entry_signals(df, indicator_prefix=f"{slot_id}__")
         return df
 
     def get_chart_indicators(self) -> List[ChartIndicatorSpec]:

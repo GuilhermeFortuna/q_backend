@@ -44,6 +44,9 @@ class TradingStrategy(ABC):
     """
 
     requires_single_entry = False
+    # Opt in when a single OR composition must preserve the strategy's native
+    # exits and repeated entry edges instead of converting them to stance votes.
+    preserve_single_entry_signals = False
 
     def filter_entry_signals(self, frame: pd.DataFrame, *, indicator_prefix: str = "") -> pd.DataFrame:
         """Apply an optional entry gate after composite stance combination.
