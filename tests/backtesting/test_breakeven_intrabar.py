@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from q_backend.backtesting.candle_kernel import _exit_params
+from q_backend.backtesting.intrabar import MarketTickReplay
 from q_backend.backtesting.exit_rules.registry import all_param_specs
 from q_backend.backtesting.engine import BacktestEngine
 from q_backend.backtesting.position_sizing import FixedQuantitySizer
@@ -676,3 +677,33 @@ def test_the_note_counts_the_candles_whose_deals_were_rescaled():
     [note] = intrabar_notes([], report)
 
     assert note["details"]["candles_rescaled"] == 2
+
+
+def test_market_replay_reports_each_candle_before_its_history_is_read():
+    events = []
+
+    class Recording(TickProvider):
+        def get_ohlcv(self, symbol, timeframe, start, end):
+            if timeframe == "M1":
+                events.append(("read", pd.Timestamp(start).isoformat()))
+            return super().get_ohlcv(symbol, timeframe, start, end)
+
+    frame = pd.DataFrame(
+        {"open": [100.0, 100.0], "high": [103.0, 103.0], "low": [74.0, 74.0], "close": [102.0, 102.0]},
+        index=pd.DatetimeIndex(["2024-01-02 10:00", "2024-01-02 11:00"]),
+    )
+    replay = MarketTickReplay(
+        Recording([100.0, 101.0]),
+        "TEST",
+        "H1",
+        frame,
+        on_replay=lambda bar, bars_total, candle_time: events.append(("report", bar, bars_total, candle_time)),
+    )
+
+    replay(1)
+    replay(1)  # served from the one-candle cache: no second report
+
+    assert events == [
+        ("report", 1, 2, pd.Timestamp("2024-01-02 11:00")),
+        ("read", pd.Timestamp("2024-01-02 11:00").isoformat()),
+    ]

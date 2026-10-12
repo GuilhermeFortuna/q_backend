@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -97,8 +98,10 @@ class MarketTickReplay:
         tick_size: float | None = None,
         report: ReplayReport | None = None,
         price_digits: int | None = None,
+        on_replay: Callable[[int, int, pd.Timestamp], None] | None = None,
     ) -> None:
         self._service = service
+        self._on_replay = on_replay
         self._tick_size = tick_size if tick_size is not None and np.isfinite(tick_size) and tick_size > 0 else None
         self._tolerance = 0.0 if self._tick_size is None else self._tick_size * 1e-6
         self._price_digits = price_digits
@@ -117,6 +120,9 @@ class MarketTickReplay:
             end = min(end, _to_naive_local(self._frame.index[bar + 1].to_pydatetime()))
         candle = np.array([float(self._frame.iloc[bar][col]) for col in ("open", "high", "low", "close")])
         self._report.replayed.add(pd.Timestamp(start))
+        if self._on_replay is not None:
+            # Before the candle's history is read, so a slow read is visible to the observer.
+            self._on_replay(bar, len(self._frame), pd.Timestamp(start))
         times, prices = self._replay(start, end, candle)
         self._last = (bar, np.ascontiguousarray(times * 1000), np.ascontiguousarray(prices))
         return self._last[1], self._last[2]
@@ -384,11 +390,16 @@ def intrabar_notes(trades: list[Any], report: ReplayReport) -> list[dict[str, An
 
 
 def breakeven_market_inputs(
-    strategy: Any, service: Any, timeframe: str, report: ReplayReport | None = None
+    strategy: Any,
+    service: Any,
+    timeframe: str,
+    report: ReplayReport | None = None,
+    on_replay: Callable[[int, int, pd.Timestamp], None] | None = None,
 ) -> dict[str, Any]:
     """Resolve instrument metadata only for an enabled breakeven rule.
 
     ``report`` collects the substitutions of every replay the returned factory creates.
+    ``on_replay`` is told each candle before its history is read; see ``MarketTickReplay``.
     """
     params = _exit_params_from_strategy(strategy)
     if float(params.get("breakeven_trigger_pct", 0.0)) <= 0.0:
@@ -415,6 +426,13 @@ def breakeven_market_inputs(
     return {
         "tick_size": tick_size,
         "intrabar_factory": lambda frame: MarketTickReplay(
-            service, strategy.symbol, timeframe, frame, grid, report=report, price_digits=digits
+            service,
+            strategy.symbol,
+            timeframe,
+            frame,
+            grid,
+            report=report,
+            price_digits=digits,
+            on_replay=on_replay,
         ),
     }
