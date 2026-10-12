@@ -94,7 +94,15 @@ def _bar_bounds_msc(times: pd.Series) -> tuple[np.ndarray, np.ndarray]:
             if close_ts.date() != open_ts.date():
                 close_ts = open_ts.normalize() + pd.Timedelta(days=1)
         else:
-            close_ts = open_ts.normalize() + pd.Timedelta(days=1)
+            if len(times) > 1:
+                step = times.iloc[idx] - times.iloc[idx - 1]
+                candidate = open_ts + step
+                if candidate.date() != open_ts.date():
+                    close_ts = open_ts.normalize() + pd.Timedelta(days=1)
+                else:
+                    close_ts = candidate
+            else:
+                close_ts = open_ts.normalize() + pd.Timedelta(days=1)
         opens.append(int(open_ts.timestamp() * 1000))
         closes.append(int(close_ts.timestamp() * 1000))
     return np.asarray(opens, dtype=np.int64), np.asarray(closes, dtype=np.int64)

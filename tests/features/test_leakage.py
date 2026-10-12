@@ -155,7 +155,7 @@ _ALL_SPEC_NAMES = [spec.name for spec in list_feature_specs()]
 
 
 @pytest.mark.parametrize("spec_name", _ALL_SPEC_NAMES)
-def test_feature_spec_is_causal(spec_name: str) -> None:
+def test_feature_spec_is_causal(spec_name: str, quote_tick_store: str) -> None:
     if spec_name in EXEMPT_SPECS:
         pytest.skip(f"exempt: {EXEMPT_SPECS[spec_name]}")
 
@@ -168,6 +168,14 @@ def test_feature_spec_is_causal(spec_name: str) -> None:
         return
 
     params = resolve_params(spec, {})
+
+    if spec.source == "quote":
+
+        def _compute(frame: pd.DataFrame):
+            return compute_feature(frame, spec, params, symbol=quote_tick_store)
+
+        assert_causal(_compute, bars, sample_indices=sample)
+        return
 
     def _compute(frame: pd.DataFrame):
         return compute_feature(frame, spec, params)
@@ -267,6 +275,26 @@ def test_exogenous_harness_catches_a_forward_leak() -> None:
 
     with pytest.raises(LeakageError):
         assert_causal(_leaky, bars, sample_indices=[40, 80])
+
+
+def test_quote_harness_catches_a_forward_leak(quote_tick_store: str) -> None:
+    """The quote path uses assert_causal too; a shift(-1) on the quote series is caught."""
+    bars = _synthetic_bars()
+    spec = get_feature_spec("quote_spread")
+    params = resolve_params(spec, {})
+
+    def _leaky(frame: pd.DataFrame) -> FeatureSeries:
+        computed = compute_feature(frame, spec, params, symbol=quote_tick_store)
+        leaked = computed.series.shift(-1)
+        return FeatureSeries(
+            feature_id="leaky_quote",
+            series=leaked,
+            warmup_bars=computed.warmup_bars,
+            leakage_status="suspect",
+        )
+
+    with pytest.raises(LeakageError):
+        assert_causal(_leaky, bars, sample_indices=[50, 120])
 
 
 # --------------------------------------------------------------------------- #

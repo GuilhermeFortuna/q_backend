@@ -47,9 +47,9 @@
 
 **Files:** `tests/features/test_leakage.py`, a tick-store fixture in `tests/features/conftest.py`.
 
-- [ ] Add a fixture that writes varying quotes across the harness's synthetic bars and points `Q_RESEARCH_TICK_STORE` at them.
-- [ ] Route `quote` specs in `test_feature_spec_is_causal` through `compute_feature` with the fixture's symbol; add the planted-lookahead test.
-- [ ] Run `uv run pytest tests/features/test_leakage.py tests/features/test_leakage_invariants.py -q`; commit.
+- [x] Add a fixture that writes varying quotes across the harness's synthetic bars and points `Q_RESEARCH_TICK_STORE` at them.
+- [x] Route `quote` specs in `test_feature_spec_is_causal` through `compute_feature` with the fixture's symbol; add the planted-lookahead test.
+- [x] Run `uv run pytest tests/features/test_leakage.py tests/features/test_leakage_invariants.py -q`; commit.
 
 ### 4. Documents
 
