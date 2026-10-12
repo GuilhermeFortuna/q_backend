@@ -553,7 +553,7 @@ p_fig.update_layout(title="Interactive Equity Curve")
 fig_id_plotly = research.publish_figure(p_fig)
 ```
 
-**One-call charts.** For the common plots, skip the plotting code entirely. Each function draws in the Q dark style and publishes in one call, returning the figure id:
+**One-call charts.** For the common plots, skip the plotting code entirely. Each function draws an interactive Plotly chart in the Q dark style and publishes it in one call, returning the figure id:
 
 ```python
 from q_backend import research
@@ -565,10 +565,32 @@ research.histogram(returns, title="Return distribution", bins=50)
 research.scatter(rsi, fwd_return, title="RSI vs forward return", xlabel="RSI", ylabel="Fwd return")
 ```
 
+**Candlesticks with indicators.** `candlestick` takes OHLC candles and draws your indicators over the price (`overlays`) or in their own panes below it (`panels`), all sharing the time axis:
+
+```python
+research.candlestick(
+    candles,                                   # DataFrame: open, high, low, close, time index
+    title="WDO M10 — breakout study",
+    overlays={
+        "EMA 20": ema20,                       # a Series draws as a line
+        "VWAP": vwap,
+        "Entry": research.Indicator(entries, kind="scatter"),   # markers
+    },
+    panels={
+        "RSI": rsi,
+        "My score": research.Indicator(score, kind="scatter"),
+    },
+    collection="breakout_study",
+)
+```
+
+- **Indicators** are pandas Series aligned with the candles. A numpy array also works, if its length matches the candles; it is aligned to their index. Wrap a value in `research.Indicator(...)` to choose `kind="line"` (default) or `kind="scatter"`, and to set a `color`.
+- **Candles** need `open`, `high`, `low` and `close` columns in any case. Gains are emerald and losses rose.
+- **Charts are interactive** in the Figures tab: zoom, pan and hover.
 - **Data:** pandas Series or DataFrame, or numpy/list values. `line` plots a DataFrame as one line per column with a legend; `bar` draws grouped bars for a DataFrame. `drawdown`, `histogram` and single-series `bar` take one series.
 - **Arguments:** `title` is required. `xlabel`, `ylabel`, `collection`, `notes`, `replace`, `api_url` and `client` work as in `publish_figure`. `histogram` also takes `bins`.
 - **Colours:** a single-series `bar` colours gains gold and losses rose. `drawdown` plots the distance from the running peak as a percentage.
-- **Empty or mismatched data** raises `ValueError` before anything is sent.
+- **Empty, mismatched or incomplete data** raises `ValueError` before anything is sent.
 - **Anything else** (other chart types, custom styling) is still a Matplotlib or Plotly figure passed to `publish_figure`.
 
 - **Supported figure types:** A `matplotlib.figure.Figure`, any object with a `.figure` attribute (such as an `Axes` or a seaborn `FacetGrid`), or a `plotly.graph_objects.Figure`. Recognized without importing either library; unsupported objects raise `TypeError`.

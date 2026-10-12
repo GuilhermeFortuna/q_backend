@@ -1,19 +1,18 @@
-"""Tests for the one-call plot helpers in q_backend.research."""
+"""Tests for the one-call interactive chart helpers in q_backend.research."""
 
 from __future__ import annotations
 
-import base64
 import json
 from unittest.mock import patch
 
 import httpx
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 import pytest
 
 from q_backend import research
-from q_backend.research import bar, drawdown, histogram, line, scatter
+from q_backend.research import Indicator, bar, candlestick, drawdown, histogram, line, scatter
 
 
 @pytest.fixture
@@ -23,26 +22,38 @@ def captured():
         yield publish
 
 
+def _figure(captured) -> go.Figure:
+    return captured.call_args.args[0]
+
+
+def _candles(periods: int = 6) -> pd.DataFrame:
+    index = pd.date_range("2026-01-01 09:00", periods=periods, freq="10min")
+    close = pd.Series(np.linspace(100.0, 105.0, periods), index=index)
+    return pd.DataFrame(
+        {"Open": close - 0.5, "High": close + 1.0, "Low": close - 1.0, "Close": close, "Volume": 10},
+        index=index,
+    )
+
+
 def test_helpers_are_exported_from_research_package() -> None:
-    for name in ("line", "drawdown", "bar", "histogram", "scatter"):
+    for name in ("line", "drawdown", "bar", "histogram", "scatter", "candlestick", "Indicator"):
         assert getattr(research, name) is not None
         assert name in research.__all__
 
 
-def test_line_series_plots_one_line_and_publishes(captured) -> None:
+def test_line_series_plots_one_interactive_line_and_publishes(captured) -> None:
     index = pd.date_range("2026-01-01", periods=4, freq="D")
     equity = pd.Series([100.0, 101.0, 99.0, 103.0], index=index, name="equity")
 
     fig_id = line(equity, title="Equity", collection="study", notes="H1", ylabel="BRL")
 
     assert fig_id == "fig-1"
-    fig = captured.call_args.args[0]
-    ax = fig.axes[0]
-    assert len(ax.lines) == 1
-    np.testing.assert_allclose(ax.lines[0].get_ydata(), [100.0, 101.0, 99.0, 103.0])
-    assert ax.get_title() == "Equity"
-    assert ax.get_ylabel() == "BRL"
-    assert ax.get_legend() is None
+    fig = _figure(captured)
+    assert isinstance(fig, go.Figure)
+    assert len(fig.data) == 1
+    assert list(fig.data[0].y) == [100.0, 101.0, 99.0, 103.0]
+    assert fig.layout.yaxis.title.text == "BRL"
+    assert fig.layout.showlegend is False
     kwargs = captured.call_args.kwargs
     assert kwargs["title"] == "Equity"
     assert kwargs["collection"] == "study"
@@ -50,14 +61,14 @@ def test_line_series_plots_one_line_and_publishes(captured) -> None:
     assert kwargs["replace"] is True
 
 
-def test_line_dataframe_draws_one_line_per_column_with_legend(captured) -> None:
+def test_line_dataframe_draws_one_trace_per_column_with_legend(captured) -> None:
     frame = pd.DataFrame({"strategy": [1.0, 2.0], "benchmark": [1.0, 1.5]})
 
     line(frame, title="Compare")
 
-    ax = captured.call_args.args[0].axes[0]
-    assert [entry.get_label() for entry in ax.lines] == ["strategy", "benchmark"]
-    assert ax.get_legend() is not None
+    fig = _figure(captured)
+    assert [trace.name for trace in fig.data] == ["strategy", "benchmark"]
+    assert fig.layout.showlegend is True
 
 
 def test_drawdown_is_distance_from_running_peak(captured) -> None:
@@ -65,20 +76,18 @@ def test_drawdown_is_distance_from_running_peak(captured) -> None:
 
     drawdown(equity, title="Drawdown")
 
-    ax = captured.call_args.args[0].axes[0]
-    np.testing.assert_allclose(ax.lines[0].get_ydata(), [0.0, 0.0, -0.25, 0.0])
+    fig = _figure(captured)
+    np.testing.assert_allclose(fig.data[0].y, [0.0, 0.0, -0.25, 0.0])
+    assert fig.data[0].fill == "tozeroy"
 
 
-def test_bar_single_series_colours_by_sign(captured) -> None:
+def test_bar_single_series_colours_gains_and_losses(captured) -> None:
     values = pd.Series([2.0, -1.0, 0.5], index=["jan", "feb", "mar"])
 
     bar(values, title="Monthly P&L")
 
-    ax = captured.call_args.args[0].axes[0]
-    colours = [patch_.get_facecolor()[:3] for patch_ in ax.patches]
-    assert colours[0] != colours[1]
-    assert colours[0] == colours[2]
-    assert [tick.get_text() for tick in ax.get_xticklabels()] == ["jan", "feb", "mar"]
+    colours = list(_figure(captured).data[0].marker.color)
+    assert colours[0] == colours[2] != colours[1]
 
 
 def test_bar_dataframe_draws_grouped_bars_with_legend(captured) -> None:
@@ -86,9 +95,10 @@ def test_bar_dataframe_draws_grouped_bars_with_legend(captured) -> None:
 
     bar(frame, title="Grouped")
 
-    ax = captured.call_args.args[0].axes[0]
-    assert len(ax.patches) == 4
-    assert ax.get_legend() is not None
+    fig = _figure(captured)
+    assert [trace.name for trace in fig.data] == ["a", "b"]
+    assert fig.layout.barmode == "group"
+    assert fig.layout.showlegend is True
 
 
 def test_histogram_leaves_out_missing_values(captured) -> None:
@@ -96,21 +106,85 @@ def test_histogram_leaves_out_missing_values(captured) -> None:
 
     histogram(values, title="Returns", bins=4)
 
-    ax = captured.call_args.args[0].axes[0]
-    counted = sum(patch_.get_height() for patch_ in ax.patches)
-    assert counted == 4
+    trace = _figure(captured).data[0]
+    assert len(trace.x) == 4
+    assert trace.nbinsx == 4
 
 
 def test_scatter_plots_points_and_checks_lengths(captured) -> None:
     scatter([1, 2, 3], [4, 5, 6], title="Feature vs return", xlabel="RSI", ylabel="fwd")
 
-    ax = captured.call_args.args[0].axes[0]
-    offsets = ax.collections[0].get_offsets()
-    np.testing.assert_allclose(offsets, [[1, 4], [2, 5], [3, 6]])
-    assert ax.get_xlabel() == "RSI"
+    fig = _figure(captured)
+    assert fig.data[0].mode == "markers"
+    assert list(fig.data[0].x) == [1.0, 2.0, 3.0]
+    assert fig.layout.xaxis.title.text == "RSI"
 
     with pytest.raises(ValueError, match="same length"):
         scatter([1, 2], [1, 2, 3], title="Bad")
+
+
+def test_candlestick_draws_candles_with_overlay_and_panel(captured) -> None:
+    candles = _candles()
+    ema = candles["Close"].ewm(span=3).mean()
+    rsi = pd.Series(np.linspace(30, 70, len(candles)), index=candles.index)
+
+    candlestick(
+        candles,
+        title="WDO M10",
+        overlays={"EMA 3": ema},
+        panels={"RSI": Indicator(rsi, kind="scatter")},
+        collection="wdo",
+    )
+
+    fig = _figure(captured)
+    assert [trace.type for trace in fig.data] == ["candlestick", "scatter", "scatter"]
+    candle = fig.data[0]
+    assert list(candle.open) == pytest.approx(list(candles["Open"]))
+    assert list(candle.close) == pytest.approx(list(candles["Close"]))
+    # The overlay sits on the price pane; the scatter panel sits in its own row below.
+    assert fig.data[1].yaxis == "y"
+    assert fig.data[2].yaxis == "y2"
+    assert fig.data[2].mode == "markers"
+    assert fig.layout.yaxis2.title.text == "RSI"
+    assert captured.call_args.kwargs["collection"] == "wdo"
+
+
+def test_candlestick_without_indicators_has_one_pane(captured) -> None:
+    candlestick(_candles(), title="Price only")
+
+    fig = _figure(captured)
+    assert [trace.type for trace in fig.data] == ["candlestick"]
+    assert "yaxis2" not in fig.to_plotly_json()["layout"]
+
+
+def test_candlestick_accepts_lower_case_columns(captured) -> None:
+    candles = _candles().rename(columns=str.lower)
+
+    candlestick(candles, title="Lower case")
+
+    assert _figure(captured).data[0].close is not None
+
+
+def test_candlestick_rejects_missing_columns_and_empty_data(captured) -> None:
+    with pytest.raises(ValueError, match="missing column"):
+        candlestick(_candles().drop(columns=["High"]), title="Bad")
+    with pytest.raises(ValueError, match="no data"):
+        candlestick(_candles().iloc[:0], title="Empty")
+    captured.assert_not_called()
+
+
+def test_indicator_must_match_candle_length(captured) -> None:
+    with pytest.raises(ValueError, match="same length"):
+        candlestick(_candles(), title="Bad", overlays={"EMA": np.arange(3.0)})
+    captured.assert_not_called()
+
+
+def test_numpy_indicator_uses_candle_index_as_x(captured) -> None:
+    candles = _candles()
+
+    candlestick(candles, title="Numpy", overlays={"Signal": Indicator(np.arange(6.0), kind="scatter")})
+
+    assert list(_figure(captured).data[1].x) == list(candles.index)
 
 
 @pytest.mark.parametrize(
@@ -137,16 +211,7 @@ def test_single_series_helpers_reject_multi_column_frames(captured) -> None:
     captured.assert_not_called()
 
 
-def test_helpers_leave_no_pyplot_figures_open(captured) -> None:
-    before = plt.get_fignums()
-
-    line([1.0, 2.0], title="No pyplot")
-    scatter([1.0], [2.0], title="No pyplot")
-
-    assert plt.get_fignums() == before
-
-
-def test_line_publishes_a_png_to_the_api() -> None:
+def test_line_publishes_a_plotly_figure_to_the_api() -> None:
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -161,6 +226,5 @@ def test_line_publishes_a_png_to_the_api() -> None:
     payload = json.loads(requests[0].content)
     assert payload["title"] == "Equity"
     assert payload["collection"] == "study"
-    assert payload["content"]["kind"] == "image"
-    assert payload["content"]["media_type"] == "image/png"
-    assert base64.b64decode(payload["content"]["data"]).startswith(b"\x89PNG\r\n\x1a\n")
+    assert payload["content"]["kind"] == "plotly"
+    assert payload["content"]["figure"]["data"][0]["type"] == "scatter"

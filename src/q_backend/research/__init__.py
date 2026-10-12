@@ -27,12 +27,14 @@ __all__ = (
     "bar",
     "histogram",
     "scatter",
+    "candlestick",
+    "Indicator",
 )
 
 if TYPE_CHECKING:
     from q_backend.research.figures import publish_figure
     from q_backend.research.figure_style import use_figure_style
-    from q_backend.research.plots import bar, drawdown, histogram, line, scatter
+    from q_backend.research.plots import Indicator, bar, candlestick, drawdown, histogram, line, scatter
     from q_backend.research import indicators
     from q_backend.research.engine import backtest
     from q_backend.research.charting import ChartIndicator
@@ -135,4 +137,12 @@ def __getattr__(name: str):
         from q_backend.research.plots import scatter
 
         return scatter
+    if name == "candlestick":
+        from q_backend.research.plots import candlestick
+
+        return candlestick
+    if name == "Indicator":
+        from q_backend.research.plots import Indicator
+
+        return Indicator
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
