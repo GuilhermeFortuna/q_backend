@@ -1,5 +1,7 @@
 """Breakeven protects unarmed trades and fills against ordered trade prices."""
 
+from datetime import datetime, timezone
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -707,3 +709,55 @@ def test_market_replay_reports_each_candle_before_its_history_is_read():
         ("report", 1, 2, pd.Timestamp("2024-01-02 11:00")),
         ("read", pd.Timestamp("2024-01-02 11:00").isoformat()),
     ]
+
+
+def test_stack_job_reports_replayed_candles_while_it_simulates(monkeypatch):
+    from q_backend.api import backtest_jobs
+    from q_backend.api.backtest_progress import BacktestProgressReporter
+    from q_backend.market_data.models import OHLCV
+
+    class Service(TickProvider):
+        def get_symbol_info(self, symbol):
+            return {"trade_tick_size": 0.25}
+
+        def get_ohlcv(self, symbol, timeframe, start, end):
+            if timeframe == "M1":
+                return super().get_ohlcv(symbol, timeframe, start, end)
+            return [
+                OHLCV(time=pd.Timestamp("2024-01-02 09:00"), open=100, high=100, low=100, close=100, tick_volume=1),
+                OHLCV(time=pd.Timestamp("2024-01-02 10:00"), open=100, high=100, low=74, close=74, tick_volume=3),
+            ]
+
+    monkeypatch.setattr(backtest_jobs, "build_composite_entry", lambda *args: EntryStrategy(breakeven_trigger_pct=0.02))
+    request = backtest_jobs.BacktestJobRequest(
+        symbol="TEST",
+        timeframe="H1",
+        entries=[{"strategy": "MACrossover", "params": {}}],
+        point_value=12.5,
+        exit_params={"breakeven_trigger_pct": 0.02},
+    )
+    published = []
+    # A clock that advances a full interval per call, so every replay report is published.
+    ticks = iter(range(1000))
+    reporter = BacktestProgressReporter(
+        "run",
+        started_at=datetime(2024, 1, 2, 9, tzinfo=timezone.utc),
+        publish=published.append,
+        clock=lambda: float(next(ticks)),
+    )
+    backtest_jobs._execute_candle(
+        request,
+        pd.Timestamp("2024-01-02 09:00"),
+        pd.Timestamp("2024-01-02 11:00"),
+        Service([100, 99, 74]),
+        reporter,
+    )
+
+    simulating = [payload for payload in published if payload["phase"] == "simulating"]
+    replays = [payload for payload in published if payload["message"].startswith("Replaying ticks")]
+    assert simulating[0]["message"] == "Simulating 2 candles"
+    assert replays, "the breakeven replay must report at least one candle"
+    assert {payload["bars_total"] for payload in replays} == {2}
+    assert {payload["progress"] for payload in replays} <= {0.0, 0.5}
+    assert replays[-1]["simulated_until"] == pd.Timestamp("2024-01-02 10:00").isoformat()
+    assert replays[-1]["candles_replayed"] >= 1
