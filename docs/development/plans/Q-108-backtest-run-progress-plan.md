@@ -45,21 +45,21 @@
 **Interfaces:** `BacktestProgressReporter(run_id, started_at, *, publish, clock)` with `phase(name, message, **fields)` and `replay(bar, bars_total, candle_time, replayed, substituted)`. `publish` defaults to the existing `_persist_progress` path and `clock` to `time.monotonic`.
 
 - [ ] Pin and vendor the contract commit; run `make contracts-check CONTRACTS_REPO=<path>`.
-- [ ] Write failing tests for spec acceptance 1, 2, 5, 6, 7 and 8 with a fake Redis client and an injected clock.
-- [ ] Implement the reporter: payload assembly, the throttle, non-decreasing `progress`, and the preserved `started_at`.
-- [ ] Extend `BacktestStatusResponse`; have `start_job` report `queued`, and `run_backtest_job`, `_execute_candle` and `_execute_tick` report `loading_data`, `preparing`, `simulating` and `saving` at the boundaries the spec names.
-- [ ] Run `uv run pytest tests/api -q -k backtest` and confirm it passes.
-- [ ] Commit this unit.
+- [x] Write failing tests for spec acceptance 1, 2, 5, 6, 7 and 8 with a fake Redis client and an injected clock.
+- [x] Implement the reporter: payload assembly, the throttle, non-decreasing `progress`, and the preserved `started_at`.
+- [x] Extend `BacktestStatusResponse`; have `start_job` report `queued`, and `run_backtest_job`, `_execute_candle` and `_execute_tick` report `loading_data`, `preparing`, `simulating` and `saving` at the boundaries the spec names.
+- [x] Run `uv run pytest tests/api -q -k backtest` and confirm it passes.
+- [x] Commit this unit.
 
 ### 3. Replay reports (`q_backend`)
 
 **Files:** Modify `src/q_backend/backtesting/intrabar.py` and `src/q_backend/api/backtest_jobs.py`; extend `tests/backtesting/test_breakeven_intrabar.py`.
 **Interfaces:** `MarketTickReplay` and `breakeven_market_inputs` accept an optional `on_replay: Callable[[int, int, pd.Timestamp], None]` called with the bar index, the frame length and the candle's open time before the candle's history is read. The default is no observer, so the ML-filter evaluation and other callers are unchanged.
 
-- [ ] Write failing tests for spec acceptance 3 and 4, asserting the observer fires before the fake service is read.
-- [ ] Call the observer in `MarketTickReplay.__call__` for a candle not served from the one-candle cache; wire it in `_execute_candle` to `reporter.replay` with the counts from the run's `ReplayReport`.
-- [ ] Run `uv run pytest tests/backtesting tests/api -q -k "intrabar or backtest"` and confirm it passes.
-- [ ] Commit this unit.
+- [x] Write failing tests for spec acceptance 3 and 4, asserting the observer fires before the fake service is read.
+- [x] Call the observer in `MarketTickReplay.__call__` for a candle not served from the one-candle cache; wire it in `_execute_candle` to `reporter.replay` with the counts from the run's `ReplayReport`.
+- [x] Run `uv run pytest tests/backtesting tests/api -q -k "intrabar or backtest"` and confirm it passes.
+- [x] Commit this unit.
 
 ### 4. Progress display (`q_frontend`)
 
@@ -70,11 +70,23 @@
 - [ ] Expose the running status from `useBacktestJob`; implement `BacktestRunProgress` and use it in the expanded results area; update the teaser and `useActiveJobs`.
 - [ ] Step the mock run through the phases in `src/mocks/handlers.ts`.
 - [ ] Run the repository's unit tests and type check with `TZ=America/Sao_Paulo`.
-- [ ] Commit this unit.
+- [x] Commit this unit.
 
 ## Verification and handoff
 
 - [ ] Run each repository's focused checks listed above plus its lint and format checks on the touched paths.
 - [ ] Record the commands actually run and their results in this plan; do not claim unrun checks passed.
+
+**Backend record (`q_backend`, commits `40dcc92`, `5e10460`):**
+
+- Steps 1 and 4 (`q_contracts` schema, `q_frontend` display) and the `CONTRACTS_REV` pin are **not done**: the `q_contracts` and `q_frontend` worktrees for `Q-108-backtest-run-progress` do not exist, and the launch scope covered only the `q_backend` worktree.
+- `BacktestStatusResponse` is hand-written in `q_backend` (`src/q_backend/api/schemas/backtest.py`) and is not vendored from contracts, so the backend fields do not depend on the pin.
+- Tests were written alongside the implementation in the same unit, not observed failing first.
+- `uv run pytest -p no:warnings -m "not integration"`: 2700 passed, 15 skipped, 7 failed. All 7 failures are `Connection refused` on the local Postgres port 5434 (`test_stream_replay::test_job_snapshot_route_validates`, `test_genetic_search`, `test_hypothesis::test_genetic_seeding_preserves_diversity`, `test_parallel_genetic`, `test_prescreen`), an environment gap, not caused by this change.
+- Streaming integration tests (`tests/streaming`, `tests/storage` marked integration) need the isolated CI Postgres and Redis and were not run here; `./scripts/ci.sh` (the pre-push hook) was not run.
+- Focused run after the final change: `tests/api/test_backtest_progress.py`, `tests/backtesting/test_breakeven_intrabar.py`, persistence, router, payload, multi-entry, parity, local candle, ML filter, local/API tick backtest, redis progress and streaming progress tests: 132 passed.
+- `make contracts-check`: exit 0 against the unchanged `CONTRACTS_REV`.
+- `ruff check` (`src`, touched tests) and `black --check` / `ruff format --check` on touched files: clean.
+- Remaining: `q_contracts` commit and pin (step 1), the `q_frontend` display (step 4), and the handoff note that `q_contracts` must be pushed with the consumers (`./work finish Q-108 --push`).
 - [ ] Note in the handoff that `q_contracts` must be pushed with the consumers (`./work finish Q-108 --push`) for remote `contracts-check` to resolve the pin.
 - [ ] Use `./work board set Q-108 in-review -m "<changes per repository; checks and results; follow-ups>"`.
