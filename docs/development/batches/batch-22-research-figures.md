@@ -23,8 +23,8 @@ Each was read from the code on 2026-10-12.
 
 | Task | Repository | Depends on | Specification | Implementation plan |
 | --- | --- | --- | --- | --- |
-| Q-109 — Publish figures from research scripts | q_backend (with q_contracts) | none | [Spec](../specs/Q-109-publish-figures-from-research-scripts-spec.md) | [Plan](../plans/Q-109-publish-figures-from-research-scripts-plan.md) |
-| Q-110 — Figures tab in the Research workspace | q_frontend | Q-109 | `q_frontend/docs/development/specs/Q-110-figures-tab-in-the-research-workspace-spec.md` | `q_frontend/docs/development/plans/Q-110-figures-tab-in-the-research-workspace-plan.md` |
+| [Q-109](https://github.com/GuilhermeFortuna/q_backend/issues/43) — Publish figures from research scripts | q_backend (with q_contracts) | none | [Spec](../specs/Q-109-publish-figures-from-research-scripts-spec.md) | [Plan](../plans/Q-109-publish-figures-from-research-scripts-plan.md) |
+| [Q-110](https://github.com/GuilhermeFortuna/q_frontend/issues/9) — Figures tab in the Research workspace | q_frontend | Q-109 | `q_frontend/docs/development/specs/Q-110-figures-tab-in-the-research-workspace-spec.md` | `q_frontend/docs/development/plans/Q-110-figures-tab-in-the-research-workspace-plan.md` |
 
 Implement Q-109, then Q-110. The work is two tasks because each is a full agent pass with its own review surface: Q-109 is a contract, a migration, storage, six routes and a library, verified without a desktop; Q-110 is a visual workspace verified against MSW. The contract is the only thing they share.
 
