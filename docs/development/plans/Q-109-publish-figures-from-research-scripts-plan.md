@@ -47,9 +47,9 @@
 
 **Files:** new `src/q_backend/api/routers/research_figures.py` and `api/schemas/research_figures.py`, a service module beside `backtesting/run_import.py` conventions, `api/main.py`, `tests/api/`.
 
-- [ ] Add failing tests for spec acceptance items 5–9.
-- [ ] Implement validation, the create/replace transaction, the content response with its headers, and deletion.
-- [ ] Run the API tests; commit.
+- [x] Add failing tests for spec acceptance items 5–9.
+- [x] Implement validation, the create/replace transaction, the content response with its headers, and deletion.
+- [x] Run the API tests; commit.
 
 ### 4. Library
 

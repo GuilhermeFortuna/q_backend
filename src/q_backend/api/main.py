@@ -17,6 +17,7 @@ from q_backend.api.routers import ml_filters as ml_filters_router
 from q_backend.api.routers import neural as neural_router
 from q_backend.api.routers import news as news_router
 from q_backend.api.routers import optimization as optimization_router
+from q_backend.api.routers import research_figures as research_figures_router
 from q_backend.api.routers import storage as storage_router
 from q_backend.api.routers import strategies as strategies_router
 from q_backend.api.routers import strategy_builder as strategy_builder_router
@@ -80,6 +81,7 @@ app.include_router(experiments_router.router)
 app.include_router(storage_router.router)
 app.include_router(catalog_router.router)
 app.include_router(news_router.router)
+app.include_router(research_figures_router.router)
 
 
 def run_dev():
