@@ -85,7 +85,7 @@ def _validate_figure_content(
         fig = content.figure
         if not isinstance(fig, dict) or "data" not in fig or not isinstance(fig["data"], list):
             raise HTTPException(status_code=422, detail="Plotly figure must contain a 'data' array")
-        raw_bytes = json.dumps(fig).encode("utf-8")
+        raw_bytes = json.dumps(fig, separators=(",", ":")).encode("utf-8")
         ext = "json"
         media_type = "application/json"
         width = None

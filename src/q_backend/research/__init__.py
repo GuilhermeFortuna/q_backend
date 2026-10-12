@@ -20,9 +20,13 @@ __all__ = (
     "ChartIndicator",
     "backtest",
     "BacktestResult",
+    "publish_figure",
+    "use_figure_style",
 )
 
 if TYPE_CHECKING:
+    from q_backend.research.figures import publish_figure
+    from q_backend.research.figure_style import use_figure_style
     from q_backend.research import indicators
     from q_backend.research.engine import backtest
     from q_backend.research.charting import ChartIndicator
@@ -97,4 +101,12 @@ def __getattr__(name: str):
         from q_backend.research.results import BacktestResult
 
         return BacktestResult
+    if name == "publish_figure":
+        from q_backend.research.figures import publish_figure
+
+        return publish_figure
+    if name == "use_figure_style":
+        from q_backend.research.figure_style import use_figure_style
+
+        return use_figure_style
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
