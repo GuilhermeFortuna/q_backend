@@ -243,6 +243,7 @@ def _evaluate_into_run(
             target_series,
             close=close,
             bars=bars_df,
+            symbol=symbol,
             progress_callback=lambda done, total: _report_progress("evaluating", done, total),
         )
         _report_progress("scoring", len(feature_set), len(feature_set))

@@ -38,10 +38,10 @@
 
 **Files:** `src/q_backend/features/compute.py`, `src/q_backend/market_data/indicator_series.py`, `src/q_backend/features/evaluation.py`, `src/q_backend/features/evaluation_service.py`, `src/q_backend/features/evidence_service.py`, `tests/features/`.
 
-- [ ] Add failing tests for spec acceptance items 3 and 4, writing ticks with the tick store's own day writer as `tests/api/test_market_indicators.py` does.
-- [ ] Move the "open the tick store or return none" logic into one function used by the chart service and by `_compute_quote_feature`; dispatch on source.
-- [ ] Pass the symbol from the evaluation run into the leakage check and from the evidence segment into its matrix builder.
-- [ ] Run `uv run pytest tests/features tests/neural/test_latent_gate.py tests/api/test_encoder_ablation_jobs.py tests/api/test_market_indicators.py -q`; commit.
+- [x] Add failing tests for spec acceptance items 3 and 4, writing ticks with the tick store's own day writer as `tests/api/test_market_indicators.py` does.
+- [x] Move the "open the tick store or return none" logic into one function used by the chart service and by `_compute_quote_feature`; dispatch on source.
+- [x] Pass the symbol from the evaluation run into the leakage check and from the evidence segment into its matrix builder.
+- [x] Run `uv run pytest tests/features tests/neural/test_latent_gate.py tests/api/test_encoder_ablation_jobs.py tests/api/test_market_indicators.py -q`; commit.
 
 ### 3. Causality coverage
 

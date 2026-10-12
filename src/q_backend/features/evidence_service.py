@@ -64,7 +64,7 @@ def _matrix_from_segment(
     for request in feature_requests:
         spec = get_feature_spec(request.name, version=request.version)
         resolved = {**spec.default_params, **request.params}
-        computed = compute_feature(segment_bars, spec, resolved)
+        computed = compute_feature(segment_bars, spec, resolved, symbol=symbol)
         fid = feature_id(spec, resolved)
         columns[fid] = computed.series
         manifest_features.append(
