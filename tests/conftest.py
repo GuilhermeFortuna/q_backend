@@ -18,9 +18,14 @@ from __future__ import annotations
 
 import os
 
+import matplotlib
 import numpy as np
 import pandas as pd
 import pytest
+
+# Tests never open windows. On a workstation with a display, pyplot would pick the Tk
+# backend, and Tk objects collected on a worker thread abort the interpreter.
+matplotlib.use("Agg")
 
 _DEV_DATABASE_URL = "postgresql+psycopg://q:q@localhost:5434/q"
 _DEV_REDIS_URL = "redis://localhost:6380/0"
