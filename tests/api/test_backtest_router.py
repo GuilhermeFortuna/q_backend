@@ -19,6 +19,7 @@ from q_backend.market_data.models import OHLCV
 BACKTEST_ROUTES: list[tuple[str, str]] = [
     ("POST", "/api/v1/backtest"),
     ("GET", "/api/v1/backtest/{run_id}"),
+    ("POST", "/api/v1/backtest/{run_id}/cancel"),
     ("GET", "/api/v1/backtest/{run_id}/result"),
     ("GET", "/api/v1/backtests"),
     ("POST", "/api/v1/backtests/bulk-delete"),
@@ -34,6 +35,7 @@ BACKTEST_ROUTES: list[tuple[str, str]] = [
 BACKTEST_OPENAPI_PATHS: list[str] = [
     "/api/v1/backtest",
     "/api/v1/backtest/{run_id}",
+    "/api/v1/backtest/{run_id}/cancel",
     "/api/v1/backtest/{run_id}/result",
     "/api/v1/backtests",
     "/api/v1/backtests/bulk-delete",

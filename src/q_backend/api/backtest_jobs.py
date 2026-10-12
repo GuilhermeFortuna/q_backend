@@ -10,7 +10,7 @@ and the lake — no execution happens in the API process.
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 import pandas as pd
 
@@ -56,12 +56,35 @@ from q_backend.storage.redis.progress import (
     get_job_progress,
     set_job_progress,
 )
+from q_backend.tasks.fanin import clear_job_keys, is_cancelled, set_cancelled
 
 logger = logging.getLogger(__name__)
 
 PROGRESS_NAMESPACE = "backtest"
 
 BacktestJobRequest = BacktestRequest
+
+CANCELLED_MESSAGE = "Cancelled by operator."
+
+Checkpoint = Callable[[], None]
+
+
+class BacktestCancelled(Exception):
+    """Raised at a checkpoint when an operator cancelled the run."""
+
+
+def _no_checkpoint() -> None:
+    return None
+
+
+def _cancel_checkpoint(run_id: str) -> Checkpoint:
+    """A checkpoint that aborts the worker once ``run_id`` has been cancelled."""
+
+    def checkpoint() -> None:
+        if is_cancelled(run_id):
+            raise BacktestCancelled(run_id)
+
+    return checkpoint
 
 
 def _strategy_persist_name(request: BacktestJobRequest) -> str:
@@ -173,6 +196,8 @@ def start_job(request: BacktestJobRequest) -> str:
     """Persist the run and dispatch it to the worker pool. Returns the run id."""
     validate_ml_filter_request(request)
     run_id = _persist_run_start(request)
+    # A reused run row may carry the flag of an earlier cancellation.
+    clear_job_keys(run_id)
     _job_reporter(run_id, started_at=_now()).phase("queued", "Waiting for a worker")
 
     from q_backend.tasks import actors
@@ -197,11 +222,14 @@ def _execute_candle(
     end: datetime,
     market_data_service,
     reporter: Optional[BacktestProgressReporter] = None,
+    checkpoint: Checkpoint = _no_checkpoint,
 ) -> tuple[dict[str, Any], list, pd.DataFrame, pd.DataFrame]:
     reporter = reporter or BacktestProgressReporter.silent()
+    checkpoint()
     reporter.phase("loading_data", f"Loading {request.timeframe} candles for {request.symbol}")
     with reporter.read("loading_candles", start, end):
         ohlcv_data = market_data_service.get_ohlcv(request.symbol, request.timeframe, start, end)
+    checkpoint()
     if not ohlcv_data:
         raise ValueError("No market data found for the given parameters.")
 
@@ -246,6 +274,7 @@ def _execute_candle(
     replay_report = ReplayReport()
 
     def on_replay(bar: int, bars_total: int, candle_time: pd.Timestamp) -> None:
+        checkpoint()
         reporter.replay(
             bar,
             bars_total,
@@ -273,8 +302,10 @@ def _execute_candle(
             read_context=reporter.read,
         ),
     )
+    checkpoint()
     reporter.phase("simulating", f"Simulating {len(df)} candles", bars_total=len(df))
     registry = engine.run(df, parallel_mode=ParallelMode.SEQUENTIAL)
+    checkpoint()
 
     metrics = registry.get_performance_metrics(request.initial_capital)
     closed_trade_objects = registry.get_closed_trades()
@@ -324,10 +355,12 @@ def _execute_tick(
     end: datetime,
     market_data_service,
     reporter: Optional[BacktestProgressReporter] = None,
+    checkpoint: Checkpoint = _no_checkpoint,
 ) -> tuple[dict[str, Any], list, pd.DataFrame, pd.DataFrame]:
     from q_backend.optimization.tick_backtest_runner import resolve_tick_flags
 
     reporter = reporter or BacktestProgressReporter.silent()
+    checkpoint()
     reporter.phase("loading_data", f"Loading ticks for {request.symbol}")
     with reporter.read("loading_ticks", start, end):
         arrays = market_data_service.get_ticks_columnar(
@@ -335,6 +368,7 @@ def _execute_tick(
         )
     if len(arrays["time_msc"]) == 0:
         raise ValueError("No tick data found for the given parameters.")
+    checkpoint()
     reporter.phase("preparing", "Preparing strategy and indicators")
 
     ticks = TickArrays(
@@ -354,8 +388,10 @@ def _execute_tick(
         point_value=request.point_value,
         symbol=request.symbol,
     )
+    checkpoint()
     reporter.phase("simulating", f"Simulating {len(ticks.time_msc)} ticks")
-    registry = engine.run(ticks, parallel_mode=ParallelMode.DAY_TRADE)
+    registry = engine.run(ticks, parallel_mode=ParallelMode.DAY_TRADE, checkpoint=checkpoint)
+    checkpoint()
 
     metrics = registry.get_performance_metrics(request.initial_capital)
     closed_trade_objects = registry.get_closed_trades()
@@ -380,17 +416,20 @@ def run_backtest_job(run_id: str, request_json: str) -> None:
 
     market_data_service = get_worker_market_data_service()
     reporter = _job_reporter(run_id)
+    checkpoint = _cancel_checkpoint(run_id)
     try:
+        checkpoint()
         start, end = _resolve_range(request)
         if request.engine == "tick":
             payload, trades_objects, equity_df, market_data = _execute_tick(
-                request, start, end, market_data_service, reporter
+                request, start, end, market_data_service, reporter, checkpoint
             )
         else:
             payload, trades_objects, equity_df, market_data = _execute_candle(
-                request, start, end, market_data_service, reporter
+                request, start, end, market_data_service, reporter, checkpoint
             )
         payload["run_id"] = run_id
+        checkpoint()
         reporter.phase("saving", "Saving results")
 
         lake_paths = None
@@ -411,6 +450,9 @@ def run_backtest_job(run_id: str, request_json: str) -> None:
             lake_paths=lake_paths,
         )
         _persist_progress(run_id, "completed")
+    except BacktestCancelled:
+        # request_cancel already recorded the terminal state; nothing was written.
+        logger.info("Backtest job %s cancelled", run_id)
     except Exception as exc:  # noqa: BLE001 - surface any failure to the client
         logger.exception("Backtest job %s failed", run_id)
         _finish_run(run_id, status=RunStatus.FAILED.value, error_message=str(exc))
@@ -427,6 +469,10 @@ def _finish_run(
 ) -> None:
     try:
         with session_scope() as session:
+            run = session.get(BacktestRun, uuid.UUID(run_id))
+            if run is not None and run.status == RunStatus.CANCELLED.value:
+                # Cancelled while the worker was finishing: the cancellation stands.
+                return
             update_backtest_run(
                 session,
                 uuid.UUID(run_id),
@@ -438,6 +484,41 @@ def _finish_run(
             )
     except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.warning("Failed to persist backtest run finish for %s", run_id, exc_info=True)
+
+
+def request_cancel(run_id: str) -> Optional[dict[str, Any]]:
+    """Cancel an active run and return its status; ``None`` if the run is unknown.
+
+    Cancellation is cooperative: the cancel flag stops the worker at its next
+    checkpoint, while the run is marked cancelled (and the terminal event recorded)
+    right away so clients leave the running state without waiting for the worker.
+    A run that already finished keeps its final status.
+    """
+    try:
+        run_uuid = uuid.UUID(run_id)
+    except ValueError:
+        return None
+    try:
+        with session_scope() as session:
+            run = session.get(BacktestRun, run_uuid)
+            if run is None:
+                return None
+            active = run.status in (RunStatus.PENDING.value, RunStatus.RUNNING.value)
+            if active:
+                update_backtest_run(
+                    session,
+                    run_uuid,
+                    status=RunStatus.CANCELLED.value,
+                    error_message=CANCELLED_MESSAGE,
+                    finished_at=_now(),
+                )
+    except Exception:  # noqa: BLE001 - surfaced below as the unchanged status
+        logger.warning("Failed to cancel backtest run %s", run_id, exc_info=True)
+        return get_status_payload(run_id)
+    if active:
+        set_cancelled(run_id)
+        _persist_progress(run_id, "cancelled", error=CANCELLED_MESSAGE)
+    return get_status_payload(run_id)
 
 
 def get_status_payload(run_id: str) -> Optional[dict[str, Any]]:

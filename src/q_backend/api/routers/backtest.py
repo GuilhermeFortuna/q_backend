@@ -71,6 +71,20 @@ def get_backtest_status(run_id: str):
     return payload
 
 
+@router.post("/api/v1/backtest/{run_id}/cancel", response_model=BacktestStatusResponse)
+def cancel_backtest(run_id: str):
+    """Request cancellation of an active backtest run.
+
+    Cancellation is cooperative: the run is marked cancelled immediately and
+    the worker stops at its next checkpoint. Cancelling a run that already
+    finished returns its final status unchanged.
+    """
+    payload = backtest_jobs.request_cancel(run_id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.")
+    return payload
+
+
 @router.get("/api/v1/backtest/{run_id}/result", response_model=BacktestResponse)
 def get_backtest_result(run_id: str):
     """Return the full chart payload for a completed async backtest run."""

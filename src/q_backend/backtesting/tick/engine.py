@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from typing import Any, List
+from typing import Any, Callable, List, Optional
 
 import numpy as np
 
@@ -118,7 +118,9 @@ class TickBacktestEngine:
         self,
         ticks: TickArrays,
         parallel_mode: ParallelMode = ParallelMode.DAY_TRADE,
+        checkpoint: Optional[Callable[[], None]] = None,
     ) -> TradeRegistry:
+        """Run the backtest; ``checkpoint`` is called before each day and may abort by raising."""
         if len(ticks.time_msc) == 0:
             return TradeRegistry()
 
@@ -128,6 +130,8 @@ class TickBacktestEngine:
             # parallelism, so spawning one here would oversubscribe the cores.
             master = TradeRegistry()
             for chunk in _split_ticks_by_day(ticks):
+                if checkpoint is not None:
+                    checkpoint()
                 master.merge(self._run_single_chunk(chunk))
             return master
 

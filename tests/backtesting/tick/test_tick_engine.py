@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from q_backend.backtesting.engine import BacktestEngine, ParallelMode
 from q_backend.backtesting.position_sizing import FixedQuantityPositionSizing
@@ -154,3 +155,42 @@ def test_parity_with_candle_engine_loose():
 
     assert abs(tick_trades - candle_trades) <= 3
     assert abs(tick_pnl - candle_pnl) <= max(5.0, abs(candle_pnl) * 0.25)
+
+
+def test_checkpoint_runs_before_each_day_and_can_abort_the_run():
+    day_msc = 24 * 60 * 60 * 1000
+    prices = np.array([10.0, 11.0, 12.0, 11.0, 10.0])
+    first = _ticks_from_prices(prices)
+    second = _ticks_from_prices(prices, day_offset_msc=day_msc)
+    ticks = TickArrays(
+        time_msc=np.concatenate([first.time_msc, second.time_msc]),
+        bid=np.concatenate([first.bid, second.bid]),
+        ask=np.concatenate([first.ask, second.ask]),
+        last=np.concatenate([first.last, second.last]),
+        volume=np.concatenate([first.volume, second.volume]),
+    )
+    strategy = build_tick_strategy(
+        "TickMaBreakout",
+        {"short_period": 2, "long_period": 3, "threshold": 0.0, "sl_points": 0.0, "tp_points": 0.0},
+        "TEST",
+    )
+    engine = TickBacktestEngine(
+        strategy=strategy,
+        sizing_config=FixedQuantityPositionSizing(quantity=1.0),
+        initial_capital=10000.0,
+        point_value=1.0,
+        symbol="TEST",
+    )
+    calls: list[int] = []
+
+    def checkpoint() -> None:
+        calls.append(1)
+
+    engine.run(ticks, parallel_mode=ParallelMode.DAY_TRADE, checkpoint=checkpoint)
+    assert len(calls) == 2
+
+    def abort() -> None:
+        raise RuntimeError("cancelled")
+
+    with pytest.raises(RuntimeError, match="cancelled"):
+        engine.run(ticks, parallel_mode=ParallelMode.DAY_TRADE, checkpoint=abort)
