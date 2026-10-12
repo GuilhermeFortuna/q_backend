@@ -14,6 +14,7 @@ from typing import Any, Dict, Optional
 
 import pandas as pd
 
+from q_backend.api.backtest_progress import BacktestProgressReporter
 from q_backend.api.schemas.backtest import BacktestRequest
 from q_backend.backtesting.chart_data import market_data_frame, serialize_chart_data
 from q_backend.backtesting.costs import TransactionCostConfig
@@ -87,16 +88,36 @@ def _request_config(request: BacktestJobRequest) -> Dict[str, Any]:
     return config
 
 
-def _persist_progress(run_id: str, status: str, error: Optional[str] = None) -> None:
+def _publish_progress(run_id: str, payload: dict[str, Any]) -> None:
     try:
-        set_job_progress(
-            get_redis(),
-            run_id,
-            {"run_id": run_id, "status": status, "error": error},
-            namespace=PROGRESS_NAMESPACE,
-        )
+        set_job_progress(get_redis(), run_id, payload, namespace=PROGRESS_NAMESPACE)
     except Exception:  # noqa: BLE001 - best-effort persistence/progress; logged and degraded
         logger.debug("Redis progress unavailable for backtest run %s", run_id)
+
+
+def _persist_progress(run_id: str, status: str, error: Optional[str] = None) -> None:
+    _publish_progress(run_id, {"run_id": run_id, "status": status, "error": error})
+
+
+def _job_reporter(run_id: str, *, started_at: Optional[datetime] = None) -> BacktestProgressReporter:
+    """Progress reporter for a run. The worker resumes the start time the API stored."""
+    if started_at is None:
+        started_at = _stored_started_at(run_id) or _now()
+    return BacktestProgressReporter(
+        run_id,
+        started_at=started_at,
+        publish=lambda payload: _publish_progress(run_id, payload),
+    )
+
+
+def _stored_started_at(run_id: str) -> Optional[datetime]:
+    try:
+        stored = get_job_progress(get_redis(), run_id, namespace=PROGRESS_NAMESPACE)
+    except Exception:  # noqa: BLE001 - best-effort progress; the worker falls back to its own clock
+        logger.debug("Redis progress unavailable for backtest run %s", run_id)
+        return None
+    raw = (stored or {}).get("started_at")
+    return datetime.fromisoformat(raw) if raw else None
 
 
 def _persist_run_start(request: BacktestJobRequest) -> str:
@@ -152,7 +173,7 @@ def start_job(request: BacktestJobRequest) -> str:
     """Persist the run and dispatch it to the worker pool. Returns the run id."""
     validate_ml_filter_request(request)
     run_id = _persist_run_start(request)
-    _persist_progress(run_id, "running")
+    _job_reporter(run_id, started_at=_now()).phase("queued", "Waiting for a worker")
 
     from q_backend.tasks import actors
 
@@ -171,15 +192,23 @@ def _resolve_range(request: BacktestJobRequest) -> tuple[datetime, datetime]:
 
 
 def _execute_candle(
-    request: BacktestJobRequest, start: datetime, end: datetime, market_data_service
+    request: BacktestJobRequest,
+    start: datetime,
+    end: datetime,
+    market_data_service,
+    reporter: Optional[BacktestProgressReporter] = None,
 ) -> tuple[dict[str, Any], list, pd.DataFrame, pd.DataFrame]:
-    ohlcv_data = market_data_service.get_ohlcv(request.symbol, request.timeframe, start, end)
+    reporter = reporter or BacktestProgressReporter.silent()
+    reporter.phase("loading_data", f"Loading {request.timeframe} candles for {request.symbol}")
+    with reporter.read("loading_candles", start, end):
+        ohlcv_data = market_data_service.get_ohlcv(request.symbol, request.timeframe, start, end)
     if not ohlcv_data:
         raise ValueError("No market data found for the given parameters.")
 
     df = pd.DataFrame([bar.model_dump() for bar in ohlcv_data])
     df.set_index("time", inplace=True)
     df.index = pd.to_datetime(df.index, format="ISO8601")
+    reporter.phase("preparing", "Preparing strategy and indicators")
 
     entries, manager, exit_params = normalize_entries(request)
     strategy = build_composite_entry(
@@ -215,6 +244,16 @@ def _execute_candle(
     )
 
     replay_report = ReplayReport()
+
+    def on_replay(bar: int, bars_total: int, candle_time: pd.Timestamp) -> None:
+        reporter.replay(
+            bar,
+            bars_total,
+            candle_time,
+            replayed=len(replay_report.replayed),
+            substituted=len(replay_report.substituted),
+        )
+
     engine = BacktestEngine(
         strategy,
         sizer,
@@ -225,8 +264,16 @@ def _execute_candle(
         day_trade_end_time=request.day_trade_end_time,
         day_trade_close_time=request.day_trade_close_time,
         costs=request.costs,
-        **breakeven_market_inputs(strategy, market_data_service, request.timeframe, report=replay_report),
+        **breakeven_market_inputs(
+            strategy,
+            market_data_service,
+            request.timeframe,
+            report=replay_report,
+            on_replay_completed=on_replay,
+            read_context=reporter.read,
+        ),
     )
+    reporter.phase("simulating", f"Simulating {len(df)} candles", bars_total=len(df))
     registry = engine.run(df, parallel_mode=ParallelMode.SEQUENTIAL)
 
     metrics = registry.get_performance_metrics(request.initial_capital)
@@ -272,15 +319,23 @@ def _ml_filter_summary(
 
 
 def _execute_tick(
-    request: BacktestJobRequest, start: datetime, end: datetime, market_data_service
+    request: BacktestJobRequest,
+    start: datetime,
+    end: datetime,
+    market_data_service,
+    reporter: Optional[BacktestProgressReporter] = None,
 ) -> tuple[dict[str, Any], list, pd.DataFrame, pd.DataFrame]:
     from q_backend.optimization.tick_backtest_runner import resolve_tick_flags
 
-    arrays = market_data_service.get_ticks_columnar(
-        request.symbol, start, end, flags=resolve_tick_flags(request.tick_flags)
-    )
+    reporter = reporter or BacktestProgressReporter.silent()
+    reporter.phase("loading_data", f"Loading ticks for {request.symbol}")
+    with reporter.read("loading_ticks", start, end):
+        arrays = market_data_service.get_ticks_columnar(
+            request.symbol, start, end, flags=resolve_tick_flags(request.tick_flags)
+        )
     if len(arrays["time_msc"]) == 0:
         raise ValueError("No tick data found for the given parameters.")
+    reporter.phase("preparing", "Preparing strategy and indicators")
 
     ticks = TickArrays(
         time_msc=arrays["time_msc"],
@@ -299,6 +354,7 @@ def _execute_tick(
         point_value=request.point_value,
         symbol=request.symbol,
     )
+    reporter.phase("simulating", f"Simulating {len(ticks.time_msc)} ticks")
     registry = engine.run(ticks, parallel_mode=ParallelMode.DAY_TRADE)
 
     metrics = registry.get_performance_metrics(request.initial_capital)
@@ -323,13 +379,19 @@ def run_backtest_job(run_id: str, request_json: str) -> None:
     from q_backend.tasks.worker_context import get_worker_market_data_service
 
     market_data_service = get_worker_market_data_service()
+    reporter = _job_reporter(run_id)
     try:
         start, end = _resolve_range(request)
         if request.engine == "tick":
-            payload, trades_objects, equity_df, market_data = _execute_tick(request, start, end, market_data_service)
+            payload, trades_objects, equity_df, market_data = _execute_tick(
+                request, start, end, market_data_service, reporter
+            )
         else:
-            payload, trades_objects, equity_df, market_data = _execute_candle(request, start, end, market_data_service)
+            payload, trades_objects, equity_df, market_data = _execute_candle(
+                request, start, end, market_data_service, reporter
+            )
         payload["run_id"] = run_id
+        reporter.phase("saving", "Saving results")
 
         lake_paths = None
         try:

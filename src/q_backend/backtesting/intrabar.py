@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -19,6 +21,8 @@ from q_backend.backtesting.candle_kernel import _exit_params_from_strategy
 # same request moments later, so an empty candle is re-read before it is reported.
 _EMPTY_READ_ATTEMPTS = 3
 _EMPTY_READ_DELAY_SECONDS = 1.0
+
+ReadContext = Callable[[Literal["reading_m1", "reading_ticks"], datetime, datetime], AbstractContextManager]
 
 # MT5 tick flags that mark a deal. Quote-only updates repeat the previous ``last``, so a
 # candle's first "price" would be the prior candle's close instead of its open.
@@ -97,8 +101,14 @@ class MarketTickReplay:
         tick_size: float | None = None,
         report: ReplayReport | None = None,
         price_digits: int | None = None,
+        on_replay: Callable[[int, int, pd.Timestamp], None] | None = None,
+        on_replay_completed: Callable[[int, int, pd.Timestamp], None] | None = None,
+        read_context: ReadContext | None = None,
     ) -> None:
         self._service = service
+        self._on_replay = on_replay
+        self._on_replay_completed = on_replay_completed
+        self._read_context = read_context
         self._tick_size = tick_size if tick_size is not None and np.isfinite(tick_size) and tick_size > 0 else None
         self._tolerance = 0.0 if self._tick_size is None else self._tick_size * 1e-6
         self._price_digits = price_digits
@@ -117,7 +127,12 @@ class MarketTickReplay:
             end = min(end, _to_naive_local(self._frame.index[bar + 1].to_pydatetime()))
         candle = np.array([float(self._frame.iloc[bar][col]) for col in ("open", "high", "low", "close")])
         self._report.replayed.add(pd.Timestamp(start))
+        if self._on_replay is not None:
+            # Before the candle's history is read, so a slow read is visible to the observer.
+            self._on_replay(bar, len(self._frame), pd.Timestamp(start))
         times, prices = self._replay(start, end, candle)
+        if self._on_replay_completed is not None:
+            self._on_replay_completed(bar, len(self._frame), pd.Timestamp(start))
         self._last = (bar, np.ascontiguousarray(times * 1000), np.ascontiguousarray(prices))
         return self._last[1], self._last[2]
 
@@ -273,7 +288,9 @@ class MarketTickReplay:
         return int(times[0]) if times.size else day_end_ms
 
     def _m1_bars(self, start: datetime, end: datetime) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        rows = self._service.get_ohlcv(self._symbol, _M1, start, end)
+        context = self._read_context("reading_m1", start, end) if self._read_context else nullcontext()
+        with context:
+            rows = self._service.get_ohlcv(self._symbol, _M1, start, end)
         if not rows:
             return np.empty(0, np.int64), np.empty((0, 4)), np.empty(0)
         times = np.array([_naive_local_to_time_msc(row.time) for row in rows], dtype=np.int64)
@@ -294,7 +311,9 @@ class MarketTickReplay:
         return deals
 
     def _read_trades(self, start: Any, end: Any) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        arrays = self._service.get_ticks_columnar(self._symbol, start, end, flags=COPY_TICKS_ALL)
+        context = self._read_context("reading_ticks", start, end) if self._read_context else nullcontext()
+        with context:
+            arrays = self._service.get_ticks_columnar(self._symbol, start, end, flags=COPY_TICKS_ALL)
         times = np.asarray(arrays["time_msc"], dtype=np.int64)
         prices = np.asarray(arrays["last"], dtype=np.float64)
         if times.ndim != 1 or prices.ndim != 1 or times.size != prices.size:
@@ -352,17 +371,25 @@ def intrabar_notes(trades: list[Any], report: ReplayReport) -> list[dict[str, An
     substituted_net = float(
         sum(trade.pnl or 0.0 for trade in trades if trade.exit_resolution in (RESOLUTION_MINUTE, RESOLUTION_CANDLE))
     )
-    parts = [f"{ticks} exits decided on real ticks"]
-    if minute:
-        parts.append(f"{minute} at one-minute resolution")
-    if candle:
-        parts.append(f"{candle} at candle resolution")
+    parts = [f"{ticks} exited on real ticks"]
     if bars:
-        parts.append(f"{bars} on closed bars")
-    message = (
-        f"{len(trades)} trades: {', '.join(parts)} because tick history was incomplete "
-        f"(net R$ {substituted_net:,.2f} on the substituted exits)."
-    )
+        parts.append(f"{bars} used normal candle-based exits")
+    message = f"{len(trades)} trades: {', '.join(parts)}. "
+    substituted_parts = []
+    if minute:
+        substituted_parts.append(f"{minute} at one-minute resolution")
+    if candle:
+        substituted_parts.append(f"{candle} at candle resolution")
+    if substituted_parts:
+        message += (
+            f"Incomplete or inconsistent tick history required substituted exits: "
+            f"{', '.join(substituted_parts)} (net R$ {substituted_net:,.2f} on the substituted exits)."
+        )
+    else:
+        message += (
+            "Incomplete or inconsistent tick history required substituted prices during replay, "
+            "but no trades exited on those prices."
+        )
     return [
         {
             "code": "intrabar_incomplete_ticks",
@@ -384,11 +411,19 @@ def intrabar_notes(trades: list[Any], report: ReplayReport) -> list[dict[str, An
 
 
 def breakeven_market_inputs(
-    strategy: Any, service: Any, timeframe: str, report: ReplayReport | None = None
+    strategy: Any,
+    service: Any,
+    timeframe: str,
+    report: ReplayReport | None = None,
+    on_replay: Callable[[int, int, pd.Timestamp], None] | None = None,
+    on_replay_completed: Callable[[int, int, pd.Timestamp], None] | None = None,
+    read_context: ReadContext | None = None,
 ) -> dict[str, Any]:
     """Resolve instrument metadata only for an enabled breakeven rule.
 
     ``report`` collects the substitutions of every replay the returned factory creates.
+    ``on_replay`` is told each candle before its history is read. ``on_replay_completed``
+    observes successful completion; ``read_context`` brackets M1/tick reads, including retries.
     """
     params = _exit_params_from_strategy(strategy)
     if float(params.get("breakeven_trigger_pct", 0.0)) <= 0.0:
@@ -415,6 +450,15 @@ def breakeven_market_inputs(
     return {
         "tick_size": tick_size,
         "intrabar_factory": lambda frame: MarketTickReplay(
-            service, strategy.symbol, timeframe, frame, grid, report=report, price_digits=digits
+            service,
+            strategy.symbol,
+            timeframe,
+            frame,
+            grid,
+            report=report,
+            price_digits=digits,
+            on_replay=on_replay,
+            on_replay_completed=on_replay_completed,
+            read_context=read_context,
         ),
     }

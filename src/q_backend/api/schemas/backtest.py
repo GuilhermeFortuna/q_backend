@@ -88,10 +88,41 @@ class BacktestStartResponse(BaseModel):
     status: str
 
 
+BacktestPhase = Literal["queued", "loading_data", "preparing", "simulating", "saving"]
+
+
+BacktestActivityKind = Literal["loading_candles", "loading_ticks", "computing", "reading_m1", "reading_ticks", "saving"]
+
+
+class BacktestActivity(BaseModel):
+    kind: BacktestActivityKind
+    started_at: datetime
+    range_start: Optional[datetime] = None
+    range_end: Optional[datetime] = None
+
+
+class BacktestPhaseTiming(BaseModel):
+    phase: BacktestPhase
+    started_at: datetime
+    finished_at: Optional[datetime] = None
+
+
 class BacktestStatusResponse(BaseModel):
     run_id: str
     status: str
     error: Optional[str] = None
+    # Live progress; every field is null when the status comes from the database row alone.
+    phase: Optional[BacktestPhase] = None
+    progress: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    message: Optional[str] = None
+    started_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    simulated_until: Optional[datetime] = None
+    bars_total: Optional[int] = None
+    candles_replayed: Optional[int] = None
+    candles_substituted: Optional[int] = None
+    activity: Optional[BacktestActivity] = None
+    phase_history: Optional[List[BacktestPhaseTiming]] = None
 
 
 BacktestOrigin = Literal["stack", "script"]

@@ -1,10 +1,13 @@
 """Breakeven protects unarmed trades and fills against ordered trade prices."""
 
+from datetime import datetime, timezone
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from q_backend.backtesting.candle_kernel import _exit_params
+from q_backend.backtesting.intrabar import MarketTickReplay
 from q_backend.backtesting.exit_rules.registry import all_param_specs
 from q_backend.backtesting.engine import BacktestEngine
 from q_backend.backtesting.position_sizing import FixedQuantitySizer
@@ -545,6 +548,11 @@ def test_exit_resolution_and_note_follow_the_tick_that_decided_each_exit():
     assert note["details"]["session_dates"] == ["2024-01-02"]
     assert note["details"]["substituted_net_pnl"] == -320.0
     assert "R$ -320.00" in note["message"]
+    assert note["message"] == (
+        "3 trades: 1 exited on real ticks, 1 used normal candle-based exits. "
+        "Incomplete or inconsistent tick history required substituted exits: "
+        "1 at one-minute resolution (net R$ -320.00 on the substituted exits)."
+    )
 
 
 def test_no_note_when_nothing_was_substituted():
@@ -676,3 +684,126 @@ def test_the_note_counts_the_candles_whose_deals_were_rescaled():
     [note] = intrabar_notes([], report)
 
     assert note["details"]["candles_rescaled"] == 2
+
+
+def test_market_replay_reports_each_candle_before_its_history_is_read():
+    events = []
+
+    class Recording(TickProvider):
+        def get_ohlcv(self, symbol, timeframe, start, end):
+            if timeframe == "M1":
+                events.append(("read", pd.Timestamp(start).isoformat()))
+            return super().get_ohlcv(symbol, timeframe, start, end)
+
+    frame = pd.DataFrame(
+        {"open": [100.0, 100.0], "high": [103.0, 103.0], "low": [74.0, 74.0], "close": [102.0, 102.0]},
+        index=pd.DatetimeIndex(["2024-01-02 10:00", "2024-01-02 11:00"]),
+    )
+    replay = MarketTickReplay(
+        Recording([100.0, 101.0]),
+        "TEST",
+        "H1",
+        frame,
+        on_replay=lambda bar, bars_total, candle_time: events.append(("report", bar, bars_total, candle_time)),
+    )
+
+    replay(1)
+    replay(1)  # served from the one-candle cache: no second report
+
+    assert events == [
+        ("report", 1, 2, pd.Timestamp("2024-01-02 11:00")),
+        ("read", pd.Timestamp("2024-01-02 11:00").isoformat()),
+    ]
+
+
+def test_stack_job_reports_replayed_candles_while_it_simulates(monkeypatch):
+    from q_backend.api import backtest_jobs
+    from q_backend.api.backtest_progress import BacktestProgressReporter
+    from q_backend.market_data.models import OHLCV
+
+    class Service(TickProvider):
+        def get_symbol_info(self, symbol):
+            return {"trade_tick_size": 0.25}
+
+        def get_ohlcv(self, symbol, timeframe, start, end):
+            if timeframe == "M1":
+                return super().get_ohlcv(symbol, timeframe, start, end)
+            return [
+                OHLCV(time=pd.Timestamp("2024-01-02 09:00"), open=100, high=100, low=100, close=100, tick_volume=1),
+                OHLCV(time=pd.Timestamp("2024-01-02 10:00"), open=100, high=100, low=74, close=74, tick_volume=3),
+            ]
+
+    monkeypatch.setattr(backtest_jobs, "build_composite_entry", lambda *args: EntryStrategy(breakeven_trigger_pct=0.02))
+    request = backtest_jobs.BacktestJobRequest(
+        symbol="TEST",
+        timeframe="H1",
+        entries=[{"strategy": "MACrossover", "params": {}}],
+        point_value=12.5,
+        exit_params={"breakeven_trigger_pct": 0.02},
+    )
+    published = []
+    # A clock that advances a full interval per call, so every replay report is published.
+    ticks = iter(range(1000))
+    reporter = BacktestProgressReporter(
+        "run",
+        started_at=datetime(2024, 1, 2, 9, tzinfo=timezone.utc),
+        publish=published.append,
+        clock=lambda: float(next(ticks)),
+    )
+    backtest_jobs._execute_candle(
+        request,
+        pd.Timestamp("2024-01-02 09:00"),
+        pd.Timestamp("2024-01-02 11:00"),
+        Service([100, 99, 74]),
+        reporter,
+    )
+
+    simulating = [payload for payload in published if payload["phase"] == "simulating"]
+    replays = [payload for payload in published if payload["message"].startswith("Replaying ticks")]
+    assert simulating[0]["message"] == "Simulating 2 candles"
+    assert replays, "the breakeven replay must report at least one candle"
+    assert {payload["bars_total"] for payload in replays} == {2}
+    assert {payload["progress"] for payload in replays} <= {0.5, 1.0}
+    assert replays[-1]["simulated_until"] == pd.Timestamp("2024-01-02 10:00").isoformat()
+    assert replays[-1]["candles_replayed"] >= 1
+
+
+def test_replay_completion_follows_reads_and_is_not_repeated_for_cached_candle():
+    from contextlib import contextmanager
+
+    events = []
+
+    @contextmanager
+    def observe(kind, start, end):
+        events.append(("before", kind))
+        yield
+        events.append(("after", kind))
+
+    replay = MarketTickReplay(
+        TickProvider([100, 101, 103, 74, 102]),
+        "TEST",
+        "H1",
+        replay_frame(),
+        read_context=observe,
+        on_replay_completed=lambda *args: events.append(("completed", args[0])),
+    )
+    replay(0)
+    replay(0)
+    assert events[0] == ("before", "reading_m1")
+    assert ("before", "reading_ticks") in events
+    assert events[-1] == ("completed", 0)
+    assert events.count(("completed", 0)) == 1
+
+
+def test_failed_replay_never_reports_completion():
+    class Down(TickProvider):
+        def get_ohlcv(self, *args):
+            raise ConnectionError("provider unavailable")
+
+    completed = []
+    replay = MarketTickReplay(
+        Down([]), "TEST", "H1", replay_frame(), on_replay_completed=lambda *args: completed.append(args)
+    )
+    with pytest.raises(ConnectionError):
+        replay(0)
+    assert completed == []
