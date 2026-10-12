@@ -147,3 +147,60 @@ def test_inverted_macd_fast_slow_422(client):
     response = test_client.post("/api/v1/market/indicators/WIN$/series", json=body)
     assert response.status_code == 422
     assert "fast_period" in response.json()["detail"]
+
+
+def test_quote_spread_unavailable_without_ticks(client, tmp_path, monkeypatch):
+    test_client, _bars, start, end = client
+    monkeypatch.setenv("Q_RESEARCH_TICK_STORE", str(tmp_path))
+    body = {
+        "timeframe": "M5",
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "indicators": [{"id": "quote_spread", "parameters": {}}],
+    }
+    response = test_client.post("/api/v1/market/indicators/WIN$/series", json=body)
+    assert response.status_code == 200, response.text
+    series = response.json()["series"][0]
+    assert series["unavailableReason"]
+    assert all(value is None for value in series["values"])
+
+
+def test_quote_spread_with_ticks(client, tmp_path, monkeypatch):
+    from datetime import date, datetime, timezone
+
+    from q_backend.research.tick_store import _slug_symbol, _write_day_atomic
+
+    test_client, bars, start, end = client
+    monkeypatch.setenv("Q_RESEARCH_TICK_STORE", str(tmp_path))
+
+    day = date(start.year, start.month, start.day)
+    times = []
+    for bar in bars[:5]:
+        moment = datetime(
+            bar.time.year, bar.time.month, bar.time.day, bar.time.hour, bar.time.minute, tzinfo=timezone.utc
+        )
+        times.append(int(moment.timestamp() * 1000))
+    count = len(times)
+    arrays = {
+        "time_msc": np.asarray(times, dtype=np.int64),
+        "bid": np.full(count, 99.0),
+        "ask": np.full(count, 101.0),
+        "last": np.full(count, 100.0),
+        "volume": np.ones(count, dtype=np.float64),
+        "flags": np.full(count, 6, dtype=np.int32),
+    }
+    directory = tmp_path / _slug_symbol("WIN$")
+    directory.mkdir(parents=True, exist_ok=True)
+    _write_day_atomic(directory / f"{day.isoformat()}.parquet", arrays)
+
+    body = {
+        "timeframe": "M5",
+        "start": bars[0].time.isoformat(),
+        "end": bars[4].time.isoformat(),
+        "indicators": [{"id": "quote_spread", "parameters": {"min_coverage": 0.0}}],
+    }
+    response = test_client.post("/api/v1/market/indicators/WIN$/series", json=body)
+    assert response.status_code == 200, response.text
+    series = response.json()["series"][0]
+    assert series.get("unavailableReason") is None
+    assert series["values"][0] == pytest.approx(200.0)

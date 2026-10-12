@@ -81,9 +81,16 @@ def _bar_bounds_msc(times: pd.Series) -> tuple[np.ndarray, np.ndarray]:
     opens: list[int] = []
     closes: list[int] = []
     for idx, ts in enumerate(times):
-        open_ts = ts.tz_convert(BRASILIA_TZ)
+        if ts.tzinfo is None:
+            open_ts = ts.tz_localize(BRASILIA_TZ)
+        else:
+            open_ts = ts.tz_convert(BRASILIA_TZ)
         if idx + 1 < len(times):
-            close_ts = times.iloc[idx + 1].tz_convert(BRASILIA_TZ)
+            next_ts = times.iloc[idx + 1]
+            if next_ts.tzinfo is None:
+                close_ts = next_ts.tz_localize(BRASILIA_TZ)
+            else:
+                close_ts = next_ts.tz_convert(BRASILIA_TZ)
             if close_ts.date() != open_ts.date():
                 close_ts = open_ts.normalize() + pd.Timedelta(days=1)
         else:
@@ -100,8 +107,16 @@ def _load_quote_arrays(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     from q_backend.research.tick_store import _read_day_columnar
 
-    start_local = start.tz_convert(BRASILIA_TZ)
-    end_local = end.tz_convert(BRASILIA_TZ)
+    if start.tzinfo is None:
+        start = start.tz_localize(BRASILIA_TZ)
+    else:
+        start = start.tz_convert(BRASILIA_TZ)
+    if end.tzinfo is None:
+        end = end.tz_localize(BRASILIA_TZ)
+    else:
+        end = end.tz_convert(BRASILIA_TZ)
+    start_local = start
+    end_local = end
     days = store._session_days_in_range(start_local, end_local)  # noqa: SLF001 - test seam
     if not days:
         raise NoMarketDataError(
