@@ -3,6 +3,7 @@ from typing import Any
 import optuna
 
 from q_backend.backtesting.entry_models import EntryInstance, EntryManagerConfig
+from q_backend.backtesting.exit_strategy import get_exit_strategy_params
 from q_backend.backtesting.position_sizing import (
     FixedQuantityPositionSizing,
     FixedSafetyMarginPositionSizing,
@@ -73,6 +74,20 @@ def entries_from_trial_params(
         instances.append(EntryInstance(strategy=template.strategy, params=params))
 
     return instances
+
+
+def exit_params_from_trial_params(
+    strategy_params: dict[str, Any],
+    exit_template: dict[str, Any] | None,
+    *,
+    fixed_strategy_params: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Overlay a trial's shared (un-namespaced) exit params on the study's exit template."""
+    exit_param_names = {spec.name for spec in get_exit_strategy_params()}
+    merged = {**(fixed_strategy_params or {}), **strategy_params}
+    resolved = dict(exit_template or {})
+    resolved.update({key: value for key, value in merged.items() if key in exit_param_names})
+    return resolved
 
 
 def manager_params_from_trial(

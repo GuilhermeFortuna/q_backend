@@ -30,6 +30,7 @@ from q_backend.optimization.runner import OptimizationRunner
 from q_backend.optimization.search_space import (
     build_position_sizing_config,
     entries_from_trial_params,
+    exit_params_from_trial_params,
     manager_params_from_trial,
     suggest_params,
 )
@@ -233,6 +234,55 @@ def test_multi_entry_optimization_rebuilds_composite_strategy(sample_ohlcv_df):
     )
     backtest_result = runner.run(run_config)
     assert backtest_result.metrics.get("total_trades", 0) > 0
+
+
+def test_exit_params_from_trial_params_overlays_shared_exit_keys():
+    resolved = exit_params_from_trial_params(
+        {"e0__short_period": 7, "stop_loss_pct": 1.5},
+        {"stop_loss_pct": 0.5, "take_profit_pct": 3.0},
+        fixed_strategy_params={"max_bars_in_trade": 12, "e1__period": 9},
+    )
+
+    assert resolved == {"stop_loss_pct": 1.5, "take_profit_pct": 3.0, "max_bars_in_trade": 12}
+
+
+def test_multi_entry_backtest_applies_sampled_exit_params(sample_ohlcv_df, monkeypatch):
+    from q_backend.optimization import backtest_runner
+
+    captured: dict[str, object] = {}
+    real_build = backtest_runner.build_composite_entry
+
+    def spy(entries, manager_kind, manager_params, exit_params, symbol):
+        captured["exit_params"] = dict(exit_params)
+        return real_build(entries, manager_kind, manager_params, exit_params, symbol)
+
+    monkeypatch.setattr(backtest_runner, "build_composite_entry", spy)
+
+    frame = sample_ohlcv_df.copy()
+    if frame.index.tz is not None:
+        frame.index = frame.index.tz_localize(None)
+
+    DefaultBacktestRunner.from_frame_sliced(frame).run(
+        BacktestRunConfig(
+            symbol="TEST",
+            timeframe="H4",
+            start=frame.index[0].to_pydatetime(),
+            end=frame.index[-1].to_pydatetime(),
+            initial_capital=100_000.0,
+            point_value=1.0,
+            strategy="MACrossover",
+            strategy_params={"e0__short_period": 7, "stop_loss_pct": 1.5},
+            position_sizing=None,
+            entries=[
+                EntryInstance(strategy="MACrossover", params={}),
+                EntryInstance(strategy="RSIMeanReversion", params={}),
+            ],
+            entry_manager=EntryManagerConfig(kind="or"),
+            exit_params={"take_profit_pct": 3.0},
+        )
+    )
+
+    assert captured["exit_params"] == {"take_profit_pct": 3.0, "stop_loss_pct": 1.5}
 
 
 def test_multi_entry_ma_validation_prunes_namespaced_periods():

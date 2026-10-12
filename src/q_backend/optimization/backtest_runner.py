@@ -20,6 +20,7 @@ from q_backend.market_data.clients.metatrader import _to_naive_local
 from q_backend.optimization.metrics import build_equity_curve, compute_extended_metrics
 from q_backend.optimization.search_space import (
     entries_from_trial_params,
+    exit_params_from_trial_params,
     manager_params_from_trial,
 )
 
@@ -217,11 +218,15 @@ class DefaultBacktestRunner:
                 config.entries,
                 fixed_strategy_params=config.fixed_params,
             )
+            resolved_exit_params = exit_params_from_trial_params(
+                merged_strategy_params,
+                config.exit_params,
+            )
             strategy = build_composite_entry(
                 [{"strategy": entry.strategy, "params": entry.params} for entry in rebuilt_entries],
                 manager_template.kind,
                 merged_manager_params,
-                config.exit_params or {},
+                resolved_exit_params,
                 config.symbol,
             )
         else:
