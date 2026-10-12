@@ -548,6 +548,11 @@ def test_exit_resolution_and_note_follow_the_tick_that_decided_each_exit():
     assert note["details"]["session_dates"] == ["2024-01-02"]
     assert note["details"]["substituted_net_pnl"] == -320.0
     assert "R$ -320.00" in note["message"]
+    assert note["message"] == (
+        "3 trades: 1 exited on real ticks, 1 used normal candle-based exits. "
+        "Incomplete or inconsistent tick history required substituted exits: "
+        "1 at one-minute resolution (net R$ -320.00 on the substituted exits)."
+    )
 
 
 def test_no_note_when_nothing_was_substituted():

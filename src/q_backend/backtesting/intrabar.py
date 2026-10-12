@@ -371,17 +371,25 @@ def intrabar_notes(trades: list[Any], report: ReplayReport) -> list[dict[str, An
     substituted_net = float(
         sum(trade.pnl or 0.0 for trade in trades if trade.exit_resolution in (RESOLUTION_MINUTE, RESOLUTION_CANDLE))
     )
-    parts = [f"{ticks} exits decided on real ticks"]
-    if minute:
-        parts.append(f"{minute} at one-minute resolution")
-    if candle:
-        parts.append(f"{candle} at candle resolution")
+    parts = [f"{ticks} exited on real ticks"]
     if bars:
-        parts.append(f"{bars} on closed bars")
-    message = (
-        f"{len(trades)} trades: {', '.join(parts)} because tick history was incomplete "
-        f"(net R$ {substituted_net:,.2f} on the substituted exits)."
-    )
+        parts.append(f"{bars} used normal candle-based exits")
+    message = f"{len(trades)} trades: {', '.join(parts)}. "
+    substituted_parts = []
+    if minute:
+        substituted_parts.append(f"{minute} at one-minute resolution")
+    if candle:
+        substituted_parts.append(f"{candle} at candle resolution")
+    if substituted_parts:
+        message += (
+            f"Incomplete or inconsistent tick history required substituted exits: "
+            f"{', '.join(substituted_parts)} (net R$ {substituted_net:,.2f} on the substituted exits)."
+        )
+    else:
+        message += (
+            "Incomplete or inconsistent tick history required substituted prices during replay, "
+            "but no trades exited on those prices."
+        )
     return [
         {
             "code": "intrabar_incomplete_ticks",
