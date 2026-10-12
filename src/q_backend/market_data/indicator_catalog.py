@@ -75,8 +75,44 @@ class IndicatorEntry:
     compute: Callable[[pd.DataFrame, Mapping[str, Any]], dict[str, pd.Series]]
 
 
+# Largest window, period or horizon the chart accepts, in bars.
+MAX_BARS = 5_000
+MAX_HALF_LIFE = 1_000.0
+# Longest a quote may be carried. Shorter than any overnight gap, so a session never
+# inherits the previous session's quote.
+MAX_QUOTE_AGE_MS = 3_600_000
+# A recursive average is warm once its seed weighs at most this much.
+SEED_WEIGHT = 0.01
+
+
 def ewma_warmup_bars(half_life: float) -> int:
+    """``N_EW`` of the q_core half-life kernels: inputs seen before the first output."""
     return int(1 + math.ceil(float(half_life) * math.log2(100.0)))
+
+
+def recursive_warmup_bars(period: int, alpha: float) -> int:
+    """Bars before a recursive average seeded over ``period`` bars is warm.
+
+    Its value never stops depending on the seed, so warm-up cannot make it exact: after
+    these bars the seed weighs at most ``SEED_WEIGHT``, the same rule as ``N_EW``.
+    """
+    if alpha >= 1.0:
+        return period
+    return period + math.ceil(math.log(SEED_WEIGHT) / math.log1p(-alpha))
+
+
+def _ema_warmup(period: int) -> int:
+    return recursive_warmup_bars(period, 2.0 / (period + 1.0))
+
+
+def _wilder_warmup(period: int) -> int:
+    return recursive_warmup_bars(period, 1.0 / period)
+
+
+def _vol_warmup(params: Mapping[str, Any], *, window: str = "vol_window", half_life: str = "vol_half_life") -> int:
+    if params["vol_estimator"] == "ewma":
+        return ewma_warmup_bars(params[half_life])
+    return int(params[window]) + 1
 
 
 def _param_defaults(entry: IndicatorEntry) -> dict[str, Any]:
@@ -87,10 +123,15 @@ def _int_param(params: Mapping[str, Any], name: str, *, minimum: int | None = No
     value = params.get(name)
     if value is None:
         raise ValueError(f"Missing required parameter '{name}'.")
+    if isinstance(value, bool):
+        raise ValueError(f"Parameter '{name}' must be an integer.")
     try:
-        parsed = int(value)
+        number = float(value)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Parameter '{name}' must be an integer.") from exc
+    if not math.isfinite(number) or number != int(number):
+        raise ValueError(f"Parameter '{name}' must be an integer (got {value!r}).")
+    parsed = int(number)
     if minimum is not None and parsed < minimum:
         raise ValueError(f"Parameter '{name}' must be >= {minimum} (got {parsed}).")
     return parsed
@@ -100,10 +141,14 @@ def _float_param(params: Mapping[str, Any], name: str, *, minimum: float | None 
     value = params.get(name)
     if value is None:
         raise ValueError(f"Missing required parameter '{name}'.")
+    if isinstance(value, bool):
+        raise ValueError(f"Parameter '{name}' must be a number.")
     try:
         parsed = float(value)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Parameter '{name}' must be a number.") from exc
+    if not math.isfinite(parsed):
+        raise ValueError(f"Parameter '{name}' must be finite (got {value!r}).")
     if minimum is not None and parsed < minimum:
         raise ValueError(f"Parameter '{name}' must be >= {minimum} (got {parsed}).")
     return parsed
@@ -176,8 +221,6 @@ def _compute_macd(frame: pd.DataFrame, params: Mapping[str, Any]) -> dict[str, p
     fast = _int_param(params, "fast_period", minimum=1)
     slow = _int_param(params, "slow_period", minimum=1)
     signal = _int_param(params, "signal_period", minimum=1)
-    if fast >= slow:
-        raise ValueError(f"fast_period must be < slow_period (got {fast} >= {slow}).")
     line, sig, hist = compute_macd(frame["close"], fast, slow, signal)
     return {"line": line, "signal": sig, "histogram": hist}
 
@@ -212,8 +255,6 @@ def _vol_params(params: Mapping[str, Any]) -> tuple[str, int | None, float | Non
 def _compute_normalized_momentum(frame: pd.DataFrame, params: Mapping[str, Any]) -> dict[str, pd.Series]:
     horizon = _int_param(params, "horizon", minimum=1)
     vol_lag = _int_param(params, "vol_lag", minimum=0)
-    if vol_lag not in (0, 1):
-        raise ValueError(f"vol_lag must be 0 or 1 (got {vol_lag}).")
     estimator, vol_window, vol_half_life = _vol_params(params)
     o, h, l, c = _ohlc(frame)
     return {
@@ -234,11 +275,7 @@ def _compute_normalized_momentum(frame: pd.DataFrame, params: Mapping[str, Any])
 def _compute_normalized_ewma_trend(frame: pd.DataFrame, params: Mapping[str, Any]) -> dict[str, pd.Series]:
     fast = _float_param(params, "fast_half_life", minimum=1e-12)
     slow = _float_param(params, "slow_half_life", minimum=1e-12)
-    if fast >= slow:
-        raise ValueError(f"fast_half_life must be < slow_half_life (got {fast} >= {slow}).")
     vol_lag = _int_param(params, "vol_lag", minimum=0)
-    if vol_lag not in (0, 1):
-        raise ValueError(f"vol_lag must be 0 or 1 (got {vol_lag}).")
     estimator, vol_window, vol_half_life = _vol_params(params)
     o, h, l, c = _ohlc(frame)
     return {
@@ -310,15 +347,11 @@ def _compute_per_bar_yang_zhang(frame: pd.DataFrame, params: Mapping[str, Any]) 
 def _compute_vol_log_ratio(frame: pd.DataFrame, params: Mapping[str, Any]) -> dict[str, pd.Series]:
     short_w = _int_param(params, "short_window", minimum=1)
     long_w = _int_param(params, "long_window", minimum=1)
-    if short_w >= long_w:
-        raise ValueError(f"short_window must be < long_window (got {short_w} >= {long_w}).")
     estimator = _choice_param(params, "vol_estimator", VOL_ESTIMATOR_CHOICES)
     o, h, l, c = _ohlc(frame)
     if estimator == "ewma":
         short_hl = _float_param(params, "short_half_life", minimum=1e-12)
         long_hl = _float_param(params, "long_half_life", minimum=1e-12)
-        if short_hl >= long_hl:
-            raise ValueError(f"short_half_life must be < long_half_life (got {short_hl} >= {long_hl}).")
         sigma_short = compute_ewma_vol_per_bar(c, short_hl)
         sigma_long = compute_ewma_vol_per_bar(c, long_hl)
     else:
@@ -330,23 +363,21 @@ def _compute_vol_log_ratio(frame: pd.DataFrame, params: Mapping[str, Any]) -> di
 def _compute_ewma_trend_spread_raw(frame: pd.DataFrame, params: Mapping[str, Any]) -> dict[str, pd.Series]:
     fast = _float_param(params, "fast_half_life", minimum=1e-12)
     slow = _float_param(params, "slow_half_life", minimum=1e-12)
-    if fast >= slow:
-        raise ValueError(f"fast_half_life must be < slow_half_life (got {fast} >= {slow}).")
     return {"line": compute_ewma_trend_spread(frame["close"], fast, slow)}
 
 
-def _period_param(name: str = "period", default: int = 20) -> ParamSpec:
-    return ParamSpec(name, "int", default, minimum=1.0)
+def _period_param(default: int = 20) -> ParamSpec:
+    return ParamSpec("period", "int", default, minimum=1.0, maximum=float(MAX_BARS))
 
 
-def _window_param(default: int = 20) -> ParamSpec:
-    return ParamSpec("window", "int", default, minimum=1.0)
+def _window_param(default: int = 20, *, minimum: int = 1) -> ParamSpec:
+    return ParamSpec("window", "int", default, minimum=float(minimum), maximum=float(MAX_BARS))
 
 
 _VOL_FLAT_PARAMS: tuple[ParamSpec, ...] = (
     ParamSpec("vol_estimator", "string", "realized", choices=VOL_ESTIMATOR_CHOICES),
-    ParamSpec("vol_window", "int", 20, minimum=1.0),
-    ParamSpec("vol_half_life", "float", 32.0, minimum=1e-12),
+    ParamSpec("vol_window", "int", 20, minimum=1.0, maximum=float(MAX_BARS)),
+    ParamSpec("vol_half_life", "float", 32.0, minimum=1e-12, maximum=MAX_HALF_LIFE),
     ParamSpec("vol_lag", "int", 1, minimum=0.0, maximum=1.0),
 )
 
@@ -362,7 +393,7 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         None,
         "bars",
         frozenset({"sma"}),
-        lambda p: _int_param(p, "period", minimum=1),
+        lambda p: p["period"],
         _compute_sma,
     ),
     IndicatorEntry(
@@ -375,7 +406,7 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         None,
         "bars",
         frozenset({"ema"}),
-        lambda p: _int_param(p, "period", minimum=1),
+        lambda p: _ema_warmup(p["period"]),
         _compute_ema,
     ),
     IndicatorEntry(
@@ -388,7 +419,7 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         None,
         "bars",
         frozenset({"wma"}),
-        lambda p: _int_param(p, "period", minimum=1),
+        lambda p: p["period"],
         _compute_wma,
     ),
     IndicatorEntry(
@@ -401,7 +432,7 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         None,
         "bars",
         frozenset({"hma"}),
-        lambda p: _int_param(p, "period", minimum=1),
+        lambda p: p["period"] + math.isqrt(p["period"]),
         _compute_hma,
     ),
     IndicatorEntry(
@@ -414,7 +445,7 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         None,
         "bars",
         frozenset({"smma"}),
-        lambda p: _int_param(p, "period", minimum=1),
+        lambda p: _wilder_warmup(p["period"]),
         _compute_smma,
     ),
     IndicatorEntry(
@@ -427,7 +458,7 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         None,
         "bars",
         frozenset({"sma"}),
-        lambda p: _int_param(p, "period", minimum=1),
+        lambda p: p["period"],
         _compute_volume_ma,
     ),
     IndicatorEntry(
@@ -436,7 +467,7 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         "Bands and channels",
         (
             _period_param(20),
-            ParamSpec("num_std", "float", 2.0, minimum=0.0),
+            ParamSpec("num_std", "float", 2.0, minimum=0.0, maximum=10.0),
         ),
         (
             OutputSpec("upper", "Upper", "price"),
@@ -447,7 +478,7 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         None,
         "bars",
         frozenset({"bollinger_bands"}),
-        lambda p: _int_param(p, "period", minimum=1),
+        lambda p: p["period"],
         _compute_bollinger,
     ),
     IndicatorEntry(
@@ -463,7 +494,7 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         None,
         "bars",
         frozenset({"donchian_channels"}),
-        lambda p: _int_param(p, "period", minimum=1),
+        lambda p: p["period"],
         _compute_donchian,
     ),
     IndicatorEntry(
@@ -476,7 +507,7 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         None,
         "bars",
         frozenset({"rsi"}),
-        lambda p: _int_param(p, "period", minimum=1),
+        lambda p: _wilder_warmup(p["period"]) + 1,
         _compute_rsi,
     ),
     IndicatorEntry(
@@ -484,9 +515,9 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         "MACD",
         "Oscillators",
         (
-            ParamSpec("fast_period", "int", 12, minimum=1.0),
-            ParamSpec("slow_period", "int", 26, minimum=1.0),
-            ParamSpec("signal_period", "int", 9, minimum=1.0),
+            ParamSpec("fast_period", "int", 12, minimum=1.0, maximum=float(MAX_BARS)),
+            ParamSpec("slow_period", "int", 26, minimum=1.0, maximum=float(MAX_BARS)),
+            ParamSpec("signal_period", "int", 9, minimum=1.0, maximum=float(MAX_BARS)),
         ),
         (
             OutputSpec("line", "MACD", "oscillator"),
@@ -497,10 +528,7 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         None,
         "bars",
         frozenset({"macd"}),
-        lambda p: max(
-            _int_param(p, "slow_period", minimum=1),
-            _int_param(p, "signal_period", minimum=1),
-        ),
+        lambda p: _ema_warmup(p["slow_period"]) + _ema_warmup(p["signal_period"]),
         _compute_macd,
     ),
     IndicatorEntry(
@@ -513,7 +541,7 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         None,
         "bars",
         frozenset({"rolling_zscore"}),
-        lambda p: _int_param(p, "window", minimum=1),
+        lambda p: p["window"],
         _compute_rolling_zscore,
     ),
     IndicatorEntry(
@@ -526,40 +554,40 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         None,
         "bars",
         frozenset({"rolling_rank"}),
-        lambda p: _int_param(p, "window", minimum=1),
+        lambda p: p["window"],
         _compute_rolling_rank,
     ),
     IndicatorEntry(
         "pct_change",
         "Percent change",
         "Oscillators",
-        (ParamSpec("change_bars", "int", 1, minimum=1.0),),
+        (ParamSpec("change_bars", "int", 1, minimum=1.0, maximum=float(MAX_BARS)),),
         (OutputSpec("line", "% change", "oscillator"),),
         "oscillator",
         None,
         "bars",
         frozenset({"pct_change"}),
-        lambda p: _int_param(p, "change_bars", minimum=1),
+        lambda p: p["change_bars"],
         _compute_pct_change,
     ),
     IndicatorEntry(
         "log_return",
         "Log return",
         "Returns and trend",
-        (ParamSpec("horizon", "int", 1, minimum=1.0),),
+        (ParamSpec("horizon", "int", 1, minimum=1.0, maximum=float(MAX_BARS)),),
         (OutputSpec("line", "Log return", "oscillator"),),
         "oscillator",
         None,
         "bars",
         frozenset({"log_return"}),
-        lambda p: _int_param(p, "horizon", minimum=1),
+        lambda p: p["horizon"],
         _compute_log_return,
     ),
     IndicatorEntry(
         "normalized_momentum",
         "Volatility-normalized momentum",
         "Returns and trend",
-        (ParamSpec("horizon", "int", 20, minimum=1.0),) + _VOL_FLAT_PARAMS,
+        (ParamSpec("horizon", "int", 20, minimum=1.0, maximum=float(MAX_BARS)),) + _VOL_FLAT_PARAMS,
         (OutputSpec("line", "Norm. momentum", "oscillator"),),
         "oscillator",
         None,
@@ -567,19 +595,7 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         frozenset(
             {"log_return", "vol_normalize", "realized_vol_per_bar", "ewma_vol_per_bar", "rogers_satchell", "yang_zhang"}
         ),
-        lambda p: _int_param(p, "horizon", minimum=1)
-        + max(
-            (
-                _int_param(p, "vol_window", minimum=1)
-                if _choice_param(p, "vol_estimator", VOL_ESTIMATOR_CHOICES) != "ewma"
-                else 0
-            ),
-            (
-                ewma_warmup_bars(_float_param(p, "vol_half_life", minimum=1e-12))
-                if _choice_param(p, "vol_estimator", VOL_ESTIMATOR_CHOICES) == "ewma"
-                else 0
-            ),
-        ),
+        lambda p: max(p["horizon"], _vol_warmup(p)) + p["vol_lag"],
         _compute_normalized_momentum,
     ),
     IndicatorEntry(
@@ -587,8 +603,8 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         "Normalized EWMA trend spread",
         "Returns and trend",
         (
-            ParamSpec("fast_half_life", "float", 8.0, minimum=1e-12),
-            ParamSpec("slow_half_life", "float", 32.0, minimum=1e-12),
+            ParamSpec("fast_half_life", "float", 8.0, minimum=1e-12, maximum=MAX_HALF_LIFE),
+            ParamSpec("slow_half_life", "float", 32.0, minimum=1e-12, maximum=MAX_HALF_LIFE),
         )
         + _VOL_FLAT_PARAMS,
         (OutputSpec("line", "Norm. trend spread", "oscillator"),),
@@ -605,20 +621,20 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
                 "yang_zhang",
             }
         ),
-        lambda p: ewma_warmup_bars(_float_param(p, "slow_half_life", minimum=1e-12)),
+        lambda p: max(ewma_warmup_bars(p["slow_half_life"]), _vol_warmup(p)) + p["vol_lag"],
         _compute_normalized_ewma_trend,
     ),
     IndicatorEntry(
         "price_zscore_log",
         "Log-price z-score",
         "Returns and trend",
-        (_window_param(20),),
+        (_window_param(20, minimum=2),),
         (OutputSpec("line", "Log-price z", "oscillator"),),
         "oscillator",
         None,
         "bars",
         frozenset({"price_zscore_log"}),
-        lambda p: _int_param(p, "window", minimum=2),
+        lambda p: p["window"],
         _compute_price_zscore_log,
     ),
     IndicatorEntry(
@@ -626,15 +642,15 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         "EWMA trend spread",
         "Returns and trend",
         (
-            ParamSpec("fast_half_life", "float", 8.0, minimum=1e-12),
-            ParamSpec("slow_half_life", "float", 32.0, minimum=1e-12),
+            ParamSpec("fast_half_life", "float", 8.0, minimum=1e-12, maximum=MAX_HALF_LIFE),
+            ParamSpec("slow_half_life", "float", 32.0, minimum=1e-12, maximum=MAX_HALF_LIFE),
         ),
         (OutputSpec("line", "Trend spread", "oscillator"),),
         "oscillator",
         None,
         "bars",
         frozenset({"ewma_trend_spread"}),
-        lambda p: ewma_warmup_bars(_float_param(p, "slow_half_life", minimum=1e-12)),
+        lambda p: ewma_warmup_bars(p["slow_half_life"]),
         _compute_ewma_trend_spread_raw,
     ),
     IndicatorEntry(
@@ -647,7 +663,7 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         None,
         "bars",
         frozenset({"atr"}),
-        lambda p: _int_param(p, "period", minimum=1),
+        lambda p: _wilder_warmup(p["period"]) + 1,
         _compute_atr,
     ),
     IndicatorEntry(
@@ -660,7 +676,7 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         None,
         "bars",
         frozenset({"atr_fraction", "atr"}),
-        lambda p: _int_param(p, "period", minimum=1),
+        lambda p: _wilder_warmup(p["period"]) + 1,
         _compute_atr_fraction,
     ),
     IndicatorEntry(
@@ -682,14 +698,14 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         "Volatility and range",
         (
             _window_param(20),
-            ParamSpec("periods_per_year", "int", 252, minimum=1.0),
+            ParamSpec("periods_per_year", "int", 252, minimum=1.0, maximum=1_000_000.0),
         ),
         (OutputSpec("line", "Realized vol", "oscillator"),),
         "oscillator",
         None,
         "bars",
         frozenset({"realized_vol"}),
-        lambda p: _int_param(p, "window", minimum=1),
+        lambda p: p["window"] + 1,
         _compute_realized_vol_ann,
     ),
     IndicatorEntry(
@@ -702,20 +718,20 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         None,
         "bars",
         frozenset({"realized_vol_per_bar"}),
-        lambda p: _int_param(p, "window", minimum=1),
+        lambda p: p["window"],
         _compute_per_bar_realized,
     ),
     IndicatorEntry(
         "per_bar_ewma_vol",
         "Per-bar EWMA volatility",
         "Volatility and range",
-        (ParamSpec("half_life", "float", 32.0, minimum=1e-12),),
+        (ParamSpec("half_life", "float", 32.0, minimum=1e-12, maximum=MAX_HALF_LIFE),),
         (OutputSpec("line", "EWMA vol", "oscillator"),),
         "oscillator",
         None,
         "bars",
         frozenset({"ewma_vol_per_bar"}),
-        lambda p: ewma_warmup_bars(_float_param(p, "half_life", minimum=1e-12)),
+        lambda p: ewma_warmup_bars(p["half_life"]),
         _compute_per_bar_ewma,
     ),
     IndicatorEntry(
@@ -728,20 +744,20 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         None,
         "bars",
         frozenset({"rogers_satchell"}),
-        lambda p: _int_param(p, "window", minimum=1),
+        lambda p: p["window"],
         _compute_per_bar_rogers,
     ),
     IndicatorEntry(
         "per_bar_yang_zhang",
         "Per-bar Yang–Zhang",
         "Volatility and range",
-        (_window_param(20),),
+        (_window_param(20, minimum=2),),
         (OutputSpec("line", "YZ vol", "oscillator"),),
         "oscillator",
         None,
         "bars",
         frozenset({"yang_zhang"}),
-        lambda p: _int_param(p, "window", minimum=2),
+        lambda p: p["window"] + 1,
         _compute_per_bar_yang_zhang,
     ),
     IndicatorEntry(
@@ -750,10 +766,10 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         "Volatility and range",
         (
             ParamSpec("vol_estimator", "string", "realized", choices=VOL_ESTIMATOR_CHOICES),
-            ParamSpec("short_window", "int", 10, minimum=1.0),
-            ParamSpec("long_window", "int", 40, minimum=1.0),
-            ParamSpec("short_half_life", "float", 8.0, minimum=1e-12),
-            ParamSpec("long_half_life", "float", 32.0, minimum=1e-12),
+            ParamSpec("short_window", "int", 10, minimum=1.0, maximum=float(MAX_BARS)),
+            ParamSpec("long_window", "int", 40, minimum=1.0, maximum=float(MAX_BARS)),
+            ParamSpec("short_half_life", "float", 8.0, minimum=1e-12, maximum=MAX_HALF_LIFE),
+            ParamSpec("long_half_life", "float", 32.0, minimum=1e-12, maximum=MAX_HALF_LIFE),
         ),
         (OutputSpec("line", "Vol log ratio", "oscillator"),),
         "oscillator",
@@ -762,11 +778,7 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         frozenset(
             {"volatility_log_ratio", "realized_vol_per_bar", "ewma_vol_per_bar", "rogers_satchell", "yang_zhang"}
         ),
-        lambda p: (
-            _int_param(p, "long_window", minimum=1)
-            if _choice_param(p, "vol_estimator", VOL_ESTIMATOR_CHOICES) != "ewma"
-            else ewma_warmup_bars(_float_param(p, "long_half_life", minimum=1e-12))
-        ),
+        lambda p: _vol_warmup(p, window="long_window", half_life="long_half_life"),
         _compute_vol_log_ratio,
     ),
     IndicatorEntry(
@@ -775,7 +787,7 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         "Liquidity",
         (
             ParamSpec("output", "string", "time_weighted_mean", choices=("last", "time_weighted_mean", "max")),
-            ParamSpec("max_quote_age_ms", "int", 60_000, minimum=0.0),
+            ParamSpec("max_quote_age_ms", "int", 60_000, minimum=0.0, maximum=float(MAX_QUOTE_AGE_MS)),
             ParamSpec("min_coverage", "float", 0.0, minimum=0.0, maximum=1.0),
         ),
         (OutputSpec("line", "Spread", "oscillator"),),
@@ -792,7 +804,7 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         "Liquidity",
         (
             ParamSpec("spread_output", "string", "time_weighted_mean", choices=("last", "time_weighted_mean", "max")),
-            ParamSpec("max_quote_age_ms", "int", 60_000, minimum=0.0),
+            ParamSpec("max_quote_age_ms", "int", 60_000, minimum=0.0, maximum=float(MAX_QUOTE_AGE_MS)),
             ParamSpec("min_coverage", "float", 0.0, minimum=0.0, maximum=1.0),
         )
         + _VOL_FLAT_PARAMS,
@@ -810,7 +822,7 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
                 "yang_zhang",
             }
         ),
-        lambda _p: 0,
+        lambda p: _vol_warmup(p) + p["vol_lag"],
         lambda _frame, _params: {},
     ),
 )
@@ -834,10 +846,12 @@ def merge_params(entry: IndicatorEntry, overrides: Mapping[str, Any] | None) -> 
 
 
 def validate_params(entry: IndicatorEntry, params: Mapping[str, Any]) -> dict[str, Any]:
+    known = {spec.name for spec in entry.params}
+    unknown = sorted(set(params or {}) - known)
+    if unknown:
+        raise ValueError(f"Unknown parameter '{unknown[0]}'.")
     merged = merge_params(entry, params)
     for spec in entry.params:
-        if spec.name not in merged:
-            continue
         value = merged[spec.name]
         if spec.type == "int":
             parsed = _int_param(merged, spec.name, minimum=int(spec.minimum) if spec.minimum is not None else None)
@@ -877,13 +891,6 @@ def validate_params(entry: IndicatorEntry, params: Mapping[str, Any]) -> dict[st
                 f"short_window must be < long_window (got {merged['short_window']} >= {merged['long_window']})."
             )
     return merged
-
-
-def compute_indicator(entry: IndicatorEntry, frame: pd.DataFrame, params: Mapping[str, Any]) -> dict[str, pd.Series]:
-    resolved = validate_params(entry, params)
-    if entry.required_data == "quotes":
-        raise ValueError(f"Indicator '{entry.id}' is computed from quotes in the series service.")
-    return entry.compute(frame, resolved)
 
 
 def charted_kernels() -> frozenset[str]:

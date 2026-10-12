@@ -531,7 +531,7 @@ def _build_feature_specs() -> dict[str, FeatureSpec]:
             node_kind="ind.ewma_trend_spread",
             lookback_param=None,
             output_type="oscillator",
-            description="Normalized EWMA log-price trend spread.",
+            description="Fast minus slow EWMA of log close.",
             default_overrides={"fast_half_life": 8.0, "slow_half_life": 32.0},
         ),
         _make_spec(

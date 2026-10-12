@@ -255,6 +255,7 @@ def _resolve_leakage_status(
     bars: pd.DataFrame | None,
     *,
     symbol: str | None = None,
+    timeframe: str | None = None,
 ) -> str:
     if manifest_entry is None:
         status = "unverified"
@@ -274,7 +275,7 @@ def _resolve_leakage_status(
     sample_indices = [idx for idx in sample_indices if idx >= 0]
 
     def _compute(frame: pd.DataFrame):
-        return compute_feature(frame, spec, params, symbol=symbol)
+        return compute_feature(frame, spec, params, symbol=symbol, timeframe=timeframe)
 
     try:
         assert_causal(_compute, bars, sample_indices=sample_indices)
@@ -303,12 +304,13 @@ def evaluate_matrix(
     feature_ids = sorted(matrix.frame.columns)
     total = len(feature_ids)
     resolved_symbol = symbol or matrix.manifest.get("symbol")
+    timeframe = matrix.manifest.get("timeframe")
 
     for index, feature_id in enumerate(feature_ids, start=1):
         series = matrix.frame[feature_id]
         series = series.rename(feature_id)
         manifest_entry = _manifest_entry_for_feature(matrix.manifest, feature_id)
-        leakage_status = _resolve_leakage_status(manifest_entry, bars, symbol=resolved_symbol)
+        leakage_status = _resolve_leakage_status(manifest_entry, bars, symbol=resolved_symbol, timeframe=timeframe)
 
         evaluation = evaluate_feature(
             series,

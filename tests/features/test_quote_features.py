@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
+from quote_ticks import write_quote_ticks
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -20,7 +21,7 @@ from q_backend.features.registry import feature_id, get_feature_spec
 from q_backend.features.sync import sync_registry_to_db
 from q_backend.features.targets import TargetSpec
 from q_backend.market_data.models import OHLCV
-from q_backend.research.tick_store import _slug_symbol, _write_day_atomic
+from q_backend.market_data.timezone import BRASILIA_TZ
 from q_backend.storage.db.base import Base
 from q_backend.storage.db.models import EvaluationRun, FeatureScoreRow, RunStatus
 from q_backend.storage.settings import get_settings
@@ -52,26 +53,14 @@ def _write_synthetic_ticks(
     bars: pd.DataFrame,
     bid_val: float = 99.0,
     ask_val: float = 101.0,
-    last_val: float = 100.0,
 ) -> None:
-    first_time = bars["time"].iloc[0]
-    day = date(first_time.year, first_time.month, first_time.day)
-    times = []
-    for ts in bars["time"]:
-        moment = datetime(ts.year, ts.month, ts.day, ts.hour, ts.minute, tzinfo=timezone.utc)
-        times.append(int(moment.timestamp() * 1000))
-    count = len(times)
-    arrays = {
-        "time_msc": np.asarray(times, dtype=np.int64),
-        "bid": np.full(count, bid_val),
-        "ask": np.full(count, ask_val),
-        "last": np.full(count, last_val),
-        "volume": np.ones(count, dtype=np.float64),
-        "flags": np.full(count, 6, dtype=np.int32),
-    }
-    directory = tick_store_dir / _slug_symbol(symbol)
-    directory.mkdir(parents=True, exist_ok=True)
-    _write_day_atomic(directory / f"{day.isoformat()}.parquet", arrays)
+    """One quote at each bar's open, on the tick store's Brasília wall clock."""
+    local = bars["time"].dt.tz_convert(BRASILIA_TZ).dt.tz_localize(None)
+    write_quote_ticks(tick_store_dir, symbol, [(ts.to_pydatetime(), bid_val, ask_val) for ts in local])
+
+
+def _iso(moment: pd.Timestamp) -> str:
+    return moment.tz_convert("UTC").strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 @pytest.fixture
@@ -93,8 +82,10 @@ def test_compute_feature_without_symbol_raises_for_quote_features():
     bars = _synthetic_bars(datetime(2024, 1, 2, 9, 0, tzinfo=timezone.utc), n=10)
     for name in ("quote_spread", "spread_vs_volatility"):
         spec = get_feature_spec(name)
-        with pytest.raises(ValueError, match="requires symbol"):
-            compute_feature(bars, spec, {}, symbol=None)
+        with pytest.raises(ValueError, match="requires symbol and timeframe"):
+            compute_feature(bars, spec, {}, symbol=None, timeframe="M5")
+        with pytest.raises(ValueError, match="requires symbol and timeframe"):
+            compute_feature(bars, spec, {}, symbol="WIN$")
 
 
 def test_evidence_matrix_builder_passes_symbol_for_quote_features(tmp_path, monkeypatch):
@@ -123,7 +114,7 @@ def test_build_feature_matrix_with_and_without_ticks(tmp_path, monkeypatch):
     bars_day2 = _synthetic_bars(day2_start, n=20)
     all_bars = pd.concat([bars_day1, bars_day2], ignore_index=True)
 
-    _write_synthetic_ticks(tmp_path, "WIN$", bars_day1, bid_val=99.0, ask_val=101.0, last_val=100.0)
+    _write_synthetic_ticks(tmp_path, "WIN$", bars_day1, bid_val=99.0, ask_val=101.0)
 
     def _mock_read_ohlcv(symbol, timeframe, start_dt, end_dt, *, service=None):
         return [
@@ -176,6 +167,31 @@ def test_build_feature_matrix_with_and_without_ticks(tmp_path, monkeypatch):
     )
     assert matrix_no_ticks.frame[qs_id].isna().all()
     assert matrix_no_ticks.frame[sv_id].isna().all()
+
+    # 3. Missing ticks are missing values, not warm-up: the first valid row is set by the
+    # recipes (volatility window 20, lag 1), with ticks, without them, and with ticks for
+    # only the later part of the range.
+    assert matrix_with_ticks.manifest["valid_from"] == _iso(bars_day1["time"].iloc[22])
+    assert matrix_no_ticks.manifest["valid_from"] is None  # 20 bars, shorter than the warm-up
+    matrix_partial = build_feature_matrix(
+        "WIN$",
+        "M5",
+        bars_day1["time"].iloc[0].to_pydatetime(),
+        bars_day2["time"].iloc[-1].to_pydatetime(),
+        [FeatureRequest("quote_spread", 1, {}), FeatureRequest("spread_vs_volatility", 1, {})],
+        use_cache=False,
+    )
+    assert matrix_partial.manifest["valid_from"] == _iso(bars_day1["time"].iloc[22])
+    assert matrix_partial.frame[qs_id].notna().sum() == len(bars_day1)
+    quote_only = build_feature_matrix(
+        "WIN$",
+        "M5",
+        bars_day2["time"].iloc[0].to_pydatetime(),
+        bars_day2["time"].iloc[-1].to_pydatetime(),
+        [FeatureRequest("quote_spread", 1, {})],
+        use_cache=False,
+    )
+    assert quote_only.manifest["valid_from"] == _iso(bars_day2["time"].iloc[0])
 
 
 def test_quote_feature_evaluation_with_and_without_ticks(db_session, tmp_path, monkeypatch):

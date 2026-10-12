@@ -172,8 +172,10 @@ def test_feature_spec_is_causal(spec_name: str, quote_tick_store: str) -> None:
     if spec.source == "quote":
 
         def _compute(frame: pd.DataFrame):
-            return compute_feature(frame, spec, params, symbol=quote_tick_store)
+            return compute_feature(frame, spec, params, symbol=quote_tick_store, timeframe="H1")
 
+        # A series of missing values is trivially causal; the fixture must produce real ones.
+        assert _compute(bars).series.iloc[sample].notna().all()
         assert_causal(_compute, bars, sample_indices=sample)
         return
 
@@ -284,7 +286,7 @@ def test_quote_harness_catches_a_forward_leak(quote_tick_store: str) -> None:
     params = resolve_params(spec, {})
 
     def _leaky(frame: pd.DataFrame) -> FeatureSeries:
-        computed = compute_feature(frame, spec, params, symbol=quote_tick_store)
+        computed = compute_feature(frame, spec, params, symbol=quote_tick_store, timeframe="H1")
         leaked = computed.series.shift(-1)
         return FeatureSeries(
             feature_id="leaky_quote",
