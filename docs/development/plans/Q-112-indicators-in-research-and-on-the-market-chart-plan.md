@@ -21,15 +21,15 @@
 
 ## Ordered implementation
 
-- [ ] 1. `q_contracts`: add `GET /api/v1/market/indicators` and `POST /api/v1/market/indicators/{symbol}/series` with their schemas to `schema/api/openapi.yaml`; regenerate; `make check`. Commit.
-- [ ] 2. `q_backend` bridge: move the `q-core` tag in `pyproject.toml` to the Q-111 release and refresh `uv.lock`; extend `REQUIRED_KERNELS`; add wrappers to `backtesting/technical_indicators.py` with tests for criteria 1 and 2. Bump `CONTRACTS_REV` and run `make contracts`. Commit.
-- [ ] 3. Catalog: add `market_data/indicator_catalog.py` (entries, parameter specs, a `compute(entry, frame, params)` dispatch that calls the wrappers) and the test for criterion 3.
-- [ ] 4. Series service and routes in `api/routers/market.py`: warm-up bars taken from the catalog entry, computation on the extended frame, trimming to the range, `null` for NaN, 422 mapping. Tests for criteria 4, 5 and 7 in `tests/api/`.
-- [ ] 5. Quote indicators: load ticks from the research tick store, derive the session key and bar bounds, call `quote_spread_bars`, apply `min_coverage`, report unavailable ranges. Test for criterion 6. Commit.
-- [ ] 6. Research: add the node kinds to `genome/node_specs.py`, their bounds to `genome/param_bounds.py`, evaluation in `genome/composite_strategy.py` and `features/compute.py`, entries in `features/registry.py`, and the warm-up rule. Add the spread features with tick loading in `features/matrix.py`. Tests for criteria 8 to 10; update the capability registry snapshot. Commit.
-- [ ] 7. `q_frontend`: vendor the contract; add queries for the two routes; build the picker and parameter controls from the catalog; draw price and oscillator series from the endpoint; migrate saved `IndicatorConfig` entries to catalog identifiers on load.
-- [ ] 8. `q_frontend`: delete `src/lib/indicators` and the computations in `useIndicatorSeries.ts`, `OscillatorPane.tsx`, `VolumeLayer.tsx`, `CandlestickChart.tsx` and `IndicatorsModal.tsx`; update mocks and tests for criteria 11 and 12. Commit.
-- [ ] 9. Document the indicators in `docs/research-library.md`. Run the focused tests, `make contracts-check` and each repository's lint and type checks. Commit.
+- [x] 1. `q_contracts`: add `GET /api/v1/market/indicators` and `POST /api/v1/market/indicators/{symbol}/series` with their schemas to `schema/api/openapi.yaml`; regenerate; `make check`. Commit.
+- [x] 2. `q_backend` bridge: move the `q-core` tag in `pyproject.toml` to the Q-111 release and refresh `uv.lock`; extend `REQUIRED_KERNELS`; add wrappers to `backtesting/technical_indicators.py` with tests for criteria 1 and 2. Bump `CONTRACTS_REV` and run `make contracts`. Commit.
+- [x] 3. Catalog: add `market_data/indicator_catalog.py` (entries, parameter specs, a `compute(entry, frame, params)` dispatch that calls the wrappers) and the test for criterion 3.
+- [x] 4. Series service and routes in `api/routers/market.py`: warm-up bars taken from the catalog entry, computation on the extended frame, trimming to the range, `null` for NaN, 422 mapping. Tests for criteria 4, 5 and 7 in `tests/api/`.
+- [x] 5. Quote indicators: load ticks from the research tick store, derive the session key and bar bounds, call `quote_spread_bars`, apply `min_coverage`, report unavailable ranges. Test for criterion 6. Commit.
+- [x] 6. Research: add the node kinds to `genome/node_specs.py`, their bounds to `genome/param_bounds.py`, evaluation in `genome/composite_strategy.py` and `features/compute.py`, entries in `features/registry.py`, and the warm-up rule. Add the spread features with tick loading in `features/matrix.py`. Tests for criteria 8 to 10; update the capability registry snapshot. Commit.
+- [x] 7. `q_frontend`: vendor the contract; add queries for the two routes; build the picker and parameter controls from the catalog; draw price and oscillator series from the endpoint; migrate saved `IndicatorConfig` entries to catalog identifiers on load.
+- [x] 8. `q_frontend`: delete `src/lib/indicators` and the computations in `useIndicatorSeries.ts`, `OscillatorPane.tsx`, `VolumeLayer.tsx`, `CandlestickChart.tsx` and `IndicatorsModal.tsx`; update mocks and tests for criteria 11 and 12. Commit.
+- [x] 9. Document the indicators in `docs/research-library.md`. Run the focused tests, `make contracts-check` and each repository's lint and type checks. Commit.
 
 ## Review focus
 
