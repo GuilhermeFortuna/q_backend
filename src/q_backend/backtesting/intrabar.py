@@ -32,6 +32,9 @@ _M1 = "M1"
 _MINUTE_MS = 60_000
 # A deal stamped up to a second after its minute's end can still belong to that minute.
 _BOUNDARY_MARGIN_MS = 1_000
+# Deals of a price-adjusted series count as a minute's own when the bar is their shifted or
+# scaled copy to within this many ticks: the adjustment rounds each price separately.
+_RESCALE_TOLERANCE_TICKS = 2.0
 # A substituted minute stamps its four prices at these offsets from the minute's start.
 _MINUTE_OFFSETS_MS = np.array([0, 15_000, 30_000, 45_000], dtype=np.int64)
 # A substituted candle spreads its four prices evenly over its duration.
@@ -48,10 +51,12 @@ class ReplayReport:
     ``breakeven_market_inputs`` gives the same report to every replay a run creates, so the
     counts describe the whole run. ``resolutions`` maps each substituted timestamp, in
     microseconds of wall-clock time as the kernel reports exit ticks, to its resolution.
+    ``rescaled`` holds the candles whose deals were moved onto an adjusted series' prices.
     """
 
     replayed: set[pd.Timestamp] = field(default_factory=set)
     substituted: set[pd.Timestamp] = field(default_factory=set)
+    rescaled: set[pd.Timestamp] = field(default_factory=set)
     resolutions: dict[int, str] = field(default_factory=dict)
 
     def record(self, candle: pd.Timestamp, times_ms: np.ndarray, resolution: str) -> None:
@@ -76,9 +81,11 @@ class MarketTickReplay:
     """Assemble each candle's trade path from deals, substituting one-minute bars where needed.
 
     A minute whose deals reproduce its M1 bar (volume, open, high, low and close) contributes
-    those deals. Any other minute contributes four prices from its M1 bar, and a candle without
-    usable M1 bars contributes its own four prices. Incomplete or inconsistent history is
-    recorded in ``report`` instead of failing; provider errors still propagate.
+    those deals. On a price-adjusted series the terminal adjusts the bars and serves the deals
+    unadjusted, so a minute whose deals carry the bar's volume and trace its shape contributes
+    them rescaled onto the bar. Any other minute contributes four prices from its M1 bar, and a
+    candle without usable M1 bars contributes its own four prices. Incomplete or inconsistent
+    history is recorded in ``report`` instead of failing; provider errors still propagate.
     """
 
     def __init__(
@@ -89,10 +96,12 @@ class MarketTickReplay:
         frame: pd.DataFrame,
         tick_size: float | None = None,
         report: ReplayReport | None = None,
+        price_digits: int | None = None,
     ) -> None:
         self._service = service
         self._tick_size = tick_size if tick_size is not None and np.isfinite(tick_size) and tick_size > 0 else None
         self._tolerance = 0.0 if self._tick_size is None else self._tick_size * 1e-6
+        self._price_digits = price_digits
         self._symbol = symbol
         self._duration = bar_duration(timeframe)
         self._frame = frame
@@ -132,15 +141,26 @@ class MarketTickReplay:
             minute_ohlc = bar_ohlc[k]
             window_stop = int(np.searchsorted(deal_times, windows[position], side="left"))
             run = self._match_minute(pointer, window_stop, deal_prices, deal_volumes, minute_ohlc, bar_volume[k])
-            if run is None:
-                pointer = max(pointer, int(np.searchsorted(deal_times, minute_start + _MINUTE_MS, side="left")))
-                minute_times = minute_start + _MINUTE_OFFSETS_MS
-                self._report.record(pd.Timestamp(start), minute_times, RESOLUTION_MINUTE)
-                segments.append((minute_times, _four_prices(minute_ohlc)))
-            else:
+            if run is not None:
                 first, stop = run
                 segments.append((deal_times[first:stop], deal_prices[first:stop]))
                 pointer = stop
+                continue
+            # A deal is never stamped before its own minute, so an adjusted run starts inside it.
+            in_minute = max(pointer, int(np.searchsorted(deal_times, minute_start, side="left")))
+            rescaled = self._rescale_minute(
+                in_minute, window_stop, deal_prices, deal_volumes, minute_ohlc, bar_volume[k]
+            )
+            if rescaled is not None:
+                first, stop, minute_prices = rescaled
+                self._report.rescaled.add(pd.Timestamp(start))
+                segments.append((deal_times[first:stop], minute_prices))
+                pointer = stop
+                continue
+            pointer = max(pointer, int(np.searchsorted(deal_times, minute_start + _MINUTE_MS, side="left")))
+            minute_times = minute_start + _MINUTE_OFFSETS_MS
+            self._report.record(pd.Timestamp(start), minute_times, RESOLUTION_MINUTE)
+            segments.append((minute_times, _four_prices(minute_ohlc)))
         times = np.concatenate([segment[0] for segment in segments]).astype(np.int64)
         prices = np.concatenate([segment[1] for segment in segments]).astype(np.float64)
         return times, prices
@@ -170,6 +190,61 @@ class MarketTickReplay:
                 if abs(run.max() - high) <= self._tolerance and abs(run.min() - low) <= self._tolerance:
                     return lower + first, lower + last + 1
         return None
+
+    def _rescale_minute(
+        self,
+        lower: int,
+        upper: int,
+        prices: np.ndarray,
+        volumes: np.ndarray,
+        minute_ohlc: np.ndarray,
+        minute_volume: float,
+    ) -> tuple[int, int, np.ndarray] | None:
+        """First run of deals in ``[lower, upper)`` with the bar's volume that the bar is an adjusted copy of.
+
+        Returns the run and its prices on the bar's scale.
+        """
+        if self._tick_size is None or upper <= lower or not np.isfinite(minute_volume) or minute_volume <= 0:
+            return None
+        cumulative = np.cumsum(volumes[lower:upper])
+        if not np.isfinite(cumulative[-1]):
+            return None
+        targets = np.concatenate(([0.0], cumulative[:-1])) + minute_volume
+        lasts = np.searchsorted(cumulative, targets - 1e-6, side="left")
+        reachable = np.flatnonzero(lasts < cumulative.size)
+        for first in reachable[np.abs(cumulative[lasts[reachable]] - targets[reachable]) <= 1e-6]:
+            run = prices[lower + first : lower + lasts[first] + 1]
+            adjusted = self._onto_bar(run, minute_ohlc)
+            if adjusted is not None:
+                return lower + int(first), lower + int(lasts[first]) + 1, adjusted
+        return None
+
+    def _onto_bar(self, run: np.ndarray, minute_ohlc: np.ndarray) -> np.ndarray | None:
+        """``run`` moved onto its bar's prices, or ``None`` when the bar is not its adjusted copy.
+
+        The bar fixes where the run's low, open, close and high land; the deals between them are
+        interpolated. That holds for an adjustment by difference and for a proportional one, whose
+        per-price rounding leaves no single offset or factor that reproduces the bar exactly.
+        """
+        open_, high, low, close = minute_ohlc
+        raw = np.array([run.min(), run[0], run[-1], run.max()])
+        bar = np.array([low, open_, close, high])
+        if raw[0] <= 0 or not np.all(np.isfinite(bar)):
+            return None
+        shifted = np.abs(bar - (raw + (open_ - run[0]))).max()
+        scaled = np.abs(bar - raw * (open_ / run[0])).max()
+        if min(shifted, scaled) > _RESCALE_TOLERANCE_TICKS * self._tick_size:
+            return None
+        order = np.argsort(raw, kind="stable")
+        raw, bar = raw[order], bar[order]
+        rise = np.diff(bar)
+        repeated = np.diff(raw) <= self._tolerance
+        # The bar must order the four prices as the deals do, and give one deal price one bar price.
+        if np.any(rise < -self._tolerance) or np.any(np.abs(rise[repeated]) > self._tolerance):
+            return None
+        distinct = np.concatenate(([True], ~repeated))
+        adjusted = np.interp(run, raw[distinct], bar[distinct])
+        return adjusted if self._price_digits is None else np.round(adjusted, self._price_digits)
 
     def _aggregates(self, minute_ohlc: np.ndarray, candle: np.ndarray) -> bool:
         observed = np.array([minute_ohlc[0, 0], minute_ohlc[:, 1].max(), minute_ohlc[:, 2].min(), minute_ohlc[-1, 3]])
@@ -301,6 +376,7 @@ def intrabar_notes(trades: list[Any], report: ReplayReport) -> list[dict[str, An
                 "substituted_net_pnl": substituted_net,
                 "candles_replayed": len(report.replayed),
                 "candles_substituted": len(report.substituted),
+                "candles_rescaled": len(report.rescaled),
                 "session_dates": report.session_dates,
             },
         }
@@ -323,10 +399,12 @@ def breakeven_market_inputs(
         service = MarketDataService()
     lookup = getattr(service, "get_symbol_info", None)
     grid = None
+    digits = None
     if lookup is not None:
-        info = lookup(strategy.symbol)
-        value = float((info or {}).get("trade_tick_size") or 0.0)
+        info = lookup(strategy.symbol) or {}
+        value = float(info.get("trade_tick_size") or 0.0)
         grid = value if np.isfinite(value) and value > 0 else None
+        digits = int(info["digits"]) if info.get("digits") is not None else None
     tick_size = None
     if float(params["breakeven_emergency_stop_ticks"]) > 0:
         if grid is None:
@@ -337,6 +415,6 @@ def breakeven_market_inputs(
     return {
         "tick_size": tick_size,
         "intrabar_factory": lambda frame: MarketTickReplay(
-            service, strategy.symbol, timeframe, frame, grid, report=report
+            service, strategy.symbol, timeframe, frame, grid, report=report, price_digits=digits
         ),
     }

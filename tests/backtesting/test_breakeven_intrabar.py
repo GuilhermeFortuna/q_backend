@@ -551,3 +551,128 @@ def test_no_note_when_nothing_was_substituted():
     from q_backend.backtesting.intrabar import ReplayReport, intrabar_notes
 
     assert intrabar_notes([], ReplayReport()) == []
+
+
+def adjusted_minutes():
+    """Two minutes of unadjusted deals: 10:00 trades 100, 110, 100 and 10:01 trades 106, 104."""
+    return [ms(0), ms(20), ms(40), ms(60), ms(80)], [100.0, 110.0, 100.0, 106.0, 104.0]
+
+
+def test_deals_of_a_series_adjusted_by_difference_are_shifted_onto_its_bars():
+    from q_backend.backtesting.intrabar import MarketTickReplay, ReplayReport
+
+    deal_times, prices = adjusted_minutes()
+    bars = [
+        minute_bar("2024-01-02 10:00", 744.25, 754.25, 744.25, 744.25, 3),
+        minute_bar("2024-01-02 10:01", 750.25, 750.25, 748.25, 748.25, 2),
+    ]
+    frame = pd.DataFrame({"open": [744.25], "high": [754.25], "low": [744.25], "close": [748.25]}, index=[START])
+    report = ReplayReport()
+
+    times, out = MarketTickReplay(
+        TickProvider(prices, times=deal_times, bars=bars), "TEST", "H1", frame, tick_size=0.25, report=report
+    )(0)
+
+    assert out.tolist() == [744.25, 754.25, 744.25, 750.25, 748.25]
+    assert times.tolist() == [t * 1000 for t in deal_times]
+    assert report.rescaled == {START}
+    assert report.substituted == set()
+    assert report.resolutions == {}
+
+
+def test_deals_of_a_proportionally_adjusted_series_land_on_its_bars_and_between_them():
+    from q_backend.backtesting.intrabar import MarketTickReplay, ReplayReport
+
+    # The bar rounds each adjusted price separately, so neither one factor nor one offset reproduces it.
+    deal_times = [ms(0), ms(10), ms(20), ms(30), ms(40)]
+    prices = [100.0, 104.0, 108.0, 99.0, 102.0]
+    bars = [minute_bar("2024-01-02 10:00", 110.09, 118.84, 109.09, 112.34, 5)]
+    frame = pd.DataFrame({"open": [110.09], "high": [118.84], "low": [109.09], "close": [112.34]}, index=[START])
+    report = ReplayReport()
+
+    _, out = MarketTickReplay(
+        TickProvider(prices, times=deal_times, bars=bars),
+        "TEST",
+        "H1",
+        frame,
+        tick_size=0.25,
+        report=report,
+        price_digits=2,
+    )(0)
+
+    # 104 lies a third of the way from the close (102 -> 112.34) to the high (108 -> 118.84).
+    assert out.tolist() == [110.09, 114.51, 118.84, 109.09, 112.34]
+    assert report.rescaled == {START}
+    assert report.resolutions == {}
+
+
+def test_deals_that_carry_the_volume_of_a_bar_they_do_not_trace_are_substituted():
+    from q_backend.backtesting.intrabar import MarketTickReplay, ReplayReport
+
+    # The deals span 10 points and the bar 20: no shift or factor near the bar's level explains that.
+    deal_times = [ms(0), ms(20), ms(40)]
+    bars = [minute_bar("2024-01-02 10:00", 744.25, 764.25, 744.25, 744.25, 3)]
+    frame = pd.DataFrame({"open": [744.25], "high": [764.25], "low": [744.25], "close": [744.25]}, index=[START])
+    report = ReplayReport()
+
+    _, out = MarketTickReplay(
+        TickProvider([100.0, 110.0, 100.0], times=deal_times, bars=bars),
+        "TEST",
+        "H1",
+        frame,
+        tick_size=0.25,
+        report=report,
+    )(0)
+
+    # Close 744.25 >= open 744.25: open, low, high, close.
+    assert out.tolist() == [744.25, 744.25, 764.25, 744.25]
+    assert report.rescaled == set()
+    assert set(report.resolutions.values()) == {"minute"}
+
+
+def test_a_bar_that_orders_its_prices_against_the_deals_is_substituted():
+    from q_backend.backtesting.intrabar import MarketTickReplay, ReplayReport
+
+    # The deals close above their open; the bar, one tick away from a shifted copy, closes below it.
+    deal_times = [ms(0), ms(20), ms(40)]
+    bars = [minute_bar("2024-01-02 10:00", 744.25, 754.25, 744.0, 744.0, 3)]
+    frame = pd.DataFrame({"open": [744.25], "high": [754.25], "low": [744.0], "close": [744.0]}, index=[START])
+    report = ReplayReport()
+
+    MarketTickReplay(
+        TickProvider([100.0, 110.0, 100.25], times=deal_times, bars=bars),
+        "TEST",
+        "H1",
+        frame,
+        tick_size=0.25,
+        report=report,
+    )(0)
+
+    assert report.rescaled == set()
+    assert set(report.resolutions.values()) == {"minute"}
+
+
+def test_adjusted_deals_are_not_rescaled_without_the_instrument_tick_size():
+    from q_backend.backtesting.intrabar import MarketTickReplay, ReplayReport
+
+    deal_times, prices = adjusted_minutes()
+    bars = [minute_bar("2024-01-02 10:00", 744.25, 754.25, 744.25, 744.25, 3)]
+    frame = pd.DataFrame({"open": [744.25], "high": [754.25], "low": [744.25], "close": [744.25]}, index=[START])
+    report = ReplayReport()
+
+    MarketTickReplay(TickProvider(prices, times=deal_times, bars=bars), "TEST", "H1", frame, report=report)(0)
+
+    assert report.rescaled == set()
+    assert set(report.resolutions.values()) == {"minute"}
+
+
+def test_the_note_counts_the_candles_whose_deals_were_rescaled():
+    from q_backend.backtesting.intrabar import ReplayReport, intrabar_notes
+
+    report = ReplayReport()
+    report.substituted.add(START)
+    report.rescaled.update({START, START + pd.Timedelta(hours=1)})
+
+    [note] = intrabar_notes([], report)
+
+    assert note["details"]["candles_rescaled"] == 2

@@ -13,6 +13,7 @@
 - One task, three repositories. `./work start` creates the task branch in `q_backend`. Create the same-named branch in `q_contracts` and `q_frontend` as worktrees under `.worktrees/<repository>/<branch>`; `./work inspect` and `./work finish` discover every repository that has it.
 - Contracts flow one way. Commit the schema change in `q_contracts` first, set `CONTRACTS_REV` in each consumer to that commit and vendor with `make contracts CONTRACTS_REPO=<path to the q_contracts worktree>`. Never hand-edit vendored code. The pin resolves remotely once the human runs `./work finish Q-107 --push`.
 - Real ticks are used wherever a minute is complete; substitution is per minute and never widens beyond the minutes that need it.
+- On a price-adjusted series a minute's deals are moved onto its M1 bar as the spec states; an adjusted minute is never counted as substituted.
 - Incomplete or inconsistent history never raises. Provider and gateway errors still do.
 - The substitution order, offsets, one-second boundary margin, `exit_resolution` values and the note code are exactly as the spec states.
 - `q_frontend` tests run with `TZ=America/Sao_Paulo`.
@@ -69,6 +70,18 @@
 - [x] Run the repository's unit tests and type check with `TZ=America/Sao_Paulo`.
 - [x] Commit this unit.
 
+### 5. Adjusted series (`q_backend`)
+
+Added during review: a `WSP$` run substituted 254 of 255 replayed candles because the terminal adjusts the bars of a continuous series and not its deals.
+
+**Files:** Modify `src/q_backend/backtesting/intrabar.py`; extend `tests/backtesting/test_breakeven_intrabar.py`.
+**Interfaces:** `MarketTickReplay` gains `price_digits: int | None`; `breakeven_market_inputs` passes the instrument's `digits`. `ReplayReport` gains `rescaled`, reported as `candles_rescaled` in the note's details.
+
+- [x] Write failing tests for spec acceptance 11 and 12.
+- [x] After the exact match fails, look for a run with the bar's volume that the bar is a shifted or scaled copy of, and contribute its deals interpolated onto the bar.
+- [x] Run `uv run pytest tests/backtesting/test_breakeven_intrabar.py -q` and confirm it passes.
+- [x] Commit this unit.
+
 ## Verification and handoff
 
 - [x] Run each repository's focused checks listed above plus its lint and format checks on the touched paths.
@@ -81,6 +94,7 @@
 - `q_contracts` (`04cd4af`): `make check` passed (251 passed, 7 skipped; black, ruff, validate, generator diff clean).
 - `q_backend` (`17c5c11`): `make contracts-check CONTRACTS_REPO=<q_contracts worktree>` exit 0; `uv run ruff check src` passed; black clean on touched files; `uv run pytest tests/backtesting/test_breakeven_intrabar.py` 28 passed; `tests/backtesting` and `tests/api` 1181 passed. Not passing here: `tests/api/test_stream_replay.py`, and `tests/optimization` (6 tests) which need Postgres on port 5434. The full `./scripts/ci.sh` was not run (it starts disposable Postgres and Redis containers under Docker).
 - `q_frontend` (`99b4e07`): `make contracts-check CONTRACTS_REPO=<q_contracts worktree>` exit 0; `pnpm typecheck` passed; eslint and prettier clean on touched files; `TZ=America/Sao_Paulo pnpm test:run` 219 files, 1074 tests passed.
+- `q_backend` (adjusted series, step 5): `uv run pytest tests/backtesting/test_breakeven_intrabar.py` 34 passed; `uv run pytest tests/backtesting tests/api --deselect tests/api/test_stream_replay.py` 1188 passed, 12 skipped; `uv run ruff check src` passed; black clean on touched files. Against the MT5 gateway, one H1 candle each of `WSP$`, `WSP$D`, `WDO$`, `DOL$`, `BIT$`, `CCM$`, `PETR4` and `VALE3` replayed on real deals with no substituted minute; `WSP$N` was unchanged; `WSP$` on 2026-09-21, which has no ticks, stayed substituted.
 
 ### Follow-ups
 
