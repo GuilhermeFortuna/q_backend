@@ -127,6 +127,28 @@ def validate_genome(
                 except ValueError as exc:
                     raise GenomeValidationError(f"Node '{node.id}' param '{key}' must be HH:MM.") from exc
 
+        if node.kind == "ind.ewma_trend_spread" and not any(
+            _is_param_ref(node.params[k]) for k in ("fast_half_life", "slow_half_life")
+        ):
+            if float(node.params["fast_half_life"]) >= float(node.params["slow_half_life"]):
+                raise GenomeValidationError(
+                    f"Node '{node.id}': ind.ewma_trend_spread fast_half_life must be < slow_half_life."
+                )
+        if node.kind == "ind.volatility_log_ratio" and not any(
+            _is_param_ref(node.params[k])
+            for k in ("short_window", "long_window", "short_half_life", "long_half_life", "per_bar_vol_estimator")
+        ):
+            estimator = str(node.params.get("per_bar_vol_estimator", "realized"))
+            if estimator == "ewma":
+                if float(node.params["short_half_life"]) >= float(node.params["long_half_life"]):
+                    raise GenomeValidationError(
+                        f"Node '{node.id}': ind.volatility_log_ratio short_half_life must be < long_half_life."
+                    )
+            elif int(node.params["short_window"]) >= int(node.params["long_window"]):
+                raise GenomeValidationError(
+                    f"Node '{node.id}': ind.volatility_log_ratio short_window must be < long_window."
+                )
+
         input_count = len(node.inputs)
         if input_count < spec.min_inputs or input_count > spec.max_inputs:
             raise GenomeValidationError(

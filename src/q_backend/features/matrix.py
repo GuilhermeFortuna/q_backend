@@ -249,7 +249,13 @@ def build_feature_matrix(
 
     for request in features:
         spec, params, fid = _resolve_request(request)
-        computed = compute_feature(bars_df, spec, request.params)
+        computed = compute_feature(
+            bars_df,
+            spec,
+            request.params,
+            symbol=symbol,
+            tick_store_root=None,
+        )
         columns[fid] = computed.series
         union_warmup = max(union_warmup, computed.warmup_bars)
         feature_manifest_rows.append(

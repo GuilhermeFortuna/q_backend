@@ -57,6 +57,18 @@ def _default_param_value(key: str) -> Any:
         return 63
     if key == "estimator":
         return "close_to_close"
+    if key == "per_bar_vol_estimator":
+        return "realized"
+    if key == "max_quote_age_ms":
+        return 60_000
+    if key == "min_coverage":
+        return 0.0
+    if key == "output":
+        return "time_weighted_mean"
+    if key == "spread_output":
+        return "time_weighted_mean"
+    if key == "vol_estimator":
+        return "realized"
     raise KeyError(f"No default registered for param key '{key}'")
 
 
@@ -460,6 +472,116 @@ def _build_feature_specs() -> dict[str, FeatureSpec]:
             lookback_param=None,
             output_type="oscillator",
             description="Realized volatility of the previous completed daily bar.",
+        ),
+        _make_spec(
+            "log_return",
+            category="returns",
+            node_kind="ind.log_return",
+            lookback_param="horizon",
+            output_type="oscillator",
+            description="Log return over a causal horizon.",
+            default_overrides={"horizon": 1},
+        ),
+        _make_spec(
+            "normalized_momentum",
+            category="returns",
+            node_kind="ind.normalized_momentum",
+            lookback_param=None,
+            output_type="oscillator",
+            description="Volatility-normalized log-return momentum.",
+            default_overrides={
+                "horizon": 20,
+                "per_bar_vol_estimator": "realized",
+                "vol_window": 20,
+                "vol_half_life": 32.0,
+                "vol_lag": 1,
+            },
+        ),
+        _make_spec(
+            "ewma_trend_spread",
+            category="returns",
+            node_kind="ind.ewma_trend_spread",
+            lookback_param=None,
+            output_type="oscillator",
+            description="Normalized EWMA log-price trend spread.",
+            default_overrides={"fast_half_life": 8.0, "slow_half_life": 32.0},
+        ),
+        _make_spec(
+            "price_zscore_log",
+            category="returns",
+            node_kind="ind.price_zscore_log",
+            lookback_param="window",
+            output_type="oscillator",
+            description="Trailing z-score of log close.",
+            default_overrides={"window": 20},
+        ),
+        _make_spec(
+            "per_bar_ewma_vol",
+            category="volatility",
+            node_kind="ind.per_bar_vol",
+            lookback_param=None,
+            output_type="oscillator",
+            description="Per-bar EWMA volatility from log returns.",
+            default_overrides={"per_bar_vol_estimator": "ewma", "half_life": 32.0, "window": 20},
+        ),
+        _make_spec(
+            "per_bar_realized_vol",
+            category="volatility",
+            node_kind="ind.per_bar_vol",
+            lookback_param="window",
+            output_type="oscillator",
+            description="Per-bar realized volatility.",
+            default_overrides={"per_bar_vol_estimator": "realized", "window": 20, "half_life": 32.0},
+        ),
+        _make_spec(
+            "atr_fraction",
+            category="volatility",
+            node_kind="ind.atr_fraction",
+            lookback_param="period",
+            output_type="oscillator",
+            description="ATR divided by close.",
+            default_overrides={"period": 14},
+        ),
+        _make_spec(
+            "volatility_log_ratio",
+            category="volatility",
+            node_kind="ind.volatility_log_ratio",
+            lookback_param=None,
+            output_type="oscillator",
+            description="Log ratio of short to long per-bar volatility.",
+            default_overrides={
+                "per_bar_vol_estimator": "realized",
+                "short_window": 10,
+                "long_window": 40,
+                "short_half_life": 8.0,
+                "long_half_life": 32.0,
+            },
+        ),
+        _make_spec(
+            "quote_spread",
+            category="liquidity",
+            node_kind="feature.quote_spread",
+            lookback_param=None,
+            output_type="oscillator",
+            description="Time-weighted mean quoted spread in basis points.",
+            default_overrides={"output": "time_weighted_mean", "max_quote_age_ms": 60_000, "min_coverage": 0.0},
+        ),
+        _make_spec(
+            "spread_vs_volatility",
+            category="liquidity",
+            node_kind="feature.spread_vs_volatility",
+            lookback_param=None,
+            output_type="oscillator",
+            description="Quoted spread normalized by per-bar volatility.",
+            default_overrides={
+                "spread_output": "time_weighted_mean",
+                "max_quote_age_ms": 60_000,
+                "min_coverage": 0.0,
+                "vol_estimator": "realized",
+                "vol_window": 20,
+                "vol_half_life": 32.0,
+                "vol_lag": 1,
+            },
         ),
         _make_spec(
             "exog_close",

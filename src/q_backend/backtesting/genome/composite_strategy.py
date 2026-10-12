@@ -28,11 +28,19 @@ from q_backend.market_data.exogenous_columns import resolve_exog_column
 from q_backend.storage.lake.artifacts import read_neural_model
 from q_backend.backtesting.technical_indicators import (
     compute_atr,
+    compute_atr_fraction,
     compute_bollinger_bands,
     compute_donchian_channels,
+    compute_ewma_trend_spread,
+    compute_ewma_vol_per_bar,
+    compute_log_return,
     compute_macd,
+    compute_normalized_momentum,
+    compute_per_bar_volatility,
+    compute_price_zscore_log,
     compute_realized_vol,
     compute_rsi,
+    compute_volatility_log_ratio,
     compute_yang_zhang,
 )
 from q_backend.backtesting.transforms import (
@@ -370,6 +378,71 @@ class CompositeStrategy(TradingStrategy):
 
             df[cols["out"]] = (pd.Series(sig1, index=df.index) + sig2 + sig3) / 3.0
             df[cols["volatility"]] = compute_realized_vol(source, vol_w)
+        elif kind == "ind.log_return":
+            source = self._binding_series(df, compiled, 0)
+            df[cols["out"]] = compute_log_return(source, int(params["horizon"]))
+        elif kind == "ind.normalized_momentum":
+            source = self._binding_series(df, compiled, 0)
+            estimator = str(params["per_bar_vol_estimator"])
+            df[cols["out"]] = compute_normalized_momentum(
+                source,
+                df["open"],
+                df["high"],
+                df["low"],
+                horizon=int(params["horizon"]),
+                vol_estimator=estimator,
+                vol_window=int(params["vol_window"]) if estimator != "ewma" else None,
+                vol_half_life=float(params["vol_half_life"]) if estimator == "ewma" else None,
+                vol_lag=int(params["vol_lag"]),
+            )
+        elif kind == "ind.ewma_trend_spread":
+            source = self._binding_series(df, compiled, 0)
+            df[cols["out"]] = compute_ewma_trend_spread(
+                source,
+                float(params["fast_half_life"]),
+                float(params["slow_half_life"]),
+            )
+        elif kind == "ind.price_zscore_log":
+            source = self._binding_series(df, compiled, 0)
+            df[cols["out"]] = compute_price_zscore_log(source, int(params["window"]))
+        elif kind == "ind.per_bar_vol":
+            estimator = str(params["per_bar_vol_estimator"])
+            df[cols["out"]] = compute_per_bar_volatility(
+                df["open"],
+                df["high"],
+                df["low"],
+                df["close"],
+                estimator=estimator,
+                window=int(params["window"]) if estimator != "ewma" else None,
+                half_life=float(params["half_life"]) if estimator == "ewma" else None,
+            )
+        elif kind == "ind.atr_fraction":
+            df[cols["out"]] = compute_atr_fraction(df["high"], df["low"], df["close"], int(params["period"]))
+        elif kind == "ind.volatility_log_ratio":
+            estimator = str(params["per_bar_vol_estimator"])
+            if estimator == "ewma":
+                sigma_short = compute_ewma_vol_per_bar(df["close"], float(params["short_half_life"]))
+                sigma_long = compute_ewma_vol_per_bar(df["close"], float(params["long_half_life"]))
+            else:
+                sigma_short = compute_per_bar_volatility(
+                    df["open"],
+                    df["high"],
+                    df["low"],
+                    df["close"],
+                    estimator=estimator,
+                    window=int(params["short_window"]),
+                    half_life=None,
+                )
+                sigma_long = compute_per_bar_volatility(
+                    df["open"],
+                    df["high"],
+                    df["low"],
+                    df["close"],
+                    estimator=estimator,
+                    window=int(params["long_window"]),
+                    half_life=None,
+                )
+            df[cols["out"]] = compute_volatility_log_ratio(sigma_short, sigma_long)
         elif kind == "ind.latent":
             if self._latent_model_hash is None:
                 df[cols["out"]] = np.nan
