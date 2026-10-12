@@ -21,8 +21,8 @@ Research gains nine indicator families (log returns, normalized momentum, normal
 
 | Task | Repository | Depends on | Specification | Implementation plan |
 | --- | --- | --- | --- | --- |
-| Q-111 — Research indicator kernels | q_core | — | `q_core/docs/development/specs/Q-111-research-indicator-kernels-spec.md` | `q_core/docs/development/plans/Q-111-research-indicator-kernels-plan.md` |
-| Q-112 — Indicators in research and on the Market chart | q_backend, with q_contracts and q_frontend | Q-111 | [Spec](../specs/Q-112-indicators-in-research-and-on-the-market-chart-spec.md) | [Plan](../plans/Q-112-indicators-in-research-and-on-the-market-chart-plan.md) |
+| [Q-111](https://github.com/GuilhermeFortuna/q_core/issues/16) — Research indicator kernels | q_core | — | `q_core/docs/development/specs/Q-111-research-indicator-kernels-spec.md` | `q_core/docs/development/plans/Q-111-research-indicator-kernels-plan.md` |
+| [Q-112](https://github.com/GuilhermeFortuna/q_backend/issues/44) — Indicators in research and on the Market chart | q_backend, with q_contracts and q_frontend | Q-111 | [Spec](../specs/Q-112-indicators-in-research-and-on-the-market-chart-spec.md) | [Plan](../plans/Q-112-indicators-in-research-and-on-the-market-chart-plan.md) |
 
 Q-112 starts when Q-111 is Done; it pins the `q_core` tag that `./work finish Q-111` publishes. Inside Q-112 the order is contract, backend, frontend.
 
