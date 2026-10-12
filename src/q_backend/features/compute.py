@@ -488,7 +488,12 @@ def _compute_quote_feature(
     tick_store_root: str | None,
 ) -> FeatureSeries:
     from q_backend.market_data.indicator_catalog import catalog_entry
-    from q_backend.market_data.indicator_series import IndicatorRequest, _quote_spread_series, _spread_vs_vol
+    from q_backend.market_data.indicator_series import (
+        IndicatorRequest,
+        _quote_spread_series,
+        _spread_vs_vol,
+        open_tick_store,
+    )
 
     frame = bars.sort_values("time").reset_index(drop=True)
     if frame.empty:
@@ -497,11 +502,7 @@ def _compute_quote_feature(
 
     entry_id = "quote_spread" if spec.node_kind == "feature.quote_spread" else "spread_vs_volatility"
     entry = catalog_entry(entry_id)
-    tick_store = None
-    if tick_store_root is not None:
-        from q_backend.research.tick_store import TickStore
-
-        tick_store = TickStore(symbol, root=tick_store_root)
+    tick_store = open_tick_store(symbol, root=tick_store_root)
     if entry_id == "spread_vs_volatility":
         payload = _spread_vs_vol(entry, frame, resolved, tick_store)
     else:
@@ -532,7 +533,7 @@ def compute_feature(
         return _compute_neural(bars, spec)
 
     resolved = resolve_params(spec, params)
-    if spec.node_kind in ("feature.quote_spread", "feature.spread_vs_volatility"):
+    if spec.source == "quote":
         if symbol is None:
             raise ValueError(f"Feature '{spec.name}' requires symbol for tick-store access.")
         return _compute_quote_feature(bars, spec, resolved, symbol=symbol, tick_store_root=tick_store_root)

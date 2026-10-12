@@ -94,7 +94,15 @@ def _bar_bounds_msc(times: pd.Series) -> tuple[np.ndarray, np.ndarray]:
             if close_ts.date() != open_ts.date():
                 close_ts = open_ts.normalize() + pd.Timedelta(days=1)
         else:
-            close_ts = open_ts.normalize() + pd.Timedelta(days=1)
+            if len(times) > 1:
+                step = times.iloc[idx] - times.iloc[idx - 1]
+                candidate = open_ts + step
+                if candidate.date() != open_ts.date():
+                    close_ts = open_ts.normalize() + pd.Timedelta(days=1)
+                else:
+                    close_ts = candidate
+            else:
+                close_ts = open_ts.normalize() + pd.Timedelta(days=1)
         opens.append(int(open_ts.timestamp() * 1000))
         closes.append(int(close_ts.timestamp() * 1000))
     return np.asarray(opens, dtype=np.int64), np.asarray(closes, dtype=np.int64)
@@ -228,6 +236,7 @@ def _spread_vs_vol(entry: IndicatorEntry, frame: pd.DataFrame, params: dict[str,
     else:
         vol_params = {"window": vol_params["vol_window"]}
     sigma = _compute(vol_entry, bar_frame.reset_index(), vol_params)["line"]
+    sigma = pd.Series(sigma.to_numpy(), index=frame["time"])
     normalized = compute_vol_normalize(spread_series, sigma, 1, int(params["vol_lag"]))
     return SeriesOutput(
         entry.outputs[0].key,
@@ -244,6 +253,14 @@ def _warmup_bars_for_requests(requests: list[IndicatorRequest]) -> int:
         params = merge_params(entry, req.parameters)
         warmup = max(warmup, entry.warmup_bars(params))
     return warmup
+
+
+def open_tick_store(symbol: str, *, root: str | None = None) -> TickStore | None:
+    """Open a TickStore for symbol and root, or return None if it cannot be opened."""
+    try:
+        return TickStore(symbol, root=root)
+    except Exception:  # noqa: BLE001 - optional store
+        return None
 
 
 def build_indicator_series(
@@ -294,10 +311,7 @@ def build_indicator_series(
 
     tick_store = None
     if any(entry.required_data == "quotes" for entry, _ in validated):
-        try:
-            tick_store = TickStore(symbol, root=tick_store_root)
-        except Exception:  # noqa: BLE001 - optional store
-            tick_store = None
+        tick_store = open_tick_store(symbol, root=tick_store_root)
 
     outputs: list[dict[str, Any]] = []
     for entry, params in validated:

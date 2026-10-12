@@ -29,32 +29,32 @@
 
 **Files:** `src/q_backend/backtesting/genome/node_specs.py`, `src/q_backend/features/registry.py`, `tests/features/test_feature_registry.py`, `tests/backtesting/genome/`.
 
-- [ ] Add failing tests for spec acceptance items 1 and 2, including the two feature identifiers pinned as literals taken from `5a71e95`.
-- [ ] Remove the two `NodeSpec` entries. Declare the quote recipes' parameter keys and defaults in the feature registry and build both specs with source `quote`.
-- [ ] Extend `assert_catalog_consistent` with the `quote` rules from the spec.
-- [ ] Run `uv run pytest tests/features/test_feature_registry.py tests/backtesting/genome tests/api/test_strategy_builder_prompt.py -q`. The four node-causality failures, the pool failure and the prompt budget failure are gone. If the budget still fails, apply acceptance item 7. Commit.
+- [x] Add failing tests for spec acceptance items 1 and 2, including the two feature identifiers pinned as literals taken from `5a71e95`.
+- [x] Remove the two `NodeSpec` entries. Declare the quote recipes' parameter keys and defaults in the feature registry and build both specs with source `quote`.
+- [x] Extend `assert_catalog_consistent` with the `quote` rules from the spec.
+- [x] Run `uv run pytest tests/features/test_feature_registry.py tests/backtesting/genome tests/api/test_strategy_builder_prompt.py -q`. The four node-causality failures, the pool failure and the prompt budget failure are gone. If the budget still fails, apply acceptance item 7. Commit.
 
 ### 2. Computation
 
 **Files:** `src/q_backend/features/compute.py`, `src/q_backend/market_data/indicator_series.py`, `src/q_backend/features/evaluation.py`, `src/q_backend/features/evaluation_service.py`, `src/q_backend/features/evidence_service.py`, `tests/features/`.
 
-- [ ] Add failing tests for spec acceptance items 3 and 4, writing ticks with the tick store's own day writer as `tests/api/test_market_indicators.py` does.
-- [ ] Move the "open the tick store or return none" logic into one function used by the chart service and by `_compute_quote_feature`; dispatch on source.
-- [ ] Pass the symbol from the evaluation run into the leakage check and from the evidence segment into its matrix builder.
-- [ ] Run `uv run pytest tests/features tests/neural/test_latent_gate.py tests/api/test_encoder_ablation_jobs.py tests/api/test_market_indicators.py -q`; commit.
+- [x] Add failing tests for spec acceptance items 3 and 4, writing ticks with the tick store's own day writer as `tests/api/test_market_indicators.py` does.
+- [x] Move the "open the tick store or return none" logic into one function used by the chart service and by `_compute_quote_feature`; dispatch on source.
+- [x] Pass the symbol from the evaluation run into the leakage check and from the evidence segment into its matrix builder.
+- [x] Run `uv run pytest tests/features tests/neural/test_latent_gate.py tests/api/test_encoder_ablation_jobs.py tests/api/test_market_indicators.py -q`; commit.
 
 ### 3. Causality coverage
 
 **Files:** `tests/features/test_leakage.py`, a tick-store fixture in `tests/features/conftest.py`.
 
-- [ ] Add a fixture that writes varying quotes across the harness's synthetic bars and points `Q_RESEARCH_TICK_STORE` at them.
-- [ ] Route `quote` specs in `test_feature_spec_is_causal` through `compute_feature` with the fixture's symbol; add the planted-lookahead test.
-- [ ] Run `uv run pytest tests/features/test_leakage.py tests/features/test_leakage_invariants.py -q`; commit.
+- [x] Add a fixture that writes varying quotes across the harness's synthetic bars and points `Q_RESEARCH_TICK_STORE` at them.
+- [x] Route `quote` specs in `test_feature_spec_is_causal` through `compute_feature` with the fixture's symbol; add the planted-lookahead test.
+- [x] Run `uv run pytest tests/features/test_leakage.py tests/features/test_leakage_invariants.py -q`; commit.
 
 ### 4. Documents
 
-- [ ] Update any repository document that describes the quote features as genome nodes or as always unavailable in the feature store. At authoring time `README.md` and `docs/research-library.md` name neither feature.
-- [ ] Commit if anything changed.
+- [x] Update any repository document that describes the quote features as genome nodes or as always unavailable in the feature store. At authoring time `README.md` and `docs/research-library.md` name neither feature.
+- [x] Commit if anything changed.
 
 ## Verification
 
