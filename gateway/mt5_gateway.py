@@ -231,6 +231,17 @@ class GatewayError(Exception):
 # is only used internally to advance the chunk cursor for the next range request,
 # exactly like MetaTraderClient does. The bytes we serve are the raw epochs, untouched.
 # ---------------------------------------------------------------------------
+def _wall_as_utc(moment: datetime) -> datetime:
+    """Pin a naive wall clock to UTC before it reaches the MT5 binding.
+
+    The binding turns a naive datetime into an epoch with the *process-local* time zone,
+    so a gateway running under a non-UTC Wine prefix asked for 10:00 and answered with
+    the 13:00 window. MT5 epochs here read as the broker wall clock in UTC, so the naive
+    Brasília wall clock is that same wall clock pinned to UTC.
+    """
+    return moment.replace(tzinfo=timezone.utc) if moment.tzinfo is None else moment
+
+
 def _epoch_to_naive(seconds: int) -> datetime:
     return datetime.fromtimestamp(int(seconds), tz=timezone.utc).replace(tzinfo=None)
 
@@ -439,7 +450,7 @@ def _fetch_ohlcv_chunked(symbol: str, mt5_timeframe: int, start: datetime, end: 
             break
 
         chunk_end = min(cursor + timedelta(days=chunk_days), end)
-        rates = mt5.copy_rates_range(symbol, mt5_timeframe, cursor, chunk_end)
+        rates = mt5.copy_rates_range(symbol, mt5_timeframe, _wall_as_utc(cursor), _wall_as_utc(chunk_end))
 
         if rates is not None and len(rates) > 0:
             chunk_len = len(rates)
@@ -496,7 +507,7 @@ def _fetch_ticks_chunked(symbol: str, start: datetime, end: datetime, flags: int
         chunk_end = min(cursor + timedelta(days=_TICK_RANGE_FETCH_DAYS) - timedelta(milliseconds=1), end)
         started = time.monotonic()
         logger.info("Fetching MT5 ticks: %s %s to %s", symbol, cursor.isoformat(), chunk_end.isoformat())
-        ticks = mt5.copy_ticks_range(symbol, cursor, chunk_end, flags)
+        ticks = mt5.copy_ticks_range(symbol, _wall_as_utc(cursor), _wall_as_utc(chunk_end), flags)
 
         if ticks is None:
             code, detail = _safe_last_error()
@@ -1062,7 +1073,7 @@ def _require_history(symbol: str, mt5_timeframe: int, timeframe: str, until: dat
     One bounded request settles it before any range walk: ``last_error()`` tells a
     symbol without history (404) apart from a terminal that failed to answer (503).
     """
-    rates = mt5.copy_rates_from(symbol, mt5_timeframe, until, 1)
+    rates = mt5.copy_rates_from(symbol, mt5_timeframe, _wall_as_utc(until), 1)
     if rates is not None and len(rates) > 0:
         return
     code, detail = _safe_last_error()
@@ -1094,7 +1105,9 @@ def _scan_history_backward(symbol: str, mt5_timeframe: int, latest: datetime) ->
     if known is not None:
         earliest, scanned_to, total = known
         if latest > scanned_to:
-            rates = mt5.copy_rates_range(symbol, mt5_timeframe, scanned_to + timedelta(seconds=1), latest)
+            rates = mt5.copy_rates_range(
+                symbol, mt5_timeframe, _wall_as_utc(scanned_to + timedelta(seconds=1)), _wall_as_utc(latest)
+            )
             total += 0 if rates is None else len(rates)
         _scanned_ranges[key] = (earliest, latest, total)
         return earliest, total
@@ -1102,7 +1115,7 @@ def _scan_history_backward(symbol: str, mt5_timeframe: int, latest: datetime) ->
     window = timedelta(days=_get_chunk_days(mt5_timeframe))
     earliest, total, end = latest, 0, latest
     for _ in range(_MAX_HISTORY_CHUNKS):
-        rates = mt5.copy_rates_range(symbol, mt5_timeframe, end - window, end)
+        rates = mt5.copy_rates_range(symbol, mt5_timeframe, _wall_as_utc(end - window), _wall_as_utc(end))
         if rates is None or len(rates) == 0:
             break
         total += len(rates)
