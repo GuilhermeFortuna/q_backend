@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from q_backend.backtesting.candle_kernel import enabled_rule_ids
-from q_backend.backtesting.exit_rules.base import NEXT_OPEN_FILL_SENTENCE, ExitRule
+from q_backend.backtesting.exit_rules.base import ExitRule
 from q_backend.backtesting.strategy_registry import StrategyParamSpec
 
 
@@ -12,15 +12,30 @@ class BreakevenStopRule(ExitRule):
     exit_group = "stop_loss"
     label = "Break-even Stop"
     description = (
-        "Triggers when a completed bar's low (long) or high (short) reaches the break-even stop "
-        "once gain reaches the trigger threshold. "
-        f"{NEXT_OPEN_FILL_SENTENCE}"
+        "Arms at the first trade price reaching the gain threshold, then stops at entry "
+        "+/- the offset. Before activation, an emergency stop limits adverse movement in ticks. "
+        "Both stops fill at the first trade price at or beyond the level, inside the candle; "
+        "gaps can fill beyond the stop. Requires historical trade ticks."
     )
     enable_param = "breakeven_trigger_pct"
     enable_value = 0.02
 
     def param_specs(self) -> list[StrategyParamSpec]:
         return [
+            StrategyParamSpec(
+                name="breakeven_emergency_stop_ticks",
+                label="Break-even Emergency Stop (ticks)",
+                type="int",
+                default=100,
+                min=0,
+                max=1000000,
+                step=1,
+                search_min=10,
+                search_max=400,
+                search_step=10,
+                hint="Maximum adverse distance from entry before break-even arms. Uses the instrument tick size. 0 disables only the emergency stop.",
+                exit_group="stop_loss",
+            ),
             StrategyParamSpec(
                 name="breakeven_trigger_pct",
                 label="Break-even Trigger (%)",

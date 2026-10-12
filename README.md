@@ -94,7 +94,12 @@ Candle strategies share a flat exit-parameter dict (fixed % SL/TP, ATR SL/TP, tr
 Legacy fixed/ATR/trailing behaviors live in `exit_rules/legacy.py` with byte-identical trigger math to the pre-refactor monolith. Specialized stop/trailing rules (WO62+):
 
 * **Chandelier** (`chandelier.py`, `exit_group=trailing`) — `chandelier_atr_mult`: trailing stop at peak high − mult×ATR (mirror for shorts); reuses shared `atr_period` (`exit_group=general`).
-* **Break-even** (`breakeven.py`, `exit_group=stop_loss`) — `breakeven_trigger_pct` arms once gain ≥ trigger; stop snaps to entry ± `breakeven_offset_pct`.
+* **Break-even** (`breakeven.py`, `exit_group=stop_loss`) — `breakeven_trigger_pct` enables the rule and arms it once gain ≥ trigger; stop snaps to entry ± `breakeven_offset_pct`. `breakeven_emergency_stop_ticks` defaults to **100 ticks** and protects the trade from entry until activation; `0` disables only the emergency stop. Activation and both stops follow historical trade prices in order, including the entry candle, and fill at the first price at or beyond the stop. Gaps can exceed the configured distance. Stack backtests, optimization and ML comparisons resolve the instrument's `trade_tick_size` and replay only candles that can activate or hit a stop. Sliced frame runners use their supplied market data service or the standard provider in their worker process. Missing ticks or OHLC/tick disagreement fail the run. The bar-only `ExitStrategy.check_exits` adapter refuses an enabled breakeven rule.
+
+Intrabar breakeven requires a `q_core` release exposing `engine.BREAKEVEN_INTRABAR`.
+Install that released engine through the normal `pyproject.toml` release-tag pin and `uv sync`
+before enabling this behavior in a running stack; an older engine is rejected rather than
+silently ignoring the emergency stop. Historical result artifacts are unchanged.
 * **Parabolic SAR** (`parabolic_sar.py`, `exit_group=trailing`) — `psar_af_start` (0 disables), `psar_af_step`, `psar_af_max`: textbook Wilder SAR per trade — seeded from entry/first-bar extremes, advanced each bar, and clamped so SAR never penetrates the prior two bars' range.
 * **Profit-target ratchet** (`profit_target_ratchet.py`, `exit_group=target`) — `target_ratchet_atr`: arms a trailing profit floor once price reaches entry ± ATR multiple; ratchet rises/falls with new extremes (reuses shared `atr_period`).
 * **Time stop** (`time_stop.py`, `exit_group=time`) — `max_bars_in_trade`: closes after N bars in trade via a per-trade bar counter in rule state.

@@ -143,7 +143,11 @@ def _column(frame: pd.DataFrame, name: str) -> np.ndarray | None:
 def _exit_params(source: dict[str, object]) -> dict[str, object]:
     from q_backend.backtesting.exit_rules.registry import all_param_specs
 
-    return {spec.name: source[spec.name] for spec in all_param_specs() if spec.name in source}
+    params = {spec.name: source[spec.name] for spec in all_param_specs() if spec.name in source}
+    if float(params.get("breakeven_trigger_pct", 0.0)) > 0.0:
+        emergency = next(spec for spec in all_param_specs() if spec.name == "breakeven_emergency_stop_ticks")
+        params.setdefault(emergency.name, emergency.default)
+    return params
 
 
 def _exit_params_from_strategy(strategy: TradingStrategy) -> dict[str, object]:
@@ -298,16 +302,22 @@ def run_chunk(
     force_close_at_end: bool,
     trade_start: datetime.datetime | None,
     intrabar: Callable[[int], tuple[np.ndarray, np.ndarray]] | None = None,
+    tick_size: float | None = None,
 ) -> ChunkRun:
     """Run one already-augmented candle chunk through q_core without row objects.
 
     ``intrabar`` supplies a candle's trade prices when the kernel must confirm a stop, target
     or custom exit inside it. Runtime decisions come from ``strategy.runtime_callback``.
     """
-    from q_backend.backtesting.exit_rules.registry import all_param_specs
-
     source_params = getattr(getattr(strategy, "exit_strategy", None), "params", strategy.parameters)
-    exit_params = {spec.name: source_params[spec.name] for spec in all_param_specs() if spec.name in source_params}
+    exit_params = _exit_params(source_params)
+    if float(exit_params.get("breakeven_trigger_pct", 0.0)) > 0.0:
+        if getattr(engine, "BREAKEVEN_INTRABAR", False) is not True:
+            raise ImportError(
+                "Installed q_core lacks BREAKEVEN_INTRABAR; install the release providing intrabar breakeven stops."
+            )
+        if tick_size is not None:
+            exit_params["tick_size"] = tick_size
     columns = {
         name: values for name in engine.required_columns(exit_params) if (values := _column(chunk, name)) is not None
     }

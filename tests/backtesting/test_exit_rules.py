@@ -118,7 +118,7 @@ def test_registry_lists_all_exit_rules():
 
 def test_all_param_specs_includes_specialized_rules():
     specs = all_param_specs()
-    assert len(specs) == 15
+    assert len(specs) == 16
     assert all(spec.exit_group is not None for spec in specs)
 
 
@@ -237,38 +237,6 @@ def test_chandelier_warmup_skips_nan_atr():
     trade = _long_trade()
     bar = {"close": 100.0, "high": 110.0, "low": 95.0, "atr_14": float("nan")}
     assert _run_bars(exit_strat, trade, [bar]) is None
-
-
-def test_breakeven_long_arms_and_exits_on_dip():
-    exit_strat = ExitStrategy(breakeven_trigger_pct=0.02, breakeven_offset_pct=0.001)
-    trade = _long_trade()
-    bars = [
-        {"close": 101.0, "high": 101.0, "low": 100.0},
-        {"close": 103.0, "high": 103.0, "low": 102.0},
-        {"close": 100.05, "high": 100.5, "low": 100.05},
-    ]
-    assert _run_bars(exit_strat, trade, bars) == 2
-
-
-def test_breakeven_long_never_arms_without_trigger():
-    exit_strat = ExitStrategy(breakeven_trigger_pct=0.05, breakeven_offset_pct=0.001)
-    trade = _long_trade()
-    bars = [
-        {"close": 101.0, "high": 101.0, "low": 99.0},
-        {"close": 100.0, "high": 100.5, "low": 99.0},
-    ]
-    assert _run_bars(exit_strat, trade, bars) is None
-
-
-def test_breakeven_short_mirror():
-    exit_strat = ExitStrategy(breakeven_trigger_pct=0.02, breakeven_offset_pct=0.001)
-    trade = _short_trade()
-    bars = [
-        {"close": 99.0, "high": 100.0, "low": 99.0},
-        {"close": 97.0, "high": 98.0, "low": 97.0},
-        {"close": 99.95, "high": 99.95, "low": 99.5},
-    ]
-    assert _run_bars(exit_strat, trade, bars) == 2
 
 
 def _psar_state(exit_strat: ExitStrategy, trade: Trade, bars: list[tuple[float, float]]) -> dict:
@@ -769,6 +737,8 @@ TARGET_RULE_IDS = {"fixed_tp", "atr_tp"}
 
 def test_exit_rule_descriptions_name_trigger_basis_and_end_with_shared_fill_sentence():
     for rule in EXIT_RULES:
+        if rule.id == "breakeven":
+            continue  # Its tick-ordered execution is covered by test_breakeven_intrabar.
         assert rule.description.endswith(NEXT_OPEN_FILL_SENTENCE), rule.id
         if rule.id in STOP_RULE_IDS:
             assert "completed bar's low (long) or high (short)" in rule.description, rule.id

@@ -341,8 +341,21 @@ def test_strategy_search_migration_revision_chain():
 
 
 def test_strategy_search_exit_quality_persists_and_rebuilds(
-    run_jobs_sync, api_db_session, api_session_scope, lake_root_path
+    run_jobs_sync, api_db_session, api_session_scope, lake_root_path, monkeypatch
 ):
+    from q_backend.optimization import strategy_search
+    from q_backend.optimization.models import CategoricalParam
+
+    derive = strategy_search.auto_search_space
+
+    def bar_exit_search_space(*args, **kwargs):
+        space = derive(*args, **kwargs)
+        # This persistence fixture supplies synthetic bars only. Tick-ordered breakeven
+        # is exercised with actual replay through test_breakeven_intrabar instead.
+        space.strategy_params["breakeven_trigger_pct"] = CategoricalParam(choices=[0.0])
+        return space
+
+    monkeypatch.setattr(strategy_search, "auto_search_space", bar_exit_search_space)
     job = _start_persisted_job(api_session_scope, n_trials=2)
 
     with patch("q_backend.api.strategy_search_jobs.session_scope", api_session_scope):

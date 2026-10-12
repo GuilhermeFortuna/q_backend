@@ -52,6 +52,28 @@ That is R$7.50 per round trip for one contract. These are example assumptions,
 not a broker fee schedule. The configured cost applies to each fill, including
 protective and custom tick exits.
 
+Configure intrabar Breakeven Stop
+--------------------------------
+
+``breakeven_trigger_pct`` enables Breakeven Stop and sets its favorable movement
+threshold as a fraction (``0.02`` means 2%). Before it arms,
+``breakeven_emergency_stop_ticks`` protects the position at a distance from entry;
+its default is **100 ticks**. Set it to ``0`` to disable only the emergency stop.
+Once armed, the stop moves to entry plus the percentage offset for longs, or
+entry minus it for shorts.
+
+Both activation and stops use historical trade ticks in order, including the
+entry candle. Pass ``ticks=store`` and build matching bars from that store.
+For a positive emergency distance, supply ``tick_size=`` with the instrument's
+price increment; it also defaults from the frame's recorded research metadata
+when available. Tick size is independent of ``point_value``. For WSP$N, a 0.25
+tick size makes 100 ticks a 25-point trigger distance.
+
+Stops fill at the first observed price at or beyond the level. Gaps can exceed
+the configured distance, and entry-price breakeven does not cover commissions.
+Missing ticks, invalid tick size or disagreement between ticks and bars fails
+the run; the engine does not substitute a next-open fill.
+
 Read the result
 ---------------
 

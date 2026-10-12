@@ -144,6 +144,8 @@ def _run_partition(
     strategy = (
         base if model is None else EntryFilteredStrategy(base, model, threshold, entry_start=start, entry_end=end)
     )
+    from q_backend.backtesting.intrabar import breakeven_market_inputs
+
     engine = BacktestEngine(
         strategy,
         build_position_sizer(source_request.position_sizing, point_value=source_request.point_value),
@@ -154,6 +156,7 @@ def _run_partition(
         day_trade_end_time=source_request.day_trade_end_time,
         day_trade_close_time=source_request.day_trade_close_time,
         costs=source_request.costs,
+        **breakeven_market_inputs(strategy, None, source_request.timeframe),
     )
     registry = engine.run(
         bars,

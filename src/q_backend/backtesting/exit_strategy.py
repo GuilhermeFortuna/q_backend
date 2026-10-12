@@ -79,6 +79,10 @@ class ExitStrategy:
         self._sync_open_trade_ids(open_trades)
         if not open_trades:
             return []
+        if float(self.params.get("breakeven_trigger_pct", 0.0)) > 0.0:
+            raise ValueError(
+                "Breakeven Stop requires intrabar execution through BacktestEngine with historical trade ticks"
+            )
 
         close = np.array([float(current_data.get("close", 0.0))], dtype=np.float64)
         high = (

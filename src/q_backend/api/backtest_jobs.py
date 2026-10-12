@@ -78,6 +78,12 @@ def _request_config(request: BacktestJobRequest) -> Dict[str, Any]:
     config = request.model_dump(mode="json")
     if request.engine == "tick":
         config["timeframe"] = "TICK"
+    else:
+        from q_backend.backtesting.candle_kernel import _exit_params
+
+        _, _, exit_params = normalize_entries(request)
+        if float(exit_params.get("breakeven_trigger_pct", 0.0)) > 0.0:
+            config["exit_params"] = _exit_params(exit_params)
     return config
 
 
@@ -201,6 +207,8 @@ def _execute_candle(
     market_data = market_data_frame(augmented)
 
     sizer = build_position_sizer(request.position_sizing, point_value=request.point_value)
+    from q_backend.backtesting.intrabar import breakeven_market_inputs
+
     engine = BacktestEngine(
         strategy,
         sizer,
@@ -211,6 +219,7 @@ def _execute_candle(
         day_trade_end_time=request.day_trade_end_time,
         day_trade_close_time=request.day_trade_close_time,
         costs=request.costs,
+        **breakeven_market_inputs(strategy, market_data_service, request.timeframe),
     )
     registry = engine.run(df, parallel_mode=ParallelMode.SEQUENTIAL)
 

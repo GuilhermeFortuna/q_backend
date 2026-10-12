@@ -204,6 +204,7 @@ def backtest(
     day_trade_close_time: str = "17:00",
     force_close_at_end: bool = False,
     ticks: TickStore | None = None,
+    tick_size: float | None = None,
     workers: int | Literal["auto"] = 1,
     progress: bool | None = None,
 ) -> BacktestResult:
@@ -242,6 +243,9 @@ def backtest(
         Whether to liquidate any open position on the final bar.
     ticks : TickStore, optional
         TickStore providing tick replay for intrabar stop/target confirmation.
+    tick_size : float, optional
+        Instrument price increment for the Breakeven Emergency Stop. Defaults to
+        ``frame.attrs['q_research']['tick_size']`` when recorded by the data loader.
     workers : int or 'auto', default 1
         Worker process count for parallel intrabar tick resolution.
     progress : bool, optional
@@ -370,6 +374,7 @@ def backtest(
         day_trade_close_time=day_trade_close_time,
         costs=costs,
         intrabar_factory=None if ticks is None else _tick_replay_factory(ticks),
+        tick_size=tick_size,
     )
 
     if isinstance(strategy, str):
@@ -395,6 +400,16 @@ def backtest(
         "force_close_at_end": force_close_at_end,
         "timeframe": timeframe,
     }
+    from q_backend.backtesting.candle_kernel import _exit_params_from_strategy
+
+    effective_exit_params = _exit_params_from_strategy(trading_strategy)
+    if float(effective_exit_params.get("breakeven_trigger_pct", 0.0)) > 0.0:
+        config_dict["exit_params"] = effective_exit_params
+        config_dict["tick_size"] = (
+            engine.tick_size
+            if engine.tick_size is not None
+            else validated_frame.attrs.get("q_research", {}).get("tick_size")
+        )
     read_only_config = MappingProxyType(config_dict)
 
     if validated_frame.empty:

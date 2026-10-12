@@ -42,6 +42,7 @@ class BacktestEngine:
         day_trade_close_time: str = "17:00",
         costs: Optional[TransactionCostConfig] = None,
         intrabar_factory: Optional[Callable[[pd.DataFrame], Callable[[int], tuple]]] = None,
+        tick_size: float | None = None,
     ):
         self.strategy = strategy
         self.sizer = sizer
@@ -53,6 +54,7 @@ class BacktestEngine:
         self.day_trade_close_time = day_trade_close_time
         self.costs = costs
         self.intrabar_factory = intrabar_factory
+        self.tick_size = tick_size
         self.kernel_sizing = sizer_to_kernel(sizer)
 
     def run(
@@ -189,6 +191,9 @@ class BacktestEngine:
             force_close_at_end=force_close_at_end,
             trade_start=trade_start,
             intrabar=intrabar,
+            tick_size=(
+                self.tick_size if self.tick_size is not None else chunk.attrs.get("q_research", {}).get("tick_size")
+            ),
         )
         registry = ledger_to_registry(
             run,

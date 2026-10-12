@@ -109,7 +109,7 @@ class DefaultBacktestRunner:
         def data_provider(_config: BacktestRunConfig) -> pd.DataFrame:
             return df
 
-        return cls(data_provider=data_provider, df=df)
+        return cls(data_provider=data_provider, df=df, market_data_service=market_data_service)
 
     @staticmethod
     def load_sliced_frame(
@@ -138,7 +138,7 @@ class DefaultBacktestRunner:
         return prepare_evaluation_frame(df, timeframe=timeframe)
 
     @classmethod
-    def from_frame_sliced(cls, df: pd.DataFrame) -> "DefaultBacktestRunner":
+    def from_frame_sliced(cls, df: pd.DataFrame, *, market_data_service: Any | None = None) -> "DefaultBacktestRunner":
         """Serve walk-forward windows by slicing an in-memory frame per run.
 
         When ``config.warmup_bars`` is set, the slice reaches that many bars before
@@ -153,7 +153,7 @@ class DefaultBacktestRunner:
                 return df.iloc[lo:].loc[: config.end]
             return df.loc[config.start : config.end]
 
-        return cls(data_provider=data_provider, df=df)
+        return cls(data_provider=data_provider, df=df, market_data_service=market_data_service)
 
     @classmethod
     def from_market_data_sliced(
@@ -173,7 +173,7 @@ class DefaultBacktestRunner:
             start=start,
             end=end,
         )
-        return cls.from_frame_sliced(df)
+        return cls.from_frame_sliced(df, market_data_service=market_data_service)
 
     def _fetch_data(self, config: BacktestRunConfig) -> pd.DataFrame:
         if self._data_provider is not None:
@@ -227,6 +227,8 @@ class DefaultBacktestRunner:
         else:
             strategy = build_strategy(config.strategy, config.strategy_params, config.symbol)
         sizer = build_position_sizer(config.position_sizing, point_value=config.point_value)
+        from q_backend.backtesting.intrabar import breakeven_market_inputs
+
         engine = BacktestEngine(
             strategy,
             sizer,
@@ -237,6 +239,7 @@ class DefaultBacktestRunner:
             day_trade_end_time=config.day_trade_end_time,
             day_trade_close_time=config.day_trade_close_time,
             costs=config.costs,
+            **breakeven_market_inputs(strategy, self._market_data_service, config.timeframe),
         )
         trade_start = config.start if config.warmup_bars > 0 else None
         registry = engine.run(df, parallel_mode=config.parallel_mode, trade_start=trade_start)
