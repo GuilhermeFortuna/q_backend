@@ -53,8 +53,8 @@
 
 ### 4. Documents
 
-- [ ] Update any repository document that describes the quote features as genome nodes or as always unavailable in the feature store. At authoring time `README.md` and `docs/research-library.md` name neither feature.
-- [ ] Commit if anything changed.
+- [x] Update any repository document that describes the quote features as genome nodes or as always unavailable in the feature store. At authoring time `README.md` and `docs/research-library.md` name neither feature.
+- [x] Commit if anything changed.
 
 ## Verification
 
