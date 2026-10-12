@@ -82,3 +82,58 @@ class OhlcvAvailableRangeResponse(BaseModel):
     start: str
     end: str
     bar_count: int
+
+
+class IndicatorParameterSpecResponse(BaseModel):
+    name: str
+    type: str
+    default: float | int | str | None
+    minimum: float | None = None
+    maximum: float | None = None
+    choices: List[str] | None = None
+
+
+class IndicatorOutputSpecResponse(BaseModel):
+    key: str
+    label: str
+    pane: str
+
+
+class IndicatorCatalogEntryResponse(BaseModel):
+    id: str
+    label: str
+    category: str
+    pane: str
+    unit: str | None = None
+    requiredData: str
+    parameters: List[IndicatorParameterSpecResponse]
+    outputs: List[IndicatorOutputSpecResponse]
+
+
+class IndicatorCatalogResponse(BaseModel):
+    indicators: List[IndicatorCatalogEntryResponse]
+
+
+class MarketIndicatorRequest(BaseModel):
+    id: str
+    parameters: dict[str, float | int | str] = {}
+
+
+class MarketIndicatorSeriesRequest(BaseModel):
+    timeframe: str
+    start: str
+    end: str
+    indicators: List[MarketIndicatorRequest]
+
+
+class MarketIndicatorSeriesOutput(BaseModel):
+    key: str
+    pane: str
+    unit: str | None = None
+    values: List[float | None]
+    unavailableReason: str | None = None
+
+
+class MarketIndicatorSeriesResponse(BaseModel):
+    timestamps: List[str]
+    series: List[MarketIndicatorSeriesOutput]
