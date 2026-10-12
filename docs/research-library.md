@@ -553,6 +553,24 @@ p_fig.update_layout(title="Interactive Equity Curve")
 fig_id_plotly = research.publish_figure(p_fig)
 ```
 
+**One-call charts.** For the common plots, skip the plotting code entirely. Each function draws in the Q dark style and publishes in one call, returning the figure id:
+
+```python
+from q_backend import research
+
+research.line(equity, title="Equity", collection="regime_study", ylabel="BRL")
+research.drawdown(equity, title="Drawdown", collection="regime_study")
+research.bar(monthly_pnl, title="Monthly P&L", collection="regime_study")
+research.histogram(returns, title="Return distribution", bins=50)
+research.scatter(rsi, fwd_return, title="RSI vs forward return", xlabel="RSI", ylabel="Fwd return")
+```
+
+- **Data:** pandas Series or DataFrame, or numpy/list values. `line` plots a DataFrame as one line per column with a legend; `bar` draws grouped bars for a DataFrame. `drawdown`, `histogram` and single-series `bar` take one series.
+- **Arguments:** `title` is required. `xlabel`, `ylabel`, `collection`, `notes`, `replace`, `api_url` and `client` work as in `publish_figure`. `histogram` also takes `bins`.
+- **Colours:** a single-series `bar` colours gains gold and losses rose. `drawdown` plots the distance from the running peak as a percentage.
+- **Empty or mismatched data** raises `ValueError` before anything is sent.
+- **Anything else** (other chart types, custom styling) is still a Matplotlib or Plotly figure passed to `publish_figure`.
+
 - **Supported figure types:** A `matplotlib.figure.Figure`, any object with a `.figure` attribute (such as an `Axes` or a seaborn `FacetGrid`), or a `plotly.graph_objects.Figure`. Recognized without importing either library; unsupported objects raise `TypeError`.
 - **Rendering & formats:** Matplotlib figures are rendered via `savefig` at `dpi` (default 200) with a tight bounding box and the figure's own face colour, as `"png"` (default) or `"svg"`. The caller's figure object is neither closed nor resized. Plotly figures are serialized via `fig.to_json()` and served interactively.
 - **Title and collection:** `title` defaults to the figure's own title (`fig._suptitle`, single axes title, or `fig.layout.title.text`). When no title is found, `ValueError` is raised naming `title=`. `collection` groups figures in the desktop and defaults to the script file stem (or `"interactive"` when run in a REPL or notebook).

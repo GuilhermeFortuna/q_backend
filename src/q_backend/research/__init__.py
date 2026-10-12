@@ -22,11 +22,17 @@ __all__ = (
     "BacktestResult",
     "publish_figure",
     "use_figure_style",
+    "line",
+    "drawdown",
+    "bar",
+    "histogram",
+    "scatter",
 )
 
 if TYPE_CHECKING:
     from q_backend.research.figures import publish_figure
     from q_backend.research.figure_style import use_figure_style
+    from q_backend.research.plots import bar, drawdown, histogram, line, scatter
     from q_backend.research import indicators
     from q_backend.research.engine import backtest
     from q_backend.research.charting import ChartIndicator
@@ -109,4 +115,24 @@ def __getattr__(name: str):
         from q_backend.research.figure_style import use_figure_style
 
         return use_figure_style
+    if name == "line":
+        from q_backend.research.plots import line
+
+        return line
+    if name == "drawdown":
+        from q_backend.research.plots import drawdown
+
+        return drawdown
+    if name == "bar":
+        from q_backend.research.plots import bar
+
+        return bar
+    if name == "histogram":
+        from q_backend.research.plots import histogram
+
+        return histogram
+    if name == "scatter":
+        from q_backend.research.plots import scatter
+
+        return scatter
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
