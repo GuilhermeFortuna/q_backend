@@ -55,16 +55,16 @@
 
 **Files:** new `src/q_backend/research/figures.py`, `research/figure_style.py` and `research/provenance.py`; modify `research/publishing.py`, `research/__init__.py`, `pyproject.toml`, `uv.lock`; `tests/research/test_figures.py`, `tests/research/test_imports.py`.
 
-- [ ] Add failing tests for spec acceptance items 1–4, 10 and 11.
-- [ ] Add the dependencies; implement figure recognition, rendering, defaults, the request and error mapping; export `publish_figure` and `use_figure_style` lazily.
-- [ ] Run `uv run pytest tests/research -q`; commit.
+- [x] Add failing tests for spec acceptance items 1–4, 10 and 11.
+- [x] Add the dependencies; implement figure recognition, rendering, defaults, the request and error mapping; export `publish_figure` and `use_figure_style` lazily.
+- [x] Run `uv run pytest tests/research -q`; commit.
 
 ### 5. Documentation and example
 
 **Files:** `docs/research-library.md`, `README.md`, `examples/research/publish_figures.py`, `tests/research/test_examples.py`.
 
-- [ ] Write the guide section and the route reference; add the example with mocked HTTP coverage.
-- [ ] Commit.
+- [x] Write the guide section and the route reference; add the example with mocked HTTP coverage.
+- [x] Commit.
 
 ## Verification
 
