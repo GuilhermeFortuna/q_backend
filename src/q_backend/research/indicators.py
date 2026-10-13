@@ -1,19 +1,32 @@
 """Supported indicator helpers for research and feature engineering.
 
-Wraps existing q_backend indicator implementations and ensures proper
-input validation, exact index preservation, and clear errors.
+Wraps existing q_backend calculations with input validation, index preservation,
+and clear errors. Bar helpers are pure; liquidity helpers read an explicit local
+TickStore without fetching or synchronizing history.
 """
 
 from __future__ import annotations
 
 import math
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
 import numpy as np
 import pandas as pd
 
 from q_backend.backtesting.moving_averages import VALID_MA_TYPES, compute_ma
 from q_backend.backtesting.technical_indicators import (
     compute_atr,
+    compute_atr_fraction,
+    compute_ewma_trend_spread,
+    compute_ewma_vol_per_bar,
+    compute_log_return,
+    compute_normalized_ewma_trend_spread,
+    compute_normalized_momentum,
+    compute_per_bar_volatility,
+    compute_price_zscore_log,
+    compute_realized_vol_per_bar,
+    compute_rogers_satchell,
+    compute_true_range,
+    compute_volatility_log_ratio,
     compute_bollinger_bands,
     compute_donchian_channels,
     compute_macd,
@@ -21,6 +34,11 @@ from q_backend.backtesting.technical_indicators import (
     compute_rsi,
     compute_yang_zhang,
 )
+
+from q_backend.backtesting.transforms import compute_pct_change, compute_rolling_rank, compute_rolling_zscore
+
+if TYPE_CHECKING:
+    from q_backend.research.tick_store import TickStore
 
 __all__ = (
     "ma",
@@ -31,6 +49,24 @@ __all__ = (
     "donchian",
     "realized_vol",
     "yang_zhang",
+    "volume_ma",
+    "rolling_zscore",
+    "rolling_rank",
+    "pct_change",
+    "log_return",
+    "normalized_momentum",
+    "normalized_ewma_trend_spread",
+    "price_zscore_log",
+    "ewma_trend_spread",
+    "atr_fraction",
+    "true_range",
+    "per_bar_realized_vol",
+    "per_bar_ewma_vol",
+    "rogers_satchell",
+    "per_bar_yang_zhang",
+    "volatility_log_ratio",
+    "quote_spread",
+    "spread_vs_volatility",
 )
 
 
@@ -39,6 +75,8 @@ def _validate_series(series: object, name: str) -> pd.Series:
         raise TypeError(f"'{name}' must be a pandas Series, got {type(series).__name__}")
     if not pd.api.types.is_numeric_dtype(series.dtype):
         raise TypeError(f"'{name}' must have a numeric dtype, got {series.dtype}")
+    if pd.api.types.is_complex_dtype(series.dtype):
+        raise TypeError(f"'{name}' contains complex values; real numeric data is required")
     # Reject infinities
     if np.isinf(series.to_numpy(dtype=np.float64, na_value=np.nan)).any():
         raise ValueError(f"'{name}' contains infinite values, which are not permitted")
@@ -55,6 +93,8 @@ def _validate_frame(frame: object, name: str, required_cols: Sequence[str]) -> p
         s = frame[col]
         if not pd.api.types.is_numeric_dtype(s.dtype):
             raise TypeError(f"Column '{col}' in '{name}' must have a numeric dtype, got {s.dtype}")
+        if pd.api.types.is_complex_dtype(s.dtype):
+            raise TypeError(f"Column '{col}' in '{name}' contains complex values; real numeric data is required")
         if np.isinf(s.to_numpy(dtype=np.float64, na_value=np.nan)).any():
             raise ValueError(f"Column '{col}' in '{name}' contains infinite values, which are not permitted")
     return frame
@@ -347,3 +387,640 @@ def yang_zhang(frame: pd.DataFrame, window: int, periods_per_year: int = 252) ->
     )
     res.index = df.index
     return res
+
+
+def volume_ma(volume: pd.Series, period: int) -> pd.Series:
+    """Compute a simple moving average of bar volume.
+
+    Parameters
+    ----------
+    volume : pandas.Series
+        Numeric bar volume; units depend on the data source.
+    period : int
+        Trailing bar count, at least 1.
+
+    Returns
+    -------
+    pandas.Series
+        Mean volume, with the input's exact index and name. Incomplete windows are NaN.
+    """
+    return ma(volume, period=period, kind="sma")
+
+
+def rolling_zscore(close: pd.Series, window: int) -> pd.Series:
+    """Compute the closing price's trailing sample z-score.
+
+    Parameters
+    ----------
+    close : pandas.Series
+        Numeric closing prices.
+    window : int
+        Trailing bar count, at least 1.
+
+    Returns
+    -------
+    pandas.Series
+        Dimensionless distance from the rolling mean, preserving index and name.
+        Incomplete, constant, and one-bar windows have undefined deviation and return NaN.
+
+    Notes
+    -----
+    Uses sample standard deviation (ddof=1), including the current close.
+    """
+    s = _validate_series(close, "close")
+    w = _validate_window(window, "window")
+    return compute_rolling_zscore(s, w)
+
+
+def rolling_rank(close: pd.Series, window: int) -> pd.Series:
+    """Compute the current close's percentile rank within its trailing window.
+
+    Parameters
+    ----------
+    close : pandas.Series
+        Numeric closing prices.
+    window : int
+        Trailing bar count, at least 1.
+
+    Returns
+    -------
+    pandas.Series
+        Fractions on the input's exact index; incomplete or missing windows are NaN.
+        The result has no Series name, matching the backend transform.
+
+    Notes
+    -----
+    Rank is count(window values <= current close) / window. Ties count fully;
+    a constant window ranks 1, and the minimum possible rank is 1/window.
+    """
+    s = _validate_series(close, "close")
+    w = _validate_window(window, "window")
+    return compute_rolling_rank(s, w)
+
+
+def pct_change(close: pd.Series, change_bars: int = 1) -> pd.Series:
+    """Compute a simple return over a positive bar lookback.
+
+    Parameters
+    ----------
+    close : pandas.Series
+        Numeric closing prices.
+    change_bars : int, default 1
+        Number of bars to look back, at least 1.
+
+    Returns
+    -------
+    pandas.Series
+        Decimal returns (0.01 means 1%), preserving index and name. Initial
+        lookback bars are NaN. Division by zero may produce infinity or NaN.
+    """
+    s = _validate_series(close, "close")
+    lag = _validate_window(change_bars, "change_bars")
+    return compute_pct_change(s, lag)
+
+
+def log_return(close: pd.Series, horizon: int = 1) -> pd.Series:
+    """Compute ln(current close) minus ln(the earlier close).
+
+    Parameters
+    ----------
+    close : pandas.Series
+        Closing prices. Non-positive or missing prices produce NaN.
+    horizon : int, default 1
+        Return lookback in bars, at least 1.
+
+    Returns
+    -------
+    pandas.Series
+        Log returns, preserving index and name. The initial horizon bars are NaN.
+    """
+    s = _validate_series(close, "close")
+    h = _validate_window(horizon, "horizon")
+    return compute_log_return(s, h)
+
+
+def price_zscore_log(close: pd.Series, window: int) -> pd.Series:
+    """Compute a sample z-score of log closing prices.
+
+    Parameters
+    ----------
+    close : pandas.Series
+        Closing prices; non-positive prices become missing values.
+    window : int
+        Trailing bar count, at least 2.
+
+    Returns
+    -------
+    pandas.Series
+        Dimensionless log-price z-score, preserving index and name. Incomplete
+        or constant windows are NaN; uses sample standard deviation (ddof=1).
+    """
+    s = _validate_series(close, "close")
+    w = _validate_window(window, "window", min_val=2)
+    return compute_price_zscore_log(s, w)
+
+
+def _ordered_half_lives(fast: object, slow: object, fast_name: str, slow_name: str) -> tuple[float, float]:
+    fast_value = _validate_positive_float(fast, fast_name)
+    slow_value = _validate_positive_float(slow, slow_name)
+    if fast_value >= slow_value:
+        raise ValueError(f"'{fast_name}' must be smaller than '{slow_name}'")
+    return fast_value, slow_value
+
+
+def ewma_trend_spread(close: pd.Series, *, fast_half_life: float = 8.0, slow_half_life: float = 32.0) -> pd.Series:
+    """Compute the fast-minus-slow EWMA spread of log closing prices.
+
+    Parameters
+    ----------
+    close : pandas.Series
+        Closing prices; non-positive prices become missing values.
+    fast_half_life : float, default 8.0
+        Fast EWMA half-life in bars, finite and positive.
+    slow_half_life : float, default 32.0
+        Slow EWMA half-life in bars, greater than the fast half-life.
+
+    Returns
+    -------
+    pandas.Series
+        Log-price trend spread, preserving index and name. Initial values are
+        NaN until the backend's half-life warm-up is complete.
+    """
+    s = _validate_series(close, "close")
+    fast, slow = _ordered_half_lives(fast_half_life, slow_half_life, "fast_half_life", "slow_half_life")
+    return compute_ewma_trend_spread(s, fast, slow)
+
+
+def atr_fraction(frame: pd.DataFrame, period: int) -> pd.Series:
+    """Compute Wilder ATR divided by the current close.
+
+    Parameters
+    ----------
+    frame : pandas.DataFrame
+        Bars with numeric high, low, and close columns.
+    period : int
+        Wilder smoothing period, at least 1.
+
+    Returns
+    -------
+    pandas.Series
+        Dimensionless range fraction (0.01 means 1%), on the exact frame index.
+        Warm-up and invalid denominators produce NaN; the result has no name.
+    """
+    df = _validate_frame(frame, "frame", ("high", "low", "close"))
+    p = _validate_window(period, "period")
+    result = compute_atr_fraction(df["high"], df["low"], df["close"], p)
+    result.index = df.index
+    return result
+
+
+def true_range(frame: pd.DataFrame) -> pd.Series:
+    """Compute each bar's range, including its gap from the preceding close.
+
+    Parameters
+    ----------
+    frame : pandas.DataFrame
+        Bars with numeric high, low, and close columns.
+
+    Returns
+    -------
+    pandas.Series
+        True range in price units on the exact frame index, with no name.
+        The first bar is NaN because there is no previous close.
+    """
+    df = _validate_frame(frame, "frame", ("high", "low", "close"))
+    result = compute_true_range(df["high"], df["low"], df["close"])
+    result.index = df.index
+    return result
+
+
+def per_bar_realized_vol(close: pd.Series, window: int) -> pd.Series:
+    """Compute root-mean-square one-bar log returns without annualization.
+
+    Parameters
+    ----------
+    close : pandas.Series
+        Closing prices; non-positive prices become missing values.
+    window : int
+        Number of trailing one-bar log returns, at least 1.
+
+    Returns
+    -------
+    pandas.Series
+        Per-bar log-return scale, preserving index and name. Incomplete windows
+        are NaN. This RMS estimator does not subtract the mean return.
+    """
+    s = _validate_series(close, "close")
+    w = _validate_window(window, "window")
+    return compute_realized_vol_per_bar(s, w)
+
+
+def per_bar_ewma_vol(close: pd.Series, half_life: float = 32.0) -> pd.Series:
+    """Compute the square root of an EWMA of squared one-bar log returns.
+
+    Parameters
+    ----------
+    close : pandas.Series
+        Closing prices; non-positive prices become missing values.
+    half_life : float, default 32.0
+        Decay half-life in bars, finite and positive.
+
+    Returns
+    -------
+    pandas.Series
+        Per-bar, unannualized volatility, preserving index and name. Initial
+        values are NaN until the backend's half-life warm-up is complete.
+    """
+    s = _validate_series(close, "close")
+    hl = _validate_positive_float(half_life, "half_life")
+    return compute_ewma_vol_per_bar(s, hl)
+
+
+def rogers_satchell(frame: pd.DataFrame, window: int) -> pd.Series:
+    """Compute per-bar Rogers-Satchell OHLC volatility.
+
+    Parameters
+    ----------
+    frame : pandas.DataFrame
+        Bars with numeric open, high, low, and close columns.
+    window : int
+        Trailing bar count, at least 1.
+
+    Returns
+    -------
+    pandas.Series
+        Unannualized range volatility on the exact frame index, with no name.
+        Incomplete windows and invalid prices are NaN. Opening gaps are not included.
+    """
+    df = _validate_frame(frame, "frame", ("open", "high", "low", "close"))
+    w = _validate_window(window, "window")
+    result = compute_rogers_satchell(df["open"], df["high"], df["low"], df["close"], w)
+    result.index = df.index
+    return result
+
+
+def per_bar_yang_zhang(frame: pd.DataFrame, window: int) -> pd.Series:
+    """Compute Yang-Zhang OHLC volatility without annualization.
+
+    Parameters
+    ----------
+    frame : pandas.DataFrame
+        Bars with numeric open, high, low, and close columns.
+    window : int
+        Trailing bar count, at least 2.
+
+    Returns
+    -------
+    pandas.Series
+        Per-bar volatility on the exact frame index, including opening gaps.
+        Equivalent to yang_zhang(frame, window, periods_per_year=1).
+    """
+    return yang_zhang(frame, window=window, periods_per_year=1)
+
+
+def _volatility_parameters(
+    estimator: object,
+    window: object,
+    half_life: object,
+    *,
+    window_name: str = "vol_window",
+    half_life_name: str = "vol_half_life",
+) -> tuple[str, int | None, float | None]:
+    if not isinstance(estimator, str):
+        raise TypeError("'vol_estimator' must be a string")
+    normalized = estimator.strip().lower()
+    allowed = ("realized", "ewma", "rogers_satchell", "yang_zhang")
+    if normalized not in allowed:
+        raise ValueError(f"'vol_estimator' must be one of {', '.join(allowed)}")
+    if normalized == "ewma":
+        return normalized, None, _validate_positive_float(half_life, half_life_name)
+    minimum = 2 if normalized == "yang_zhang" else 1
+    return normalized, _validate_window(window, window_name, min_val=minimum), None
+
+
+def _validate_vol_lag(value: object) -> int:
+    lag = _validate_window(value, "vol_lag", min_val=0)
+    if lag > 1:
+        raise ValueError("'vol_lag' must be 0 or 1")
+    return lag
+
+
+def normalized_momentum(
+    frame: pd.DataFrame,
+    *,
+    horizon: int = 20,
+    vol_estimator: str = "realized",
+    vol_window: int | None = 20,
+    vol_half_life: float | None = 32.0,
+    vol_lag: int = 1,
+) -> pd.Series:
+    """Scale a horizon log return by per-bar volatility and sqrt(horizon).
+
+    Parameters
+    ----------
+    frame : pandas.DataFrame
+        Bars with numeric open, high, low, and close columns.
+    horizon : int, default 20
+        Return lookback in bars, at least 1.
+    vol_estimator : str, default 'realized'
+        Case-insensitive realized, ewma, rogers_satchell, or yang_zhang.
+    vol_window : int or None, default 20
+        Volatility window, at least 1 (2 for Yang-Zhang); ignored for EWMA.
+    vol_half_life : float or None, default 32.0
+        Positive volatility half-life in bars; used only for EWMA.
+    vol_lag : int, default 1
+        Use previous-bar volatility (1) or current-bar volatility (0).
+
+    Returns
+    -------
+    pandas.Series
+        Dimensionless momentum on the exact frame index, named close. Warm-up,
+        missing prices, and volatility at or below the kernel floor produce NaN.
+    """
+    df = _validate_frame(frame, "frame", ("open", "high", "low", "close"))
+    h = _validate_window(horizon, "horizon")
+    estimator, window, half_life = _volatility_parameters(vol_estimator, vol_window, vol_half_life)
+    lag = _validate_vol_lag(vol_lag)
+    result = compute_normalized_momentum(
+        df["close"],
+        df["open"],
+        df["high"],
+        df["low"],
+        horizon=h,
+        vol_estimator=estimator,
+        vol_window=window,
+        vol_half_life=half_life,
+        vol_lag=lag,
+    )
+    result.index = df.index
+    return result
+
+
+def normalized_ewma_trend_spread(
+    frame: pd.DataFrame,
+    *,
+    fast_half_life: float = 8.0,
+    slow_half_life: float = 32.0,
+    vol_estimator: str = "realized",
+    vol_window: int | None = 20,
+    vol_half_life: float | None = 32.0,
+    vol_lag: int = 1,
+) -> pd.Series:
+    """Scale the fast-minus-slow log-price EWMA spread by per-bar volatility.
+
+    Parameters
+    ----------
+    frame : pandas.DataFrame
+        Bars with numeric open, high, low, and close columns.
+    fast_half_life : float, default 8.0
+        Fast log-price half-life in bars, finite and positive.
+    slow_half_life : float, default 32.0
+        Slow log-price half-life, greater than the fast half-life.
+    vol_estimator : str, default 'realized'
+        Case-insensitive realized, ewma, rogers_satchell, or yang_zhang.
+    vol_window : int or None, default 20
+        Volatility window, at least 1 (2 for Yang-Zhang); ignored for EWMA.
+    vol_half_life : float or None, default 32.0
+        Positive volatility half-life; used only for EWMA.
+    vol_lag : int, default 1
+        Use previous-bar volatility (1) or current-bar volatility (0).
+
+    Returns
+    -------
+    pandas.Series
+        Dimensionless trend spread on the exact frame index, named close.
+        Warm-up, missing inputs, and near-zero volatility produce NaN.
+    """
+    df = _validate_frame(frame, "frame", ("open", "high", "low", "close"))
+    fast, slow = _ordered_half_lives(fast_half_life, slow_half_life, "fast_half_life", "slow_half_life")
+    estimator, window, half_life = _volatility_parameters(vol_estimator, vol_window, vol_half_life)
+    lag = _validate_vol_lag(vol_lag)
+    result = compute_normalized_ewma_trend_spread(
+        df["close"],
+        df["open"],
+        df["high"],
+        df["low"],
+        fast_half_life=fast,
+        slow_half_life=slow,
+        vol_estimator=estimator,
+        vol_window=window,
+        vol_half_life=half_life,
+        vol_lag=lag,
+    )
+    result.index = df.index
+    return result
+
+
+def volatility_log_ratio(
+    frame: pd.DataFrame,
+    *,
+    vol_estimator: str = "realized",
+    short_window: int | None = 10,
+    long_window: int | None = 40,
+    short_half_life: float | None = 8.0,
+    long_half_life: float | None = 32.0,
+) -> pd.Series:
+    """Compute ln(short volatility) minus ln(long volatility).
+
+    Parameters
+    ----------
+    frame : pandas.DataFrame
+        Bars with numeric open, high, low, and close columns.
+    vol_estimator : str, default 'realized'
+        Case-insensitive realized, ewma, rogers_satchell, or yang_zhang.
+    short_window : int or None, default 10
+        Short trailing window; at least 1 (2 for Yang-Zhang), ignored for EWMA.
+    long_window : int or None, default 40
+        Long window, greater than the short window; ignored for EWMA.
+    short_half_life : float or None, default 8.0
+        Positive short volatility half-life; used only for EWMA.
+    long_half_life : float or None, default 32.0
+        Long half-life, greater than the short half-life; used only for EWMA.
+
+    Returns
+    -------
+    pandas.Series
+        Dimensionless log ratio on the exact frame index, with no name.
+        Zero means equal volatility; missing or near-zero estimates produce NaN.
+    """
+    df = _validate_frame(frame, "frame", ("open", "high", "low", "close"))
+    estimator, short_w, short_hl = _volatility_parameters(
+        vol_estimator, short_window, short_half_life, window_name="short_window", half_life_name="short_half_life"
+    )
+    _, long_w, long_hl = _volatility_parameters(
+        vol_estimator, long_window, long_half_life, window_name="long_window", half_life_name="long_half_life"
+    )
+    if estimator == "ewma":
+        short_hl, long_hl = _ordered_half_lives(short_hl, long_hl, "short_half_life", "long_half_life")
+    elif short_w >= long_w:
+        raise ValueError("'short_window' must be smaller than 'long_window'")
+    args = (df["open"], df["high"], df["low"], df["close"])
+    short = compute_per_bar_volatility(*args, estimator=estimator, window=short_w, half_life=short_hl)
+    long = compute_per_bar_volatility(*args, estimator=estimator, window=long_w, half_life=long_hl)
+    result = compute_volatility_log_ratio(short, long)
+    result.index = df.index
+    return result
+
+
+def _read_relative_spread(
+    frame: pd.DataFrame,
+    ticks: TickStore,
+    timeframe: str,
+    output: str,
+    max_quote_age_ms: int,
+    min_coverage: float,
+) -> tuple[pd.DataFrame, np.ndarray, str | None]:
+    # Lazy imports keep pure bar calculations independent of tick-store dependencies.
+    from q_backend.market_data.exogenous_context import bar_duration
+    from q_backend.market_data.quote_spread import bar_bounds_msc, quote_spread as aggregate_quotes
+    from q_backend.research.tick_store import TickStore
+
+    df = _validate_frame(frame, "frame", ())
+    if not isinstance(ticks, TickStore):
+        raise TypeError("'ticks' must be a TickStore")
+    if not isinstance(df.index, pd.DatetimeIndex):
+        raise TypeError("'frame' must have a DatetimeIndex of bar-open timestamps")
+    if df.index.hasnans or not df.index.is_unique or not df.index.is_monotonic_increasing:
+        raise ValueError("'frame' index must contain unique, chronological bar timestamps without NaT")
+    if not isinstance(timeframe, str):
+        raise TypeError("'timeframe' must be a string")
+    tf = timeframe.strip().upper()
+    bar_duration(tf)  # Validate even on empty frames; use the shared service's supported intervals.
+    opens, closes = bar_bounds_msc(df.index, tf)
+    if np.any(opens[1:] < closes[:-1]):
+        raise ValueError("'frame' bar intervals must not overlap for the selected timeframe")
+    if not isinstance(output, str) or output not in ("last", "time_weighted_mean", "max"):
+        raise ValueError("'output' must be last, time_weighted_mean, or max")
+    age = _validate_window(max_quote_age_ms, "max_quote_age_ms", min_val=0)
+    if isinstance(min_coverage, bool) or not isinstance(min_coverage, (int, float, np.integer, np.floating)):
+        raise TypeError("'min_coverage' must be a number")
+    coverage = float(min_coverage)
+    if not math.isfinite(coverage) or not 0 <= coverage <= 1:
+        raise ValueError("'min_coverage' must be finite and between 0 and 1")
+    metadata = df.attrs.get("q_research", {})
+    if not isinstance(metadata, dict):
+        raise TypeError("'frame' q_research metadata must be a dictionary")
+    if metadata.get("symbol", ticks.symbol) != ticks.symbol:
+        raise ValueError("'frame' symbol metadata conflicts with ticks.symbol")
+    if "timeframe" in metadata and metadata["timeframe"] != tf:
+        raise ValueError("'frame' timeframe metadata conflicts with timeframe")
+    quotes = aggregate_quotes(ticks, ticks.symbol, df.index, tf, max_quote_age_ms=age)
+    return df, quotes.select(output, coverage), quotes.unavailable_reason
+
+
+def quote_spread(
+    frame: pd.DataFrame,
+    *,
+    ticks: TickStore,
+    timeframe: str,
+    output: str = "time_weighted_mean",
+    max_quote_age_ms: int = 60_000,
+    min_coverage: float = 0.0,
+) -> pd.Series:
+    """Read stored bid-ask quotes and aggregate spread to bars in basis points.
+
+    Parameters
+    ----------
+    frame : pandas.DataFrame
+        A unique, chronological DatetimeIndex of non-overlapping bar opens; price columns are
+        not required. Naive timestamps mean Brasilia local time. Any q_research
+        symbol/timeframe metadata must match the explicit arguments.
+    ticks : q_backend.research.TickStore
+        Explicit local store; its symbol identifies the instrument. Never synced by this helper.
+    timeframe : str
+        Fixed bar interval supported by the shared quote service: M1, M5, M10,
+        M15, H1, H2, H4, or D1 (case-insensitive).
+    output : str, default 'time_weighted_mean'
+        Spread aggregation: time_weighted_mean, last (quote valid at bar close), or max.
+    max_quote_age_ms : int, default 60000
+        Nonnegative milliseconds a quote remains valid without a new update.
+    min_coverage : float, default 0.0
+        Required fraction of each bar covered by valid quotes, between 0 and 1.
+
+    Returns
+    -------
+    pandas.Series
+        Quoted spread in basis points (1 bp = 0.01%) on the exact frame index,
+        with no name. Missing/stale/under-covered quotes are NaN. The attrs key
+        unavailable_reason contains the service explanation, or None.
+
+    Notes
+    -----
+    Reads existing local files only: no gateway, synchronization, database, or
+    Redis. Quotes never carry across sessions. No automatic history is loaded.
+    """
+    df, relative, reason = _read_relative_spread(frame, ticks, timeframe, output, max_quote_age_ms, min_coverage)
+    result = pd.Series(relative * 10_000.0, index=df.index)
+    result.attrs["unavailable_reason"] = reason
+    return result
+
+
+def spread_vs_volatility(
+    frame: pd.DataFrame,
+    *,
+    ticks: TickStore,
+    timeframe: str,
+    spread_output: str = "time_weighted_mean",
+    max_quote_age_ms: int = 60_000,
+    min_coverage: float = 0.0,
+    vol_estimator: str = "realized",
+    vol_window: int | None = 20,
+    vol_half_life: float | None = 32.0,
+    vol_lag: int = 1,
+) -> pd.Series:
+    """Divide relative quoted spread by lagged per-bar volatility.
+
+    Parameters
+    ----------
+    frame : pandas.DataFrame
+        Numeric open, high, low, and close on a unique, chronological DatetimeIndex
+        of non-overlapping bars.
+        Naive timestamps mean Brasilia local time; metadata must match the arguments.
+    ticks : q_backend.research.TickStore
+        Explicit local store for the instrument; never synchronized by this helper.
+    timeframe : str
+        Fixed quote-bar interval: M1, M5, M10, M15, H1, H2, H4, or D1.
+    spread_output : str, default 'time_weighted_mean'
+        Spread aggregation: time_weighted_mean, last, or max.
+    max_quote_age_ms : int, default 60000
+        Nonnegative quote lifetime in milliseconds.
+    min_coverage : float, default 0.0
+        Minimum covered fraction of a bar, between 0 and 1.
+    vol_estimator : str, default 'realized'
+        Case-insensitive realized, ewma, rogers_satchell, or yang_zhang.
+    vol_window : int or None, default 20
+        Volatility window, at least 1 (2 for Yang-Zhang); ignored for EWMA.
+    vol_half_life : float or None, default 32.0
+        Positive half-life in bars; used only for EWMA.
+    vol_lag : int, default 1
+        Use previous-bar volatility (1) or current-bar volatility (0).
+
+    Returns
+    -------
+    pandas.Series
+        Dimensionless spread/volatility ratio on the exact frame index, with no
+        name. Missing quotes, warm-up, and near-zero volatility yield NaN.
+        The attrs key unavailable_reason contains the quote service explanation, or None.
+
+    Notes
+    -----
+    The numerator is relative spread, not basis points. This helper reads local
+    quote files without syncing or fetching. Supply enough bars for volatility warm-up.
+    """
+    from q_backend.market_data.quote_spread import spread_vs_volatility as normalize_spread
+
+    df = _validate_frame(frame, "frame", ("open", "high", "low", "close"))
+    estimator, window, half_life = _volatility_parameters(vol_estimator, vol_window, vol_half_life)
+    lag = _validate_vol_lag(vol_lag)
+    _, relative, reason = _read_relative_spread(df, ticks, timeframe, spread_output, max_quote_age_ms, min_coverage)
+    result = normalize_spread(
+        df,
+        relative,
+        vol_estimator=estimator,
+        vol_window=window if window is not None else 20,
+        vol_half_life=half_life if half_life is not None else 32.0,
+        vol_lag=lag,
+    )
+    result.index = df.index
+    result.attrs["unavailable_reason"] = reason
+    return result

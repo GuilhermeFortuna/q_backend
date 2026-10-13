@@ -223,23 +223,105 @@ bars["yang_zhang_vol"] = indicators.yang_zhang(bars, window=20, periods_per_year
 
 ### Supported functions
 
-| Function | Return | Description & Delegation |
+Every identifier in the Market chart catalog is available through these public
+helpers. The five moving-average identifiers use `ma(kind=...)`; the remaining
+identifiers have matching helper names. Existing helpers and their signatures
+remain supported, including annualized `yang_zhang`.
+
+| Function | Input / output | Meaning |
 |---|---|---|
-| `ma(close, period, kind="sma")` | `Series` | Moving average (`sma`, `ema`, `wma`, `smma`, `hma`), case-insensitive |
-| `rsi(close, period)` | `Series` | Wilder's Relative Strength Index |
-| `atr(frame, period)` | `Series` | Wilder's Average True Range (requires `high`, `low`, `close`) |
-| `bollinger(close, period, num_std=2.0)` | `(upper, middle, lower)` | Bollinger Bands with configurable standard deviation |
-| `macd(close, fast_period=12, slow_period=26, signal_period=9)` | `(line, signal, hist)` | Moving Average Convergence Divergence |
-| `donchian(frame, period)` | `(upper, lower)` | Donchian Channels (requires `high`, `low`) |
-| `realized_vol(close, window, periods_per_year=252)` | `Series` | Annualized close-to-close realized volatility from log returns |
-| `yang_zhang(frame, window, periods_per_year=252)` | `Series` | Annualized Yang-Zhang (2000) volatility (requires `open`, `high`, `low`, `close`, `window >= 2`) |
+| `ma(close, period, kind="sma")` | Series → Series | SMA, EMA, WMA, SMMA, or HMA |
+| `volume_ma(volume, period)` | Series → Series | Simple average of a chosen volume field |
+| `rsi(close, period)` | Series → Series | Wilder RSI |
+| `atr(frame, period)` | OHLC frame → Series | Wilder true-range average, in price units |
+| `atr_fraction(frame, period)` | OHLC frame → Series | ATR / current close, as a fraction |
+| `true_range(frame)` | OHLC frame → Series | Current range including the previous-close gap |
+| `bollinger(close, period, num_std=2.0)` | Series → `(upper, middle, lower)` | Sample standard-deviation price bands |
+| `macd(close, fast_period=12, slow_period=26, signal_period=9)` | Series → `(line, signal, histogram)` | Price EMA spread and signal |
+| `donchian(frame, period)` | Frame → `(upper, lower)` | Trailing highest high and lowest low |
+| `rolling_zscore(close, window)` | Series → Series | Sample z-score of closes |
+| `rolling_rank(close, window)` | Series → Series | Fraction of trailing closes ≤ current close, including ties |
+| `pct_change(close, change_bars=1)` | Series → Series | Simple return as a decimal: 0.01 means 1% |
+| `log_return(close, horizon=1)` | Series → Series | Natural-log price return |
+| `price_zscore_log(close, window)` | Series → Series | Sample z-score of log closes; window ≥ 2 |
+| `ewma_trend_spread(close, *, fast_half_life=8.0, slow_half_life=32.0)` | Series → Series | Fast-minus-slow log-price EWMA |
+| `normalized_momentum(frame, *, horizon=20, ...)` | OHLC frame → Series | Horizon log return / (per-bar volatility × √horizon) |
+| `normalized_ewma_trend_spread(frame, *, fast_half_life=8.0, slow_half_life=32.0, ...)` | OHLC frame → Series | Log-price EWMA spread / per-bar volatility |
+| `realized_vol(close, window, periods_per_year=252)` | Series → Series | Annualized centered sample log-return deviation |
+| `yang_zhang(frame, window, periods_per_year=252)` | OHLC frame → Series | Annualized OHLC volatility including gaps |
+| `per_bar_realized_vol(close, window)` | Series → Series | Unannualized root mean square of log returns |
+| `per_bar_ewma_vol(close, half_life=32.0)` | Series → Series | Square root of an EWMA of squared log returns |
+| `rogers_satchell(frame, window)` | OHLC frame → Series | Per-bar OHLC volatility excluding opening gaps |
+| `per_bar_yang_zhang(frame, window)` | OHLC frame → Series | Yang–Zhang with `periods_per_year=1` |
+| `volatility_log_ratio(frame, *, vol_estimator="realized", short_window=10, long_window=40, short_half_life=8.0, long_half_life=32.0)` | OHLC frame → Series | ln(short volatility / long volatility) |
+| `quote_spread(frame, *, ticks, timeframe, ...)` | Timestamped frame + TickStore → Series | Quoted bid–ask spread in basis points |
+| `spread_vs_volatility(frame, *, ticks, timeframe, ...)` | OHLC frame + TickStore → Series | Relative quoted spread / per-bar volatility |
 
-### Calculation rules & conventions
+### Calculation rules and conventions
 
-- **Index preservation:** All returned Series share the exact index (including timezone and name) of the input. Input objects are never mutated.
-- **NaN warm-up:** Initial periods contain `NaN` according to standard indicator warm-up. No backfilling or zero-filling is applied.
-- **Annualization:** Volatility helpers accept an explicit `periods_per_year` parameter (default `252` for daily bars). For intraday bars (e.g. M5), set `periods_per_year` explicitly according to trading sessions per year.
-- **Validation:** Periods and windows must be integers $\ge 1$ (excluding booleans; Yang-Zhang window $\ge 2$). `num_std` must be finite and $> 0$. Non-numeric data, missing required columns, and infinite values fail immediately with descriptive errors. Volume columns are not required.
+- **Index preservation:** Results retain the input labels, timezone, and index name. Inputs are never mutated.
+- **Warm-up and missing values:** Initial history and undefined calculations remain NaN; no filling is applied. Recursive half-life kernels need enough observations for their own warm-up. These helpers never load extra history.
+- **Units:** Simple returns and ATR fractions are decimals, not multiplied by 100. Rolling rank includes ties (a constant window ranks 1). Z-scores use sample deviation. `realized_vol` and `yang_zhang` are annualized; per-bar helpers are not. Per-bar realized volatility uses RMS returns, while annualized realized volatility uses centered sample deviation.
+- **Validation:** Integer parameters reject booleans and fractional values; floats must be finite and satisfy their documented bounds. Required columns must contain real numeric data and be free of infinities; complex inputs are rejected before conversion. Missing and non-positive prices follow each kernel's documented behavior. Research lookbacks retain the existing unbounded convention without HTTP resource caps.
+
+### Volatility composites
+
+`normalized_momentum`, `normalized_ewma_trend_spread`, and
+`spread_vs_volatility` share keyword-only options:
+`vol_estimator="realized"`, `vol_window=20`, `vol_half_life=32.0`, and `vol_lag=1`.
+Choose `realized`, `ewma`, `rogers_satchell`, or `yang_zhang`, case-insensitively.
+EWMA uses a positive half-life and ignores the window; other estimators use a
+window and ignore the half-life. Yang–Zhang requires a window ≥ 2. Unused inputs
+may be None. A lag of 1 uses the previous bar's volatility, while 0 uses the
+current bar. Missing or near-zero volatility leaves NaN ratios.
+
+Fast half-lives must be smaller than slow half-lives. `volatility_log_ratio`
+requires short < long for windows, or for half-lives when using EWMA.
+
+```python
+from q_backend.research import indicators
+
+bars["rank"] = indicators.rolling_rank(bars["close"], window=20)
+bars["return"] = indicators.log_return(bars["close"], horizon=5)
+bars["volume_ma"] = indicators.volume_ma(bars["tick_volume"], period=20)
+bars["momentum"] = indicators.normalized_momentum(
+    bars, horizon=20, vol_estimator="ewma", vol_half_life=16.0,
+)
+bars["volatility_regime"] = indicators.volatility_log_ratio(
+    bars, short_window=10, long_window=40,
+)
+```
+
+### Liquidity from local quote history
+
+Quote helpers require an explicit `TickStore` and fixed `timeframe` (M1, M5,
+M10, M15, H1, H2, H4, or D1, matching the shared quote service). They read
+already-stored files and never fetch or synchronize ticks. Frames need a
+unique, chronological DatetimeIndex of non-overlapping bar-open times; aware
+times are aligned in Brasília and naive times are interpreted as Brasília local
+time. Returned Series retain the original index. Any `q_research` symbol or
+timeframe metadata must match the explicit store and timeframe.
+
+```python
+from q_backend.research import TickStore, indicators
+
+ticks = TickStore("WIN$N")  # Existing local quote history.
+spread = indicators.quote_spread(bars, ticks=ticks, timeframe="M5", min_coverage=0.5)
+ratio = indicators.spread_vs_volatility(bars, ticks=ticks, timeframe="M5", vol_window=20)
+print(spread.attrs["unavailable_reason"])
+```
+
+Defaults are time-weighted mean spread, `max_quote_age_ms=60_000`, and
+`min_coverage=0.0`. Select `output="last"` or `"max"` on `quote_spread`, or
+`spread_output` on `spread_vs_volatility`. Last means a quote valid at bar close.
+Coverage is a fraction between 0 and 1; quote age is a nonnegative integer.
+Quotes never carry across sessions, and stale or under-covered bars remain NaN.
+
+Quoted spread is in **basis points** (1 bp = 0.01%); spread versus volatility is
+**dimensionless** and uses relative spread as its numerator. If no requested
+session has ticks, the result is all NaN and `Series.attrs["unavailable_reason"]`
+contains the service explanation. The attribute is None for empty results or
+when at least one requested session has ticks, even if its quotes are unusable.
 
 ## Strategy definition & local backtesting (`ResearchStrategy`, `backtest`)
 

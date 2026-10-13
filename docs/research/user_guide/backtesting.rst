@@ -53,7 +53,7 @@ not a broker fee schedule. The configured cost applies to each fill, including
 protective and custom tick exits.
 
 Configure intrabar Breakeven Stop
---------------------------------
+---------------------------------
 
 ``breakeven_trigger_pct`` enables Breakeven Stop and sets its favorable movement
 threshold as a fraction (``0.02`` means 2%). Before it arms,
