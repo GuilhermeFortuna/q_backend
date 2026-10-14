@@ -993,6 +993,23 @@ uv run python examples/research/mt5_backtest.py --symbol 'WIN$N' --timeframe M5 
 * **`POST /api/v1/research/figures/bulk-delete`**
   * *Description:* Delete multiple figures by id list (`{"figure_ids": ["..."]}`) or entire collection (`{"collection": "..."}`).
 
+### Research Studies
+* **`POST /api/v1/research/studies`**
+  * *Description:* Store a time-indexed study for one symbol and timeframe, drawn on the Market chart. Returns `201` with `{"studyId": "<uuid>", "replaced": <bool>}`. Replacing an existing symbol, timeframe and name keeps the id and increments the revision.
+  * *Request:* `{"name": "...", "symbol": "WDO$N", "timeframe": "M10", "notes": null, "replace": true, "provenance": null, "timestamps": ["2026-01-05T13:00:00+00:00", ...], "series": [{"key": "kc_upper", "label": "Upper", "pane": "price", "color": "#6eb5ff", "lineStyle": "dashed", "lineWidth": 1.5, "values": [3.0, null, ...]}]}`
+  * *Errors:* `422` for a blank name or symbol, an unknown timeframe, unordered or repeated timestamps, a value array that does not match the timestamps, duplicate or reserved series keys, an unknown pane or line style, a non-positive line width, or an all-null series. `413` when timestamps times series exceeds `Q_RESEARCH_STUDY_MAX_VALUES`. `409` when `replace` is false and the identity exists.
+* **`GET /api/v1/research/studies?symbol=WDO$N&timeframe=M10`**
+  * *Description:* Metadata only for the symbol's studies, newest `updatedAt` first. `timeframe` is optional.
+  * *Response:* `{"items": [{"studyId": "...", "name": "...", "symbol": "WDO$N", "timeframe": "M10", "notes": null, "series": [{"key": "...", "label": "...", "pane": "price", ...}], "start": "...", "end": "...", "pointCount": 37, "revision": 2, "createdAt": "...", "updatedAt": "...", "provenance": null}]}`
+* **`GET /api/v1/research/studies/{study_id}/series?start=...&end=...`**
+  * *Description:* Stored values between `start` and `end` (inclusive, ISO-8601). Reads only the requested range.
+  * *Response:* `{"timestamps": ["..."], "series": [{"key": "kc_upper", "values": [3.0, null, ...]}]}`
+* **`PATCH /api/v1/research/studies/{study_id}`**
+  * *Description:* Rename a study (`{"name": "..."}`). Returns the metadata. `409` when the new name already exists for its symbol and timeframe.
+* **`DELETE /api/v1/research/studies/{study_id}`**
+  * *Description:* Delete a study and its stored values (`204`).
+  * *Errors:* `404` on every study route for an unknown id.
+
 ### Optuna Parameter Optimization
 * **`POST /api/v1/optimize`**
   * *Description:* Launch an asynchronous Optuna parameter optimization study.

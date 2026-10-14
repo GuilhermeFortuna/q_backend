@@ -21,14 +21,14 @@
 
 ## Ordered implementation
 
-- [ ] 1. `q_contracts`: add the five `research/studies` routes and their schemas (camelCase, as the market indicator schemas) to `schema/api/openapi.yaml`; regenerate; `make check`. Commit.
-- [ ] 2. `q_backend`: bump `CONTRACTS_REV` and run `make contracts`. Add `research_study_max_values` to `storage/settings.py`, the `ResearchStudy` model and its Alembic migration, and a repository with get-by-identity, list-by-symbol, upsert, rename and delete.
-- [ ] 3. `research/study_service.py`: request validation (the `422` and `413` rules), Parquet write through the lake's temporary-file-and-rename helper, range reads with a Parquet filter on `time`, rename with the `409` check, and delete of row and file. Routes in `api/routers/research_studies.py`, registered next to the figures router. Tests for criteria 5 to 7 in `tests/api/`. Commit.
+- [x] 1. `q_contracts`: add the five `research/studies` routes and their schemas (camelCase, as the market indicator schemas) to `schema/api/openapi.yaml`; regenerate; `make check`. Commit.
+- [x] 2. `q_backend`: bump `CONTRACTS_REV` and run `make contracts`. Add `research_study_max_values` to `storage/settings.py`, the `ResearchStudy` model and its Alembic migration, and a repository with get-by-identity, list-by-symbol, upsert, rename and delete.
+- [x] 3. `research/study_service.py`: request validation (the `422` and `413` rules), Parquet write through the lake's temporary-file-and-rename helper, range reads with a Parquet filter on `time`, rename with the `409` check, and delete of row and file. Routes in `api/routers/research_studies.py`, registered next to the figures router. Tests for criteria 5 to 7 in `tests/api/`. Commit.
 - [x] 4. `research/studies.py`: `publish_study` with index conversion, timeframe inference and checks, column selection through `ChartIndicator`, value conversion, and the HTTP call through the error mapping `publish_figure` uses (moved to a shared helper if needed). Export it lazily from `research/__init__.py`. Tests for criteria 1 to 4 with mocked HTTP. Commit.
-- [ ] 5. `q_frontend`: vendor the contract; add `api/queries/researchStudies.ts` (list by symbol with refetch on window focus, series by id, revision and range, rename and delete mutations) and MSW handlers and mocks.
-- [ ] 6. `q_frontend`: add the Studies group to `IndicatorsModal.tsx` with the disabled state, notes, rename and an in-app delete confirmation; store enabled ids per symbol under `quant:market-studies`, dropping ids missing from the list.
-- [ ] 7. `q_frontend`: align study values to loaded bars by timestamp, feed price series to `IndicatorLayer` and each study's oscillator series to one `OscillatorPane`, assign theme colours to unstyled series, label legends, and add the misalignment notice to the chart notice. Component tests for criteria 8 to 11. Commit.
-- [ ] 8. Document the feature in `docs/research-library.md` and the README API reference; add `examples/research/publish_study.py`. Run the focused tests, `make contracts-check` and each repository's lint and type checks. Commit.
+- [x] 5. `q_frontend`: vendor the contract; add `api/queries/researchStudies.ts` (list by symbol with refetch on window focus, series by id, revision and range, rename and delete mutations) and MSW handlers and mocks.
+- [x] 6. `q_frontend`: add the Studies group to `IndicatorsModal.tsx` with the disabled state, notes, rename and an in-app delete confirmation; store enabled ids per symbol under `quant:market-studies`, dropping ids missing from the list.
+- [x] 7. `q_frontend`: align study values to loaded bars by timestamp, feed price series to `IndicatorLayer` and each study's oscillator series to one `OscillatorPane`, assign theme colours to unstyled series, label legends, and add the misalignment notice to the chart notice. Component tests for criteria 8 to 11. Commit.
+- [x] 8. Document the feature in `docs/research-library.md` and the README API reference; add `examples/research/publish_study.py`. Run the focused tests, `make contracts-check` and each repository's lint and type checks. Commit.
 
 ## Review focus
 
