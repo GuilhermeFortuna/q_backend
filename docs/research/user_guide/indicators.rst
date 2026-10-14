@@ -101,6 +101,9 @@ Supported indicators
    * - :func:`~q_backend.research.indicators.spread_vs_volatility`
      - ``Series``
      - Relative stored quote spread divided by per-bar volatility.
+   * - :func:`~q_backend.research.indicators.top_bottom`
+     - ``DataFrame``
+     - Confirmed tops and bottoms from a causal ATR-threshold zigzag. Each pivot appears on the bar that confirms it, not the bar where it occurred.
 
 Add indicators to a frame
 -------------------------

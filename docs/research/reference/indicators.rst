@@ -53,6 +53,7 @@ Channels and volatility
    rogers_satchell
    per_bar_yang_zhang
    volatility_log_ratio
+   top_bottom
 
 Liquidity from stored quotes
 ----------------------------

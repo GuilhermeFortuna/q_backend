@@ -36,6 +36,7 @@ from q_backend.backtesting.technical_indicators import (
 )
 
 from q_backend.backtesting.transforms import compute_pct_change, compute_rolling_rank, compute_rolling_zscore
+from q_backend.research.swings import LiveSwingDetector
 
 if TYPE_CHECKING:
     from q_backend.research.tick_store import TickStore
@@ -67,6 +68,7 @@ __all__ = (
     "volatility_log_ratio",
     "quote_spread",
     "spread_vs_volatility",
+    "top_bottom",
 )
 
 
@@ -1024,3 +1026,82 @@ def spread_vs_volatility(
     result.index = df.index
     result.attrs["unavailable_reason"] = reason
     return result
+
+
+def top_bottom(frame: pd.DataFrame, *, atr_period: int = 14, reversal_atr: float = 2.0) -> pd.DataFrame:
+    """Detect confirmed tops and bottoms with a causal ATR-threshold zigzag.
+
+    A pivot is confirmed once price retreats from the running extreme of the current leg
+    by at least ``reversal_atr`` times the Wilder ATR. Pivots alternate between tops and
+    bottoms and are never revised.
+
+    Parameters
+    ----------
+    frame : pandas.DataFrame
+        Numeric high, low, and close on a chronological index of completed bars.
+    atr_period : int, default 14
+        Wilder ATR period, an integer >= 1.
+    reversal_atr : float, default 2.0
+        Reversal size in ATR multiples, a finite number > 0.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Frame on the exact index of ``frame`` with columns:
+
+        - ``top`` / ``bottom``: price of the pivot confirmed on that bar, NaN otherwise.
+        - ``top_index`` / ``bottom_index``: index label of the bar holding that pivot
+          (object dtype, None otherwise). It is always at or before the confirming bar.
+        - ``leg``: detector direction after the bar (1 rising, -1 falling, 0 undefined).
+
+    Raises
+    ------
+    TypeError
+        If ``frame`` is not a DataFrame, ``atr_period`` is not an integer, or
+        ``reversal_atr`` is not a number.
+    ValueError
+        If required columns are missing, values are non-finite, or parameters are out of range.
+
+    Notes
+    -----
+    Row ``i`` depends only on bars ``0..i``, so the output for a prefix of ``frame`` equals
+    the prefix of the output. Pivots are known only on their confirming bar; the lag from
+    ``top_index`` / ``bottom_index`` to the row label is the detection latency. Warm-up
+    lasts ``atr_period`` bars, during which no pivots are emitted.
+    """
+    df = _validate_frame(frame, "frame", ("high", "low", "close"))
+    period = _validate_window(atr_period, "atr_period", min_val=1)
+    reversal = _validate_positive_float(reversal_atr, "reversal_atr")
+
+    detector = LiveSwingDetector(atr_period=period, reversal_atr=reversal)
+    n = len(df)
+    top = np.full(n, np.nan)
+    bottom = np.full(n, np.nan)
+    top_index = np.full(n, None, dtype=object)
+    bottom_index = np.full(n, None, dtype=object)
+    leg = np.zeros(n, dtype=np.int8)
+
+    for pos, (index, high, low, close) in enumerate(
+        zip(df.index, df["high"].to_numpy(), df["low"].to_numpy(), df["close"].to_numpy())
+    ):
+        pivot = detector.update(index, high, low, close)
+        if pivot is not None and pivot.kind == "top":
+            top[pos] = pivot.price
+            top_index[pos] = pivot.pivot_index
+        elif pivot is not None:
+            bottom[pos] = pivot.price
+            bottom_index[pos] = pivot.pivot_index
+        leg[pos] = detector.direction
+
+    # Index columns stay object dtype even when they hold timestamps, so prefixes with and
+    # without pivots share a dtype.
+    return pd.DataFrame(
+        {
+            "top": top,
+            "bottom": bottom,
+            "top_index": pd.Series(top_index, index=frame.index, dtype=object),
+            "bottom_index": pd.Series(bottom_index, index=frame.index, dtype=object),
+            "leg": leg,
+        },
+        index=frame.index,
+    )

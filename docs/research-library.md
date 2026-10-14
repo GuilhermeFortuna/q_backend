@@ -256,6 +256,7 @@ remain supported, including annualized `yang_zhang`.
 | `volatility_log_ratio(frame, *, vol_estimator="realized", short_window=10, long_window=40, short_half_life=8.0, long_half_life=32.0)` | OHLC frame → Series | ln(short volatility / long volatility) |
 | `quote_spread(frame, *, ticks, timeframe, ...)` | Timestamped frame + TickStore → Series | Quoted bid–ask spread in basis points |
 | `spread_vs_volatility(frame, *, ticks, timeframe, ...)` | OHLC frame + TickStore → Series | Relative quoted spread / per-bar volatility |
+| `top_bottom(frame, *, atr_period=14, reversal_atr=2.0)` | OHLC frame → DataFrame | Causal ATR-threshold zigzag: confirmed top and bottom prices, their pivot bars, and leg direction |
 
 ### Calculation rules and conventions
 
@@ -707,15 +708,15 @@ research.publish_study(
 )
 ```
 
-`examples/research/publish_study.py` loads bars, computes a Bollinger band, and publishes its band fill, entry markers and a score histogram.
+`examples/research/publish_study.py` loads bars, computes a Bollinger band and its width with `research.indicators`, and publishes them.
 
 - **Data:** a `pandas.Series` or `DataFrame` with a `DatetimeIndex` that is strictly increasing. A timezone-aware index is converted to UTC. A naive index is read as Brasília exchange time, as `load_bars` reads naive input. Every column must be numeric or boolean; booleans become `0` and `1`. `NaN` and infinities become gaps. An unnamed Series is published under the key `value`.
-- **Series:** without `series=`, every column is published as a `line` in `pane` (`"price"` by default) with its name as key and label. With `series=`, a list of `ChartIndicator` publishes only the named columns. `kind` can be `"line"` (default), `"step"`, `"markers"` or `"histogram"`. Lines and steps accept `color`, `line_style`, `line_width`, `fill_to` and `fill_opacity`; a fill target must be another selected line or step in the same pane, and the default opacity is `0.15`. Markers accept `color`, `shape`, `size` and `position`; shapes are `circle` (default), `square`, `diamond`, `triangle-up`, `triangle-down` and `cross`, and size defaults to 8 pixels (maximum 32). `position="value"` draws at each value; `"above-bar"` and `"below-bar"` draw only for non-zero values, at the bar high or low, and are price-pane only. This makes a boolean column (`0`/`1`) a compact signal series. Histograms are oscillator-pane only and accept `color`, `negative_color` and `baseline` (default `0`); values below the baseline use `negative_color` when provided. A field that does not apply to the chosen kind is rejected. A missing or duplicate column, invalid fill target, or empty selection raises `ValueError`.
+- **Series:** without `series=`, every column is published in `pane` (`"price"` by default) with its name as key and label. With `series=`, a list of `ChartIndicator` publishes only the named columns, each with its own pane, label, colour, line style and width. A missing or duplicate column, or an empty selection, raises `ValueError`.
 - **Timeframe:** `timeframe=` is one of `M1`, `M5`, `M10`, `M15`, `M30`, `H1`, `H2`, `H4` or `D1`. When omitted, it is the smallest gap between consecutive timestamps, which must be one of them. Session and weekend gaps are ignored when inferring. Either way, every gap must be a whole multiple of the timeframe and every timestamp must fall on a whole minute; otherwise `ValueError` names the gap found and `timeframe=`.
 - **Symbol:** upper-cased. A study is shown only for that exact symbol: one published for `WDO$N` does not appear on `WDOV26`.
 - **Replacement:** a study is identified by symbol, timeframe and name. By default (`replace=True`) publishing an existing identity replaces its values and styling in place, keeps its id, and increments its revision; the chart refetches it. Pass `replace=False` to get `ValueError` on a conflict.
 - **Alignment:** values are placed on the bar with the same timestamp, and a bar with no value breaks the line. Nothing is shifted or resampled. When some values in the loaded range fall between bars, the chart notice reports how many, which usually means a timezone mismatch or timestamps that are not bar open times.
-- **Size limits:** non-null values across all series are capped by `Q_RESEARCH_STUDY_MAX_VALUES` (default 2,000,000). Timestamps are independently capped by `Q_RESEARCH_STUDY_MAX_TIMESTAMPS` (default 2,000,000). Either limit returns HTTP `413` and raises `ValueError` with the measured count and limit.
+- **Size limit:** timestamps times series is capped by `Q_RESEARCH_STUDY_MAX_VALUES` (default 2,000,000). Exceeding it returns HTTP `413` and raises `ValueError`.
 - **API URL and errors:** as for `publish_figure`. Unreachable API raises `ConnectionError` naming `./dev research`; HTTP 422, 409 or 413 raises `ValueError` with the server detail.
 
 ## Execution model
