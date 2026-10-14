@@ -683,6 +683,41 @@ research.candlestick(
 - **Size limit:** Decoded content is capped by `Q_RESEARCH_FIGURE_MAX_BYTES` (default 32 MiB). Exceeding this limit returns HTTP `413` and raises `ValueError`.
 - **API URL and errors:** Like `publish()`, target URL defaults to `Q_API_URL` or `http://127.0.0.1:8001`. An unreachable API raises `ConnectionError` naming `./dev research`. HTTP 422 or 413 raises `ValueError` with the server detail.
 
+### Publish studies to the Market chart
+
+A pandas Series or DataFrame indexed by bar time can be published as a **study** for one symbol and timeframe. The Market chart lists it in its indicator menu, under **Studies**, while that symbol is on the chart, and draws it like a catalog indicator:
+
+```python
+from q_backend import research
+from q_backend.research import ChartIndicator
+
+bars = research.load_bars("WDO$N", timeframe="M10", start="2026-01-01")
+study = keltner(bars)                                  # DataFrame on bars.index
+
+research.publish_study(study, symbol="WDO$N", name="Keltner 20/2")
+research.publish_study(
+    study,
+    symbol="WDO$N",
+    name="Keltner 20/2 + width",
+    series=[
+        ChartIndicator("kc_upper", color="#6eb5ff"),
+        ChartIndicator("kc_lower", color="#6eb5ff"),
+        ChartIndicator("kc_width", pane="oscillator", label="Width"),
+    ],
+)
+```
+
+`examples/research/publish_study.py` loads bars, computes a Bollinger band and its width with `research.indicators`, and publishes them.
+
+- **Data:** a `pandas.Series` or `DataFrame` with a `DatetimeIndex` that is strictly increasing. A timezone-aware index is converted to UTC. A naive index is read as Brasília exchange time, as `load_bars` reads naive input. Every column must be numeric or boolean; booleans become `0` and `1`. `NaN` and infinities become gaps. An unnamed Series is published under the key `value`.
+- **Series:** without `series=`, every column is published in `pane` (`"price"` by default) with its name as key and label. With `series=`, a list of `ChartIndicator` publishes only the named columns, each with its own pane, label, colour, line style and width. A missing or duplicate column, or an empty selection, raises `ValueError`.
+- **Timeframe:** `timeframe=` is one of `M1`, `M5`, `M10`, `M15`, `M30`, `H1`, `H2`, `H4` or `D1`. When omitted, it is the smallest gap between consecutive timestamps, which must be one of them. Session and weekend gaps are ignored when inferring. Either way, every gap must be a whole multiple of the timeframe and every timestamp must fall on a whole minute; otherwise `ValueError` names the gap found and `timeframe=`.
+- **Symbol:** upper-cased. A study is shown only for that exact symbol: one published for `WDO$N` does not appear on `WDOV26`.
+- **Replacement:** a study is identified by symbol, timeframe and name. By default (`replace=True`) publishing an existing identity replaces its values and styling in place, keeps its id, and increments its revision; the chart refetches it. Pass `replace=False` to get `ValueError` on a conflict.
+- **Alignment:** values are placed on the bar with the same timestamp, and a bar with no value breaks the line. Nothing is shifted or resampled. When some values in the loaded range fall between bars, the chart notice reports how many, which usually means a timezone mismatch or timestamps that are not bar open times.
+- **Size limit:** timestamps times series is capped by `Q_RESEARCH_STUDY_MAX_VALUES` (default 2,000,000). Exceeding it returns HTTP `413` and raises `ValueError`.
+- **API URL and errors:** as for `publish_figure`. Unreachable API raises `ConnectionError` naming `./dev research`; HTTP 422, 409 or 413 raises `ValueError` with the server detail.
+
 ## Execution model
 
 - Strategy hooks see completed bars only. An unpriced entry or close decided on a bar fills at the next bar's open; a priced entry fills on the deciding bar (see [Priced entry orders](#priced-entry-orders)).

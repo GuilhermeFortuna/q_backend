@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 import struct
 import xml.etree.ElementTree as ET
 from typing import Any, Optional
 
 from q_backend.research.provenance import collect_figure_provenance, get_script_path
-
-DEFAULT_API_URL = "http://127.0.0.1:8001"
+from q_backend.research.transport import post_research_json
 
 
 def _is_matplotlib_figure(obj: Any) -> bool:
@@ -169,38 +167,15 @@ def publish_figure(
     }
 
     # 6. HTTP dispatch
-    base_url = api_url.rstrip("/") if api_url is not None else os.getenv("Q_API_URL", DEFAULT_API_URL).rstrip("/")
-    target_url = f"{base_url}/api/v1/research/figures"
-
-    import httpx
-
+    res_data = post_research_json(
+        "/api/v1/research/figures",
+        payload,
+        noun="figure",
+        endpoint="figures",
+        api_url=api_url,
+        client=client,
+    )
     try:
-        http_client = client if client is not None else httpx.Client()
-        response = http_client.post(target_url, json=payload)
-    except httpx.RequestError as exc:
-        raise ConnectionError(
-            f"Cannot connect to Research API at {base_url}. Start the stack with './dev research'."
-        ) from exc
-
-    if response.status_code == 422:
-        try:
-            detail = response.json().get("detail", response.text)
-        except Exception:  # noqa: BLE001
-            detail = response.text
-        raise ValueError(f"Server rejected figure publish (422): {detail}")
-
-    if response.status_code == 413:
-        try:
-            detail = response.json().get("detail", response.text)
-        except Exception:  # noqa: BLE001
-            detail = response.text
-        raise ValueError(f"Figure too large for Research API (413): {detail}")
-
-    if response.is_error:
-        raise RuntimeError(f"Figure publish failed with status {response.status_code}: {response.text}")
-
-    try:
-        res_data = response.json()
         return str(res_data["figure_id"])
     except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(f"Unexpected response format from figures endpoint: {response.text}") from exc
+        raise RuntimeError(f"Unexpected response format from figures endpoint: {res_data!r}") from exc

@@ -25,6 +25,7 @@ from q_backend.storage.db.models import (
     MLFilterModelVersion,
     MLFilterRun,
     ResearchFigure,
+    ResearchStudy,
     RunStatus,
     Strategy,
     StrategySearchCandidate,
@@ -1729,3 +1730,121 @@ def bulk_delete_research_figures(
         return len(existing_figures), [], deleted_ids
 
     return 0, [], []
+
+
+def create_research_study(
+    session: Session,
+    *,
+    study_id: str | uuid.UUID,
+    name: str,
+    symbol: str,
+    timeframe: str,
+    series: list[dict[str, Any]],
+    start: datetime,
+    end: datetime,
+    point_count: int,
+    notes: Optional[str] = None,
+    provenance: Optional[dict[str, Any]] = None,
+) -> ResearchStudy:
+    study = ResearchStudy(
+        id=uuid.UUID(str(study_id)),
+        name=name,
+        symbol=symbol,
+        timeframe=timeframe,
+        notes=notes,
+        series=series,
+        start=start,
+        end=end,
+        point_count=point_count,
+        revision=1,
+        provenance=provenance,
+    )
+    session.add(study)
+    session.flush()
+    return study
+
+
+def get_research_study(
+    session: Session,
+    study_id: str | uuid.UUID,
+) -> Optional[ResearchStudy]:
+    try:
+        study_uuid = uuid.UUID(str(study_id))
+    except ValueError:
+        return None
+    return session.get(ResearchStudy, study_uuid)
+
+
+def get_research_study_by_identity(
+    session: Session,
+    *,
+    symbol: str,
+    timeframe: str,
+    name: str,
+) -> Optional[ResearchStudy]:
+    stmt = select(ResearchStudy).where(
+        ResearchStudy.symbol == symbol,
+        ResearchStudy.timeframe == timeframe,
+        ResearchStudy.name == name,
+    )
+    return session.execute(stmt).scalar_one_or_none()
+
+
+def list_research_studies(
+    session: Session,
+    *,
+    symbol: str,
+    timeframe: Optional[str] = None,
+) -> list[ResearchStudy]:
+    stmt = select(ResearchStudy).where(ResearchStudy.symbol == symbol)
+    if timeframe is not None:
+        stmt = stmt.where(ResearchStudy.timeframe == timeframe)
+    stmt = stmt.order_by(desc(ResearchStudy.updated_at))
+    return list(session.execute(stmt).scalars().all())
+
+
+def update_research_study(
+    session: Session,
+    study: ResearchStudy,
+    *,
+    series: list[dict[str, Any]],
+    start: datetime,
+    end: datetime,
+    point_count: int,
+    notes: Optional[str] = None,
+    provenance: Optional[dict[str, Any]] = None,
+) -> ResearchStudy:
+    study.series = series
+    study.start = start
+    study.end = end
+    study.point_count = point_count
+    study.notes = notes
+    study.provenance = provenance
+    study.revision += 1
+    study.updated_at = datetime.now(timezone.utc)
+    session.flush()
+    return study
+
+
+def rename_research_study(
+    session: Session,
+    study: ResearchStudy,
+    *,
+    name: str,
+) -> ResearchStudy:
+    study.name = name
+    study.updated_at = datetime.now(timezone.utc)
+    session.flush()
+    return study
+
+
+def delete_research_study(
+    session: Session,
+    study_id: str | uuid.UUID,
+) -> bool:
+    study = get_research_study(session, study_id)
+    if study is None:
+        return False
+    session.delete(study)
+    session.flush()
+    return True
