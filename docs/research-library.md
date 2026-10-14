@@ -386,9 +386,13 @@ class RSIReversion(ResearchStrategy):
    - A `phase` keyword-only parameter opts the exit into intrabar evaluation (see [Stop and target orders](#stop-and-target-orders)). Without it, an exit is called once per closed bar, as before. `**kwargs` alone does not opt in.
 4. **`chart_indicators() -> Sequence[ChartIndicator]`** (optional):
    - Declares the computed columns the Trade Chart draws, in order. Defaults to an empty sequence.
-   - `ChartIndicator(column, pane="price", label="", color=None, line_style=None, line_width=None)`: `column` must be a numeric column added by `compute_indicators`; `pane` is `"price"` or `"oscillator"`; an empty `label` defaults to the column name.
+   - `ChartIndicator(column, pane="price", label="", color=None, line_style=None, line_width=None, kind="line", ...)`: `column` must be a numeric column added by `compute_indicators`; `pane` is `"price"` or `"oscillator"`; an empty `label` defaults to the column name.
    - Styling is optional: `color` is a CSS color string, `line_style` is `"solid"`, `"dashed"` or `"dotted"`, and `line_width` is a positive finite number in pixels. Unset values use the chart's defaults (solid, 1.2 px). An invalid `line_style` or `line_width` raises `ValueError` when the `ChartIndicator` is created.
-   - Called once per backtest and does not receive the frame, so it cannot change results. A declared column that is missing, a market column (`open`, `high`, `low`, `close`), non-numeric or declared twice raises `ValueError` naming the strategy class and column.
+   - `kind` chooses how the series is drawn on the Trade Chart: `"line"` (default), `"step"`, `"markers"` (one glyph per non-null value), `"histogram"` (oscillator pane only, bars from `baseline`), or `"segment"` (see below). The same kinds, fields and rules apply to studies published with `publish_study`, except `"segment"`.
+   - Marker fields: `shape` is `"circle"` (default), `"square"`, `"diamond"`, `"triangle-up"`, `"triangle-down"` or `"cross"`; `size` is the glyph width in pixels (at most 32, default 8); `position` is `"value"` (default, at the value), `"above-bar"` or `"below-bar"` (a fixed gap above the high or below the low, skipping zeros, so a boolean column marks the bars where it is true). `above-bar` and `below-bar` are price-pane only.
+   - Histogram and fill fields: `negative_color` colours bars below `baseline` (default `0`); `fill_to` names another `line` or `step` series in the same pane and shades the area between them at `fill_opacity` (default `0.15`).
+   - Segment: `kind="segment"` draws a horizontal line at `column`'s value from the bar named by `start_column` to the bar holding the value. `start_column` is a column of bar labels, such as a pivot's index, and is required for `segment` and rejected for other kinds. Use it for pivots: the segment starts at the pivot bar and ends at the bar that confirmed it. A segment whose start label is not in the frame is not drawn. Segments are price-pane only.
+   - Called once per backtest and does not receive the frame, so it cannot change results. A declared column that is missing, a market column (`open`, `high`, `low`, `close`), non-numeric or declared twice raises `ValueError` naming the strategy class and column. So does a `fill_to` that names no other same-pane line or step series, and a `start_column` missing from `compute_indicators`.
    - No pane is inferred: a column that is not declared is not drawn.
 
    ```python
@@ -398,6 +402,21 @@ class RSIReversion(ResearchStrategy):
                ChartIndicator("short_ma", label="EMA 9", color="#4da3ff", line_style="dashed"),
                ChartIndicator("long_ma", label="WMA 20", color="#ff9f43", line_width=2),
                ChartIndicator("ma_delta", pane="oscillator"),
+               ChartIndicator("entry", kind="markers", shape="triangle-up", position="below-bar", color="#26a69a"),
+           ]
+   ```
+
+   Pivot segments from `top_bottom` (the column holds the pivot price on its confirming bar, and `top_index` holds the pivot bar):
+
+   ```python
+   class MorningBreakout(ResearchStrategy):
+       def compute_indicators(self, frame):
+           return frame.join(top_bottom(frame), how="left")
+
+       def chart_indicators(self):
+           return [
+               ChartIndicator("top", kind="segment", start_column="top_index", color="#26a69a", label="Top"),
+               ChartIndicator("bottom", kind="segment", start_column="bottom_index", color="#ef5350", label="Bottom"),
            ]
    ```
 
@@ -596,7 +615,7 @@ The progress bar shows bars decided out of the total, the current bar, the open 
 - **`rejected_entries: DataFrame`**: Entries not taken because a level was already on the wrong side of the fill, with columns `time`, `side`, `fill_price`, `stop_loss` and `take_profit`. Empty when there are none.
 - **`equity: DataFrame`**: Time series indexed by bar timestamp containing `realized_equity` (initial capital plus cumulative net PnL from closed trades). Open positions are not marked to market.
 - **`data: DataFrame`**: Prepared historical bars augmented with user and exit indicator columns (internal signal arrays omitted). Keeps every computed column, declared or not.
-- **`indicators: tuple[ChartIndicator, ...]`**: Chart series in declaration order. For a custom strategy, the columns from `chart_indicators()`; for a registered strategy run by name, its own chart indicators; empty when none are declared.
+- **`indicators: tuple[ChartIndicator, ...]`**: Chart series in declaration order, with their kind and styling. For a custom strategy, the columns from `chart_indicators()`; for a registered strategy run by name, its own chart indicators; empty when none are declared.
 - **`config: Mapping`**: Read-only mapping recording the run arguments (`symbol`, `strategy`, `strategy_params`, `quantity`, `point_value`, `initial_capital`, `costs`, `exit_params`, `day_trade`, session times, `force_close_at_end`, and `timeframe`).
 
 ### Publish a backtest to the Research stack
@@ -711,7 +730,7 @@ research.publish_study(
 `examples/research/publish_study.py` loads bars, computes a Bollinger band and its width with `research.indicators`, and publishes them.
 
 - **Data:** a `pandas.Series` or `DataFrame` with a `DatetimeIndex` that is strictly increasing. A timezone-aware index is converted to UTC. A naive index is read as Brasília exchange time, as `load_bars` reads naive input. Every column must be numeric or boolean; booleans become `0` and `1`. `NaN` and infinities become gaps. An unnamed Series is published under the key `value`.
-- **Series:** without `series=`, every column is published in `pane` (`"price"` by default) with its name as key and label. With `series=`, a list of `ChartIndicator` publishes only the named columns, each with its own pane, label, colour, line style and width. A missing or duplicate column, or an empty selection, raises `ValueError`.
+- **Series:** without `series=`, every column is published in `pane` (`"price"` by default) with its name as key and label. With `series=`, a list of `ChartIndicator` publishes only the named columns, each with its own pane, label, colour, line style, width and plot kind (see **Chart indicators** under research strategies). A missing or duplicate column, an empty selection, or `kind="segment"` (which is for the backtest Trade Chart only) raises `ValueError`.
 - **Timeframe:** `timeframe=` is one of `M1`, `M5`, `M10`, `M15`, `M30`, `H1`, `H2`, `H4` or `D1`. When omitted, it is the smallest gap between consecutive timestamps, which must be one of them. Session and weekend gaps are ignored when inferring. Either way, every gap must be a whole multiple of the timeframe and every timestamp must fall on a whole minute; otherwise `ValueError` names the gap found and `timeframe=`.
 - **Symbol:** upper-cased. A study is shown only for that exact symbol: one published for `WDO$N` does not appear on `WDOV26`.
 - **Replacement:** a study is identified by symbol, timeframe and name. By default (`replace=True`) publishing an existing identity replaces its values and styling in place, keeps its id, and increments its revision; the chart refetches it. Pass `replace=False` to get `ValueError` on a conflict.

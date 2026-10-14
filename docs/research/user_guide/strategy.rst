@@ -18,7 +18,7 @@ A research strategy implements up to four hooks:
    Evaluated per closed bar before ``entry_strategy``. Returns :meth:`~q_backend.research.TradeOrder.close` or ``None``.
    The optional ``phase`` parameter enables intrabar exits; see :doc:`execution`.
 4. ``chart_indicators(self) -> Sequence[ChartIndicator]``
-   Declares which indicator columns to render on the Trade Chart in the research desktop terminal.
+   Declares which indicator columns to render on the Trade Chart in the research desktop terminal. Each entry can draw a line, step, markers, histogram or pivot segment; ``kind`` and its fields are described in the ``chart_indicators`` section of ``docs/research-library.md``.
 
 Position context
 ----------------
@@ -97,5 +97,7 @@ For the RSI strategy in the quickstart, add this method to ``RSIReversion``:
 
 Use ``pane="price"`` for overlays such as moving averages and
 ``pane="oscillator"`` for separate indicator plots. Column names must match
-those returned by ``compute_indicators``. See :doc:`publishing` to review them
+those returned by ``compute_indicators``. Use ``kind="markers"`` for signal
+glyphs, and ``kind="segment"`` with ``start_column`` to draw a pivot from the bar
+where it started to the bar that confirmed it. See :doc:`publishing` to review them
 in the desktop.
