@@ -275,3 +275,40 @@ def test_failed_write_leaves_neither_row_nor_file(client, test_db, monkeypatch):
         assert session.query(ResearchStudy).count() == 0
     finally:
         session.close()
+
+
+def test_publish_study_library_round_trips_through_the_api(client):
+    import pandas as pd
+
+    from q_backend.research import ChartIndicator, publish_study
+
+    index = pd.DatetimeIndex(["2026-01-05 10:00", "2026-01-05 10:10", "2026-01-05 10:20"])
+    frame = pd.DataFrame({"kc_upper": [3.0, None, 3.2], "kc_width": [1.0, 1.1, 1.2]}, index=index)
+
+    study_id = publish_study(
+        frame,
+        symbol="wdo$n",
+        name="Keltner 20/2",
+        series=[
+            ChartIndicator("kc_upper", color="#6eb5ff"),
+            ChartIndicator("kc_width", pane="oscillator", label="Width"),
+        ],
+        api_url="http://testserver",
+        client=client,
+    )
+
+    listing = client.get("/api/v1/research/studies", params={"symbol": "WDO$N"}).json()["items"]
+    assert [item["studyId"] for item in listing] == [study_id]
+    assert listing[0]["timeframe"] == "M10"
+
+    series = client.get(
+        f"/api/v1/research/studies/{study_id}/series",
+        params={"start": "2026-01-05T13:00:00+00:00", "end": "2026-01-05T13:20:00+00:00"},
+    ).json()
+    assert series["timestamps"] == [
+        "2026-01-05T13:00:00+00:00",
+        "2026-01-05T13:10:00+00:00",
+        "2026-01-05T13:20:00+00:00",
+    ]
+    values = {item["key"]: item["values"] for item in series["series"]}
+    assert values == {"kc_upper": [3.0, None, 3.2], "kc_width": [1.0, 1.1, 1.2]}
