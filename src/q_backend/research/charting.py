@@ -8,7 +8,7 @@ from typing import Literal
 
 ChartPane = Literal["price", "oscillator"]
 ChartLineStyle = Literal["solid", "dashed", "dotted"]
-ChartKind = Literal["line", "step", "markers", "histogram"]
+ChartKind = Literal["line", "step", "markers", "histogram", "segment"]
 ChartMarkerShape = Literal["circle", "square", "diamond", "triangle-up", "triangle-down", "cross"]
 ChartMarkerPosition = Literal["value", "above-bar", "below-bar"]
 
@@ -35,6 +35,14 @@ class ChartIndicator:
         Stroke style for line rendering.
     line_width : float, optional
         Stroke thickness in pixels (positive finite float).
+    kind : {'line', 'step', 'markers', 'histogram', 'segment'}, default 'line'
+        How the series is drawn. On the Trade Chart, ``markers`` draws one glyph per non-null
+        value; ``segment`` draws a horizontal line from the bar named by ``start_column`` to
+        the bar holding the value. Studies published with ``publish_study`` accept every kind
+        except ``segment``.
+    start_column : str, optional
+        For ``kind='segment'``: column of bar labels (for example a pivot's index) marking where
+        each segment starts. Required for ``segment`` and rejected for other kinds.
     """
 
     column: str
@@ -51,6 +59,7 @@ class ChartIndicator:
     baseline: float | None = None
     fill_to: str | None = None
     fill_opacity: float | None = None
+    start_column: str | None = None
 
     def __post_init__(self) -> None:
         if self.kind == "markers":
@@ -77,6 +86,7 @@ class ChartIndicator:
             "step": {"color", "line_style", "line_width", "fill_to", "fill_opacity"},
             "markers": {"color", "shape", "size", "position"},
             "histogram": {"color", "negative_color", "baseline"},
+            "segment": {"color", "line_style", "line_width", "start_column"},
         }
         if not isinstance(self.kind, str) or self.kind not in allowed:
             raise ValueError(f"ChartIndicator kind must be one of {tuple(allowed)!r}, got {self.kind!r}")
@@ -104,12 +114,19 @@ class ChartIndicator:
                 "baseline",
                 "fill_to",
                 "fill_opacity",
+                "start_column",
             )
             if getattr(self, field) is not None
         }
         unsupported = supplied - allowed[self.kind]
         if unsupported:
             raise ValueError(f"ChartIndicator fields {sorted(unsupported)} do not apply to kind {self.kind!r}")
+        if self.kind == "segment" and not self.start_column:
+            raise ValueError("ChartIndicator kind 'segment' requires start_column")
+        if self.kind == "segment" and self.pane != "price":
+            raise ValueError("ChartIndicator segment must use the price pane")
+        if self.start_column is not None and not isinstance(self.start_column, str):
+            raise ValueError(f"ChartIndicator start_column must be a column name, got {self.start_column!r}")
         if self.kind == "histogram" and self.pane != "oscillator":
             raise ValueError("ChartIndicator histogram must use the oscillator pane")
         if self.position in {"above-bar", "below-bar"} and self.pane != "price":
@@ -131,3 +148,24 @@ class ChartIndicator:
             )
         if not self.label:
             object.__setattr__(self, "label", self.column)
+
+
+STYLE_FIELDS: tuple[str, ...] = (
+    "color",
+    "line_style",
+    "line_width",
+    "kind",
+    "shape",
+    "size",
+    "position",
+    "negative_color",
+    "baseline",
+    "fill_to",
+    "fill_opacity",
+    "start_column",
+)
+
+
+def indicator_style(indicator: ChartIndicator) -> dict[str, object]:
+    """Styling fields of a ``ChartIndicator`` for a ``ChartIndicatorSpec``."""
+    return {field: getattr(indicator, field) for field in STYLE_FIELDS}

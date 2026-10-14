@@ -331,3 +331,59 @@ def test_publish_round_trip_through_api_test_client(api_db_session, api_session_
         assert read_back["trades"][0]["pnl"] == closed_trades["pnl"].iloc[0]
     finally:
         app.dependency_overrides.pop(get_session, None)
+
+
+class SegmentRoundTripStrategy(ImportRoundTripStrategy):
+    def compute_indicators(self, frame):
+        frame = super().compute_indicators(frame)
+        frame["pivot"] = float("nan")
+        frame["pivot_bar"] = None
+        frame.iloc[3, frame.columns.get_loc("pivot")] = frame["high"].iloc[1]
+        frame.iloc[3, frame.columns.get_loc("pivot_bar")] = frame.index[1]
+        return frame
+
+    def chart_indicators(self):
+        return (
+            ChartIndicator("pivot", kind="segment", start_column="pivot_bar", color="#26a69a", label="Top"),
+            ChartIndicator("sma", kind="markers", shape="cross", label="SMA"),
+        )
+
+
+def test_segment_and_marker_series_round_trip_through_publish(api_db_session, api_session_scope, lake):
+    import pandas as pd
+    from fastapi.testclient import TestClient
+
+    from q_backend.api.deps import get_session
+    from q_backend.api.main import app
+    from q_backend.market_data.timezone import BRASILIA_TZ
+
+    app.dependency_overrides[get_session] = lambda: api_db_session
+    try:
+        client = TestClient(app)
+        idx = pd.date_range("2024-01-02 10:00", periods=5, freq="5min", tz=BRASILIA_TZ, name="time")
+        frame = pd.DataFrame(
+            {
+                "open": [100.0, 101.0, 102.0, 103.0, 104.0],
+                "high": [101.0, 102.0, 103.0, 104.0, 105.0],
+                "low": [99.0, 100.0, 101.0, 102.0, 103.0],
+                "close": [100.5, 101.5, 102.5, 103.5, 104.5],
+                "tick_volume": [100, 110, 120, 130, 140],
+            },
+            index=idx,
+        )
+        frame.attrs["q_research"] = {"timeframe": "M5", "symbol": "WIN$N"}
+        result = backtest(frame, strategy=SegmentRoundTripStrategy(), symbol="WIN$N")
+
+        with patch("q_backend.research.publishing.httpx.Client", return_value=client):
+            run_id = result.publish(api_url="http://testserver")
+
+        read_back = client.get(f"/api/v1/backtest/{run_id}/result").json()
+        pivot, sma = read_back["indicators"]
+        assert pivot["kind"] == "segment"
+        assert pivot["start_index"] == [None, None, None, 1, None]
+        assert pivot["values"][3] == frame["high"].iloc[1]
+        assert sma["kind"] == "markers"
+        assert sma["shape"] == "cross"
+        assert "start_index" not in sma
+    finally:
+        app.dependency_overrides.clear()

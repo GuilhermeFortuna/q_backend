@@ -24,6 +24,7 @@ from q_backend.api.schemas.backtest import (
 from q_backend.backtesting.chart_data import serialize_chart_data
 from q_backend.backtesting.position_sizing import FixedQuantityPositionSizing
 from q_backend.backtesting.strategy import ChartIndicatorSpec
+from q_backend.research.charting import indicator_style
 
 if TYPE_CHECKING:
     from q_backend.research.charting import ChartIndicator
@@ -44,9 +45,7 @@ class _IndicatorAdapter:
                 key=ind.column,
                 label=ind.label,
                 pane=ind.pane,
-                color=ind.color,
-                line_style=ind.line_style,
-                line_width=ind.line_width,
+                **indicator_style(ind),
             )
             for ind in self._indicators
         ]
@@ -160,6 +159,15 @@ def publish_backtest_result(
                 color=ind["color"],
                 line_style=ind["line_style"],
                 line_width=ind["line_width"],
+                kind=ind.get("kind"),
+                shape=ind.get("shape"),
+                size=ind.get("size"),
+                position=ind.get("position"),
+                negative_color=ind.get("negative_color"),
+                baseline=ind.get("baseline"),
+                fill_to=ind.get("fill_to"),
+                fill_opacity=ind.get("fill_opacity"),
+                start_index=ind.get("start_index"),
                 values=clean_values,
             )
         )

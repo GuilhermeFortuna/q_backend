@@ -25,7 +25,7 @@ from q_backend.backtesting.strategy_registry import (
 )
 from q_backend.market_data.timezone import BRASILIA_TZ
 from q_backend.research.adapter import ResearchStrategyAdapter
-from q_backend.research.charting import ChartIndicator
+from q_backend.research.charting import STYLE_FIELDS, ChartIndicator
 from q_backend.research.frame import _validate_prices
 from q_backend.research.progress import backtest_progress
 from q_backend.research.results import (
@@ -91,9 +91,7 @@ def _chart_indicators(trading_strategy: TradingStrategy) -> tuple[ChartIndicator
             spec.key,
             pane=spec.pane,
             label=spec.label,
-            color=spec.color,
-            line_style=spec.line_style,
-            line_width=spec.line_width,
+            **{field: getattr(spec, field) for field in STYLE_FIELDS},
         )
         for spec in specs
     )
@@ -112,8 +110,7 @@ def _validate_input_frame(frame: pd.DataFrame, is_builtin: bool) -> pd.DataFrame
 
     if not isinstance(frame.index, pd.DatetimeIndex):
         raise ValueError(
-            "DataFrame index must be a timezone-aware DatetimeIndex. "
-            "Use df.tz_localize('America/Sao_Paulo') if naive."
+            "DataFrame index must be a timezone-aware DatetimeIndex. Use df.tz_localize('America/Sao_Paulo') if naive."
         )
 
     if frame.index.tz is None:

@@ -17,6 +17,15 @@ class ChartIndicatorSpec(BaseModel):
     color: Optional[str] = None
     line_style: Optional[Literal["solid", "dashed", "dotted"]] = None
     line_width: Optional[float] = Field(default=None, gt=0)
+    kind: Literal["line", "step", "markers", "histogram", "segment"] = "line"
+    shape: Optional[Literal["circle", "square", "diamond", "triangle-up", "triangle-down", "cross"]] = None
+    size: Optional[float] = Field(default=None, gt=0, le=32)
+    position: Optional[Literal["value", "above-bar", "below-bar"]] = None
+    negative_color: Optional[str] = None
+    baseline: Optional[float] = None
+    fill_to: Optional[str] = None
+    fill_opacity: Optional[float] = Field(default=None, gt=0, le=1)
+    start_column: Optional[str] = None
 
 
 class TradingStrategy(ABC):

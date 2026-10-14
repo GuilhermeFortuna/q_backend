@@ -56,7 +56,7 @@ research.publish_study(
 
 - `ChartIndicator` gains `kind`, `shape`, `size`, `position`, `negative_color`, `baseline`, `fill_to` and `fill_opacity`, validated in `__post_init__` with the rules above. `fill_to` is checked against the other selected columns in `publish_study`; an unknown or invalid target raises `ValueError` naming it.
 - `publish_study` without `series` still publishes every column as a `line`.
-- A research strategy whose `chart_indicators` declares a kind other than `line`, or any of the new fields, raises `ValueError` saying they apply to studies only. The backtest Trade Chart and `ChartIndicatorSeries` do not change.
+- ~~A research strategy whose `chart_indicators` declares a kind other than `line`, or any of the new fields, raises `ValueError` saying they apply to studies only. The backtest Trade Chart and `ChartIndicatorSeries` do not change.~~ *Superseded 2026-10-14, see [Amendment](#amendment-2026-10-14).*
 
 ## Control API
 
@@ -97,4 +97,15 @@ Tests use the API test client with a temporary lake and database, mocked HTTP fo
 
 This issue authorizes only its listed deliverable after written-plan approval and
 `./work start Q-115 --agent <agent> --worktree`.
-The task branch also exists in `q_contracts` and `q_frontend`. No change to the backtest Trade Chart, `ChartIndicatorSeries`, catalog indicators, `q_terminal` or the figures feature; no per-point colours or text labels; no shapes spanning time ranges; no resampling between timeframes.
+The task branch also exists in `q_contracts` and `q_frontend`. No change to ~~the backtest Trade Chart, `ChartIndicatorSeries`,~~ catalog indicators, `q_terminal` or the figures feature; no per-point colours or text labels; no shapes spanning time ranges; no resampling between timeframes.
+
+## Amendment (2026-10-14)
+
+*Superseded in part.* The Q-115 scope kept the backtest Trade Chart line-only and rejected non-line kinds in a strategy's `chart_indicators`. That decision is reversed:
+
+- A research strategy's `chart_indicators` may declare every kind and field that `publish_study` accepts, so markers, steps, histograms and fills draw on the backtest Trade Chart.
+- A new kind, `segment`, draws a horizontal line at a value from the bar named by `start_column` (for example a pivot's index) to the bar holding the value. It is for the Trade Chart only; `publish_study` rejects it. It is price-pane only.
+- `ChartIndicatorSeries` carries the same optional fields plus `start_index`. The fields are omitted when unset, so an existing line series keeps its payload and a result stored before this change reads as lines.
+- The Market chart, study storage and the study wire format are unchanged.
+
+Implementation: `q_backend` and `q_frontend` `feat/trade-chart-series-kinds` branches, with the schema in `q_contracts` `feat/trade-chart-series-kinds`.

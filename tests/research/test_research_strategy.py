@@ -336,6 +336,25 @@ def test_chart_indicator_accepts_line_styling() -> None:
     assert (indicator.color, indicator.line_style, indicator.line_width) == ("#ff0000", "dotted", 2.5)
 
 
+def test_chart_indicator_accepts_segment_kind_with_start_column() -> None:
+    indicator = ChartIndicator("top", kind="segment", start_column="top_index", color="#26a69a")
+    assert (indicator.kind, indicator.start_column, indicator.pane) == ("segment", "top_index", "price")
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        pytest.param({"kind": "segment"}, "requires start_column", id="segment without start_column"),
+        pytest.param({"kind": "segment", "start_column": "i", "pane": "oscillator"}, "price pane", id="oscillator"),
+        pytest.param({"start_column": "i"}, "do not apply to kind 'line'", id="start_column on a line"),
+        pytest.param({"kind": "segment", "start_column": "i", "shape": "cross"}, "do not apply", id="shape"),
+    ],
+)
+def test_chart_indicator_rejects_invalid_segment_declarations(kwargs: dict, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        ChartIndicator("top", **kwargs)
+
+
 def test_chart_indicator_accepts_study_plot_kinds() -> None:
     assert ChartIndicator("step", kind="step", fill_to="upper").kind == "step"
     assert ChartIndicator("entry", kind="markers", shape="triangle-up", position="below-bar").size == 8

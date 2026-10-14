@@ -34,7 +34,7 @@
 - Studies published before this task draw exactly as before.
 - `above-bar`/`below-bar` markers treat `0` as no marker; `value` markers draw at `0`.
 - Marker rendering stays bounded by the visible range on long M1 studies.
-- The backtest Trade Chart contract is untouched, and strategies cannot declare kinds it cannot draw.
+- ~~The backtest Trade Chart contract is untouched, and strategies cannot declare kinds it cannot draw.~~ *Superseded 2026-10-14: the backtest Trade Chart accepts every kind; see the spec amendment.*
 - `LiveStrategyChart` looks the same after the glyph extraction.
 
 ## Validation and handoff

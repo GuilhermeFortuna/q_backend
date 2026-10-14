@@ -257,3 +257,18 @@ def test_publish_study_example_loads_bars_and_publishes_the_band() -> None:
     assert payload["series"][2]["fillTo"] == "bb_upper"
     assert payload["series"][3]["position"] == "below-bar"
     assert payload["series"][4]["pane"] == "oscillator"
+
+
+def test_segment_kind_is_rejected_for_studies() -> None:
+    index = pd.date_range("2026-01-05 10:00", periods=3, freq="10min")
+    frame = pd.DataFrame({"top": [None, 3.0, None], "top_index": [None, index[0], None]}, index=index)
+    client, captured = _client()
+    with pytest.raises(ValueError, match="backtest Trade Chart"):
+        publish_study(
+            frame,
+            symbol="WDO$N",
+            name="pivots",
+            series=[ChartIndicator("top", kind="segment", start_column="top_index")],
+            client=client,
+        )
+    assert captured == []
