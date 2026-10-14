@@ -678,3 +678,25 @@ class ResearchFigure(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_research_figures_collection_title", "collection", "title"),
         Index("ix_research_figures_updated_at", "updated_at"),
     )
+
+
+class ResearchStudy(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Metadata and series styling of a study; its values live in the lake."""
+
+    __tablename__ = "research_studies"
+
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    series: Mapped[list[dict[str, Any]]] = mapped_column(PortableJSON, nullable=False)
+    start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    point_count: Mapped[int] = mapped_column(nullable=False)
+    revision: Mapped[int] = mapped_column(nullable=False, default=1, server_default="1")
+    provenance: Mapped[Optional[dict[str, Any]]] = mapped_column(PortableJSON, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("symbol", "timeframe", "name", name="uq_research_studies_identity"),
+        Index("ix_research_studies_symbol_updated_at", "symbol", "updated_at"),
+    )

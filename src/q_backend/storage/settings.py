@@ -87,6 +87,7 @@ class Settings(BaseSettings):
     trade_poll_interval_s: float = 0.25
     catalog_tombstone_grace_s: int = 604_800
     research_figure_max_bytes: int = 33_554_432
+    research_study_max_values: int = 2_000_000
 
 
 @lru_cache

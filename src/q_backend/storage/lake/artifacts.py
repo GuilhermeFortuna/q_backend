@@ -306,7 +306,7 @@ def read_strategy_search_candidate_artifact(
     path = _strategy_search_candidate_artifact_absolute_path(run_id, candidate_id, kind)
     if not path.is_file():
         raise FileNotFoundError(
-            f"Strategy search candidate artifact '{kind}' not found for " f"run '{run_id}' candidate '{candidate_id}'."
+            f"Strategy search candidate artifact '{kind}' not found for run '{run_id}' candidate '{candidate_id}'."
         )
     return pd.read_parquet(path)
 
@@ -587,7 +587,7 @@ def read_neural_model(model_hash: str) -> NeuralEncoder:
         encoder = _load_legacy_pca_artifact(payload)
 
     if encoder.model_id != model_hash:
-        raise ValueError(f"Artifact model_id '{encoder.model_id}' does not match requested hash " f"'{model_hash}'.")
+        raise ValueError(f"Artifact model_id '{encoder.model_id}' does not match requested hash '{model_hash}'.")
     return encoder
 
 
@@ -670,4 +670,41 @@ def delete_research_figure_content(figure_id: str) -> bool:
     if not fig_dir.exists():
         return False
     shutil.rmtree(fig_dir, ignore_errors=True)
+    return True
+
+
+def study_lake_dir(study_id: str) -> Path:
+    return lake_root() / "research_studies" / str(study_id)
+
+
+def write_research_study_values(study_id: str, values: pd.DataFrame) -> Path:
+    """Write a study's values atomically: a reader sees the old file or the new one."""
+    import uuid
+
+    study_dir = study_lake_dir(study_id)
+    study_dir.mkdir(parents=True, exist_ok=True)
+    temp_file = study_dir / f".tmp_{uuid.uuid4().hex}.parquet"
+    target_file = study_dir / "values.parquet"
+    try:
+        values.to_parquet(temp_file, index=False)
+        temp_file.replace(target_file)
+    except Exception:
+        temp_file.unlink(missing_ok=True)
+        raise
+    return target_file
+
+
+def read_research_study_values(study_id: str, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
+    """Read the rows of a study whose ``time`` lies between start and end, inclusive."""
+    target_file = study_lake_dir(study_id) / "values.parquet"
+    if not target_file.is_file():
+        raise FileNotFoundError(f"Research study values not found for id '{study_id}'.")
+    return pd.read_parquet(target_file, filters=[("time", ">=", start), ("time", "<=", end)])
+
+
+def delete_research_study_values(study_id: str) -> bool:
+    study_dir = study_lake_dir(study_id)
+    if not study_dir.exists():
+        return False
+    shutil.rmtree(study_dir, ignore_errors=True)
     return True
