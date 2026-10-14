@@ -35,6 +35,8 @@ Q-117 starts when Q-116 is Done; it pins the `q_core` tag that `./work finish Q-
 
 ## Recorded, not in this batch
 
+Each item is expanded, with scope and caveats, in [Volume at price: follow-up ideas](../../volume-at-price-follow-ups.md).
+
 - **Footprint chart** (per-bar bid × ask cells); the kernels already produce per-bar segments.
 - **Order-flow series in research**: per-bar buy, sell, delta and cumulative delta from the Q-081 kernels, which `q_terminal` shows but research cannot read.
 - **Volume-at-price features** in the feature store and genome (distance to POC, VAH and VAL; inside-value flags).
