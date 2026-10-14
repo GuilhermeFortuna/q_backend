@@ -88,6 +88,7 @@ class Settings(BaseSettings):
     catalog_tombstone_grace_s: int = 604_800
     research_figure_max_bytes: int = 33_554_432
     research_study_max_values: int = 2_000_000
+    research_study_max_timestamps: int = 2_000_000
 
 
 @lru_cache

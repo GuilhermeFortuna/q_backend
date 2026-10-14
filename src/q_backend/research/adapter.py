@@ -464,6 +464,11 @@ class ResearchStrategyAdapter(TradingStrategy):
         for entry in declared:
             if not isinstance(entry, ChartIndicator):
                 raise ValueError(f"{name}.chart_indicators returned {entry!r}, expected ChartIndicator")
+            if entry.kind != "line" or any(
+                getattr(entry, field) is not None
+                for field in ("shape", "size", "position", "negative_color", "baseline", "fill_to", "fill_opacity")
+            ):
+                raise ValueError(f"{name}.chart_indicators: new ChartIndicator kinds and fields apply to studies only")
             column = entry.column
             if column in seen:
                 raise ValueError(f"{name}.chart_indicators declares column {column!r} more than once")

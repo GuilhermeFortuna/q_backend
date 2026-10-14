@@ -43,11 +43,16 @@ logger = logging.getLogger(__name__)
 def create_or_replace_study(request: ResearchStudyCreateRequest, session: Session) -> tuple[str, bool]:
     settings = get_settings()
     timestamps = parse_utc_timestamps(request.timestamps)
-    cells = len(timestamps) * len(request.series)
-    if cells > settings.research_study_max_values:
+    if len(timestamps) > settings.research_study_max_timestamps:
         raise HTTPException(
             status_code=413,
-            detail=f"Study has {cells} values; the limit is {settings.research_study_max_values}",
+            detail=f"Study has {len(timestamps)} timestamps; the limit is {settings.research_study_max_timestamps}",
+        )
+    value_count = sum(value is not None for item in request.series for value in item.values)
+    if value_count > settings.research_study_max_values:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Study has {value_count} non-null values; the limit is {settings.research_study_max_values}",
         )
 
     existing = get_research_study_by_identity(

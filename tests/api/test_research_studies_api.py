@@ -144,6 +144,7 @@ def test_metadata_lists_only_the_symbol_and_orders_newest_first(client):
         "color": "#6eb5ff",
         "lineStyle": "dashed",
         "lineWidth": 1.5,
+        "kind": "line",
     }
 
 
@@ -202,11 +203,108 @@ def test_documented_validation_failures_return_422(client, overrides):
 
 
 def test_value_limit_returns_413(client, monkeypatch):
-    monkeypatch.setenv("Q_RESEARCH_STUDY_MAX_VALUES", "7")
+    monkeypatch.setenv("Q_RESEARCH_STUDY_MAX_VALUES", "6")
     get_settings.cache_clear()
     response = _post(client, _request())
     assert response.status_code == 413
+    assert response.json()["detail"] == "Study has 7 non-null values; the limit is 6"
     get_settings.cache_clear()
+
+
+def test_sparse_study_counts_only_non_null_values(client, monkeypatch):
+    monkeypatch.setenv("Q_RESEARCH_STUDY_MAX_VALUES", "7")
+    get_settings.cache_clear()
+    response = _post(client, _request())
+    assert response.status_code == 201
+    get_settings.cache_clear()
+
+
+def test_timestamp_limit_returns_413(client, monkeypatch):
+    monkeypatch.setenv("Q_RESEARCH_STUDY_MAX_TIMESTAMPS", "3")
+    get_settings.cache_clear()
+    response = _post(client, _request())
+    assert response.status_code == 413
+    assert response.json()["detail"] == "Study has 4 timestamps; the limit is 3"
+    get_settings.cache_clear()
+
+
+@pytest.mark.parametrize(
+    "series",
+    [
+        [{"key": "a", "label": "A", "pane": "price", "kind": "unknown", "values": [1, 2, 3, 4]}],
+        [{"key": "a", "label": "A", "pane": "price", "kind": [], "values": [1, 2, 3, 4]}],
+        [{"key": "a", "label": "A", "pane": "price", "kind": "markers", "lineWidth": 2, "values": [1, 2, 3, 4]}],
+        [{"key": "a", "label": "A", "pane": "price", "kind": "markers", "shape": "hex", "values": [1, 2, 3, 4]}],
+        [{"key": "a", "label": "A", "pane": "price", "kind": "markers", "size": 33, "values": [1, 2, 3, 4]}],
+        [{"key": "a", "label": "A", "pane": "price", "kind": "markers", "position": [], "values": [1, 2, 3, 4]}],
+        [
+            {
+                "key": "a",
+                "label": "A",
+                "pane": "oscillator",
+                "kind": "markers",
+                "position": "above-bar",
+                "values": [1, 2, 3, 4],
+            }
+        ],
+        [{"key": "a", "label": "A", "pane": "price", "kind": "histogram", "values": [1, 2, 3, 4]}],
+        [{"key": "a", "label": "A", "pane": "price", "kind": "line", "baseline": 0, "values": [1, 2, 3, 4]}],
+        [{"key": "a", "label": "A", "pane": "price", "kind": "line", "fillOpacity": 0, "values": [1, 2, 3, 4]}],
+        [{"key": "a", "label": "A", "pane": "price", "kind": "line", "fillTo": "a", "values": [1, 2, 3, 4]}],
+        [
+            {"key": "a", "label": "A", "pane": "price", "kind": "line", "fillTo": "b", "values": [1, 2, 3, 4]},
+            {"key": "b", "label": "B", "pane": "oscillator", "values": [1, 2, 3, 4]},
+        ],
+        [
+            {"key": "a", "label": "A", "pane": "price", "kind": "line", "fillTo": "b", "values": [1, 2, 3, 4]},
+            {"key": "b", "label": "B", "pane": "price", "kind": "markers", "values": [1, 2, 3, 4]},
+        ],
+    ],
+)
+def test_study_kind_validation_returns_422(client, series):
+    assert _post(client, _request(series=series)).status_code == 422
+
+
+def test_study_metadata_defaults_legacy_kind_to_line(client):
+    response = _post(client, _request())
+    assert response.status_code == 201
+    listing = client.get("/api/v1/research/studies", params={"symbol": "WDO$N"})
+    assert listing.json()["items"][0]["series"][0]["kind"] == "line"
+
+
+def test_legacy_series_metadata_without_kind_reads_as_line():
+    from q_backend.api.schemas.research_studies import study_series_metadata
+
+    metadata = study_series_metadata([{"key": "old", "label": "Old", "pane": "price"}])
+    assert metadata[0].kind == "line"
+
+
+def test_valid_study_plot_kinds_are_accepted(client):
+    series = [
+        {"key": "line", "label": "Line", "pane": "price", "values": [1, 2, 3, 4]},
+        {"key": "fill", "label": "Fill", "pane": "price", "kind": "step", "fillTo": "line", "values": [2, 3, 4, 5]},
+        {
+            "key": "signal",
+            "label": "Signal",
+            "pane": "price",
+            "kind": "markers",
+            "shape": "diamond",
+            "size": 7,
+            "position": "below-bar",
+            "values": [0, 1, 0, 1],
+        },
+        {
+            "key": "hist",
+            "label": "Histogram",
+            "pane": "oscillator",
+            "kind": "histogram",
+            "negativeColor": "red",
+            "baseline": 0,
+            "values": [-1, 0, 1, 2],
+        },
+    ]
+    response = _post(client, _request(series=series))
+    assert response.status_code == 201, response.text
 
 
 def test_rename_onto_existing_identity_returns_409(client):

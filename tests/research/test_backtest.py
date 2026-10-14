@@ -643,6 +643,10 @@ def test_chart_indicators_hook_runs_once_per_backtest(ohlcv_5m: pd.DataFrame) ->
         pytest.param([ChartIndicator("close")], "'close'", id="market column"),
         pytest.param([ChartIndicator("open", pane="oscillator")], "'open'", id="market column in oscillator"),
         pytest.param([ChartIndicator("tag")], "'tag'", id="non-numeric column"),
+        pytest.param([ChartIndicator("short_ma", kind="step")], "studies only", id="study-only kind"),
+        pytest.param(
+            [ChartIndicator("short_ma", kind="markers", shape="cross")], "studies only", id="study-only fields"
+        ),
         pytest.param(
             [ChartIndicator("short_ma"), ChartIndicator("short_ma", pane="oscillator")],
             "'short_ma'",

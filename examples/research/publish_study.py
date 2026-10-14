@@ -35,7 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
 def build_band_study(bars: pd.DataFrame, period: int, num_std: float) -> pd.DataFrame:
     """Return the band and its width on ``bars.index``."""
     upper, middle, lower = indicators.bollinger(bars["close"], period, num_std)
-    return pd.DataFrame(
+    study = pd.DataFrame(
         {
             "bb_upper": upper,
             "bb_middle": middle,
@@ -44,6 +44,9 @@ def build_band_study(bars: pd.DataFrame, period: int, num_std: float) -> pd.Data
         },
         index=bars.index,
     )
+    study["long_entry"] = bars["close"] > study["bb_upper"]
+    study["score"] = bars["close"] - study["bb_middle"]
+    return study
 
 
 def publish_band_study(
@@ -67,8 +70,9 @@ def publish_band_study(
         series=[
             ChartIndicator("bb_upper", color="#6eb5ff"),
             ChartIndicator("bb_middle", color="#6eb5ff", line_style="dotted"),
-            ChartIndicator("bb_lower", color="#6eb5ff"),
-            ChartIndicator("bb_width", pane="oscillator", label="Width"),
+            ChartIndicator("bb_lower", color="#6eb5ff", fill_to="bb_upper"),
+            ChartIndicator("long_entry", kind="markers", shape="triangle-up", position="below-bar", color="#26a69a"),
+            ChartIndicator("score", kind="histogram", pane="oscillator", negative_color="#ef5350"),
         ],
         notes=f"Bollinger band over {timeframe} bars from {start}.",
         api_url=api_url,
