@@ -21,6 +21,7 @@ __all__ = (
     "backtest",
     "BacktestResult",
     "publish_figure",
+    "publish_study",
     "use_figure_style",
     "line",
     "drawdown",
@@ -33,6 +34,7 @@ __all__ = (
 
 if TYPE_CHECKING:
     from q_backend.research.figures import publish_figure
+    from q_backend.research.studies import publish_study
     from q_backend.research.figure_style import use_figure_style
     from q_backend.research.plots import Indicator, bar, candlestick, drawdown, histogram, line, scatter
     from q_backend.research import indicators
@@ -113,6 +115,10 @@ def __getattr__(name: str):
         from q_backend.research.figures import publish_figure
 
         return publish_figure
+    if name == "publish_study":
+        from q_backend.research.studies import publish_study
+
+        return publish_study
     if name == "use_figure_style":
         from q_backend.research.figure_style import use_figure_style
 
