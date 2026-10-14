@@ -19,8 +19,8 @@ Research reads where volume traded: volume-at-price profiles built from stored t
 
 | Task | Repository | Depends on | Specification | Implementation plan |
 | --- | --- | --- | --- | --- |
-| Q-116 — Volume-at-price kernels | q_core | — | `q_core/docs/development/specs/Q-116-volume-at-price-kernels-spec.md` | `q_core/docs/development/plans/Q-116-volume-at-price-kernels-plan.md` |
-| Q-117 — Volume at price in research and on the Market chart | q_backend, with q_contracts and q_frontend | Q-116 | [Spec](../specs/Q-117-volume-at-price-in-research-and-on-the-market-chart-spec.md) | [Plan](../plans/Q-117-volume-at-price-in-research-and-on-the-market-chart-plan.md) |
+| [Q-116](https://github.com/GuilhermeFortuna/q_core/issues/17) — Volume-at-price kernels | q_core | — | `q_core/docs/development/specs/Q-116-volume-at-price-kernels-spec.md` | `q_core/docs/development/plans/Q-116-volume-at-price-kernels-plan.md` |
+| [Q-117](https://github.com/GuilhermeFortuna/q_backend/issues/48) — Volume at price in research and on the Market chart | q_backend, with q_contracts and q_frontend | Q-116 | [Spec](../specs/Q-117-volume-at-price-in-research-and-on-the-market-chart-spec.md) | [Plan](../plans/Q-117-volume-at-price-in-research-and-on-the-market-chart-plan.md) |
 
 Q-117 starts when Q-116 is Done; it pins the `q_core` tag that `./work finish Q-116` publishes. Inside Q-117 the order is contract, backend, frontend.
 
