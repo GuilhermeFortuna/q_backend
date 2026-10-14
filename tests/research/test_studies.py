@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import patch
 
 import httpx
 import numpy as np
@@ -193,3 +194,24 @@ def test_transport_and_status_error_mapping() -> None:
     client, _ = _client(body={"status": "ok"})
     with pytest.raises(RuntimeError, match="Unexpected response format"):
         publish_study(data, symbol="WDO$N", name="Band", client=client)
+
+
+def test_publish_study_example_loads_bars_and_publishes_the_band() -> None:
+    import examples.research.publish_study as example
+
+    index = pd.date_range("2026-01-05 10:00", periods=40, freq="10min")
+    bars = pd.DataFrame({"close": np.linspace(10.0, 12.0, 40)}, index=index)
+    client, captured = _client()
+
+    with patch.object(example.research, "load_bars", return_value=bars) as load:
+        study_id = example.publish_band_study(
+            symbol="WDO$N", timeframe="M10", start="2026-01-05", api_url="http://api", client=client
+        )
+
+    assert study_id == "study-1"
+    load.assert_called_once_with("WDO$N", timeframe="M10", start="2026-01-05")
+    payload = _payload(captured)
+    assert payload["name"] == "Bollinger 20/2"
+    assert payload["timeframe"] == "M10"
+    assert [item["key"] for item in payload["series"]] == ["bb_upper", "bb_middle", "bb_lower", "bb_width"]
+    assert payload["series"][3]["pane"] == "oscillator"
