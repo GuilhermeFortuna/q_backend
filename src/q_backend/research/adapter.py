@@ -21,7 +21,7 @@ from q_backend.backtesting.signal_columns import (
     write_signal_columns,
 )
 from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy
-from q_backend.research.charting import ChartIndicator
+from q_backend.research.charting import ChartIndicator, indicator_style
 from q_backend.research.frame import FRAME_COLUMNS
 from q_backend.research.hooks import detect_hook_call, invoke_hook
 from q_backend.research.orders import TradeOrder
@@ -464,11 +464,6 @@ class ResearchStrategyAdapter(TradingStrategy):
         for entry in declared:
             if not isinstance(entry, ChartIndicator):
                 raise ValueError(f"{name}.chart_indicators returned {entry!r}, expected ChartIndicator")
-            if entry.kind != "line" or any(
-                getattr(entry, field) is not None
-                for field in ("shape", "size", "position", "negative_color", "baseline", "fill_to", "fill_opacity")
-            ):
-                raise ValueError(f"{name}.chart_indicators: new ChartIndicator kinds and fields apply to studies only")
             column = entry.column
             if column in seen:
                 raise ValueError(f"{name}.chart_indicators declares column {column!r} more than once")
@@ -479,6 +474,24 @@ class ResearchStrategyAdapter(TradingStrategy):
                 raise ValueError(f"{name}.chart_indicators declares column {column!r} missing from compute_indicators")
             if not is_numeric_dtype(augmented[column]):
                 raise ValueError(f"{name}.chart_indicators declares non-numeric column {column!r}")
+            if entry.start_column is not None:
+                start = entry.start_column
+                if start in _MARKET_COLUMNS or start not in augmented.columns:
+                    raise ValueError(
+                        f"{name}.chart_indicators declares start_column {start!r} missing from compute_indicators"
+                    )
+        declared_by_column = {entry.column: entry for entry in declared}
+        for entry in declared:
+            if entry.fill_to is None:
+                continue
+            target = declared_by_column.get(entry.fill_to)
+            if entry.fill_to == entry.column:
+                raise ValueError(f"{name}.chart_indicators: {entry.column!r} cannot fill to itself")
+            if target is None or target.pane != entry.pane or target.kind not in {"line", "step"}:
+                raise ValueError(
+                    f"{name}.chart_indicators: {entry.column!r} fill_to {entry.fill_to!r} must name another "
+                    "declared line or step series in the same pane"
+                )
         return tuple(declared)
 
     def get_chart_indicators(self) -> list[ChartIndicatorSpec]:
@@ -487,9 +500,7 @@ class ResearchStrategyAdapter(TradingStrategy):
                 key=indicator.column,
                 label=indicator.label,
                 pane=indicator.pane,
-                color=indicator.color,
-                line_style=indicator.line_style,
-                line_width=indicator.line_width,
+                **indicator_style(indicator),
             )
             for indicator in self._chart_indicators
         ]

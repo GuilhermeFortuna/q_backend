@@ -95,6 +95,8 @@ def publish_study(
     missing = [key for key in keys if key not in frame.columns]
     if missing:
         raise ValueError(f"series= names columns missing from the data: {missing}")
+    if any(indicator.kind == "segment" for indicator in selected):
+        raise ValueError("ChartIndicator kind 'segment' is for the backtest Trade Chart, not studies.")
     selected_by_key = {indicator.column: indicator for indicator in selected}
     for indicator in selected:
         if indicator.fill_to is None:

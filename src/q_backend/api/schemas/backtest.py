@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import NonNegativeInt, BaseModel, Field
 
 from q_backend.api.schemas.market import OhlcvBarResponse
 from q_backend.backtesting.costs import TransactionCostConfig
@@ -61,6 +61,23 @@ class ChartIndicatorSeries(BaseModel):
     color: Optional[str] = None
     line_style: Optional[Literal["solid", "dashed", "dotted"]] = None
     line_width: Optional[float] = Field(default=None, gt=0)
+    # Plot-kind fields are omitted from the JSON when unset, so line series keep their existing payload.
+    # An absent kind is a line.
+    kind: Optional[Literal["line", "step", "markers", "histogram", "segment"]] = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    shape: Optional[Literal["circle", "square", "diamond", "triangle-up", "triangle-down", "cross"]] = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    size: Optional[float] = Field(default=None, gt=0, le=32, exclude_if=lambda value: value is None)
+    position: Optional[Literal["value", "above-bar", "below-bar"]] = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    negative_color: Optional[str] = Field(default=None, exclude_if=lambda value: value is None)
+    baseline: Optional[float] = Field(default=None, exclude_if=lambda value: value is None)
+    fill_to: Optional[str] = Field(default=None, exclude_if=lambda value: value is None)
+    fill_opacity: Optional[float] = Field(default=None, gt=0, le=1, exclude_if=lambda value: value is None)
+    start_index: Optional[List[Optional[NonNegativeInt]]] = Field(default=None, exclude_if=lambda value: value is None)
     values: List[Optional[float]]
 
 

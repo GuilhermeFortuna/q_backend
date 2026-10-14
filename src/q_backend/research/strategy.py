@@ -35,7 +35,10 @@ class ResearchStrategy(ABC):
         -------
         Sequence of ChartIndicator
             Sequence of indicator configurations specifying column names, panes,
-            colors, line styles, and line widths.
+            colors, line styles, line widths, and plot kinds. A ``kind="segment"``
+            entry draws from the bar named by its ``start_column`` to the bar
+            holding its value, such as a pivot from the bar where it started to
+            the bar that confirmed it.
         """
         return ()
 

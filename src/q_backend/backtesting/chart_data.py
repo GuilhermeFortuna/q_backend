@@ -25,6 +25,15 @@ def _series_values(column: pd.Series) -> List[Optional[float]]:
     return values
 
 
+_PLOT_STYLE_FIELDS = ("shape", "size", "position", "negative_color", "baseline", "fill_to", "fill_opacity")
+
+
+def _segment_positions(df: pd.DataFrame, spec: ChartIndicatorSpec) -> List[Optional[int]]:
+    """Bar position of each segment's start bar, or None where the label is missing from the frame."""
+    position_by_label = {label: position for position, label in enumerate(df.index)}
+    return [position_by_label.get(label) for label in df[spec.start_column]]
+
+
 def serialize_chart_data(
     df: pd.DataFrame,
     strategy: TradingStrategy,
@@ -52,17 +61,30 @@ def serialize_chart_data(
     for spec in specs:
         if spec.key not in df.columns:
             continue
-        indicators.append(
-            {
-                "key": spec.key,
-                "label": spec.label,
-                "pane": spec.pane,
-                "color": spec.color,
-                "line_style": spec.line_style,
-                "line_width": spec.line_width,
-                "values": _series_values(df[spec.key]),
-            }
-        )
+        column = df[spec.key]
+        entry: Dict[str, Any] = {
+            "key": spec.key,
+            "label": spec.label,
+            "pane": spec.pane,
+            "color": spec.color,
+            "line_style": spec.line_style,
+            "line_width": spec.line_width,
+        }
+        # Plot-kind fields are emitted only when they differ from a plain line, so existing line
+        # series serialize exactly as before.
+        if spec.kind != "line":
+            entry["kind"] = spec.kind
+        for field in _PLOT_STYLE_FIELDS:
+            value = getattr(spec, field)
+            if value is not None:
+                entry[field] = value
+        if spec.kind == "segment":
+            start_index = _segment_positions(df, spec)
+            # A segment without a resolvable start bar is dropped rather than drawn from the wrong bar.
+            column = column.where(pd.Series([p is not None for p in start_index], index=column.index))
+            entry["start_index"] = start_index
+        entry["values"] = _series_values(column)
+        indicators.append(entry)
 
     return {"bars": bars, "indicators": indicators}
 

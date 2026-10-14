@@ -629,6 +629,34 @@ def test_styled_chart_indicators_survive_adapter_and_serialization(ohlcv_5m: pd.
     assert result.indicators == (styled,)
 
 
+class SegmentChartStrategy(DeclaredChartStrategy):
+    """Marks a pivot bar and its confirmation, as ``top_bottom`` does, for segment declarations."""
+
+    def compute_indicators(self, frame: pd.DataFrame) -> pd.DataFrame:
+        frame = super().compute_indicators(frame)
+        frame["pivot"] = float("nan")
+        frame["pivot_bar"] = None
+        frame.iloc[8, frame.columns.get_loc("pivot")] = frame["high"].iloc[8]
+        frame.iloc[11, frame.columns.get_loc("pivot")] = frame["high"].iloc[8]
+        frame.iloc[11, frame.columns.get_loc("pivot_bar")] = frame.index[8]
+        return frame
+
+    def chart_indicators(self):
+        self.hook_calls += 1
+        return [
+            ChartIndicator("pivot", kind="segment", start_column="pivot_bar", color="#26a69a"),
+            ChartIndicator("short_ma", kind="markers", shape="cross", position="value"),
+        ]
+
+
+def test_segment_and_marker_kinds_reach_the_backtest_result(ohlcv_5m: pd.DataFrame) -> None:
+    result = backtest(ohlcv_5m, strategy=SegmentChartStrategy(), symbol="WIN$")
+    segment, markers = result.indicators
+    assert segment.kind == "segment"
+    assert segment.start_column == "pivot_bar"
+    assert markers.kind == "markers" and markers.shape == "cross" and markers.size == 8
+
+
 def test_chart_indicators_hook_runs_once_per_backtest(ohlcv_5m: pd.DataFrame) -> None:
     strategy = DeclaredChartStrategy()
     backtest(ohlcv_5m, strategy=strategy, symbol="WIN$")
@@ -643,10 +671,17 @@ def test_chart_indicators_hook_runs_once_per_backtest(ohlcv_5m: pd.DataFrame) ->
         pytest.param([ChartIndicator("close")], "'close'", id="market column"),
         pytest.param([ChartIndicator("open", pane="oscillator")], "'open'", id="market column in oscillator"),
         pytest.param([ChartIndicator("tag")], "'tag'", id="non-numeric column"),
-        pytest.param([ChartIndicator("short_ma", kind="step")], "studies only", id="study-only kind"),
         pytest.param(
-            [ChartIndicator("short_ma", kind="markers", shape="cross")], "studies only", id="study-only fields"
+            [ChartIndicator("short_ma", kind="segment", start_column="missing")],
+            "'missing'",
+            id="segment start_column missing",
         ),
+        pytest.param(
+            [ChartIndicator("short_ma"), ChartIndicator("ma_delta", pane="oscillator", fill_to="short_ma")],
+            "'ma_delta'",
+            id="fill_to in another pane",
+        ),
+        pytest.param([ChartIndicator("short_ma", fill_to="short_ma")], "'short_ma'", id="fill_to itself"),
         pytest.param(
             [ChartIndicator("short_ma"), ChartIndicator("short_ma", pane="oscillator")],
             "'short_ma'",
