@@ -21,8 +21,8 @@
 
 ## Ordered implementation
 
-- [ ] 1. `q_contracts`: add the optional fields and their enums and bounds to `ResearchStudySeriesInput` and `ResearchStudySeriesMetadata`; regenerate; extend `tests/test_research_studies_contract.py`; `make check`. Commit.
-- [ ] 2. `q_backend`: bump `CONTRACTS_REV` and run `make contracts`. In `api/schemas/research_studies.py`, add the fields and a model validator for the per-kind, pane and `fillTo` rules; read a stored series without `kind` as `line` in `study_series_metadata`. Tests for criteria 1 and 4. Commit.
+- [x] 1. `q_contracts`: add the optional fields and their enums and bounds to `ResearchStudySeriesInput` and `ResearchStudySeriesMetadata`; regenerate; extend `tests/test_research_studies_contract.py`; `make check`. Commit.
+- [x] 2. `q_backend`: bump `CONTRACTS_REV` and run `make contracts`. In `api/schemas/research_studies.py`, add the fields and a model validator for the per-kind, pane and `fillTo` rules; read a stored series without `kind` as `line` in `study_series_metadata`. Tests for criteria 1 and 4. Commit.
 - [x] 3. `research/study_service.py`: count non-null values for `research_study_max_values`, add `research_study_max_timestamps` to `storage/settings.py`, and update the `413` details. Tests for criterion 5. Commit.
 - [x] 4. `research/charting.py`: add the fields and rules to `ChartIndicator`; check `fill_to` in `research/studies.py` and serialise the new fields; make the strategy adapter's `_declare_chart_indicators` raise the studies-only `ValueError`. Tests for criteria 2 and 3 with mocked HTTP. Commit.
 - [ ] 5. `q_frontend`: vendor the contract. Extract the glyph shapes from `LiveStrategyChart.tsx` into a shared module under `components/charts/layers/` and switch `LiveStrategyChart` to it (criterion 9). Commit.
