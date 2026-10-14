@@ -15,6 +15,34 @@ RESERVED_STUDY_KEY = "time"
 
 StudyPane = Literal["price", "oscillator"]
 StudyLineStyle = Literal["solid", "dashed", "dotted"]
+StudyKind = Literal["line", "step", "markers", "histogram"]
+StudyMarkerShape = Literal["circle", "square", "diamond", "triangle-up", "triangle-down", "cross"]
+StudyMarkerPosition = Literal["value", "above-bar", "below-bar"]
+
+_KIND_FIELDS = {
+    "line": {"color", "lineStyle", "lineWidth", "fillTo", "fillOpacity"},
+    "step": {"color", "lineStyle", "lineWidth", "fillTo", "fillOpacity"},
+    "markers": {"color", "shape", "size", "position"},
+    "histogram": {"color", "negativeColor", "baseline"},
+}
+
+
+def _validate_series_style(values: Any) -> Any:
+    if not isinstance(values, dict):
+        return values
+    kind = values.get("kind", "line")
+    if not isinstance(kind, str) or kind not in _KIND_FIELDS:
+        return values  # Literal validation reports the invalid kind.
+    supplied = set(values) - {"key", "label", "pane", "values", "kind"}
+    unsupported = supplied - _KIND_FIELDS[kind]
+    if unsupported:
+        raise ValueError(f"fields {sorted(unsupported)} do not apply to kind {kind!r}")
+    pane = values.get("pane")
+    if kind == "histogram" and pane != "oscillator":
+        raise ValueError("histogram series must use the oscillator pane")
+    if kind == "markers" and values.get("position", "value") in ("above-bar", "below-bar") and pane != "price":
+        raise ValueError("above-bar and below-bar markers must use the price pane")
+    return values
 
 
 def parse_utc_timestamps(values: list[str]) -> list[datetime]:
@@ -32,7 +60,7 @@ def parse_utc_timestamps(values: list[str]) -> list[datetime]:
 
 
 class ResearchStudySeriesInput(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     key: str = Field(min_length=1)
     label: str = Field(min_length=1)
@@ -40,7 +68,33 @@ class ResearchStudySeriesInput(BaseModel):
     color: Optional[str] = None
     line_style: Optional[StudyLineStyle] = Field(default=None, alias="lineStyle")
     line_width: Optional[float] = Field(default=None, alias="lineWidth", gt=0)
+    kind: StudyKind = "line"
+    shape: Optional[StudyMarkerShape] = None
+    size: Optional[float] = Field(default=None, gt=0, le=32)
+    position: Optional[StudyMarkerPosition] = None
+    negative_color: Optional[str] = Field(default=None, alias="negativeColor")
+    baseline: Optional[float] = None
+    fill_to: Optional[str] = Field(default=None, alias="fillTo")
+    fill_opacity: Optional[float] = Field(default=None, alias="fillOpacity", gt=0, le=1)
     values: list[Optional[float]]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _style_fields_apply_to_kind(cls, values: Any) -> Any:
+        return _validate_series_style(values)
+
+    @field_validator("size", "baseline", "fill_opacity", mode="before")
+    @classmethod
+    def _new_numbers_are_finite(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        try:
+            finite = not isinstance(value, bool) and math.isfinite(float(value))
+        except (TypeError, ValueError):
+            finite = False
+        if not finite:
+            raise ValueError("study style values must be finite numbers")
+        return value
 
     @field_validator("values")
     @classmethod
@@ -85,6 +139,7 @@ class ResearchStudyCreateRequest(BaseModel):
                 raise ValueError("timestamps must be strictly increasing")
 
         keys: set[str] = set()
+        series_by_key = {item.key: item for item in self.series}
         for item in self.series:
             if item.key == RESERVED_STUDY_KEY:
                 raise ValueError(f"series key {RESERVED_STUDY_KEY!r} is reserved")
@@ -95,6 +150,16 @@ class ResearchStudyCreateRequest(BaseModel):
                 raise ValueError(f"series {item.key!r} has {len(item.values)} values for {len(parsed)} timestamps")
             if all(value is None for value in item.values):
                 raise ValueError(f"series {item.key!r} has no values")
+            if item.fill_to is not None:
+                target = series_by_key.get(item.fill_to)
+                if item.fill_to == item.key:
+                    raise ValueError(f"series {item.key!r} cannot fill to itself")
+                if target is None:
+                    raise ValueError(f"fillTo target {item.fill_to!r} does not exist")
+                if target.pane != item.pane:
+                    raise ValueError(f"fillTo target {item.fill_to!r} must use the same pane")
+                if target.kind not in {"line", "step"}:
+                    raise ValueError(f"fillTo target {item.fill_to!r} must be line or step")
         return self
 
 
@@ -106,7 +171,7 @@ class ResearchStudyCreateResponse(BaseModel):
 
 
 class ResearchStudySeriesMetadata(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     key: str
     label: str
@@ -114,6 +179,32 @@ class ResearchStudySeriesMetadata(BaseModel):
     color: Optional[str] = None
     line_style: Optional[StudyLineStyle] = Field(default=None, alias="lineStyle")
     line_width: Optional[float] = Field(default=None, alias="lineWidth")
+    kind: StudyKind = "line"
+    shape: Optional[StudyMarkerShape] = None
+    size: Optional[float] = Field(default=None, gt=0, le=32)
+    position: Optional[StudyMarkerPosition] = None
+    negative_color: Optional[str] = Field(default=None, alias="negativeColor")
+    baseline: Optional[float] = None
+    fill_to: Optional[str] = Field(default=None, alias="fillTo")
+    fill_opacity: Optional[float] = Field(default=None, alias="fillOpacity", gt=0, le=1)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _style_fields_apply_to_kind(cls, values: Any) -> Any:
+        return _validate_series_style(values)
+
+    @field_validator("size", "baseline", "fill_opacity", mode="before")
+    @classmethod
+    def _new_numbers_are_finite(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        try:
+            finite = not isinstance(value, bool) and math.isfinite(float(value))
+        except (TypeError, ValueError):
+            finite = False
+        if not finite:
+            raise ValueError("study style values must be finite numbers")
+        return value
 
 
 class ResearchStudyMetadata(BaseModel):

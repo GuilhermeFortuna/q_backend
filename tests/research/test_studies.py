@@ -131,6 +131,46 @@ def test_series_publishes_only_named_columns_with_styling() -> None:
     assert items[2]["pane"] == "oscillator" and items[2]["label"] == "Width"
 
 
+def test_study_plot_kind_fields_are_serialized() -> None:
+    index = pd.date_range("2026-01-05 10:00", periods=3, freq="10min")
+    frame = pd.DataFrame({"upper": [3, 3, 3], "lower": [1, 1, 1], "entry": [0, 1, 0], "score": [-1, 0, 2]}, index=index)
+    client, captured = _client()
+    publish_study(
+        frame,
+        symbol="WDO$N",
+        name="plots",
+        series=[
+            ChartIndicator("upper"),
+            ChartIndicator("lower", fill_to="upper", fill_opacity=0.2),
+            ChartIndicator("entry", kind="markers", shape="triangle-up", position="below-bar"),
+            ChartIndicator("score", kind="histogram", pane="oscillator", negative_color="#f00", baseline=0),
+        ],
+        client=client,
+    )
+    items = {item["key"]: item for item in _payload(captured)["series"]}
+    assert items["lower"]["fillTo"] == "upper" and items["lower"]["fillOpacity"] == 0.2
+    assert items["entry"]["kind"] == "markers" and items["entry"]["position"] == "below-bar"
+    assert items["score"]["negativeColor"] == "#f00" and items["score"]["baseline"] == 0
+
+
+@pytest.mark.parametrize(
+    "selected",
+    [
+        [ChartIndicator("upper", fill_to="upper")],
+        [ChartIndicator("upper", fill_to="missing")],
+        [ChartIndicator("upper", fill_to="lower"), ChartIndicator("lower", pane="oscillator")],
+        [ChartIndicator("upper", fill_to="entry"), ChartIndicator("entry", kind="markers")],
+    ],
+)
+def test_invalid_fill_target_is_rejected_before_http(selected) -> None:
+    index = pd.date_range("2026-01-05 10:00", periods=2, freq="10min")
+    frame = pd.DataFrame({"upper": [2, 2], "lower": [1, 1], "entry": [1, 0]}, index=index)
+    client, captured = _client()
+    with pytest.raises(ValueError, match="fill"):
+        publish_study(frame, symbol="WDO$N", name="invalid", series=selected, client=client)
+    assert captured == []
+
+
 @pytest.mark.parametrize(
     "selection",
     [
@@ -213,5 +253,7 @@ def test_publish_study_example_loads_bars_and_publishes_the_band() -> None:
     payload = _payload(captured)
     assert payload["name"] == "Bollinger 20/2"
     assert payload["timeframe"] == "M10"
-    assert [item["key"] for item in payload["series"]] == ["bb_upper", "bb_middle", "bb_lower", "bb_width"]
-    assert payload["series"][3]["pane"] == "oscillator"
+    assert [item["key"] for item in payload["series"]] == ["bb_upper", "bb_middle", "bb_lower", "long_entry", "score"]
+    assert payload["series"][2]["fillTo"] == "bb_upper"
+    assert payload["series"][3]["position"] == "below-bar"
+    assert payload["series"][4]["pane"] == "oscillator"

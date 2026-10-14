@@ -34,7 +34,7 @@ def create_study(
     return ResearchStudyCreateResponse(studyId=study_id, replaced=replaced)
 
 
-@router.get("", response_model=ResearchStudyListResponse)
+@router.get("", response_model=ResearchStudyListResponse, response_model_exclude_none=True)
 def get_studies(
     symbol: str = Query(min_length=1),
     timeframe: Optional[str] = Query(default=None),
@@ -53,7 +53,7 @@ def get_series(
     return get_study_series(study_id, start=start, end=end, session=session)
 
 
-@router.patch("/{study_id}", response_model=ResearchStudyMetadata)
+@router.patch("/{study_id}", response_model=ResearchStudyMetadata, response_model_exclude_none=True)
 def rename(
     study_id: str,
     request: ResearchStudyRenameRequest,

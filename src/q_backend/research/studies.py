@@ -95,6 +95,19 @@ def publish_study(
     missing = [key for key in keys if key not in frame.columns]
     if missing:
         raise ValueError(f"series= names columns missing from the data: {missing}")
+    selected_by_key = {indicator.column: indicator for indicator in selected}
+    for indicator in selected:
+        if indicator.fill_to is None:
+            continue
+        target = selected_by_key.get(indicator.fill_to)
+        if indicator.fill_to == indicator.column:
+            raise ValueError(f"Series {indicator.column!r} cannot fill to itself.")
+        if target is None:
+            raise ValueError(f"fill_to target {indicator.fill_to!r} is not selected.")
+        if target.pane != indicator.pane:
+            raise ValueError(f"fill_to target {indicator.fill_to!r} must use the same pane.")
+        if target.kind not in {"line", "step"}:
+            raise ValueError(f"fill_to target {indicator.fill_to!r} must be kind 'line' or 'step'.")
 
     wire_series: list[dict[str, Any]] = []
     for indicator in selected:
@@ -110,6 +123,20 @@ def publish_study(
             item["lineStyle"] = indicator.line_style
         if indicator.line_width is not None:
             item["lineWidth"] = indicator.line_width
+        if indicator.kind != "line":
+            item["kind"] = indicator.kind
+        for field, wire_name in (
+            ("shape", "shape"),
+            ("size", "size"),
+            ("position", "position"),
+            ("negative_color", "negativeColor"),
+            ("baseline", "baseline"),
+            ("fill_to", "fillTo"),
+            ("fill_opacity", "fillOpacity"),
+        ):
+            value = getattr(indicator, field)
+            if value is not None:
+                item[wire_name] = value
         wire_series.append(item)
 
     # 5. Payload and HTTP dispatch

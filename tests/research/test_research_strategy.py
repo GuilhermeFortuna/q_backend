@@ -336,6 +336,30 @@ def test_chart_indicator_accepts_line_styling() -> None:
     assert (indicator.color, indicator.line_style, indicator.line_width) == ("#ff0000", "dotted", 2.5)
 
 
+def test_chart_indicator_accepts_study_plot_kinds() -> None:
+    assert ChartIndicator("step", kind="step", fill_to="upper").kind == "step"
+    assert ChartIndicator("entry", kind="markers", shape="triangle-up", position="below-bar").size == 8
+    assert ChartIndicator("entry", kind="markers").position == "value"
+    assert ChartIndicator("score", pane="oscillator", kind="histogram", negative_color="#f00").kind == "histogram"
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"kind": "markers", "line_width": 2},
+        {"kind": "markers", "shape": "hex"},
+        {"kind": "markers", "size": 33},
+        {"kind": "markers", "position": "above-bar", "pane": "oscillator"},
+        {"kind": "histogram"},
+        {"kind": "line", "baseline": 0},
+        {"kind": "line", "fill_opacity": 0},
+    ],
+)
+def test_chart_indicator_rejects_invalid_study_kind_fields(kwargs) -> None:
+    with pytest.raises(ValueError):
+        ChartIndicator("series", **kwargs)
+
+
 def test_chart_indicator_rejects_unknown_line_style() -> None:
     with pytest.raises(ValueError, match="line_style"):
         ChartIndicator("rsi", line_style="wavy")  # type: ignore[arg-type]
