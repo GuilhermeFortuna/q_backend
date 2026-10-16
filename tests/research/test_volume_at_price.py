@@ -109,3 +109,77 @@ def test_missing_tick_size_on_value_area_levels(tmp_path):
     bars = _bars([datetime(2026, 9, 1, 9)])
     with pytest.raises(ValueError, match="tick_size"):
         indicators.value_area_levels(bars, ticks=store, timeframe="M5")
+
+
+def test_bar_profiles_use_timeframe_and_exclusive_range(tmp_path):
+    nine = datetime(2026, 9, 2, 9)
+    write_trade_ticks(
+        tmp_path,
+        SYMBOL,
+        [
+            (nine, 100.0, 10.0, BUY_FLAG),
+            (nine + timedelta(minutes=4), 100.5, 5.0, SELL_FLAG),
+            (nine + timedelta(minutes=5), 101.0, 7.0, BUY_FLAG),
+            (nine + timedelta(minutes=10), 102.0, 9.0, BUY_FLAG),
+        ],
+    )
+    profile = indicators.volume_at_price(
+        TickStore(SYMBOL, root=tmp_path),
+        start="2026-09-02T09:00",
+        end="2026-09-02T09:10",
+        tick_size=TICK,
+        by="bar",
+        timeframe="M5",
+    )
+    assert profile.segments["total"].tolist() == [15.0, 7.0]
+    assert profile.segments.index.hour.tolist() == [9, 9]
+    assert profile.segments.index.minute.tolist() == [0, 5]
+
+
+def test_developing_levels_include_session_history_before_frame(tmp_path):
+    write_trade_ticks(
+        tmp_path,
+        SYMBOL,
+        [
+            (datetime(2026, 9, 2, 9), 100.0, 100.0, BUY_FLAG),
+            (datetime(2026, 9, 2, 10), 102.0, 1.0, BUY_FLAG),
+            (datetime(2026, 9, 2, 10, 5), 103.0, 1000.0, BUY_FLAG),
+        ],
+    )
+    store = TickStore(SYMBOL, root=tmp_path)
+    frame = _bars([datetime(2026, 9, 2, 10)])
+    levels = indicators.value_area_levels(frame, ticks=store, timeframe="M5", tick_size=TICK)
+    assert levels["poc"].tolist() == [100.0]
+    assert levels.index.equals(frame.index)
+    # Even a window with no new ticks still has a developing session profile.
+    later = indicators.value_area_levels(
+        _bars([datetime(2026, 9, 2, 11)]),
+        ticks=store,
+        timeframe="M5",
+        tick_size=TICK,
+    )
+    assert later["poc"].tolist() == [103.0]
+
+
+def test_prior_session_uses_stored_predecessor_outside_frame(tmp_path):
+    write_trade_ticks(
+        tmp_path,
+        SYMBOL,
+        [
+            (datetime(2026, 9, 1, 9), 100.0, 100.0, BUY_FLAG),
+            (datetime(2026, 9, 3, 9), 102.0, 1.0, BUY_FLAG),
+        ],
+    )
+    store = TickStore(SYMBOL, root=tmp_path)
+    # Skip a missing calendar day; the current day need not contain stored ticks.
+    for day in [2, 3]:
+        frame = _bars([datetime(2026, 9, day, 10)])
+        levels = indicators.value_area_levels(
+            frame,
+            ticks=store,
+            timeframe="M5",
+            tick_size=TICK,
+            mode="prior_session",
+        )
+        assert levels["poc"].tolist() == [100.0]
+        assert levels.attrs["unavailable_reason"] is None

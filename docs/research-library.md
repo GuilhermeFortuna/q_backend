@@ -329,10 +329,14 @@ when at least one requested session has ticks, even if its quotes are unusable.
 Trade helpers use the same explicit `TickStore` and never synchronize or call the
 gateway. A trade is a tick with the buy or sell bit set; volume is binned on the
 instrument `tick_size` grid (from the caller or `frame.attrs["q_research"]["tick_size"]`).
-`volume_at_price` returns `rows` and `segments` frames per session, bar, or range.
+`volume_at_price` returns `rows` and `segments` frames per session, bar, or range,
+using the exclusive range `[start, end)`. Bar profiles require `timeframe`; their
+grid aligns to local midnight, with boundary segments clipped to the query range.
 `value_area_levels` aligns POC, VAH and VAL to bar opens: `developing` uses trades
-up to each bar's close; `prior_session` repeats the previous stored session's
-final levels (NaN for the first session). Sync contiguous history before
+from the session's beginning strictly before each bar's close, including trades
+before the first requested bar. `prior_session` repeats the previous stored
+session's final levels, including a predecessor outside the requested window
+(NaN only when no earlier session is stored). Sync contiguous history before
 `prior_session`. The Market chart profile route enforces
 `Q_MARKET_VOLUME_PROFILE_MAX_ROWS` (default 200,000 rows).
 
