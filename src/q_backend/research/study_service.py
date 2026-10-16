@@ -35,6 +35,7 @@ from q_backend.storage.lake.artifacts import (
     read_research_study_values,
     write_research_study_values,
 )
+from q_backend.research.studies import slice_segment_start_index_for_window
 from q_backend.storage.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -134,13 +135,27 @@ def get_study_series(study_id: str, *, start: str, end: str, session: Session) -
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=f"Research study '{study_id}' values not found") from exc
 
-    series = [
-        ResearchStudySeriesValues(
-            key=item["key"],
-            values=[None if np.isnan(value) else float(value) for value in frame[item["key"]].to_numpy()],
+    window_times = pd.DatetimeIndex(frame["time"])
+    series: list[ResearchStudySeriesValues] = []
+    for item in study.series:
+        values = [None if np.isnan(value) else float(value) for value in frame[item["key"]].to_numpy()]
+        start_index = None
+        if item.get("kind") == "segment":
+            full_start = item.get("startIndex")
+            if full_start is not None:
+                start_index = slice_segment_start_index_for_window(
+                    full_start,
+                    study.start,
+                    window_times,
+                    study.timeframe,
+                )
+        series.append(
+            ResearchStudySeriesValues(
+                key=item["key"],
+                values=values,
+                start_index=start_index,
+            )
         )
-        for item in study.series
-    ]
     return ResearchStudySeriesResponse(
         timestamps=[_utc_iso(moment) for moment in frame["time"]],
         series=series,

@@ -15,7 +15,7 @@ RESERVED_STUDY_KEY = "time"
 
 StudyPane = Literal["price", "oscillator"]
 StudyLineStyle = Literal["solid", "dashed", "dotted"]
-StudyKind = Literal["line", "step", "markers", "histogram"]
+StudyKind = Literal["line", "step", "markers", "histogram", "segment"]
 StudyMarkerShape = Literal["circle", "square", "diamond", "triangle-up", "triangle-down", "cross"]
 StudyMarkerPosition = Literal["value", "above-bar", "below-bar"]
 
@@ -24,6 +24,7 @@ _KIND_FIELDS = {
     "step": {"color", "lineStyle", "lineWidth", "fillTo", "fillOpacity"},
     "markers": {"color", "shape", "size", "position"},
     "histogram": {"color", "negativeColor", "baseline"},
+    "segment": {"color", "lineStyle", "lineWidth", "startIndex"},
 }
 
 
@@ -42,6 +43,8 @@ def _validate_series_style(values: Any) -> Any:
         raise ValueError("histogram series must use the oscillator pane")
     if kind == "markers" and values.get("position", "value") in ("above-bar", "below-bar") and pane != "price":
         raise ValueError("above-bar and below-bar markers must use the price pane")
+    if kind == "segment" and pane != "price":
+        raise ValueError("segment series must use the price pane")
     return values
 
 
@@ -76,6 +79,7 @@ class ResearchStudySeriesInput(BaseModel):
     baseline: Optional[float] = None
     fill_to: Optional[str] = Field(default=None, alias="fillTo")
     fill_opacity: Optional[float] = Field(default=None, alias="fillOpacity", gt=0, le=1)
+    start_index: Optional[list[Optional[int]]] = Field(default=None, alias="startIndex")
     values: list[Optional[float]]
 
     @model_validator(mode="before")
@@ -160,6 +164,18 @@ class ResearchStudyCreateRequest(BaseModel):
                     raise ValueError(f"fillTo target {item.fill_to!r} must use the same pane")
                 if target.kind not in {"line", "step"}:
                     raise ValueError(f"fillTo target {item.fill_to!r} must be line or step")
+            if item.kind == "segment":
+                if item.fill_to is not None:
+                    raise ValueError(f"series {item.key!r} with kind segment cannot use fillTo")
+                if item.start_index is None:
+                    raise ValueError(f"series {item.key!r} with kind segment requires startIndex")
+                if len(item.start_index) != len(parsed):
+                    raise ValueError(
+                        f"series {item.key!r} has {len(item.start_index)} startIndex entries for {len(parsed)} timestamps"
+                    )
+                for position in item.start_index:
+                    if position is not None and (position < 0 or position >= len(parsed)):
+                        raise ValueError(f"series {item.key!r} startIndex entries must be bar positions or null")
         return self
 
 
@@ -187,6 +203,7 @@ class ResearchStudySeriesMetadata(BaseModel):
     baseline: Optional[float] = None
     fill_to: Optional[str] = Field(default=None, alias="fillTo")
     fill_opacity: Optional[float] = Field(default=None, alias="fillOpacity", gt=0, le=1)
+    start_index: Optional[list[Optional[int]]] = Field(default=None, alias="startIndex")
 
     @model_validator(mode="before")
     @classmethod
@@ -241,8 +258,11 @@ class ResearchStudyRenameRequest(BaseModel):
 
 
 class ResearchStudySeriesValues(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     key: str
     values: list[Optional[float]]
+    start_index: Optional[list[Optional[int]]] = Field(default=None, alias="startIndex")
 
 
 class ResearchStudySeriesResponse(BaseModel):

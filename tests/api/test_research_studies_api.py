@@ -279,6 +279,45 @@ def test_legacy_series_metadata_without_kind_reads_as_line():
     assert metadata[0].kind == "line"
 
 
+def test_segment_start_index_is_rebased_on_series_range_reads(client):
+    series = [
+        {
+            "key": "top",
+            "label": "Top",
+            "pane": "price",
+            "kind": "segment",
+            "color": "#26a69a",
+            "startIndex": [None, None, 0, None, 2, None],
+            "values": [None, None, 103.0, None, 101.0, None],
+        },
+    ]
+    timestamps = [
+        "2026-01-05T13:00:00+00:00",
+        "2026-01-05T13:10:00+00:00",
+        "2026-01-05T13:20:00+00:00",
+        "2026-01-05T13:30:00+00:00",
+        "2026-01-05T13:40:00+00:00",
+        "2026-01-05T13:50:00+00:00",
+    ]
+    study_id = _post(
+        client,
+        {
+            "name": "Pivots",
+            "symbol": "WDO$N",
+            "timeframe": "M10",
+            "timestamps": timestamps,
+            "series": series,
+        },
+    ).json()["studyId"]
+    payload = client.get(
+        f"/api/v1/research/studies/{study_id}/series",
+        params={"start": timestamps[2], "end": timestamps[4]},
+    ).json()
+    top = next(item for item in payload["series"] if item["key"] == "top")
+    assert top["startIndex"] == [0, None, 0]
+    assert top["values"] == [103.0, None, 101.0]
+
+
 def test_valid_study_plot_kinds_are_accepted(client):
     series = [
         {"key": "line", "label": "Line", "pane": "price", "values": [1, 2, 3, 4]},

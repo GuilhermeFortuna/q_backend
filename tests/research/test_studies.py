@@ -11,6 +11,7 @@ import pandas as pd
 import pytest
 
 from q_backend.research import ChartIndicator, publish_study
+from q_backend.research.studies import slice_segment_start_index_for_window
 
 
 def _m10_index_with_overnight_gap() -> pd.DatetimeIndex:
@@ -259,16 +260,34 @@ def test_publish_study_example_loads_bars_and_publishes_the_band() -> None:
     assert payload["series"][4]["pane"] == "oscillator"
 
 
-def test_segment_kind_is_rejected_for_studies() -> None:
-    index = pd.date_range("2026-01-05 10:00", periods=3, freq="10min")
-    frame = pd.DataFrame({"top": [None, 3.0, None], "top_index": [None, index[0], None]}, index=index)
+def test_slice_segment_start_index_rebases_onto_a_window() -> None:
+    index = pd.date_range("2026-01-05 10:00", periods=6, freq="10min", tz="UTC")
+    full = [None, None, 0, None, 2, None]
+    window = index[2:5]
+    sliced = slice_segment_start_index_for_window(full, index[0].to_pydatetime(), window, "M10")
+    assert sliced == [0, None, 0]
+
+
+def test_segment_kind_publishes_start_index_positions() -> None:
+    index = pd.date_range("2026-01-05 10:00", periods=4, freq="10min")
+    frame = pd.DataFrame(
+        {
+            "top": [np.nan, np.nan, 103.0, np.nan],
+            "top_index": [None, None, index[0], None],
+        },
+        index=index,
+    )
     client, captured = _client()
-    with pytest.raises(ValueError, match="backtest Trade Chart"):
-        publish_study(
-            frame,
-            symbol="WDO$N",
-            name="pivots",
-            series=[ChartIndicator("top", kind="segment", start_column="top_index")],
-            client=client,
-        )
-    assert captured == []
+    publish_study(
+        frame,
+        symbol="WDO$N",
+        name="pivots",
+        series=[
+            ChartIndicator("top", kind="segment", start_column="top_index", color="#26a69a", label="Top"),
+        ],
+        client=client,
+    )
+    segment = _payload(captured)["series"][0]
+    assert segment["kind"] == "segment"
+    assert segment["startIndex"] == [None, None, 0, None]
+    assert segment["values"] == [None, None, 103.0, None]

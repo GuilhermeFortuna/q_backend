@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from datetime import datetime
 from typing import Any, Optional, Union
 
 import numpy as np
@@ -95,10 +96,18 @@ def publish_study(
     missing = [key for key in keys if key not in frame.columns]
     if missing:
         raise ValueError(f"series= names columns missing from the data: {missing}")
-    if any(indicator.kind == "segment" for indicator in selected):
-        raise ValueError("ChartIndicator kind 'segment' is for the backtest Trade Chart, not studies.")
+    for indicator in selected:
+        if indicator.kind != "segment":
+            continue
+        start_column = indicator.start_column
+        if not start_column:
+            raise ValueError(f"Series {indicator.column!r} with kind 'segment' requires start_column")
+        if start_column not in frame.columns:
+            raise ValueError(f"Series {indicator.column!r} start_column {start_column!r} is missing from the data")
     selected_by_key = {indicator.column: indicator for indicator in selected}
     for indicator in selected:
+        if indicator.kind == "segment" and indicator.fill_to is not None:
+            raise ValueError(f"Series {indicator.column!r} with kind 'segment' cannot use fill_to")
         if indicator.fill_to is None:
             continue
         target = selected_by_key.get(indicator.fill_to)
@@ -113,12 +122,22 @@ def publish_study(
 
     wire_series: list[dict[str, Any]] = []
     for indicator in selected:
+        column = frame[indicator.column]
+        values = _column_values(column, indicator.column)
+        if indicator.kind == "segment":
+            assert indicator.start_column is not None
+            start_index = _segment_positions(frame, indicator.start_column)
+            values = [
+                value if position is not None else None for value, position in zip(values, start_index, strict=True)
+            ]
         item: dict[str, Any] = {
             "key": indicator.column,
             "label": indicator.label,
             "pane": indicator.pane,
-            "values": _column_values(frame[indicator.column], indicator.column),
+            "values": values,
         }
+        if indicator.kind == "segment":
+            item["startIndex"] = start_index
         if indicator.color is not None:
             item["color"] = indicator.color
         if indicator.line_style is not None:
@@ -201,6 +220,61 @@ def _resolve_timeframe(utc_index: pd.DatetimeIndex, timeframe: Optional[str]) ->
                 f"timeframe={normalized}; pass timeframe= for the bars the study was computed on."
             )
     return normalized
+
+
+def slice_segment_start_index_for_window(
+    full_start_index: list[Optional[int]],
+    study_start: datetime,
+    window_times: pd.DatetimeIndex,
+    timeframe: str,
+) -> list[Optional[int]]:
+    """Rebase full-study segment starts onto a timestamp window returned by the series API."""
+    if len(window_times) == 0:
+        return []
+    if timeframe not in CHART_TIMEFRAMES:
+        raise ValueError(f"timeframe must be one of {list(CHART_TIMEFRAMES)}, got {timeframe!r}")
+    step = pd.Timedelta(minutes=CHART_TIMEFRAMES[timeframe])
+    origin = pd.Timestamp(study_start)
+    if origin.tzinfo is None:
+        origin = origin.tz_localize("UTC")
+    else:
+        origin = origin.tz_convert("UTC")
+    first = pd.Timestamp(window_times[0])
+    if first.tzinfo is None:
+        first = first.tz_localize("UTC")
+    else:
+        first = first.tz_convert("UTC")
+    offset = int((first - origin) // step)
+    sliced: list[Optional[int]] = []
+    for i in range(len(window_times)):
+        global_i = offset + i
+        if global_i < 0 or global_i >= len(full_start_index):
+            sliced.append(None)
+            continue
+        raw = full_start_index[global_i]
+        if raw is None:
+            sliced.append(None)
+            continue
+        rebased = raw - offset
+        if rebased > i:
+            sliced.append(None)
+        elif rebased < 0:
+            sliced.append(0)
+        else:
+            sliced.append(rebased)
+    return sliced
+
+
+def _segment_positions(frame: pd.DataFrame, start_column: str) -> list[Optional[int]]:
+    """Bar position of each segment's start bar, or None where the label is missing from the frame."""
+    position_by_label = {label: position for position, label in enumerate(frame.index)}
+    positions: list[Optional[int]] = []
+    for label in frame[start_column]:
+        if label is None or (not isinstance(label, str) and pd.isna(label)):
+            positions.append(None)
+        else:
+            positions.append(position_by_label.get(label))
+    return positions
 
 
 def _column_values(column: pd.Series, key: str) -> list[Optional[float]]:
