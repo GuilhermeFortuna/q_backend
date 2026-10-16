@@ -697,6 +697,27 @@ class TickStore:
             time_msc, bid, ask, flags = time_msc[order], bid[order], ask[order], flags[order]
         return time_msc, bid, ask, flags
 
+    def trades(self, day: date) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """One session's ticks as time-ordered ``(time_msc, last, volume, flags)`` arrays."""
+        path = self._day_path(day)
+        if not path.is_file():
+            raise NoMarketDataError(
+                symbol=self._symbol,
+                timeframe="ticks",
+                source=TICK_STORE_SOURCE,
+                start=day.isoformat(),
+                end=day.isoformat(),
+            )
+        table = pq.read_table(path, columns=["time_msc", "last", "volume", "flags"])
+        time_msc = table["time_msc"].to_numpy(zero_copy_only=False).astype(np.int64, copy=False)
+        last = table["last"].to_numpy(zero_copy_only=False).astype(np.float64, copy=False)
+        volume = table["volume"].to_numpy(zero_copy_only=False).astype(np.float64, copy=False)
+        flags = table["flags"].to_numpy(zero_copy_only=False).astype(np.int64, copy=False)
+        if time_msc.size > 1 and np.any(time_msc[1:] < time_msc[:-1]):
+            order = np.argsort(time_msc, kind="stable")
+            time_msc, last, volume, flags = time_msc[order], last[order], volume[order], flags[order]
+        return time_msc, last, volume, flags
+
     def trade_prices(self, start: str | datetime, end: str | datetime) -> tuple[np.ndarray, np.ndarray]:
         start_ts = parse_query_bound(start)
         end_ts = parse_query_bound(end)

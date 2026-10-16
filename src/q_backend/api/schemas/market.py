@@ -97,6 +97,7 @@ class IndicatorOutputSpecResponse(BaseModel):
     key: str
     label: str
     pane: str
+    kind: str | None = "line"
 
 
 class IndicatorCatalogEntryResponse(BaseModel):
@@ -137,3 +138,39 @@ class MarketIndicatorSeriesOutput(BaseModel):
 class MarketIndicatorSeriesResponse(BaseModel):
     timestamps: List[str]
     series: List[MarketIndicatorSeriesOutput]
+
+
+class MarketVolumeProfileRowArrays(BaseModel):
+    price: List[float]
+    buy: List[float]
+    sell: List[float]
+    unknown: List[float]
+
+
+class MarketVolumeProfileSegment(BaseModel):
+    start: str
+    end: str
+    total: float
+    buy: float
+    sell: float
+    unknown: float
+    trades: int
+    poc: float
+    vah: float
+    val: float
+    rows: MarketVolumeProfileRowArrays
+
+
+class MarketVolumeProfileRequest(BaseModel):
+    start: str
+    end: str
+    segment: str
+    rowTicks: int = 1
+    valueArea: float = 0.7
+
+
+class MarketVolumeProfileResponse(BaseModel):
+    tickSize: float | None = None
+    rowSize: float | None = None
+    segments: List[MarketVolumeProfileSegment]
+    unavailableReason: str | None = None

@@ -36,9 +36,9 @@ from q_backend.backtesting.transforms import compute_pct_change, compute_rolling
 
 ParamType = Literal["int", "float", "string"]
 Pane = Literal["price", "oscillator"]
-RequiredData = Literal["bars", "quotes"]
+RequiredData = Literal["bars", "quotes", "trades"]
 
-CATALOG_EXCLUDED_KERNELS: frozenset[str] = frozenset({"clip"})
+CATALOG_EXCLUDED_KERNELS: frozenset[str] = frozenset({"clip", "volume_at_price"})
 
 VOL_ESTIMATOR_CHOICES = ("realized", "ewma", "rogers_satchell", "yang_zhang")
 
@@ -53,11 +53,15 @@ class ParamSpec:
     choices: tuple[str, ...] | None = None
 
 
+OutputKind = Literal["line", "step"]
+
+
 @dataclass(frozen=True)
 class OutputSpec:
     key: str
     label: str
     pane: Pane
+    kind: OutputKind = "line"
 
 
 @dataclass(frozen=True)
@@ -825,6 +829,27 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         lambda p: _vol_warmup(p) + p["vol_lag"],
         lambda _frame, _params: {},
     ),
+    IndicatorEntry(
+        "value_area_levels",
+        "Value area levels",
+        "Volume",
+        (
+            ParamSpec("mode", "string", "developing", choices=("developing", "prior_session")),
+            ParamSpec("row_ticks", "int", 1, minimum=1.0, maximum=1_000.0),
+            ParamSpec("value_area", "float", 0.7, minimum=0.05, maximum=1.0),
+        ),
+        (
+            OutputSpec("poc", "POC", "price", "step"),
+            OutputSpec("vah", "VAH", "price", "step"),
+            OutputSpec("val", "VAL", "price", "step"),
+        ),
+        "price",
+        None,
+        "trades",
+        frozenset({"volume_at_price_levels"}),
+        lambda _p: 0,
+        lambda _frame, _params: {},
+    ),
 )
 
 
@@ -929,7 +954,15 @@ def catalog_response_entries() -> list[dict[str, Any]]:
                     }
                     for spec in entry.params
                 ],
-                "outputs": [{"key": out.key, "label": out.label, "pane": out.pane} for out in entry.outputs],
+                "outputs": [
+                    {
+                        "key": out.key,
+                        "label": out.label,
+                        "pane": out.pane,
+                        **({"kind": out.kind} if out.kind != "line" else {}),
+                    }
+                    for out in entry.outputs
+                ],
             }
         )
     return payload

@@ -12,6 +12,8 @@ from q_backend.api.schemas.market import (
     InstrumentResponse,
     MarketIndicatorSeriesRequest,
     MarketIndicatorSeriesResponse,
+    MarketVolumeProfileRequest,
+    MarketVolumeProfileResponse,
     MarketSnapshotResponse,
     MarketSnapshotsResponse,
     MarketTicksResponse,
@@ -21,6 +23,14 @@ from q_backend.api.schemas.market import (
 )
 from q_backend.market_data.indicator_catalog import catalog_response_entries
 from q_backend.market_data.indicator_series import IndicatorRequest, build_indicator_series
+from q_backend.market_data.quote_spread import open_tick_store
+from q_backend.market_data.volume_at_price import (
+    _validate_row_ticks,
+    _validate_value_area,
+    build_volume_profile,
+    profile_to_api_payload,
+)
+from q_backend.storage.settings import get_settings
 from q_backend.market_data import api_service as market_service
 from q_backend.market_data.clients.metatrader import _to_naive_local
 from q_backend.market_data.models import OHLCV, Tick
@@ -399,3 +409,64 @@ def post_market_indicator_series(
         requests=requests,
     )
     return payload
+
+
+@router.post(
+    "/api/v1/market/volume-profile/{symbol}",
+    response_model=MarketVolumeProfileResponse,
+)
+def post_market_volume_profile(
+    symbol: str,
+    body: MarketVolumeProfileRequest,
+    mds: MarketDataService = Depends(get_market_data_service),
+):
+    symbol = symbol.upper()
+    segment = body.segment.strip().lower()
+    if segment not in ("session", "range"):
+        raise HTTPException(status_code=422, detail="segment must be session or range")
+    try:
+        row_ticks = _validate_row_ticks(body.rowTicks)
+        value_area = _validate_value_area(body.valueArea)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    start = _to_naive_local(pd.Timestamp(body.start).to_pydatetime())
+    end = _to_naive_local(pd.Timestamp(body.end).to_pydatetime())
+    if start >= end:
+        raise HTTPException(status_code=422, detail="start must be < end")
+
+    info = mds.get_symbol_info(symbol) or {}
+    tick_size = float(info.get("trade_tick_size") or 0.0)
+    if tick_size <= 0:
+        return {
+            "tickSize": None,
+            "rowSize": None,
+            "segments": [],
+            "unavailableReason": f"No trade tick size is configured for {symbol}.",
+        }
+
+    store = open_tick_store(symbol)
+    by = "session" if segment == "session" else "range"
+    try:
+        profile = build_volume_profile(
+            store,
+            symbol,
+            start=start.isoformat(),
+            end=end.isoformat(),
+            tick_size=tick_size,
+            by=by,
+            row_ticks=row_ticks,
+            value_area=value_area,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    row_count = len(profile.rows)
+    limit = get_settings().market_volume_profile_max_rows
+    if row_count > limit:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Profile has {row_count} rows; the limit is {limit}; raise the row size",
+        )
+
+    return profile_to_api_payload(profile, tick_size=tick_size, row_ticks=row_ticks)

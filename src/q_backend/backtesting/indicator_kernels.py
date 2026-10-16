@@ -39,6 +39,8 @@ REQUIRED_KERNELS: tuple[str, ...] = (
     "vol_normalize",
     "volatility_log_ratio",
     "quote_spread_bars",
+    "volume_at_price",
+    "volume_at_price_levels",
 )
 
 
