@@ -89,6 +89,7 @@ class Settings(BaseSettings):
     research_figure_max_bytes: int = 33_554_432
     research_study_max_values: int = 2_000_000
     research_study_max_timestamps: int = 2_000_000
+    market_volume_profile_max_rows: int = 200_000
 
 
 @lru_cache

@@ -324,6 +324,29 @@ session has ticks, the result is all NaN and `Series.attrs["unavailable_reason"]
 contains the service explanation. The attribute is None for empty results or
 when at least one requested session has ticks, even if its quotes are unusable.
 
+### Volume at price from local trades
+
+Trade helpers use the same explicit `TickStore` and never synchronize or call the
+gateway. A trade is a tick with the buy or sell bit set; volume is binned on the
+instrument `tick_size` grid (from the caller or `frame.attrs["q_research"]["tick_size"]`).
+`volume_at_price` returns `rows` and `segments` frames per session, bar, or range.
+`value_area_levels` aligns POC, VAH and VAL to bar opens: `developing` uses trades
+up to each bar's close; `prior_session` repeats the previous stored session's
+final levels (NaN for the first session). Sync contiguous history before
+`prior_session`. The Market chart profile route enforces
+`Q_MARKET_VOLUME_PROFILE_MAX_ROWS` (default 200,000 rows).
+
+```python
+from q_backend.research import TickStore, indicators, load_bars
+
+ticks = TickStore("WIN$N")
+bars = load_bars("WIN$N", "M5", start="2026-10-01", end="2026-10-10")
+profile = indicators.volume_at_price(
+    ticks, start="2026-10-01", end="2026-10-10", tick_size=0.5, by="session"
+)
+levels = indicators.value_area_levels(bars, ticks=ticks, timeframe="M5", mode="prior_session")
+```
+
 ## Strategy definition & local backtesting (`ResearchStrategy`, `backtest`)
 
 The `ResearchStrategy` ABC and `backtest()` function allow defining custom strategy classes or running built-in candle strategies synchronously against pandas DataFrames using Q's deterministic execution engine (`q_core`).

@@ -36,6 +36,7 @@ from q_backend.backtesting.technical_indicators import (
 )
 
 from q_backend.backtesting.transforms import compute_pct_change, compute_rolling_rank, compute_rolling_zscore
+from q_backend.market_data.volume_at_price import VolumeProfile
 from q_backend.research.swings import LiveSwingDetector
 
 if TYPE_CHECKING:
@@ -68,6 +69,9 @@ __all__ = (
     "volatility_log_ratio",
     "quote_spread",
     "spread_vs_volatility",
+    "VolumeProfile",
+    "volume_at_price",
+    "value_area_levels",
     "top_bottom",
 )
 
@@ -1026,6 +1030,80 @@ def spread_vs_volatility(
     result.index = df.index
     result.attrs["unavailable_reason"] = reason
     return result
+
+
+def volume_at_price(
+    ticks: TickStore,
+    *,
+    start: str,
+    end: str,
+    tick_size: float,
+    by: str = "session",
+    timeframe: str | None = None,
+    row_ticks: int = 1,
+    value_area: float = 0.7,
+) -> VolumeProfile:
+    """Build volume-at-price profiles from stored trades in ``ticks``."""
+    from q_backend.market_data.volume_at_price import build_volume_profile
+    from q_backend.research.tick_store import TickStore
+
+    if not isinstance(ticks, TickStore):
+        raise TypeError("'ticks' must be a TickStore")
+    profile = build_volume_profile(
+        ticks,
+        ticks.symbol,
+        start=start,
+        end=end,
+        tick_size=tick_size,
+        by=by,  # type: ignore[arg-type]
+        timeframe=timeframe,
+        row_ticks=row_ticks,
+        value_area=value_area,
+    )
+    return profile
+
+
+def value_area_levels(
+    frame: pd.DataFrame,
+    *,
+    ticks: TickStore,
+    timeframe: str,
+    mode: str = "developing",
+    tick_size: float | None = None,
+    row_ticks: int = 1,
+    value_area: float = 0.7,
+) -> pd.DataFrame:
+    """Return POC, VAH and VAL on ``frame``'s index from stored trades."""
+    from q_backend.market_data.volume_at_price import value_area_levels_from_ticks
+    from q_backend.research.tick_store import TickStore
+
+    df = _validate_frame(frame, "frame", ())
+    if not isinstance(ticks, TickStore):
+        raise TypeError("'ticks' must be a TickStore")
+    resolved_tick = tick_size
+    if resolved_tick is None:
+        metadata = df.attrs.get("q_research", {})
+        if isinstance(metadata, dict):
+            raw = metadata.get("tick_size")
+            if raw is not None:
+                resolved_tick = float(raw)
+    if resolved_tick is None:
+        raise ValueError(
+            "tick_size is required when frame.attrs['q_research']['tick_size'] is not set; "
+            "pass tick_size=... or load bars with symbol metadata."
+        )
+    levels, reason = value_area_levels_from_ticks(
+        df,
+        ticks,
+        ticks.symbol,
+        timeframe=timeframe,
+        mode=mode,  # type: ignore[arg-type]
+        tick_size=float(resolved_tick),
+        row_ticks=row_ticks,
+        value_area=value_area,
+    )
+    levels.attrs["unavailable_reason"] = reason
+    return levels
 
 
 def top_bottom(frame: pd.DataFrame, *, atr_period: int = 14, reversal_atr: float = 2.0) -> pd.DataFrame:

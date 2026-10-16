@@ -19,6 +19,7 @@ from q_backend.market_data.indicator_catalog import (
 )
 from q_backend.market_data.models import OHLCV
 from q_backend.market_data.quote_spread import open_tick_store, quote_spread, spread_vs_volatility
+from q_backend.market_data.volume_at_price import value_area_levels_from_ticks
 from q_backend.market_data.service import MarketDataService
 from q_backend.market_data.timezone import mt5_datetime_to_utc_iso
 from q_backend.research.tick_store import TickStore
@@ -172,11 +173,55 @@ def build_indicator_series(
         raise HTTPException(status_code=404, detail=f"No OHLCV bars for {symbol} {timeframe} in the requested range.")
 
     tick_store = None
-    if any(entry.required_data == "quotes" for entry, _ in validated):
-        tick_store = open_tick_store(symbol, root=tick_store_root)
+    needs_ticks = any(entry.required_data in ("quotes", "trades") for entry, _ in validated)
+    tick_store = open_tick_store(symbol, root=tick_store_root) if needs_ticks else None
+    tick_size = None
+    if any(entry.required_data == "trades" for entry, _ in validated):
+        info = mds.get_symbol_info(symbol) or {}
+        tick_size = float(info.get("trade_tick_size") or 0.0)
+        if tick_size <= 0:
+            tick_size = None
 
     outputs: list[dict[str, Any]] = []
     for entry, params in validated:
+        if entry.required_data == "trades":
+            if tick_store is None or tick_size is None:
+                reason = (
+                    f"The tick store is not available for {symbol}."
+                    if tick_store is None
+                    else f"No trade tick size is configured for {symbol}."
+                )
+                for output in entry.outputs:
+                    payload = {
+                        "key": output.key,
+                        "pane": output.pane,
+                        "unit": entry.unit,
+                        "values": [None] * int(in_range.sum()),
+                        "unavailableReason": reason,
+                    }
+                    outputs.append(payload)
+                continue
+            levels, reason = value_area_levels_from_ticks(
+                frame,
+                tick_store,
+                symbol,
+                timeframe=timeframe,
+                mode=params["mode"],
+                tick_size=tick_size,
+                row_ticks=params["row_ticks"],
+                value_area=params["value_area"],
+            )
+            for output in entry.outputs:
+                payload = {
+                    "key": output.key,
+                    "pane": output.pane,
+                    "unit": entry.unit,
+                    "values": _values(levels[output.key].to_numpy()[in_range]),
+                }
+                if reason is not None:
+                    payload["unavailableReason"] = reason
+                outputs.append(payload)
+            continue
         if entry.required_data == "quotes":
             values, reason = _quote_values(
                 entry, frame, params, symbol=symbol, timeframe=timeframe, tick_store=tick_store

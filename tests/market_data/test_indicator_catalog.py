@@ -21,7 +21,7 @@ def test_every_kernel_is_charted_or_excluded():
     published = published_q_core_kernels()
     charted = charted_kernels()
     assert published == charted | CATALOG_EXCLUDED_KERNELS
-    assert CATALOG_EXCLUDED_KERNELS == frozenset({"clip"})
+    assert CATALOG_EXCLUDED_KERNELS == frozenset({"clip", "volume_at_price"})
 
 
 def _frame(count: int = 1_500) -> pd.DataFrame:
