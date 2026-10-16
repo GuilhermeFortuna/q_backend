@@ -21,7 +21,7 @@ from q_backend.market_data.models import OHLCV
 from q_backend.market_data.quote_spread import open_tick_store, quote_spread, spread_vs_volatility
 from q_backend.market_data.volume_at_price import value_area_levels_from_ticks
 from q_backend.market_data.service import MarketDataService
-from q_backend.market_data.timezone import mt5_datetime_to_utc_iso
+from q_backend.market_data.timezone import BRASILIA_TZ, mt5_datetime_to_utc_iso
 from q_backend.research.tick_store import TickStore
 
 # A calendar window this long without a single bar is treated as the start of history.
@@ -201,8 +201,10 @@ def build_indicator_series(
                     }
                     outputs.append(payload)
                 continue
+            level_frame = frame.set_index("time")
+            level_frame.index = level_frame.index.tz_localize(BRASILIA_TZ)
             levels, reason = value_area_levels_from_ticks(
-                frame,
+                level_frame,
                 tick_store,
                 symbol,
                 timeframe=timeframe,

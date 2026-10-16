@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from bisect import bisect_left
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Literal
@@ -225,10 +226,14 @@ def _build_segments(
             end_labels,
         )
 
-    if bar_times is None or timeframe is None:
+    if timeframe is None:
         raise ValueError("'timeframe' is required when by='bar'")
     tf = timeframe.strip().upper()
-    bar_duration(tf)
+    duration = bar_duration(tf)
+    if bar_times is None:
+        end_ts = _ts_from_msc(end_exclusive_msc)
+        bar_times = pd.date_range(start_ts.floor(duration), end_ts, freq=duration, inclusive="left")
+        bar_times = bar_times[np.isin(bar_times.date, days)]
     bar_open, bar_close = bar_bounds_msc(bar_times, tf)
     for open_msc, close_msc in zip(bar_open, bar_close, strict=True):
         open_i = int(open_msc)
@@ -311,6 +316,10 @@ def build_volume_profile(
     rows_per = _validate_row_ticks(row_ticks)
     area = _validate_value_area(value_area)
     mode = _validate_by(by)
+    if mode == "bar":
+        if timeframe is None:
+            raise ValueError("'timeframe' is required when by='bar'")
+        bar_duration(timeframe.strip().upper())
 
     start_ts = parse_query_bound(start)
     end_ts = parse_query_bound(end)
@@ -384,31 +393,21 @@ def value_area_levels_from_ticks(
             f"The tick store is not available for {symbol}.",
         )
 
-    if not isinstance(frame.index, pd.DatetimeIndex) or frame.index.empty:
-        empty = pd.DataFrame({"poc": [], "vah": [], "val": []}, index=frame.index)
-        return empty, None
+    if not isinstance(frame.index, pd.DatetimeIndex):
+        raise TypeError("frame must have a DatetimeIndex")
+    if frame.empty:
+        return pd.DataFrame({"poc": [], "vah": [], "val": []}, index=frame.index), None
 
-    start_ts = frame.index[0]
-    end_ts = frame.index[-1]
-    end_exclusive_msc = _query_end_exclusive_msc(end_ts) + int(bar_duration(tf) / pd.Timedelta(milliseconds=1))
-    time_msc, price, volume, flags, session, days = _load_trades(store, start_ts, end_exclusive_msc)
-    if time_msc.size == 0:
-        first = start_ts.tz_convert(BRASILIA_TZ).date().isoformat()
-        final = end_ts.tz_convert(BRASILIA_TZ).date().isoformat()
-        nan_frame = pd.DataFrame(
-            {"poc": np.nan, "vah": np.nan, "val": np.nan},
-            index=frame.index,
-        )
-        return nan_frame, f"No ticks are stored for {symbol} between {first} and {final}."
-
-    bar_open, bar_close = bar_bounds_msc(frame.index, tf)
-    checkpoint_msc = bar_close.astype(np.int64)
     bar_days = frame.index.tz_convert(BRASILIA_TZ).date if frame.index.tz else frame.index.date
-    checkpoint_session = np.array([_session_key(day) for day in bar_days], dtype=np.int64)
-
     if levels_mode == "prior_session":
         session_profiles: dict[int, tuple[float, float, float]] = {}
-        for day in sorted(set(days)):
+        stored_days = sorted(store.sessions())
+        # Only load the predecessors needed by the requested bars, including one
+        # outside the frame's range. Missing calendar days are skipped by design.
+        prior_days = {
+            stored_days[position - 1] for day in set(bar_days) if (position := bisect_left(stored_days, day)) > 0
+        }
+        for day in sorted(prior_days):
             profile = build_volume_profile(
                 store,
                 symbol,
@@ -437,7 +436,23 @@ def value_area_levels_from_ticks(
             if prior is not None:
                 poc[index], vah[index], val[index] = prior
         out = pd.DataFrame({"poc": poc, "vah": vah, "val": val}, index=frame.index)
-        return out, None
+        reason = None if stored_days else f"No ticks are stored for {symbol}."
+        return out, reason
+
+    # A developing profile starts at the session boundary, regardless of the
+    # first requested bar. Checkpoints remain exclusive at each bar's close.
+    start_ts = frame.index[0]
+    if start_ts.tzinfo is None:
+        start_ts = start_ts.tz_localize(BRASILIA_TZ)
+    else:
+        start_ts = start_ts.tz_convert(BRASILIA_TZ)
+    _, checkpoint_msc = bar_bounds_msc(frame.index, tf)
+    checkpoint_session = np.array([_session_key(day) for day in bar_days], dtype=np.int64)
+    time_msc, price, volume, flags, session, _ = _load_trades(store, start_ts.normalize(), int(checkpoint_msc.max()))
+    if time_msc.size == 0:
+        first, final = min(bar_days).isoformat(), max(bar_days).isoformat()
+        nan_frame = pd.DataFrame({"poc": np.nan, "vah": np.nan, "val": np.nan}, index=frame.index)
+        return nan_frame, f"No ticks are stored for {symbol} between {first} and {final}."
 
     levels = compute_volume_at_price_levels(
         time_msc,
