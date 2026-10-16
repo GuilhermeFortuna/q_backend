@@ -224,31 +224,22 @@ def _resolve_timeframe(utc_index: pd.DatetimeIndex, timeframe: Optional[str]) ->
 
 def slice_segment_start_index_for_window(
     full_start_index: list[Optional[int]],
-    study_start: datetime,
+    full_times: pd.DatetimeIndex,
     window_times: pd.DatetimeIndex,
-    timeframe: str,
 ) -> list[Optional[int]]:
-    """Rebase full-study segment starts onto a timestamp window returned by the series API."""
+    """Rebase full-study segment starts onto a timestamp window returned by the series API.
+
+    Segment starts are row positions in the stored study, so the window's offset is the row
+    of its first timestamp in ``full_times``. Calendar arithmetic from the study start would
+    be wrong across bar gaps (nights, weekends).
+    """
     if len(window_times) == 0:
         return []
-    if timeframe not in CHART_TIMEFRAMES:
-        raise ValueError(f"timeframe must be one of {list(CHART_TIMEFRAMES)}, got {timeframe!r}")
-    step = pd.Timedelta(minutes=CHART_TIMEFRAMES[timeframe])
-    origin = pd.Timestamp(study_start)
-    if origin.tzinfo is None:
-        origin = origin.tz_localize("UTC")
-    else:
-        origin = origin.tz_convert("UTC")
-    first = pd.Timestamp(window_times[0])
-    if first.tzinfo is None:
-        first = first.tz_localize("UTC")
-    else:
-        first = first.tz_convert("UTC")
-    offset = int((first - origin) // step)
+    offset = int(full_times.searchsorted(window_times[0]))
     sliced: list[Optional[int]] = []
     for i in range(len(window_times)):
         global_i = offset + i
-        if global_i < 0 or global_i >= len(full_start_index):
+        if global_i >= len(full_start_index):
             sliced.append(None)
             continue
         raw = full_start_index[global_i]

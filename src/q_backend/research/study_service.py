@@ -32,6 +32,7 @@ from q_backend.storage.db.repositories import (
 )
 from q_backend.storage.lake.artifacts import (
     delete_research_study_values,
+    read_research_study_times,
     read_research_study_values,
     write_research_study_values,
 )
@@ -136,6 +137,7 @@ def get_study_series(study_id: str, *, start: str, end: str, session: Session) -
         raise HTTPException(status_code=404, detail=f"Research study '{study_id}' values not found") from exc
 
     window_times = pd.DatetimeIndex(frame["time"])
+    full_times: Optional[pd.DatetimeIndex] = None
     series: list[ResearchStudySeriesValues] = []
     for item in study.series:
         values = [None if np.isnan(value) else float(value) for value in frame[item["key"]].to_numpy()]
@@ -143,12 +145,9 @@ def get_study_series(study_id: str, *, start: str, end: str, session: Session) -
         if item.get("kind") == "segment":
             full_start = item.get("startIndex")
             if full_start is not None:
-                start_index = slice_segment_start_index_for_window(
-                    full_start,
-                    study.start,
-                    window_times,
-                    study.timeframe,
-                )
+                if full_times is None:
+                    full_times = read_research_study_times(str(study.id))
+                start_index = slice_segment_start_index_for_window(full_start, full_times, window_times)
         series.append(
             ResearchStudySeriesValues(
                 key=item["key"],

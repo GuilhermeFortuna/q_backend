@@ -702,6 +702,14 @@ def read_research_study_values(study_id: str, start: pd.Timestamp, end: pd.Times
     return pd.read_parquet(target_file, filters=[("time", ">=", start), ("time", "<=", end)])
 
 
+def read_research_study_times(study_id: str) -> pd.DatetimeIndex:
+    """Read every row timestamp of a study, in stored order."""
+    target_file = study_lake_dir(study_id) / "values.parquet"
+    if not target_file.is_file():
+        raise FileNotFoundError(f"Research study values not found for id '{study_id}'.")
+    return pd.DatetimeIndex(pd.read_parquet(target_file, columns=["time"])["time"])
+
+
 def delete_research_study_values(study_id: str) -> bool:
     study_dir = study_lake_dir(study_id)
     if not study_dir.exists():

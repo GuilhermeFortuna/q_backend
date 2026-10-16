@@ -263,9 +263,17 @@ def test_publish_study_example_loads_bars_and_publishes_the_band() -> None:
 def test_slice_segment_start_index_rebases_onto_a_window() -> None:
     index = pd.date_range("2026-01-05 10:00", periods=6, freq="10min", tz="UTC")
     full = [None, None, 0, None, 2, None]
-    window = index[2:5]
-    sliced = slice_segment_start_index_for_window(full, index[0].to_pydatetime(), window, "M10")
+    sliced = slice_segment_start_index_for_window(full, index, index[2:5])
     assert sliced == [0, None, 0]
+
+
+def test_slice_segment_start_index_uses_row_positions_across_bar_gaps() -> None:
+    day_one = pd.date_range("2026-01-05 10:00", periods=3, freq="10min", tz="UTC")
+    day_two = pd.date_range("2026-01-08 10:00", periods=3, freq="10min", tz="UTC")
+    full_times = day_one.append(day_two)
+    full = [None, None, None, None, 3, None]
+    sliced = slice_segment_start_index_for_window(full, full_times, full_times[3:])
+    assert sliced == [None, 0, None]
 
 
 def test_segment_kind_publishes_start_index_positions() -> None:
