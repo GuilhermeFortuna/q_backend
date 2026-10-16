@@ -292,3 +292,55 @@ def compute_quote_spread_bars(
         int(max_quote_age_ms),
     )
     return last, twm, mx, coverage
+
+
+def compute_volume_at_price(
+    time_msc: np.ndarray,
+    price: np.ndarray,
+    volume: np.ndarray,
+    flags: np.ndarray,
+    segment_open_msc: np.ndarray,
+    segment_close_msc: np.ndarray,
+    tick_size: float,
+    row_ticks: int,
+    value_area: float,
+) -> tuple[dict, dict]:
+    """Return row and segment dicts from the q_core volume-at-price kernel."""
+    return kernels.volume_at_price(
+        np.ascontiguousarray(time_msc, dtype=np.int64),
+        np.ascontiguousarray(price, dtype=np.float64),
+        np.ascontiguousarray(volume, dtype=np.float64),
+        np.ascontiguousarray(flags, dtype=np.int64),
+        np.ascontiguousarray(segment_open_msc, dtype=np.int64),
+        np.ascontiguousarray(segment_close_msc, dtype=np.int64),
+        float(tick_size),
+        int(row_ticks),
+        float(value_area),
+    )
+
+
+def compute_volume_at_price_levels(
+    time_msc: np.ndarray,
+    price: np.ndarray,
+    volume: np.ndarray,
+    flags: np.ndarray,
+    session: np.ndarray,
+    checkpoint_msc: np.ndarray,
+    checkpoint_session: np.ndarray,
+    tick_size: float,
+    row_ticks: int,
+    value_area: float,
+) -> dict:
+    """Return developing level columns from the q_core kernel."""
+    return kernels.volume_at_price_levels(
+        np.ascontiguousarray(time_msc, dtype=np.int64),
+        np.ascontiguousarray(price, dtype=np.float64),
+        np.ascontiguousarray(volume, dtype=np.float64),
+        np.ascontiguousarray(flags, dtype=np.int64),
+        np.ascontiguousarray(session, dtype=np.int64),
+        np.ascontiguousarray(checkpoint_msc, dtype=np.int64),
+        np.ascontiguousarray(checkpoint_session, dtype=np.int64),
+        float(tick_size),
+        int(row_ticks),
+        float(value_area),
+    )
