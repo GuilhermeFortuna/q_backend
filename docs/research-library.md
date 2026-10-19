@@ -232,6 +232,7 @@ remain supported, including annualized `yang_zhang`.
 |---|---|---|
 | `ma(close, period, kind="sma")` | Series → Series | SMA, EMA, WMA, SMMA, or HMA |
 | `volume_ma(volume, period)` | Series → Series | Simple average of a chosen volume field |
+| `vwap(frame)` | OHLCV frame → Series | Intraday VWAP of typical price, reset each calendar day |
 | `rsi(close, period)` | Series → Series | Wilder RSI |
 | `atr(frame, period)` | OHLC frame → Series | Wilder true-range average, in price units |
 | `atr_fraction(frame, period)` | OHLC frame → Series | ATR / current close, as a fraction |

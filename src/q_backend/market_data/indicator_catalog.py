@@ -28,6 +28,7 @@ from q_backend.backtesting.technical_indicators import (
     compute_realized_vol_per_bar,
     compute_rogers_satchell,
     compute_rsi,
+    compute_intraday_vwap,
     compute_true_range,
     compute_volatility_log_ratio,
     compute_yang_zhang,
@@ -201,6 +202,22 @@ def _compute_volume_ma(frame: pd.DataFrame, params: Mapping[str, Any]) -> dict[s
     period = _int_param(params, "period", minimum=1)
     volume = frame["volume"] if "volume" in frame.columns else pd.Series(np.nan, index=frame.index)
     return {"line": compute_ma(volume, period, "sma")}
+
+
+def _session_times(frame: pd.DataFrame) -> pd.DatetimeIndex:
+    """Bar times that define VWAP sessions: the loader's ``time`` column, else a DatetimeIndex."""
+    if "time" in frame.columns:
+        return pd.DatetimeIndex(frame["time"])
+    if isinstance(frame.index, pd.DatetimeIndex):
+        return frame.index
+    raise ValueError("VWAP needs bar times: a 'time' column or a DatetimeIndex.")
+
+
+def _compute_vwap(frame: pd.DataFrame, params: Mapping[str, Any]) -> dict[str, pd.Series]:
+    times = _session_times(frame)
+    high, low, close, volume = (frame[name].set_axis(times) for name in ("high", "low", "close", "volume"))
+    vwap = compute_intraday_vwap(high, low, close, volume)
+    return {"line": vwap.set_axis(frame.index)}
 
 
 def _compute_bollinger(frame: pd.DataFrame, params: Mapping[str, Any]) -> dict[str, pd.Series]:
@@ -464,6 +481,21 @@ INDICATOR_CATALOG: tuple[IndicatorEntry, ...] = (
         frozenset({"sma"}),
         lambda p: p["period"],
         _compute_volume_ma,
+    ),
+    IndicatorEntry(
+        "vwap",
+        "VWAP",
+        "Volume",
+        (),
+        (OutputSpec("line", "VWAP", "price"),),
+        "price",
+        None,
+        "bars",
+        frozenset(),
+        # A session's VWAP depends on every bar since the session's first bar, so warm-up
+        # loads up to MAX_BARS earlier bars, assuming no session is longer than that.
+        lambda _p: MAX_BARS,
+        _compute_vwap,
     ),
     IndicatorEntry(
         "bollinger",
