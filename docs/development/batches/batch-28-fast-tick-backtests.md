@@ -28,10 +28,10 @@ The evidence comes from a profile on 2026-10-19: `WDO$N` M5, 1,253 bars (2026-10
 
 | Task | Repository | Depends on | Specification | Implementation plan |
 | --- | --- | --- | --- | --- |
-| Q-118 — Resting orders and stop amendments in the candle kernel | q_core | — | `q_core/docs/development/specs/Q-118-resting-orders-and-stop-amendments-in-the-candle-kernel-spec.md` | `q_core/docs/development/plans/Q-118-resting-orders-and-stop-amendments-in-the-candle-kernel-plan.md` |
-| Q-119 — Native session tick source for the candle kernel | q_core | — | `q_core/docs/development/specs/Q-119-native-session-tick-source-for-the-candle-kernel-spec.md` | `q_core/docs/development/plans/Q-119-native-session-tick-source-for-the-candle-kernel-plan.md` |
-| Q-120 — Resting orders and stop amendments in research backtests | q_backend | Q-118 | [Spec](../specs/Q-120-resting-orders-and-stop-amendments-in-research-backtests-spec.md) | [Plan](../plans/Q-120-resting-orders-and-stop-amendments-in-research-backtests-plan.md) |
-| Q-121 — Fast tick-backed research backtests | q_backend | Q-119, Q-120 | [Spec](../specs/Q-121-fast-tick-backed-research-backtests-spec.md) | [Plan](../plans/Q-121-fast-tick-backed-research-backtests-plan.md) |
+| [Q-118](https://github.com/GuilhermeFortuna/q_core/issues/18) — Resting orders and stop amendments in the candle kernel | q_core | — | `q_core/docs/development/specs/Q-118-resting-orders-and-stop-amendments-in-the-candle-kernel-spec.md` | `q_core/docs/development/plans/Q-118-resting-orders-and-stop-amendments-in-the-candle-kernel-plan.md` |
+| [Q-119](https://github.com/GuilhermeFortuna/q_core/issues/19) — Native session tick source for the candle kernel | q_core | — | `q_core/docs/development/specs/Q-119-native-session-tick-source-for-the-candle-kernel-spec.md` | `q_core/docs/development/plans/Q-119-native-session-tick-source-for-the-candle-kernel-plan.md` |
+| [Q-120](https://github.com/GuilhermeFortuna/q_backend/issues/49) — Resting orders and stop amendments in research backtests | q_backend | Q-118 | [Spec](../specs/Q-120-resting-orders-and-stop-amendments-in-research-backtests-spec.md) | [Plan](../plans/Q-120-resting-orders-and-stop-amendments-in-research-backtests-plan.md) |
+| [Q-121](https://github.com/GuilhermeFortuna/q_backend/issues/50) — Fast tick-backed research backtests | q_backend | Q-119, Q-120 | [Spec](../specs/Q-121-fast-tick-backed-research-backtests-spec.md) | [Plan](../plans/Q-121-fast-tick-backed-research-backtests-plan.md) |
 
 - Q-118 and Q-119 are independent and can run in parallel. Each is released by `./work finish`.
 - Q-120 pins the Q-118 tag. Q-121 pins the Q-119 tag (or a later one).
