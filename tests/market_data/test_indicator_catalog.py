@@ -39,7 +39,12 @@ def _frame(count: int = 1_500) -> pd.DataFrame:
     )
 
 
-_BAR_ENTRIES = [entry for entry in INDICATOR_CATALOG if entry.required_data == "bars"]
+# VWAP resets each session, so its value is pinned to session start rather than a bar count;
+# test_vwap_resets_each_session covers it instead.
+SESSION_ANCHORED = frozenset({"vwap"})
+_BAR_ENTRIES = [
+    entry for entry in INDICATOR_CATALOG if entry.required_data == "bars" and entry.id not in SESSION_ANCHORED
+]
 
 
 @pytest.mark.parametrize("entry", _BAR_ENTRIES, ids=lambda entry: entry.id)
@@ -77,3 +82,38 @@ def test_validate_params_rejects_what_it_cannot_compute():
             validate_params(sma, bad)
     with pytest.raises(ValueError, match="half_life"):
         validate_params(CATALOG_BY_ID["per_bar_ewma_vol"], {"half_life": float("inf")})
+
+
+def _session_frame(days: int = 3, bars_per_day: int = 12) -> pd.DataFrame:
+    """Five-minute bars for several Brasília sessions, with the loader's naive ``time`` column."""
+    times = pd.DatetimeIndex(
+        [
+            pd.Timestamp("2026-09-01 09:00") + pd.Timedelta(days=day, minutes=5 * bar)
+            for day in range(days)
+            for bar in range(bars_per_day)
+        ]
+    )
+    frame = _frame(len(times))
+    frame.insert(0, "time", times)
+    return frame
+
+
+def test_vwap_resets_each_session_and_ignores_history_before_it():
+    entry = CATALOG_BY_ID["vwap"]
+    params = validate_params(entry, {})
+    frame = _session_frame()
+    full = entry.compute(frame, params)["line"]
+    session_start = 12  # first bar of the second session
+    late = entry.compute(frame.iloc[session_start + 5 :].reset_index(drop=True), params)["line"]
+    # Bars from the third session on depend only on their own session.
+    third_session = 24
+    np.testing.assert_allclose(
+        late.iloc[third_session - session_start - 5 :].to_numpy(), full.iloc[third_session:].to_numpy()
+    )
+    # A bar mid-session differs once history before the session start is removed.
+    assert not np.isclose(late.iloc[0], full.iloc[session_start + 5])
+
+
+def test_vwap_needs_bar_times():
+    with pytest.raises(ValueError, match="bar times"):
+        CATALOG_BY_ID["vwap"].compute(_frame(10), validate_params(CATALOG_BY_ID["vwap"], {}))
