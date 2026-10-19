@@ -92,6 +92,23 @@ def compute_atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int) 
     return to_series(res, idx, None)
 
 
+def compute_intraday_vwap(high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series) -> pd.Series:
+    """Cumulative VWAP of typical price (H+L+C)/3, reset at each calendar day of the index.
+
+    Causal: the value at bar i uses bars of the same session up to and including i.
+    Bars with a missing price or volume, and bars before the session's first traded
+    volume, are NaN.
+    """
+    idx = shared_index(close, high, low, volume)
+    typical = (high + low + close) / 3.0
+    valid = typical.notna() & volume.notna()
+    session = idx.normalize()
+    cum_pv = (typical * volume).where(valid, 0.0).groupby(session).cumsum()
+    cum_vol = volume.where(valid, 0.0).groupby(session).cumsum()
+    vwap = cum_pv / cum_vol.where(cum_vol > 0)
+    return vwap.where(valid)
+
+
 def _require_positive_float(param: str, value: float) -> float:
     if value <= 0.0 or not float(value) == value:
         raise ValueError(f"{param} must be a finite number > 0 (got {value}).")

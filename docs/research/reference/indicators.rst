@@ -17,6 +17,7 @@ Moving averages and oscillators
 
    ma
    volume_ma
+   vwap
    rsi
    macd
 

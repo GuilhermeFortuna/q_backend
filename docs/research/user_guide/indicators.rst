@@ -29,6 +29,9 @@ Supported indicators
    * - :func:`~q_backend.research.indicators.volume_ma`
      - ``Series``
      - Simple moving average of a chosen volume Series.
+   * - :func:`~q_backend.research.indicators.vwap`
+     - ``Series``
+     - Intraday VWAP of typical price, reset at each calendar day; needs high, low, close and volume.
    * - :func:`~q_backend.research.indicators.rsi`
      - ``Series``
      - Wilder RSI on a 0–100 scale.

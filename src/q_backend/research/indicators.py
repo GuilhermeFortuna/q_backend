@@ -29,6 +29,7 @@ from q_backend.backtesting.technical_indicators import (
     compute_volatility_log_ratio,
     compute_bollinger_bands,
     compute_donchian_channels,
+    compute_intraday_vwap,
     compute_macd,
     compute_realized_vol,
     compute_rsi,
@@ -52,6 +53,7 @@ __all__ = (
     "realized_vol",
     "yang_zhang",
     "volume_ma",
+    "vwap",
     "rolling_zscore",
     "rolling_rank",
     "pct_change",
@@ -411,6 +413,53 @@ def volume_ma(volume: pd.Series, period: int) -> pd.Series:
         Mean volume, with the input's exact index and name. Incomplete windows are NaN.
     """
     return ma(volume, period=period, kind="sma")
+
+
+def vwap(frame: pd.DataFrame) -> pd.Series:
+    """Compute intraday volume-weighted average price, reset at each calendar day.
+
+    Typical price is ``(high + low + close) / 3``, weighted by bar volume and
+    accumulated from the first bar of each session. Sessions are calendar days in
+    the index's own timezone.
+
+    Parameters
+    ----------
+    frame : pandas.DataFrame
+        DataFrame containing ``'high'``, ``'low'``, ``'close'``, and ``'volume'``
+        columns on a chronological ``DatetimeIndex`` of completed bars.
+
+    Returns
+    -------
+    pandas.Series
+        VWAP sharing the exact index of ``frame``, with no Series name. Bars with a
+        missing price or volume, and bars before a session's first traded volume,
+        are NaN.
+
+    Raises
+    ------
+    TypeError
+        If ``frame`` is not a DataFrame or its index is not a ``DatetimeIndex``.
+    ValueError
+        If required columns are missing, the index is not sorted ascending, volume is
+        negative, or values are infinite.
+
+    Notes
+    -----
+    Causal: each value uses only bars of the same session up to and including its own.
+    """
+    df = _validate_frame(frame, "frame", ("high", "low", "close", "volume"))
+    if not isinstance(df.index, pd.DatetimeIndex):
+        raise TypeError(f"'frame' must have a DatetimeIndex, got {type(df.index).__name__}")
+    if not df.index.is_monotonic_increasing:
+        raise ValueError("'frame' index must be sorted in ascending order")
+    if (df["volume"] < 0).any():
+        raise ValueError("Column 'volume' in 'frame' must not be negative")
+    if df.empty:
+        return pd.Series(dtype=np.float64, index=df.index, name=None)
+    res = compute_intraday_vwap(high=df["high"], low=df["low"], close=df["close"], volume=df["volume"])
+    res.index = df.index
+    res.name = None
+    return res
 
 
 def rolling_zscore(close: pd.Series, window: int) -> pd.Series:

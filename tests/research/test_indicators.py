@@ -374,3 +374,97 @@ def test_add_indicators_example(sample_ohlcv: pd.DataFrame, tmp_path) -> None:
     df_enriched = add_indicators_to_frame(sample_ohlcv)
     assert len(df_enriched) == len(sample_ohlcv)
     pd.testing.assert_frame_equal(df_enriched, enriched, check_freq=False)
+
+
+def _vwap_bars(rows: list[tuple[float, float, float, float]], times: list[str]) -> pd.DataFrame:
+    index = pd.DatetimeIndex(pd.to_datetime(times)).tz_localize(BRASILIA_TZ, nonexistent="raise", ambiguous="raise")
+    high, low, close, volume = zip(*rows, strict=True)
+    return pd.DataFrame(
+        {"high": high, "low": low, "close": close, "volume": volume},
+        index=index.rename("time"),
+    )
+
+
+def test_vwap_matches_hand_computed_values_and_resets_each_session() -> None:
+    bars = _vwap_bars(
+        [
+            (11.0, 9.0, 10.0, 100.0),  # typical 10
+            (13.0, 11.0, 12.0, 300.0),  # typical 12 -> (1000 + 3600) / 400
+            (5.0, 3.0, 4.0, 50.0),  # next session starts over: typical 4
+            (6.0, 4.0, 5.0, 0.0),  # zero volume leaves the level unchanged
+        ],
+        ["2026-09-01 09:00", "2026-09-01 09:05", "2026-09-02 09:00", "2026-09-02 09:05"],
+    )
+    original = bars.copy(deep=True)
+
+    res = indicators.vwap(bars)
+
+    assert res.iloc[0] == pytest.approx(10.0)
+    assert res.iloc[1] == pytest.approx(11.5)
+    assert res.iloc[2] == pytest.approx(4.0)
+    assert res.iloc[3] == pytest.approx(4.0)
+    pd.testing.assert_index_equal(res.index, bars.index)
+    assert res.name is None
+    pd.testing.assert_frame_equal(bars, original)
+
+
+def test_vwap_is_causal_and_nan_for_missing_or_untraded_bars() -> None:
+    bars = _vwap_bars(
+        [
+            (6.0, 4.0, 5.0, 0.0),  # no volume yet -> NaN
+            (11.0, 9.0, 10.0, 100.0),
+            (np.nan, 9.0, 10.0, 100.0),  # missing price -> NaN, does not poison later bars
+            (13.0, 11.0, 12.0, np.nan),  # missing volume -> NaN
+            (13.0, 11.0, 12.0, 100.0),
+        ],
+        [f"2026-09-01 09:{minute:02d}" for minute in range(0, 25, 5)],
+    )
+
+    res = indicators.vwap(bars)
+
+    assert np.isnan(res.iloc[0])
+    assert res.iloc[1] == pytest.approx(10.0)
+    assert np.isnan(res.iloc[2])
+    assert np.isnan(res.iloc[3])
+    assert res.iloc[4] == pytest.approx(11.0)  # (1000 + 1200) / 200
+
+    prefix = indicators.vwap(bars.iloc[:3])
+    pd.testing.assert_series_equal(res.iloc[:3], prefix)
+
+
+def test_vwap_empty_frame_keeps_index() -> None:
+    empty = _vwap_bars([(1.0, 1.0, 1.0, 1.0)], ["2026-09-01 09:00"]).iloc[:0]
+
+    res = indicators.vwap(empty)
+
+    assert res.empty
+    pd.testing.assert_index_equal(res.index, empty.index)
+
+
+@pytest.mark.parametrize(
+    "frame_factory, exc_type, match",
+    [
+        (lambda: pd.DataFrame({"high": [1.0], "low": [1.0], "close": [1.0]}), ValueError, "missing required columns"),
+        (
+            lambda: pd.DataFrame({"high": [1.0], "low": [1.0], "close": [1.0], "volume": [1.0]}),
+            TypeError,
+            "DatetimeIndex",
+        ),
+        (
+            lambda: _vwap_bars([(1.0, 1.0, 1.0, -1.0)], ["2026-09-01 09:00"]),
+            ValueError,
+            "must not be negative",
+        ),
+        (
+            lambda: _vwap_bars(
+                [(1.0, 1.0, 1.0, 1.0), (1.0, 1.0, 1.0, 1.0)],
+                ["2026-09-01 09:05", "2026-09-01 09:00"],
+            ),
+            ValueError,
+            "sorted in ascending order",
+        ),
+    ],
+)
+def test_vwap_rejects_invalid_frames(frame_factory, exc_type, match) -> None:
+    with pytest.raises(exc_type, match=match):
+        indicators.vwap(frame_factory())
