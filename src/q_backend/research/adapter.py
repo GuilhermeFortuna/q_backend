@@ -243,6 +243,12 @@ class ResearchStrategyAdapter(TradingStrategy):
         self._decision_frame: pd.DataFrame | None = None
         self._forming: FormingRow | None = None
 
+    def __getstate__(self) -> dict[str, Any]:
+        """Session worker processes get a silent progress reporter; the parent's may drive a terminal."""
+        state = self.__dict__.copy()
+        state["progress"] = BacktestProgress()
+        return state
+
     def close(self) -> None:
         """Put back a forming row that a tick decision left showing in the prepared history."""
         if self._forming is not None:

@@ -446,6 +446,26 @@ def run_chunk(
     return ChunkRun(trades, list(result["exit_reason_text"]), rejected)
 
 
+def merge_chunk_runs(runs: list[ChunkRun], starts: list[int]) -> ChunkRun:
+    """Join kernel runs of consecutive blocks of one chunk, in order.
+
+    ``starts[i]`` is the chunk position of block ``i``'s first bar. Bar indices in each run are
+    block-relative, so they move by that offset; a negative index (no exit yet) is left as it is.
+    """
+
+    def join(name: str, offsets: bool, parts: list[np.ndarray]) -> np.ndarray:
+        arrays = [np.where(part >= 0, part + start, part) if offsets else part for part, start in zip(parts, starts)]
+        return np.concatenate(arrays)
+
+    trades = {
+        name: join(name, name in ("entry_bar", "exit_bar"), [run.trades[name] for run in runs])
+        for name in runs[0].trades
+    }
+    rejected = {name: join(name, name == "bar", [run.rejected[name] for run in runs]) for name in runs[0].rejected}
+    exit_reason_text = [text for run in runs for text in run.exit_reason_text]
+    return ChunkRun(trades, exit_reason_text, rejected)
+
+
 def ledger_to_registry(run: ChunkRun, index: pd.DatetimeIndex, *, symbol: str, point_value: float) -> TradeRegistry:
     """Recreate the public registry objects, asserting q_core and registry PnL agree."""
     registry = TradeRegistry()

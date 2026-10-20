@@ -56,10 +56,10 @@
 
 **Files:** `src/q_backend/research/engine.py`, `src/q_backend/research/progress.py`, `tests/research/test_parallel_sessions.py`.
 
-- [ ] Write a failing test for acceptance 6.
-- [ ] After preparation, split the frame into contiguous session blocks. Run each block's kernel chunk in a `forkserver` process pool. The payload is the strategy, the prepared frame and the source arguments, and each worker builds its own source.
-- [ ] Merge trades, rejected entries and progress in session order. `force_close_at_end` applies only to the last block.
-- [ ] Keep `day_trade=False` sequential. Commit.
+- [x] Write a failing test for acceptance 6.
+- [x] After preparation, split the frame into contiguous session blocks. Run each block's kernel chunk in a `forkserver` process pool. The payload is the strategy, the prepared frame and the source arguments, and each worker builds its own source.
+- [x] Merge trades, rejected entries and progress in session order. `force_close_at_end` applies only to the last block.
+- [x] Keep `day_trade=False` sequential. Commit.
 
 ### 4. Causality check
 

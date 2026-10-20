@@ -161,6 +161,14 @@ class BacktestEngine:
         registry, _run = self._run_chunk(chunk, force_close_at_end, trade_start, prepared=prepared)
         return registry
 
+    def run_prepared_block(self, data: pd.DataFrame, *, force_close_at_end: bool = False) -> ChunkRun:
+        """Kernel run of a prepared block of whole sessions, with bar indices within the block.
+
+        Returns the raw run rather than a registry, so a worker process can hand it back to the
+        caller, which joins the blocks with ``merge_chunk_runs``.
+        """
+        return self._kernel_run(data, force_close_at_end, prepared=True)
+
     def _run_chunk(
         self,
         chunk: pd.DataFrame,
@@ -169,6 +177,23 @@ class BacktestEngine:
         *,
         prepared: bool = False,
     ) -> tuple[TradeRegistry, ChunkRun]:
+        run = self._kernel_run(chunk, force_close_at_end, trade_start, prepared=prepared)
+        registry = ledger_to_registry(
+            run,
+            chunk.index,
+            symbol=self.strategy.symbol,
+            point_value=self.point_values.get(self.strategy.symbol, 1.0),
+        )
+        return registry, run
+
+    def _kernel_run(
+        self,
+        chunk: pd.DataFrame,
+        force_close_at_end: bool,
+        trade_start: Optional[datetime.datetime] = None,
+        *,
+        prepared: bool = False,
+    ) -> ChunkRun:
         # 1. Compute indicators (vectorized, no lookahead bias)
         if not prepared:
             chunk = augment_indicator_frame(self.strategy, chunk)
@@ -195,10 +220,4 @@ class BacktestEngine:
                 self.tick_size if self.tick_size is not None else chunk.attrs.get("q_research", {}).get("tick_size")
             ),
         )
-        registry = ledger_to_registry(
-            run,
-            signals.index,
-            symbol=self.strategy.symbol,
-            point_value=self.point_values.get(self.strategy.symbol, 1.0),
-        )
-        return registry, run
+        return run

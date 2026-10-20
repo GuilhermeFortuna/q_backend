@@ -30,6 +30,17 @@ class ExitStrategy:
         self._step = _engine.DecisionStep(exit_params=filtered)
         self._last_open_ids: set[str] = set()
 
+    def __getstate__(self) -> dict[str, Any]:
+        """Pickle the parameters; the q_core decision step is rebuilt, fresh, in the receiving process."""
+        state = self.__dict__.copy()
+        del state["_step"]
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self.__dict__.update(state)
+        filtered = {spec.name: self.params[spec.name] for spec in all_param_specs() if spec.name in self.params}
+        self._step = _engine.DecisionStep(exit_params=filtered)
+
     @property
     def stop_loss_pct(self) -> float:
         return float(self.params.get("stop_loss_pct", 0.0))

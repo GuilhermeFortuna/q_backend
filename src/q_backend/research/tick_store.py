@@ -302,6 +302,13 @@ class TickStore:
         self._trade_prices_cache_day: date | None = None
         self._trade_prices_cache: tuple[np.ndarray, np.ndarray] | None = None
 
+    def __getstate__(self) -> dict[str, object]:
+        """Pickle the store's location, not the session it has cached in memory."""
+        state = self.__dict__.copy()
+        state["_trade_prices_cache_day"] = None
+        state["_trade_prices_cache"] = None
+        return state
+
     @property
     def symbol(self) -> str:
         """Instrument ticker symbol."""
