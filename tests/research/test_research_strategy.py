@@ -77,6 +77,16 @@ def test_trade_order_levels_are_validated_at_construction() -> None:
         TradeOrder.buy(9.0)  # type: ignore[misc]
 
 
+def _first_bar_decisions(adapter: ResearchStrategyAdapter, bars: pd.DataFrame) -> dict:
+    """Decide the first bar through the runtime callback, as the candle kernel does."""
+    return adapter.runtime_callback(adapter.compute_indicators(bars)).strategy(0, ())
+
+
+def _all_bar_decisions(adapter: ResearchStrategyAdapter, bars: pd.DataFrame) -> list[dict]:
+    hooks = adapter.runtime_callback(adapter.compute_indicators(bars))
+    return [hooks.strategy(bar, ()) for bar in range(len(bars))]
+
+
 def test_scripted_strategy_lifecycle_and_isolation(sample_bars: pd.DataFrame) -> None:
     calls = []
 
@@ -113,6 +123,8 @@ def test_scripted_strategy_lifecycle_and_isolation(sample_bars: pd.DataFrame) ->
     caller_bars.attrs["q_research"] = {"dummy": "metadata"}
 
     res = adapter.compute_indicators(caller_bars)
+    hooks = adapter.runtime_callback(res)
+    decisions = [hooks.strategy(bar, ()) for bar in range(5)]
 
     # 1. compute_indicators called once on full frame
     assert calls[0] == ("compute_indicators", 5)
@@ -130,14 +142,14 @@ def test_scripted_strategy_lifecycle_and_isolation(sample_bars: pd.DataFrame) ->
     assert caller_bars.attrs["q_research"] == {"dummy": "metadata"}
     pd.testing.assert_frame_equal(caller_bars[["open", "high", "low", "close", "tick_volume"]], sample_bars)
 
-    # 4. Result signal columns
+    # 4. Decisions by bar
     # Bar 1 (len=2): buy
     # Bar 2 (len=3): close
     # Bar 3 (len=4): sell
-    np.testing.assert_array_equal(res[SIGNAL_ENTRY], [0, 1, 0, -1, 0])
-    np.testing.assert_array_equal(res[SIGNAL_EXIT_LONG], [False, False, True, False, False])
-    np.testing.assert_array_equal(res[SIGNAL_EXIT_SHORT], [False, False, True, False, False])
-    np.testing.assert_array_equal(res[SIGNAL_STRENGTH], [0.0, 1.0, 0.0, 1.0, 0.0])
+    assert [d.get("entry", 0) for d in decisions] == [0, 1, 0, -1, 0]
+    assert [d.get("exit_long", False) for d in decisions] == [False, False, True, False, False]
+    assert [d.get("exit_short", False) for d in decisions] == [False, False, True, False, False]
+    assert [d.get("strength", 0.0) for d in decisions] == [0.0, 1.0, 0.0, 1.0, 0.0]
     assert "custom_ind" in res.columns
     assert "temp" in res.columns
 
@@ -214,7 +226,7 @@ def test_invalid_return_and_action_types(sample_bars: pd.DataFrame) -> None:
 
     adapter = ResearchStrategyAdapter(BadEntryType(), symbol="WIN$")
     with pytest.raises(TypeError, match="returned str, expected TradeOrder or None"):
-        adapter.compute_indicators(sample_bars)
+        _first_bar_decisions(adapter, sample_bars)
 
     # 3. entry_strategy returns illegal action ('close')
     class IllegalEntryAction(ResearchStrategy):
@@ -222,8 +234,8 @@ def test_invalid_return_and_action_types(sample_bars: pd.DataFrame) -> None:
             return TradeOrder.close()
 
     adapter = ResearchStrategyAdapter(IllegalEntryAction(), symbol="WIN$")
-    with pytest.raises(ValueError, match="only 'buy' or 'sell' is permitted"):
-        adapter.compute_indicators(sample_bars)
+    with pytest.raises(ValueError, match="illegal action 'close'; permitted actions"):
+        _first_bar_decisions(adapter, sample_bars)
 
     # 4. exit_strategy returns illegal action ('buy')
     class IllegalExitAction(ResearchStrategy):
@@ -234,8 +246,8 @@ def test_invalid_return_and_action_types(sample_bars: pd.DataFrame) -> None:
             return TradeOrder.buy()
 
     adapter = ResearchStrategyAdapter(IllegalExitAction(), symbol="WIN$")
-    with pytest.raises(ValueError, match="only 'close' is permitted"):
-        adapter.compute_indicators(sample_bars)
+    with pytest.raises(ValueError, match="illegal action 'buy'; permitted actions"):
+        _first_bar_decisions(adapter, sample_bars)
 
 
 def test_reserved_columns_and_tampered_market_data(sample_bars: pd.DataFrame) -> None:
@@ -306,7 +318,7 @@ def test_hook_exceptions_preserve_cause_and_timestamp(sample_bars: pd.DataFrame)
 
     adapter = ResearchStrategyAdapter(FailingExit(), symbol="WIN$")
     with pytest.raises(RuntimeError, match=f"exit_strategy at bar {target_ts}") as exc_info:
-        adapter.compute_indicators(sample_bars)
+        _all_bar_decisions(adapter, sample_bars)
     assert isinstance(exc_info.value.__cause__, ZeroDivisionError)
 
     class FailingEntry(ResearchStrategy):
@@ -317,7 +329,7 @@ def test_hook_exceptions_preserve_cause_and_timestamp(sample_bars: pd.DataFrame)
 
     adapter = ResearchStrategyAdapter(FailingEntry(), symbol="WIN$")
     with pytest.raises(RuntimeError, match=f"entry_strategy at bar {target_ts}") as exc_info:
-        adapter.compute_indicators(sample_bars)
+        _all_bar_decisions(adapter, sample_bars)
     assert isinstance(exc_info.value.__cause__, ValueError)
 
 

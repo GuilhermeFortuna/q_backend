@@ -308,6 +308,10 @@ def test_an_empty_frame_returns_the_complete_schemas(root):
         "exit_tick_time",
         "stop_loss",
         "take_profit",
+        "order_kind",
+        "entry_tick_time",
+        "final_stop_loss",
+        "final_take_profit",
     ]
     assert result.rejected_entries.columns.tolist() == [
         "time",

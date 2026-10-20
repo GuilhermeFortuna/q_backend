@@ -30,6 +30,9 @@ from q_backend.market_data.timezone import BRASILIA_TZ
 
 REQUIRED_ENGINE_FUNCTIONS: Final = ("run_candle", "DecisionStep", "size_entry", "required_columns")
 REQUIRED_ENGINE_CAPABILITIES: Final = ("PROTECTIVE_ORDERS", "RESTING_ORDERS")
+# Entry kinds in the q_core ledger, by code: an open fill, a priced entry, and resting stop and limit orders.
+ENTRY_KIND_ORDER: Final = ("market", "priced", "stop", "limit")
+_RESTING_KINDS: Final = (2, 3)
 REQUIRED_RUN_CANDLE_PARAMETERS: Final = (
     "stop_price",
     "target_price",
@@ -345,6 +348,8 @@ def run_chunk(
             level_args["exit_tick_callback"] = runtime.tick
     if intrabar is not None:
         level_args["intrabar"] = intrabar
+    if runtime is not None:
+        level_args["snapshot_levels"] = True
     try:
         result = engine.run_candle(
             time_us=np.ascontiguousarray(wall_clock_us(signals.index)),
@@ -389,22 +394,29 @@ def run_chunk(
             ) from exc
         raise
     entry_bar = np.asarray(result["entry_bar"], dtype=np.int64)
+    entry_kind = np.asarray(result["entry_kind"], dtype=np.int64)
+    # A resting fill belongs to the last buy or sell decided before its bar: a later decision would have replaced it.
+    placed_bars = np.flatnonzero(runtime.entry_placed) if runtime is not None else np.empty(0, dtype=np.int64)
+
+    def decided_bar(i: int) -> int:
+        b = int(entry_bar[i])
+        if entry_kind[i] in _RESTING_KINDS:
+            before = int(np.searchsorted(placed_bars, b)) - 1
+            return int(placed_bars[before]) if before >= 0 else -1
+        is_priced = (
+            decided_entry is not None
+            and not np.isnan(decided_entry[b])
+            and (decided_entry[b] == result["entry_price"][i] or np.isclose(decided_entry[b], result["entry_price"][i]))
+        )
+        return b if is_priced else b - 1
 
     def levels_of(decided: np.ndarray | None) -> np.ndarray:
         out = np.full(len(entry_bar), np.nan)
         if decided is not None:
-            for i, b in enumerate(entry_bar):
-                is_priced = (
-                    decided_entry is not None
-                    and not np.isnan(decided_entry[b])
-                    and (
-                        decided_entry[b] == result["entry_price"][i]
-                        or np.isclose(decided_entry[b], result["entry_price"][i])
-                    )
-                )
-                decided_bar = b if is_priced else b - 1
-                if decided_bar >= 0:
-                    out[i] = decided[decided_bar]
+            for i in range(len(entry_bar)):
+                bar = decided_bar(i)
+                if bar >= 0:
+                    out[i] = decided[bar]
         return out
 
     trades = {
@@ -419,10 +431,14 @@ def run_chunk(
             "commission",
             "pnl",
             "exit_time_us",
+            "entry_time_us",
         )
     }
+    trades["entry_kind"] = entry_kind
     trades["stop_loss"] = levels_of(decided_stop)
     trades["take_profit"] = levels_of(decided_target)
+    trades["final_stop_loss"] = np.asarray(result["final_stop_price"], dtype=np.float64)
+    trades["final_take_profit"] = np.asarray(result["final_target_price"], dtype=np.float64)
     rejected = {
         name: np.asarray(result[f"rejected_{name}"])
         for name in ("bar", "side", "fill_price", "stop_price", "target_price")
@@ -452,7 +468,13 @@ def ledger_to_registry(run: ChunkRun, index: pd.DatetimeIndex, *, symbol: str, p
             commission=float(run.trades["commission"][i]),
             stop_loss=_level(run.trades["stop_loss"][i]),
             take_profit=_level(run.trades["take_profit"][i]),
+            order_kind=ENTRY_KIND_ORDER[int(run.trades["entry_kind"][i])],
+            final_stop_loss=_level(run.trades["final_stop_loss"][i]),
+            final_take_profit=_level(run.trades["final_take_profit"][i]),
         )
+        entry_tick_us = int(run.trades["entry_time_us"][i])
+        if entry_tick_us >= 0:
+            trade.entry_tick_time = pd.Timestamp(entry_tick_us, unit="us").tz_localize(BRASILIA_TZ)
         registry.register_trade(trade)
         exit_bar = int(run.trades["exit_bar"][i])
         if exit_bar >= 0:
