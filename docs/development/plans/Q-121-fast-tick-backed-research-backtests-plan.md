@@ -65,7 +65,7 @@
 
 **Files:** `src/q_backend/research/engine.py`, `tests/research/test_backtest.py`.
 
-- [ ] Write a failing test for acceptance 7, then add `check_causality`. Commit.
+- [x] Write a failing test for acceptance 7, then add `check_causality`. Commit.
 
 ### 5. Docs, examples and timings
 

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import pandas as pd
+from pandas.api.types import is_numeric_dtype
 
 from q_backend.backtesting.candle_kernel import engine as kernel
 from q_backend.backtesting.candle_kernel import ledger_to_registry
@@ -45,6 +46,8 @@ from q_backend.research.tick_phase import resolve_workers
 from q_backend.research.tick_store import TickStore
 
 _INTERNAL_COLUMNS = frozenset((*SIGNAL_COLUMNS, *LEVEL_COLUMNS, BAR_INDEX))
+# Session ends at which the causality check recomputes indicators, at most.
+_CAUSALITY_PREFIXES = 20
 
 
 def _is_json_scalar(val: Any) -> bool:
@@ -207,6 +210,7 @@ def backtest(
     tick_size: float | None = None,
     workers: int | Literal["auto"] = 1,
     progress: bool | None = None,
+    check_causality: bool = False,
 ) -> BacktestResult:
     """
     Run a synchronous research backtest with deterministic Q execution semantics.
@@ -254,6 +258,11 @@ def backtest(
         must depend only on their arguments and on state that resets within a session.
     progress : bool, optional
         Whether to display a progress bar on stderr.
+    check_causality : bool, default False
+        Before running, recompute ``compute_indicators`` on the history up to up to 20 evenly
+        spaced session ends and compare it with the full run. An indicator that reads a later bar
+        raises ``ValueError`` naming its column and bar. Off, the check costs nothing. Custom
+        strategies only.
 
     Returns
     -------
@@ -297,11 +306,18 @@ def backtest(
     worker_count = resolve_workers(workers)
     if progress is not None and not isinstance(progress, bool):
         raise TypeError(f"progress must be a bool or None, got {type(progress).__name__}")
+    if not isinstance(check_causality, bool):
+        raise TypeError(f"check_causality must be a bool, got {type(check_causality).__name__}")
 
     if ticks is not None and ticks.symbol != symbol:
         raise ValueError(f"ticks is a store for {ticks.symbol!r}, but the backtest symbol is {symbol!r}")
 
     is_builtin = isinstance(strategy, str)
+    if check_causality and is_builtin:
+        raise ValueError(
+            "check_causality applies to ResearchStrategy instances; registered strategies are causal by "
+            "construction and covered by their own test suites"
+        )
     validated_frame = _validate_input_frame(frame, is_builtin=is_builtin)
     timeframe = frame.attrs.get("q_research", {}).get("timeframe") if hasattr(frame, "attrs") else None
     reporter = backtest_progress(progress, " ".join(part for part in (symbol, timeframe) if part))
@@ -446,6 +462,7 @@ def backtest(
                 strategy=strategy,
                 workers=worker_count,
                 reporter=reporter,
+                check_causality=check_causality,
             )
             reporter.finish(len(result.trades))
     except kernel.IntrabarDataError as exc:
@@ -454,6 +471,46 @@ def backtest(
         if isinstance(trading_strategy, ResearchStrategyAdapter):
             trading_strategy.close()
     return result
+
+
+def _check_causality(strategy: ResearchStrategy, frame: pd.DataFrame, prepared: pd.DataFrame) -> None:
+    """Recompute indicators on prefixes ending at session ends, and compare them with the full run.
+
+    An indicator that reads a later bar takes a different value on a prefix that lacks that bar,
+    so the first difference names the column and the bar. A history of one session has no earlier
+    session end to check.
+    """
+    name = type(strategy).__name__
+    days = np.asarray(frame.index.tz_convert(BRASILIA_TZ).date)
+    ends = np.flatnonzero(days[1:] != days[:-1])  # the last bar of each session but the final one
+    if len(ends) == 0:
+        return
+    picks = np.unique(np.linspace(0, len(ends) - 1, min(_CAUSALITY_PREFIXES, len(ends))).round().astype(int))
+    for end in ends[picks]:
+        stop = int(end) + 1
+        try:
+            computed = strategy.compute_indicators(frame.iloc[:stop].copy())
+        except Exception as exc:
+            raise RuntimeError(f"Error in {name}.compute_indicators during the causality check: {exc}") from exc
+        for column in computed.columns:
+            if column not in prepared.columns:
+                continue
+            matches = _same_values(computed[column], prepared[column].iloc[:stop])
+            if not matches.all():
+                bar = frame.index[int(np.flatnonzero(~matches)[0])]
+                raise ValueError(
+                    f"{name}.compute_indicators is not causal: column {column!r} at bar {bar} "
+                    f"changes when the bars after it are removed (history ends {frame.index[stop - 1]})"
+                )
+
+
+def _same_values(left: pd.Series, right: pd.Series) -> np.ndarray:
+    """Element-wise match: missing values match missing values, and floats match within rounding."""
+    both_missing = left.isna().to_numpy() & right.isna().to_numpy()
+    if is_numeric_dtype(left) and is_numeric_dtype(right):
+        close = np.isclose(left.to_numpy(dtype=np.float64), right.to_numpy(dtype=np.float64), rtol=1e-9, atol=1e-12)
+        return close | both_missing
+    return (left.to_numpy() == right.to_numpy()) | both_missing
 
 
 @dataclass(frozen=True)
@@ -476,9 +533,12 @@ def _execute_backtest(
     strategy: Any,
     workers: int,
     reporter: BacktestProgress,
+    check_causality: bool,
 ) -> BacktestResult:
     # Prepare once, then reuse explicitly for execution and result data.
     augmented_data = augment_indicator_frame(trading_strategy, validated_frame)
+    if check_causality:
+        _check_causality(strategy, validated_frame, augmented_data)
     blocks = session_blocks(augmented_data.index, workers) if engine.day_trade else None
     if blocks is None:
         registry, run = engine.run_prepared_detailed(augmented_data, force_close_at_end=force_close_at_end)
