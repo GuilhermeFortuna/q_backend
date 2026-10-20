@@ -405,11 +405,11 @@ class RSIReversion(ResearchStrategy):
    - Must be strictly **causal**: all calculations must only depend on rows $\le$ current row. Centered rolling windows, `shift(-1)`, or whole-frame statistics (global mean, min, max) leak future information and invalidate research results.
 2. **`entry_strategy(frame: DataFrame, positions: tuple[ResearchPosition, ...]) -> TradeOrder | None`**:
    - Abstract method called on an isolated owned copy of closed-bar history up to the current bar.
-   - Returns `TradeOrder.buy()`, `TradeOrder.sell()`, or `None`.
+   - Returns a buy or sell of any kind (see [Resting entry orders](#resting-entry-orders)), `TradeOrder.cancel()` to remove the working entry order, or `None`.
    - `positions` is optional in your override's signature; existing `entry_strategy(self, frame)` methods remain supported.
 3. **`exit_strategy(frame: DataFrame, positions: tuple[ResearchPosition, ...], *, phase="bar") -> TradeOrder | None`**:
    - Called on an isolated owned copy of closed-bar history up to the current bar, evaluated **before** `entry_strategy`.
-   - Returns `TradeOrder.close()` or `None`. Defaults to returning `None`.
+   - Returns `TradeOrder.close()`, `TradeOrder.amend(...)` to move the open position's stop or target, or `None`. Defaults to returning `None`. `amend` is allowed in the bar phase and in hooks without `phase`; see [Moving stops and targets](#moving-stops-and-targets).
    - `positions` is optional in your override's signature; existing `exit_strategy(self, frame)` methods remain supported.
    - A `phase` keyword-only parameter opts the exit into intrabar evaluation (see [Stop and target orders](#stop-and-target-orders)). Without it, an exit is called once per closed bar, as before. `**kwargs` alone does not opt in.
 4. **`chart_indicators() -> Sequence[ChartIndicator]`** (optional):
@@ -450,7 +450,7 @@ class RSIReversion(ResearchStrategy):
 
 #### Entry levels and phase-aware exits
 
-- `TradeOrder.buy(*, stop_loss=None, take_profit=None, price=None)` and `TradeOrder.sell(...)` attach price levels fixed at entry or a same-bar fill price. A buy's stop lies below its target and a sell's above it; when `price` is set, `stop_loss < price < take_profit` for a buy and `stop_loss > price > take_profit` for a sell; levels and prices must be finite and positive. `TradeOrder.close()` takes no levels or price. Invalid values raise `ValueError` when the order is built.
+- `TradeOrder.buy(*, stop_loss=None, take_profit=None, price=None)` and `TradeOrder.sell(...)` attach price levels, or a same-bar fill price. `TradeOrder.amend` can move the levels later (see [Moving stops and targets](#moving-stops-and-targets)), and `TradeOrder.buy_stop`, `buy_limit`, `sell_stop` and `sell_limit` place resting entries (see [Resting entry orders](#resting-entry-orders)). A buy's stop lies below its target and a sell's above it; when `price` is set, `stop_loss < price < take_profit` for a buy and `stop_loss > price > take_profit` for a sell; levels and prices must be finite and positive. `TradeOrder.close()` takes no levels or price. Invalid values raise `ValueError` when the order is built.
 - An exit that declares `phase` is called three times per candle with open positions:
   - `phase="screen"` on the whole candle after queued fills. Return `TradeOrder.close()` to ask for the candle's ticks, not to exit. Screen with the candle's full high and low so that a crossing that reverses before the close still qualifies. Flat candles are never screened.
   - `phase="tick"` for the trade prices of a screened candle, in stored order. The frame ends with the candle observed so far: its `open` is the first trade price, `high` and `low` the extremes so far, `close` the current price and `tick_volume` the count of prices. Other columns of that row are `NaN`, and the indicators are recomputed on the raw history with that row, so they never see the completed candle. Returning `TradeOrder.close()` exits at that tick's trade price.
@@ -475,6 +475,30 @@ class StopTargetBreakout(ResearchStrategy):
         reached = frame["low"].iloc[-1] <= floor if phase == "screen" else frame["close"].iloc[-1] <= floor
         return TradeOrder.close() if reached else None
 ```
+
+#### Trailing stops with `amend`
+
+Write a trailing stop with `amend` rather than a phase-aware exit whenever its trigger is a price level. The kernel fills the stop from ticks and the strategy keeps no state: `positions[0].stop_loss` is the level in force.
+
+```python
+class TrailingLow(ResearchStrategy):
+    def entry_strategy(self, frame, positions=()):
+        if positions:
+            return None
+        return TradeOrder.buy(stop_loss=frame["low"].iloc[-1] - 5.0)
+
+    def exit_strategy(self, frame, positions=()):
+        if not positions or positions[0].side != "long":
+            return None
+        new_stop = frame["low"].iloc[-1]
+        if positions[0].stop_loss is None or new_stop > positions[0].stop_loss:
+            return TradeOrder.amend(stop_loss=new_stop)
+        return None
+```
+
+- An amendment decided on bar `i` applies from the first price of bar `i+1`, and the decision on bar `i+1` shows the new level in `positions[0].stop_loss`.
+- The trailing stop closes at the first tick at or beyond the latest level, with reason `STOP_LOSS`. The phase-aware version of the same rule gives the same exit bars, tick times and prices, with reason `SIGNAL`.
+- Levels and amendments need `ticks=` in `backtest()`.
 
 ### Open position context
 
@@ -501,6 +525,8 @@ existing signatures and do not receive positions.
 | `entry_time` | `pandas.Timestamp` | Actual entry timestamp in the research frame's timezone. |
 | `entry_price` | `float` | Actual filled entry price. |
 | `quantity` | `float` | Actual filled quantity from engine sizing. |
+| `stop_loss` | `float` or `None` | Stop level in force at this decision, after any amendment; `None` when unset. |
+| `take_profit` | `float` or `None` | Target level in force at this decision, after any amendment; `None` when unset. |
 
 The tuple is empty (`()`) when flat. With the research backtest's fixed-quantity
 sizing, it contains at most one position for the backtest symbol. Pending entry
@@ -639,7 +665,7 @@ The progress bar shows bars decided out of the total, the current bar, the open 
 ### Backtest results (`BacktestResult`)
 
 - **`metrics: dict`**: Summary performance statistics computed across closed trades (`total_trades`, `total_pnl`, `win_rate`, `profit_factor`, `max_drawdown_value`, `max_drawdown_pct`, etc.).
-- **`trades: DataFrame`**: Execution log with stable columns (`trade_id`, `symbol`, `side`, `status`, `entry_time`, `entry_price`, `exit_time`, `exit_price`, `pnl`, `quantity`, `commission`, `point_value`, `exit_reason`, `exit_tick_time`, `stop_loss`, `take_profit`). `exit_time` is the candle's timestamp. `exit_tick_time` is the time of the tick that closed a stop, target or phase-aware exit inside the candle, and `NaT` for other exits. `stop_loss` and `take_profit` are the levels the trade was opened with, `NaN` when unset.
+- **`trades: DataFrame`**: Execution log with stable columns (`trade_id`, `symbol`, `side`, `status`, `entry_time`, `entry_price`, `exit_time`, `exit_price`, `pnl`, `quantity`, `commission`, `point_value`, `exit_reason`, `exit_tick_time`, `stop_loss`, `take_profit`, `order_kind`, `entry_tick_time`, `final_stop_loss`, `final_take_profit`). `exit_time` is the candle's timestamp. `exit_tick_time` is the time of the tick that closed a stop, target or phase-aware exit inside the candle, and `NaT` for other exits. `stop_loss` and `take_profit` are the levels the trade was opened with, `NaN` when unset. `order_kind` is `market`, `priced`, `stop` or `limit`. `entry_tick_time` is the tick that filled a resting order, `NaT` otherwise. `final_stop_loss` and `final_take_profit` are the levels in force when the trade closed, `NaN` when unset.
 - **`rejected_entries: DataFrame`**: Entries not taken because a level was already on the wrong side of the fill, with columns `time`, `side`, `fill_price`, `stop_loss` and `take_profit`. Empty when there are none.
 - **`equity: DataFrame`**: Time series indexed by bar timestamp containing `realized_equity` (initial capital plus cumulative net PnL from closed trades). Open positions are not marked to market.
 - **`data: DataFrame`**: Prepared historical bars augmented with user and exit indicator columns (internal signal arrays omitted). Keeps every computed column, declared or not.
@@ -799,7 +825,7 @@ class PreviousHighBreakout(ResearchStrategy):
 
 - A stop triggers on the first trade price at or beyond its level and fills at that price, so a gap through the level fills at the gap price. A target triggers on the first trade price strictly beyond its level and fills at the level, so a price equal to the target does not fill.
 - When both levels lie inside one candle, the order in which prices traded decides. Protective and custom exits resolve in one chronological scan. At the same tick, a protective fill takes precedence over a custom exit. A trade cannot close on the tick that opened it.
-- Levels are fixed at entry. Existing `exit_params` rules, close requests without `phase`, and the `phase="bar"` close keep their next-open execution. `force_close_at_end` and day-trade closes are unchanged.
+- Existing `exit_params` rules, close requests without `phase`, and the `phase="bar"` close keep their next-open execution. `force_close_at_end` and day-trade closes are unchanged.
 - Candle prices load only when a level's range is reached or a phase-aware screen qualifies, at most once per candle. Candles with no open trade read nothing. A candle's ticks run from its timestamp to the next bar in the same session, or to the end of that exchange day for its last bar, and never reach into the next day.
 - The frame must be built from the same store with `TickStore.bars`, so that each loaded candle's first, highest, lowest and last prices equal its open, high, low and close. A mismatch raises `ValueError` naming the bar. A candle whose session is not stored raises `NoMarketDataError` naming the day and `TickStore.sync`. An empty interval fails with the bar's time; there is no fallback to next-open execution.
 - Live trading decides on completed bars only, so a deployed strategy does not reproduce these intrabar fills.
@@ -808,6 +834,23 @@ class PreviousHighBreakout(ResearchStrategy):
 - With `day_trade=True`: an entry is taken only from a signal bar whose time lies between the start and end times inclusive; open positions close at the open of the first bar at or after the close time; a position still open on the last bar of a calendar day closes at that bar's close.
 - Without `day_trade`, positions carry across sessions. `force_close_at_end` closes at the last bar's close.
 - `equity` is realized only, as the guide already says.
+
+#### Resting entry orders
+
+- `TradeOrder.buy_stop(price, ...)`, `buy_limit`, `sell_stop` and `sell_limit` place a working entry that fills from ticks. `stop_loss`, `take_profit` and `expire_bars` are keyword-only, and a stop or limit order needs a price. The same side rules as a priced entry apply to the levels.
+- A stop fills at the first trade at or beyond its price, at that trade's price, so a gap fills at the gap price. A limit fills at its own price on the first trade strictly beyond it, so a trade equal to the limit does not fill.
+- The order works from the first price of the bar after the one that placed it. `expire_bars` (default `1`) is how many bars after the placing bar it may fill on: an order placed on bar `i` with `expire_bars=k` fills on bars `i+1` to `i+k`. `expire_bars=None` keeps it until it fills, is replaced or is cancelled. In day-trade mode it also lapses at the force-close bar and after the session's last bar.
+- One working entry at a time. Any new entry decision (market, priced or resting) replaces it, and `TradeOrder.cancel()` removes it. A replaced or cancelled order does not fill.
+- Within one price, protective exits resolve first, then a custom exit, then the resting fill. A protective exit and a reversing resting entry at the same price therefore close, then open. A new trade never exits on the price that filled it.
+- Resting orders need `ticks=` in `backtest()`, and a resting order returned without it raises `ValueError` naming the strategy, the bar and the `ticks` argument.
+- A resting fill is recorded with `order_kind` `stop` or `limit` and `entry_tick_time`, the tick that filled it (see [Backtest results](#backtest-results-backtestresult)).
+
+#### Moving stops and targets
+
+- `TradeOrder.amend(*, stop_loss=None, take_profit=None)` returned from `exit_strategy` moves the stop and/or target of every open position from the next bar's first price. It needs at least one level, and a level left out keeps its current value. While flat it does nothing.
+- An amended level already beyond the next bar's open fills at that open, by the gap rule. An amendment never changes an exit rule or an entry decided in the same call.
+- `amend` is allowed in the bar phase and in hooks without `phase`. Returning it from `entry_strategy`, or from a `screen` or `tick` call, raises `ValueError` naming the strategy, the hook, the phase and the bar. `cancel` is allowed from `entry_strategy` only.
+- Amendments need `ticks=` in `backtest()`.
 
 ## Transaction costs
 
@@ -903,6 +946,13 @@ uv run python examples/research/stop_target_backtest.py \
 ```
 
 Prints metrics, exit reasons, the tick time of each exit inside a candle, and rejected entries. Sessions in the window must already be synced.
+
+### Resting stop entries and trailing amendments
+```bash
+uv run python examples/research/resting_orders_backtest.py
+```
+
+Runs a buy-stop break-out with a trailing stop moved by `amend`, over a synthetic session written to a temporary directory, so it needs no synced data. Prints each trade's `order_kind`, `entry_tick_time` and final levels.
 
 ### Offline RSI reversion backtest
 ```bash

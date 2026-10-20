@@ -391,6 +391,27 @@ def test_stop_target_backtest_example_runs_over_a_store(tmp_path: Path) -> None:
     assert result.rejected_entries.empty
 
 
+def test_resting_orders_example_runs_over_a_temporary_store(capsys: pytest.CaptureFixture[str]) -> None:
+    from examples.research.resting_orders_backtest import main, run_example
+
+    result = run_example()
+
+    assert len(result.trades) == 1
+    trade = result.trades.iloc[0]
+    assert trade["order_kind"] == "stop"
+    assert trade["entry_price"] == 102.0
+    assert trade["entry_tick_time"] == pd.Timestamp("2026-10-05 10:12:00", tz=BRASILIA_TZ)
+    assert trade["exit_reason"] == "STOP_LOSS"
+    assert trade["exit_price"] == 101.0
+    assert trade["exit_tick_time"] == pd.Timestamp("2026-10-05 10:32:00", tz=BRASILIA_TZ)
+    assert trade["stop_loss"] == 94.0
+    assert trade["final_stop_loss"] == 101.5
+
+    main([])
+    printed = capsys.readouterr().out
+    assert "STOP_LOSS" in printed and "order_kind" in printed
+
+
 def test_publish_figures_example_with_mocked_http() -> None:
     import json
     import httpx
