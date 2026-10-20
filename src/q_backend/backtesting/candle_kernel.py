@@ -29,7 +29,7 @@ from q_backend.backtesting.strategy import TradingStrategy
 from q_backend.market_data.timezone import BRASILIA_TZ
 
 REQUIRED_ENGINE_FUNCTIONS: Final = ("run_candle", "DecisionStep", "size_entry", "required_columns")
-REQUIRED_ENGINE_CAPABILITIES: Final = ("PROTECTIVE_ORDERS",)
+REQUIRED_ENGINE_CAPABILITIES: Final = ("PROTECTIVE_ORDERS", "RESTING_ORDERS")
 REQUIRED_RUN_CANDLE_PARAMETERS: Final = (
     "stop_price",
     "target_price",
@@ -38,6 +38,7 @@ REQUIRED_RUN_CANDLE_PARAMETERS: Final = (
     "strategy_callback",
     "exit_screen_callback",
     "exit_tick_callback",
+    "snapshot_levels",
 )
 
 
