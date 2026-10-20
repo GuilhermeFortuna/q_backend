@@ -100,6 +100,13 @@ Intrabar breakeven requires a `q_core` release exposing `engine.BREAKEVEN_INTRAB
 Install that released engine through the normal `pyproject.toml` release-tag pin and `uv sync`
 before enabling this behavior in a running stack; an older engine is rejected rather than
 silently ignoring the emergency stop. Historical result artifacts are unchanged.
+
+If a research import reports a missing `q_core` capability such as `SESSION_TICK_SOURCE`, run
+`uv sync --frozen` from this repository to install the release recorded in `uv.lock`. Same-day
+release tags can report the same package version: `v2026.10.19` and `v2026.10.19.2` both report
+`2026.10.19`, but only the latter includes the native session tick source. The resolved commit,
+rather than the displayed version alone, identifies the installed release.
+
 * **Parabolic SAR** (`parabolic_sar.py`, `exit_group=trailing`) — `psar_af_start` (0 disables), `psar_af_step`, `psar_af_max`: textbook Wilder SAR per trade — seeded from entry/first-bar extremes, advanced each bar, and clamped so SAR never penetrates the prior two bars' range.
 * **Profit-target ratchet** (`profit_target_ratchet.py`, `exit_group=target`) — `target_ratchet_atr`: arms a trailing profit floor once price reaches entry ± ATR multiple; ratchet rises/falls with new extremes (reuses shared `atr_period`).
 * **Time stop** (`time_stop.py`, `exit_group=time`) — `max_bars_in_trade`: closes after N bars in trade via a per-trade bar counter in rule state.
