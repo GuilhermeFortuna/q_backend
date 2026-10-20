@@ -44,8 +44,8 @@ class BacktestProgress:
     def bar(self, done: int, timestamp: pd.Timestamp, position: str = "") -> None:
         """Report that ``done`` bars are decided, the last one opening at ``timestamp``."""
 
-    def replay(self, timestamp: pd.Timestamp, done: int, total: int) -> None:
-        """Report tick replay inside the candle opening at ``timestamp``."""
+    def replay(self, timestamp: pd.Timestamp, done: int) -> None:
+        """Report that ``done`` ticks of the candle opening at ``timestamp`` have been decided on."""
 
     def finish(self, trades: int) -> None:
         """Report the completed run."""
@@ -101,15 +101,13 @@ class RichBacktestProgress(BacktestProgress):
         self._progress.update(self._bars, completed=done, status=" · ".join(parts))
         self._progress.update(self._ticks, visible=False)
 
-    def replay(self, timestamp: pd.Timestamp, done: int, total: int) -> None:
+    def replay(self, timestamp: pd.Timestamp, done: int) -> None:
         if self._ticks is None:
             return
         if timestamp != self._replayed:
             self._replayed = timestamp
             self._replays += 1
-        self._progress.update(
-            self._ticks, completed=done, total=total, status=f"{timestamp:%Y-%m-%d %H:%M} ticks", visible=True
-        )
+        self._progress.update(self._ticks, completed=done, status=f"{timestamp:%Y-%m-%d %H:%M} ticks", visible=True)
 
     def finish(self, trades: int) -> None:
         if self._bars is None or self._ticks is None:

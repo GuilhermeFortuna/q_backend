@@ -24,26 +24,33 @@
 
 ### 0. Baseline
 
-- [ ] Before changing code, run the benchmark logic (step 5's script, drafted first) on 60 synthetic sessions with the current code. Record the timings in this plan.
+- [x] Before changing code, run the benchmark logic (step 5's script, drafted first) on 60 synthetic sessions with the current code. Record the timings in this plan.
+
+  Baseline, `uv run python examples/research/tick_backtest_benchmark.py --sessions 60 --workers 4`, on the development workstation, before any change (`q-core` v2026.10.19, `TickReplay`, `TickWorkerPool`):
+
+  | strategy | workers=1 (s) | workers=4 (s) | trades |
+  |---|---|---|---|
+  | amend | 0.58 | 0.58 | 354 |
+  | phase | 1.16 | 5.68 | 177 |
 
 ### 1. Native price source
 
 **Files:** `pyproject.toml`, `uv.lock`, `src/q_backend/backtesting/candle_kernel.py` (`check_engine`), `src/q_backend/research/engine.py`, `src/q_backend/research/tick_store.py` (a session path and interval helper), `src/q_backend/research/intrabar.py` (removed or reduced to the helper).
 
-- [ ] Pin the tag published by `./work finish Q-119`, and require `SESSION_TICK_SOURCE`.
-- [ ] Write failing tests for acceptance 2 and the error mapping.
-- [ ] Build the source with each bar's `[start_msc, end_msc)` from `naive_local_to_time_msc`, using `TickReplay`'s session rule and `None` for sessions that are not stored. Map `IntrabarDataError` to today's exceptions.
-- [ ] Run `uv run pytest tests/research tests/backtesting -q` (acceptance 1). Commit.
+- [x] Pin the tag published by `./work finish Q-119`, and require `SESSION_TICK_SOURCE`.
+- [x] Write failing tests for acceptance 2 and the error mapping.
+- [x] Build the source with each bar's `[start_msc, end_msc)` from `naive_local_to_time_msc`, using `TickReplay`'s session rule and `None` for sessions that are not stored. Map `IntrabarDataError` to today's exceptions.
+- [x] Run `uv run pytest tests/research tests/backtesting -q` (acceptance 1). Commit.
 
 ### 2. Constant-cost frames
 
 **Files:** `src/q_backend/research/adapter.py`, `src/q_backend/research/tick_phase.py`, `tests/research/test_hook_frames.py`.
 
-- [ ] Write failing tests for acceptance 3–5.
-- [ ] Replace `_owned_prefix` copies with positional slices of the prepared frame, with empty `attrs`.
-- [ ] Build tick frames from a scratch copy of the prepared frame, allocated once per run: write the forming row's market columns, set its other columns to `NaN`, and pass a slice. Restore the row when the bar ends.
-- [ ] Remove `compute_indicators` from replay, and remove `TickWorkerPool` and the wave logic in `_RuntimeHooks._decide`.
-- [ ] Run the research suites. Commit.
+- [x] Write failing tests for acceptance 3–5.
+- [x] Replace `_owned_prefix` copies with positional slices of the prepared frame, with empty `attrs`.
+- [x] Build tick frames from a scratch copy of the prepared frame, allocated once per run: write the forming row's market columns, set its other columns to `NaN`, and pass a slice. Restore the row when the bar ends.
+- [x] Remove `compute_indicators` from replay, and remove `TickWorkerPool` and the wave logic in `_RuntimeHooks._decide`.
+- [x] Run the research suites. Commit.
 
 ### 3. Parallel day-trade sessions
 

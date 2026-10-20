@@ -327,7 +327,7 @@ def run_chunk(
     }
     tradable = None if trade_start is None else np.ascontiguousarray(~(chunk.index < trade_start), dtype=bool)
     runtime_factory = getattr(strategy, "runtime_callback", None)
-    runtime = runtime_factory(chunk, intrabar) if runtime_factory is not None else None
+    runtime = runtime_factory(chunk) if runtime_factory is not None else None
     level_args: dict[str, object] = {}
     if runtime is None:
         decided_stop = signals.stop_price

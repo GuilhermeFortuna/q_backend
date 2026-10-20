@@ -32,7 +32,6 @@ class StopTargetBreakout(ResearchStrategy):
         out = frame.copy()
         out["upper"] = out["high"].rolling(BREAKOUT_BARS).max().shift(1)
         out["atr"] = (out["high"] - out["low"]).rolling(ATR_BARS).mean()
-        out["exit_floor"] = out["low"].rolling(EXIT_BARS).min().shift(1)
         return out
 
     def entry_strategy(self, frame: pd.DataFrame) -> TradeOrder | None:
@@ -47,7 +46,9 @@ class StopTargetBreakout(ResearchStrategy):
     def exit_strategy(self, frame: pd.DataFrame, positions: tuple = (), *, phase: str = "bar") -> TradeOrder | None:
         if phase == "bar" or not positions:
             return None
-        floor = frame["exit_floor"].iloc[-1]
+        # A tick decision sees the forming candle with no indicators, so the floor is read from the
+        # EXIT_BARS closed candles before the current one: the last row is the candle being decided.
+        floor = frame["low"].iloc[-EXIT_BARS - 1 : -1].min()
         if phase == "screen":
             reached = frame["low"].iloc[-1] <= floor
         else:

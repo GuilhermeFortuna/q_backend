@@ -262,16 +262,15 @@ def test_runtime_and_legacy_numerical_parity(bars):
 
 
 @pytest.mark.parametrize("context", [False, True])
-def test_hook_timestamp_storage_is_owned(bars, context):
+def test_hook_timestamp_storage_is_read_only(bars, context):
     original_index = bars.index.copy(deep=True)
 
     def exit_hook(frame):
-        backing = frame.index.values.base
-        if backing is not None:
-            assert backing.size <= len(frame), "future timestamps exposed through index backing storage"
         values = frame.index.values
-        values.setflags(write=True)
-        values[0] = pd.Timestamp("1999-01-01").to_datetime64()
+        assert not values.flags.writeable
+        with pytest.raises(ValueError, match="read-only"):
+            values[0] = pd.Timestamp("1999-01-01").to_datetime64()
+        return None
 
     def entry_hook(frame):
         assert frame.index[0] == original_index[0]

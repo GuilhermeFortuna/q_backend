@@ -311,7 +311,6 @@ def backtest(
             symbol=symbol,
             exit_params=exit_params,
             ticks_available=ticks is not None,
-            workers=worker_count,
             progress=reporter,
         )
         if trading_strategy.requires_ticks and ticks is None:
