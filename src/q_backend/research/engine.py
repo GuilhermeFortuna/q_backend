@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from numbers import Integral, Real
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import pandas as pd
+from pandas.api.types import is_numeric_dtype
 
+from q_backend.backtesting.candle_kernel import engine as kernel
+from q_backend.backtesting.candle_kernel import ledger_to_registry
 from q_backend.backtesting.costs import TransactionCostConfig
 from q_backend.backtesting.engine import BacktestEngine
 from q_backend.backtesting.exit_rules.registry import all_param_specs
@@ -27,7 +31,8 @@ from q_backend.market_data.timezone import BRASILIA_TZ
 from q_backend.research.adapter import ResearchStrategyAdapter
 from q_backend.research.charting import STYLE_FIELDS, ChartIndicator
 from q_backend.research.frame import _validate_prices
-from q_backend.research.progress import backtest_progress
+from q_backend.research.intrabar import intrabar_error, native_tick_source
+from q_backend.research.progress import BacktestProgress, backtest_progress
 from q_backend.research.results import (
     BacktestResult,
     build_equity_curve,
@@ -36,12 +41,13 @@ from q_backend.research.results import (
     trades_to_frame,
 )
 from q_backend.research.strategy import ResearchStrategy
+from q_backend.research.session_blocks import run_session_blocks, session_blocks
 from q_backend.research.tick_phase import resolve_workers
-
-if TYPE_CHECKING:
-    from q_backend.research.tick_store import TickStore
+from q_backend.research.tick_store import TickStore
 
 _INTERNAL_COLUMNS = frozenset((*SIGNAL_COLUMNS, *LEVEL_COLUMNS, BAR_INDEX))
+# Session ends at which the causality check recomputes indicators, at most.
+_CAUSALITY_PREFIXES = 20
 
 
 def _is_json_scalar(val: Any) -> bool:
@@ -204,6 +210,7 @@ def backtest(
     tick_size: float | None = None,
     workers: int | Literal["auto"] = 1,
     progress: bool | None = None,
+    check_causality: bool = False,
 ) -> BacktestResult:
     """
     Run a synchronous research backtest with deterministic Q execution semantics.
@@ -244,9 +251,18 @@ def backtest(
         Instrument price increment for the Breakeven Emergency Stop. Defaults to
         ``frame.attrs['q_research']['tick_size']`` when recorded by the data loader.
     workers : int or 'auto', default 1
-        Worker process count for parallel intrabar tick resolution.
+        Worker processes for day-trade sessions. With ``day_trade=True`` the sessions are split
+        into up to ``workers`` contiguous blocks, each run in its own process, and joined in
+        session order with the same result as ``workers=1``. Other runs are sequential, whatever
+        the value. The strategy must be picklable from a module when ``workers > 1``; its hooks
+        must depend only on their arguments and on state that resets within a session.
     progress : bool, optional
         Whether to display a progress bar on stderr.
+    check_causality : bool, default False
+        Before running, recompute ``compute_indicators`` on the history up to up to 20 evenly
+        spaced session ends and compare it with the full run. An indicator that reads a later bar
+        raises ``ValueError`` naming its column and bar. Off, the check costs nothing. Custom
+        strategies only.
 
     Returns
     -------
@@ -290,11 +306,18 @@ def backtest(
     worker_count = resolve_workers(workers)
     if progress is not None and not isinstance(progress, bool):
         raise TypeError(f"progress must be a bool or None, got {type(progress).__name__}")
+    if not isinstance(check_causality, bool):
+        raise TypeError(f"check_causality must be a bool, got {type(check_causality).__name__}")
 
     if ticks is not None and ticks.symbol != symbol:
         raise ValueError(f"ticks is a store for {ticks.symbol!r}, but the backtest symbol is {symbol!r}")
 
     is_builtin = isinstance(strategy, str)
+    if check_causality and is_builtin:
+        raise ValueError(
+            "check_causality applies to ResearchStrategy instances; registered strategies are causal by "
+            "construction and covered by their own test suites"
+        )
     validated_frame = _validate_input_frame(frame, is_builtin=is_builtin)
     timeframe = frame.attrs.get("q_research", {}).get("timeframe") if hasattr(frame, "attrs") else None
     reporter = backtest_progress(progress, " ".join(part for part in (symbol, timeframe) if part))
@@ -309,7 +332,6 @@ def backtest(
             symbol=symbol,
             exit_params=exit_params,
             ticks_available=ticks is not None,
-            workers=worker_count,
             progress=reporter,
         )
         if trading_strategy.requires_ticks and ticks is None:
@@ -370,7 +392,7 @@ def backtest(
         day_trade_end_time=day_trade_end_time,
         day_trade_close_time=day_trade_close_time,
         costs=costs,
-        intrabar_factory=None if ticks is None else _tick_replay_factory(ticks),
+        intrabar_factory=None if ticks is None else _NativeTickSources(ticks),
         tick_size=tick_size,
     )
 
@@ -438,18 +460,67 @@ def backtest(
                 force_close_at_end=force_close_at_end,
                 config=read_only_config,
                 strategy=strategy,
+                workers=worker_count,
+                reporter=reporter,
+                check_causality=check_causality,
             )
             reporter.finish(len(result.trades))
+    except kernel.IntrabarDataError as exc:
+        raise intrabar_error(exc, validated_frame, ticks) from exc
     finally:
         if isinstance(trading_strategy, ResearchStrategyAdapter):
             trading_strategy.close()
     return result
 
 
-def _tick_replay_factory(ticks: TickStore) -> Callable[[pd.DataFrame], Callable[[int], tuple]]:
-    from q_backend.research.intrabar import TickReplay
+def _check_causality(strategy: ResearchStrategy, frame: pd.DataFrame, prepared: pd.DataFrame) -> None:
+    """Recompute indicators on prefixes ending at session ends, and compare them with the full run.
 
-    return lambda chunk: TickReplay(ticks, chunk)
+    An indicator that reads a later bar takes a different value on a prefix that lacks that bar,
+    so the first difference names the column and the bar. A history of one session has no earlier
+    session end to check.
+    """
+    name = type(strategy).__name__
+    days = np.asarray(frame.index.tz_convert(BRASILIA_TZ).date)
+    ends = np.flatnonzero(days[1:] != days[:-1])  # the last bar of each session but the final one
+    if len(ends) == 0:
+        return
+    picks = np.unique(np.linspace(0, len(ends) - 1, min(_CAUSALITY_PREFIXES, len(ends))).round().astype(int))
+    for end in ends[picks]:
+        stop = int(end) + 1
+        try:
+            computed = strategy.compute_indicators(frame.iloc[:stop].copy())
+        except Exception as exc:
+            raise RuntimeError(f"Error in {name}.compute_indicators during the causality check: {exc}") from exc
+        for column in computed.columns:
+            if column not in prepared.columns:
+                continue
+            matches = _same_values(computed[column], prepared[column].iloc[:stop])
+            if not matches.all():
+                bar = frame.index[int(np.flatnonzero(~matches)[0])]
+                raise ValueError(
+                    f"{name}.compute_indicators is not causal: column {column!r} at bar {bar} "
+                    f"changes when the bars after it are removed (history ends {frame.index[stop - 1]})"
+                )
+
+
+def _same_values(left: pd.Series, right: pd.Series) -> np.ndarray:
+    """Element-wise match: missing values match missing values, and floats match within rounding."""
+    both_missing = left.isna().to_numpy() & right.isna().to_numpy()
+    if is_numeric_dtype(left) and is_numeric_dtype(right):
+        close = np.isclose(left.to_numpy(dtype=np.float64), right.to_numpy(dtype=np.float64), rtol=1e-9, atol=1e-12)
+        return close | both_missing
+    return (left.to_numpy() == right.to_numpy()) | both_missing
+
+
+@dataclass(frozen=True)
+class _NativeTickSources:
+    """Builds each run's candle price source from its store; picklable for session worker processes."""
+
+    store: TickStore
+
+    def __call__(self, chunk: pd.DataFrame) -> Any:
+        return native_tick_source(self.store, chunk)
 
 
 def _execute_backtest(
@@ -460,10 +531,34 @@ def _execute_backtest(
     force_close_at_end: bool,
     config: Mapping[str, Any],
     strategy: Any,
+    workers: int,
+    reporter: BacktestProgress,
+    check_causality: bool,
 ) -> BacktestResult:
     # Prepare once, then reuse explicitly for execution and result data.
     augmented_data = augment_indicator_frame(trading_strategy, validated_frame)
-    registry, run = engine.run_prepared_detailed(augmented_data, force_close_at_end=force_close_at_end)
+    if check_causality:
+        _check_causality(strategy, validated_frame, augmented_data)
+    blocks = session_blocks(augmented_data.index, workers) if engine.day_trade else None
+    if blocks is None:
+        registry, run = engine.run_prepared_detailed(augmented_data, force_close_at_end=force_close_at_end)
+    else:
+        run = run_session_blocks(
+            engine,
+            augmented_data,
+            blocks,
+            force_close_at_end=force_close_at_end,
+            workers=workers,
+            strategy_name=type(strategy).__name__,
+            strategy_module=type(strategy).__module__,
+            on_block_done=lambda bars, timestamp: reporter.bar(bars, timestamp),
+        )
+        registry = ledger_to_registry(
+            run,
+            augmented_data.index,
+            symbol=engine.strategy.symbol,
+            point_value=engine.point_values.get(engine.strategy.symbol, 1.0),
+        )
 
     # Clean data (omit internal columns)
     clean_data = augmented_data.drop(columns=[col for col in _INTERNAL_COLUMNS if col in augmented_data.columns])

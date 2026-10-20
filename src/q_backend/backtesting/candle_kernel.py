@@ -29,7 +29,7 @@ from q_backend.backtesting.strategy import TradingStrategy
 from q_backend.market_data.timezone import BRASILIA_TZ
 
 REQUIRED_ENGINE_FUNCTIONS: Final = ("run_candle", "DecisionStep", "size_entry", "required_columns")
-REQUIRED_ENGINE_CAPABILITIES: Final = ("PROTECTIVE_ORDERS", "RESTING_ORDERS")
+REQUIRED_ENGINE_CAPABILITIES: Final = ("PROTECTIVE_ORDERS", "RESTING_ORDERS", "SESSION_TICK_SOURCE")
 # Entry kinds in the q_core ledger, by code: an open fill, a priced entry, and resting stop and limit orders.
 ENTRY_KIND_ORDER: Final = ("market", "priced", "stop", "limit")
 _RESTING_KINDS: Final = (2, 3)
@@ -327,7 +327,7 @@ def run_chunk(
     }
     tradable = None if trade_start is None else np.ascontiguousarray(~(chunk.index < trade_start), dtype=bool)
     runtime_factory = getattr(strategy, "runtime_callback", None)
-    runtime = runtime_factory(chunk, intrabar) if runtime_factory is not None else None
+    runtime = runtime_factory(chunk) if runtime_factory is not None else None
     level_args: dict[str, object] = {}
     if runtime is None:
         decided_stop = signals.stop_price
@@ -444,6 +444,26 @@ def run_chunk(
         for name in ("bar", "side", "fill_price", "stop_price", "target_price")
     }
     return ChunkRun(trades, list(result["exit_reason_text"]), rejected)
+
+
+def merge_chunk_runs(runs: list[ChunkRun], starts: list[int]) -> ChunkRun:
+    """Join kernel runs of consecutive blocks of one chunk, in order.
+
+    ``starts[i]`` is the chunk position of block ``i``'s first bar. Bar indices in each run are
+    block-relative, so they move by that offset; a negative index (no exit yet) is left as it is.
+    """
+
+    def join(name: str, offsets: bool, parts: list[np.ndarray]) -> np.ndarray:
+        arrays = [np.where(part >= 0, part + start, part) if offsets else part for part, start in zip(parts, starts)]
+        return np.concatenate(arrays)
+
+    trades = {
+        name: join(name, name in ("entry_bar", "exit_bar"), [run.trades[name] for run in runs])
+        for name in runs[0].trades
+    }
+    rejected = {name: join(name, name == "bar", [run.rejected[name] for run in runs]) for name in runs[0].rejected}
+    exit_reason_text = [text for run in runs for text in run.exit_reason_text]
+    return ChunkRun(trades, exit_reason_text, rejected)
 
 
 def ledger_to_registry(run: ChunkRun, index: pd.DatetimeIndex, *, symbol: str, point_value: float) -> TradeRegistry:

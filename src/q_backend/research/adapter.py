@@ -25,17 +25,26 @@ from q_backend.research.orders import TradeOrder
 from q_backend.research.positions import ResearchPosition
 from q_backend.research.progress import BacktestProgress
 from q_backend.research.strategy import ResearchStrategy
-from q_backend.research.tick_phase import TickDecisions, TickEvaluator, TickWorkerPool
+from q_backend.research.tick_phase import FormingRow, forming_compatible
 
 _RESERVED_COLUMNS = frozenset((*SIGNAL_COLUMNS, *LEVEL_COLUMNS, BAR_INDEX))
 _MARKET_COLUMNS = ("open", "high", "low", "close")
 
 
-def _owned_prefix(frame: pd.DataFrame, end: int) -> pd.DataFrame:
-    prefix = frame.iloc[:end].copy()
-    # DataFrame.copy retains index backing storage, which otherwise exposes future
-    # timestamps and lets a hook mutate later decision/position timestamps.
-    prefix.index = prefix.index.copy(deep=True)
+def _owned_index(index: pd.DatetimeIndex) -> pd.DatetimeIndex:
+    """A private copy of the timestamps, read-only, so a hook cannot change the timestamps of later frames."""
+    owned = index.copy(deep=True)
+    owned.values.setflags(write=False)
+    return owned
+
+
+def _prefix(frame: pd.DataFrame, end: int) -> pd.DataFrame:
+    """Positional slice of the prepared history through ``end``, with no attributes.
+
+    A hook that writes to it copies the columns it writes (copy-on-write), so the history and
+    later frames are unaffected.
+    """
+    prefix = frame.iloc[:end]
     prefix.attrs = {}
     return prefix
 
@@ -54,23 +63,16 @@ def _same_positions(left: tuple, right: tuple) -> bool:
 
 
 @dataclass
-class _TickPlan:
-    """Tick-phase decisions for one screened candle.
-
-    ``pending`` lists the ticks that are evaluated: the first, and every later one that moves
-    the forming candle's high, low or close. The others repeat a frame that already declined
-    to exit, apart from its tick count. Decisions hold for one position snapshot.
-    """
+class _Candle:
+    """A candle replayed tick by tick: its prices so far, and the positions it was last decided for."""
 
     bar: int
-    prices: np.ndarray
-    candles: np.ndarray
-    pending: np.ndarray
-    positions: tuple
-    cursor: int = 0
-    decided: int = 0
-    exit_tick: int = -1
-    next_tick: int = 0
+    open: float
+    high: float
+    low: float
+    price: float
+    seen: int = 0
+    decided: tuple | None = None
 
 
 class _RuntimeHooks:
@@ -82,36 +84,30 @@ class _RuntimeHooks:
     bars that queued a buy or sell, which a resting fill is attributed to.
     """
 
-    def __init__(
-        self,
-        adapter: ResearchStrategyAdapter,
-        chunk: pd.DataFrame,
-        history_positions: np.ndarray,
-        intrabar: Callable[[int], tuple[np.ndarray, np.ndarray]] | None,
-    ) -> None:
+    def __init__(self, adapter: ResearchStrategyAdapter, chunk: pd.DataFrame, history_positions: np.ndarray) -> None:
         self._adapter = adapter
         self._chunk = chunk
         self._history_positions = history_positions
-        self._intrabar = intrabar
         self._progress = adapter.progress
         self.stop_price = np.full(len(chunk), np.nan)
         self.target_price = np.full(len(chunk), np.nan)
         self.entry_price = np.full(len(chunk), np.nan)
         self.entry_placed = np.zeros(len(chunk), dtype=bool)
-        self._plan: _TickPlan | None = None
+        self._candle: _Candle | None = None
         self.screen: Callable[[int, tuple], bool] | None = self._screen if adapter._phased_exit else None
         self.tick: Callable[[int, int, int, float, tuple], bool] | None = self._tick if adapter._phased_exit else None
 
     def strategy(self, bar: int, raw_positions: tuple) -> dict[str, Any]:
         adapter = self._adapter
+        self._restore_forming_row()
         positions = self._positions(raw_positions)
         end = int(self._history_positions[bar]) + 1
         timestamp = self._chunk.index[bar]
         phase = "bar" if adapter._phased_exit else None
         exit_decision = adapter._invoke_hook(
-            "exit_strategy", _owned_prefix(adapter._decision_frame, end), positions, phase=phase
+            "exit_strategy", _prefix(adapter._decision_frame, end), positions, phase=phase
         )
-        entry_decision = adapter._invoke_hook("entry_strategy", _owned_prefix(adapter._decision_frame, end), positions)
+        entry_decision = adapter._invoke_hook("entry_strategy", _prefix(adapter._decision_frame, end), positions)
         decision: dict[str, Any] = {}
         if exit_decision is not None:
             if exit_decision.action == "close":
@@ -143,70 +139,55 @@ class _RuntimeHooks:
 
     def _screen(self, bar: int, raw_positions: tuple) -> bool:
         adapter = self._adapter
+        self._restore_forming_row()
         end = int(self._history_positions[bar]) + 1
         decision = adapter._invoke_hook(
             "exit_strategy",
-            _owned_prefix(adapter._decision_frame, end),
+            _prefix(adapter._decision_frame, end),
             self._positions(raw_positions),
             phase="screen",
         )
         return decision is not None
 
     def _tick(self, bar: int, tick: int, time_us: int, price: float, raw_positions: tuple) -> bool:
-        plan = self._plan
+        """Decide one tick of a screened candle, in order, from the candle's observed prices.
+
+        A tick that leaves the candle's high, low and close where they were repeats the frame that
+        last declined to exit, apart from its tick count, so it is not decided again unless the
+        positions have changed since.
+        """
+        candle = self._candle
         if tick == 0:
-            plan = self._plan = self._new_plan(bar, raw_positions)
-        if plan is None or plan.bar != bar or plan.next_tick != tick or plan.prices[tick] != price:
+            candle = self._candle = _Candle(bar=bar, open=price, high=price, low=price, price=price)
+        if candle is None or candle.bar != bar or tick != candle.seen:
             raise RuntimeError(f"Tick replay for bar {bar} arrived out of order at tick {tick}")
-        plan.next_tick += 1
-        if not _same_positions(raw_positions, plan.positions):
-            # Decisions were taken for other positions: start over from this tick.
-            plan.positions = raw_positions
-            plan.pending = np.concatenate(([tick], plan.pending[plan.pending > tick]))
-            plan.cursor = plan.decided = 0
-            plan.exit_tick = -1
-        if plan.cursor >= len(plan.pending) or plan.pending[plan.cursor] != tick:
+        moved = tick == 0 or price != candle.price
+        candle.seen += 1
+        candle.high = max(candle.high, price)
+        candle.low = min(candle.low, price)
+        candle.price = price
+        if not moved and candle.decided is not None and _same_positions(raw_positions, candle.decided):
             return False
-        if plan.cursor >= plan.decided:
-            self._decide(plan, raw_positions)
-        plan.cursor += 1
-        return plan.exit_tick == tick
-
-    def _new_plan(self, bar: int, raw_positions: tuple) -> _TickPlan:
-        if self._intrabar is None:
-            raise RuntimeError("Tick replay requires the candle price source")
-        _times, prices = self._intrabar(bar)
-        high = np.maximum.accumulate(prices)
-        low = np.minimum.accumulate(prices)
-        candles = np.column_stack((np.full(len(prices), prices[0]), high, low, prices))
-        # A new high or low is also a new close, so a changed price marks every changed candle.
-        moved = np.flatnonzero(prices[1:] != prices[:-1]) + 1
-        return _TickPlan(
-            bar=bar,
-            prices=prices,
-            candles=candles,
-            pending=np.concatenate(([0], moved)),
-            positions=raw_positions,
+        candle.decided = raw_positions
+        adapter = self._adapter
+        frame = adapter._forming.frame(
+            int(self._history_positions[bar]), (candle.open, candle.high, candle.low, price), tick + 1
         )
-
-    def _decide(self, plan: _TickPlan, raw_positions: tuple) -> None:
-        """Decide the next wave of pending ticks, stopping at the first exit."""
-        decisions = self._adapter._tick_decisions
-        if decisions is None:
-            raise RuntimeError("Research indicators must be prepared before tick replay")
-        wave = plan.pending[plan.decided : plan.decided + decisions.wave_size]
-        hit = decisions.first_exit(
-            int(self._history_positions[plan.bar]), wave, plan.candles[wave], self._positions(raw_positions)
+        self._progress.replay(self._chunk.index[bar], tick + 1)
+        decision = invoke_hook(
+            adapter.research_strategy,
+            adapter._hook_calls["exit_strategy"],
+            "exit_strategy",
+            frame,
+            self._positions(raw_positions),
+            phase="tick",
+            detail=f" tick {tick}",
         )
-        if hit is None:
-            plan.decided += len(wave)
-            exhausted = plan.decided >= len(plan.pending)
-            replayed = len(plan.prices) if exhausted else int(plan.pending[plan.decided])
-        else:
-            plan.exit_tick = int(wave[hit])
-            plan.decided = len(plan.pending)
-            replayed = plan.exit_tick + 1
-        self._progress.replay(self._chunk.index[plan.bar], replayed, len(plan.prices))
+        return decision is not None
+
+    def _restore_forming_row(self) -> None:
+        if self._adapter._forming is not None:
+            self._adapter._forming.restore()
 
     def _positions(self, raw_positions: tuple) -> tuple[ResearchPosition, ...]:
         chunk = self._chunk
@@ -241,7 +222,6 @@ class ResearchStrategyAdapter(TradingStrategy):
         exit_params: Mapping[str, Any] | None = None,
         *,
         ticks_available: bool = False,
-        workers: int = 1,
         progress: BacktestProgress | None = None,
     ) -> None:
         if not isinstance(research_strategy, ResearchStrategy):
@@ -255,20 +235,24 @@ class ResearchStrategyAdapter(TradingStrategy):
         self.exit_strategy = ExitStrategy(self.parameters)
         self._chart_indicators: tuple[ChartIndicator, ...] = ()
         self._ticks_available = ticks_available
-        self._workers = workers
         self.progress = progress if progress is not None else BacktestProgress()
         self._hook_calls = {
             name: detect_hook_call(research_strategy, name) for name in ("exit_strategy", "entry_strategy")
         }
         self._phased_exit = self._hook_calls["exit_strategy"].phase
         self._decision_frame: pd.DataFrame | None = None
-        self._tick_decisions: TickDecisions | None = None
+        self._forming: FormingRow | None = None
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Session worker processes get a silent progress reporter; the parent's may drive a terminal."""
+        state = self.__dict__.copy()
+        state["progress"] = BacktestProgress()
+        return state
 
     def close(self) -> None:
-        """Release tick worker processes, if any were started."""
-        if self._tick_decisions is not None:
-            self._tick_decisions.close()
-            self._tick_decisions = None
+        """Put back a forming row that a tick decision left showing in the prepared history."""
+        if self._forming is not None:
+            self._forming.restore()
 
     @property
     def requires_ticks(self) -> bool:
@@ -344,14 +328,14 @@ class ResearchStrategyAdapter(TradingStrategy):
         self._chart_indicators = self._declare_chart_indicators(augmented)
 
         # Decisions are taken by the kernel's runtime callbacks, once per bar, through runtime_callback.
-        self._decision_frame = augmented.copy()
-        self._decision_frame.attrs = {}
+        # A phase-aware exit shows forming candles in this history, so its columns must hold missing values.
+        history = augmented.copy()
+        history.attrs = {}
+        history.index = _owned_index(augmented.index)
         if self._phased_exit:
-            raw_history = data.copy()
-            raw_history.attrs = {}
-            self.close()
-            evaluator = TickEvaluator(self.research_strategy, raw_history, self._hook_calls["exit_strategy"])
-            self._tick_decisions = evaluator if self._workers == 1 else TickWorkerPool(evaluator, self._workers)
+            history = forming_compatible(history)
+        self._decision_frame = history
+        self._forming = FormingRow(history) if self._phased_exit else None
         self.progress.start(orig_len)
         return write_signal_columns(
             augmented,
@@ -381,19 +365,15 @@ class ResearchStrategyAdapter(TradingStrategy):
                 f"{type(self.research_strategy).__name__} {action} at bar {timestamp} {reason}; pass ticks= to backtest()"
             )
 
-    def runtime_callback(
-        self,
-        chunk: pd.DataFrame,
-        intrabar: Callable[[int], tuple[np.ndarray, np.ndarray]] | None = None,
-    ) -> _RuntimeHooks:
-        """Bind one prepared chunk to its original, isolated indicator history."""
+    def runtime_callback(self, chunk: pd.DataFrame) -> _RuntimeHooks:
+        """Bind one prepared chunk to the prepared indicator history."""
         history = self._decision_frame
         if history is None:
             raise RuntimeError("Research indicators must be prepared before runtime decisions")
         history_positions = history.index.get_indexer(chunk.index)
         if (history_positions < 0).any():
             raise ValueError("Runtime chunk is not part of the prepared research frame")
-        return _RuntimeHooks(self, chunk, history_positions, intrabar)
+        return _RuntimeHooks(self, chunk, history_positions)
 
     def _invoke_hook(
         self,

@@ -107,6 +107,15 @@ def test_check_engine_requires_resting_orders_and_snapshot_levels() -> None:
     values.update(PROTECTIVE_ORDERS=True, run_candle=run_candle, version=lambda: "0.0.0")
     with pytest.raises(ImportError, match="RESTING_ORDERS"):
         check_engine(types.SimpleNamespace(**values))
-    values["RESTING_ORDERS"] = True
+    values.update(RESTING_ORDERS=True, SESSION_TICK_SOURCE=True)
     with pytest.raises(ImportError, match="snapshot_levels"):
+        check_engine(types.SimpleNamespace(**values))
+
+
+def test_check_engine_requires_the_native_session_tick_source() -> None:
+    from q_backend.backtesting.candle_kernel import REQUIRED_ENGINE_FUNCTIONS, check_engine
+
+    values = {name: object() for name in REQUIRED_ENGINE_FUNCTIONS}
+    values.update(PROTECTIVE_ORDERS=True, RESTING_ORDERS=True, run_candle=lambda **_: None, version=lambda: "0.0.0")
+    with pytest.raises(ImportError, match="SESSION_TICK_SOURCE"):
         check_engine(types.SimpleNamespace(**values))

@@ -1,4 +1,4 @@
-"""Tick-phase decisions: skipped repeats, worker processes and progress output."""
+"""Tick-phase decisions: skipped repeats, worker counts and progress output."""
 
 from __future__ import annotations
 
@@ -66,36 +66,6 @@ def test_ticks_that_repeat_the_forming_candle_are_not_decided_again(root):
     assert [row["tick_volume"] for row in decided] == [1, 3, 6]
     assert result.trades["exit_price"].tolist() == [105.5]
     assert result.trades["exit_tick_time"].tolist() == [_stamp("10:20:50")]
-
-
-def test_worker_processes_reach_the_same_trades_as_one_process(root):
-    store = _write_session(root, ENTRY_BAR + REPEATS + NEXT_OPEN)
-    frame = _m10_frame(store)
-
-    single = backtest(frame, strategy=Breakout(), symbol=SYMBOL, ticks=store)
-    pooled = backtest(frame, strategy=Breakout(), symbol=SYMBOL, ticks=store, workers=2)
-
-    assert len(pooled.trades) == 1
-    pd.testing.assert_frame_equal(pooled.trades[COMPARED], single.trades[COMPARED])
-
-
-def test_a_tick_hook_failure_in_a_worker_names_the_phase_and_bar(root):
-    store = _write_session(root, ENTRY_BAR + REPEATS + NEXT_OPEN)
-
-    with pytest.raises(RuntimeError, match="phase tick") as exc_info:
-        backtest(_m10_frame(store), strategy=FailingOnTicks(), symbol=SYMBOL, ticks=store, workers=2)
-    assert "2026-10-05 10:20" in str(exc_info.value)
-
-
-def test_a_strategy_that_cannot_be_pickled_is_rejected_for_workers(root):
-    store = _write_session(root, ENTRY_BAR + REPEATS + NEXT_OPEN)
-
-    class Local(Breakout):
-        pass
-
-    with pytest.raises(ValueError, match="workers=1") as exc_info:
-        backtest(_m10_frame(store), strategy=Local(), symbol=SYMBOL, ticks=store, workers=2)
-    assert "Local" in str(exc_info.value)
 
 
 @pytest.mark.parametrize("workers", [0, -1, True, 2.0, "many"])

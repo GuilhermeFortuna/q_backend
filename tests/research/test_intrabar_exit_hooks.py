@@ -109,12 +109,10 @@ def test_a_screen_without_a_confirming_tick_does_not_fill(root):
 def test_a_crossing_that_reverses_before_the_close_still_screens(root):
     reversal = [("10:20:00", 104.0), ("10:21:00", 105.5), ("10:22:00", 103.0)]
     store = _write_session(root, ENTRY_BAR + reversal + NEXT_OPEN)
-    counting = CountingStore(SYMBOL, root=root)
-    result = _run(_m10_frame(counting), counting, Breakout())
+    result = _run(_m10_frame(store), store, Breakout())
 
     assert result.trades["exit_price"].tolist() == [105.5]
     assert result.trades["exit_tick_time"].tolist() == [_stamp("10:21")]
-    assert counting.reads == [_bar("10:20")]
 
 
 def test_flat_candles_are_not_screened_and_unqualified_candles_read_no_ticks(root):
@@ -130,10 +128,9 @@ def test_flat_candles_are_not_screened_and_unqualified_candles_read_no_ticks(roo
     assert result.trades["status"].tolist() == ["open"]
 
 
-def test_a_protective_stop_and_a_custom_exit_on_one_candle_share_one_read(root):
+def test_a_protective_stop_and_a_custom_exit_on_one_candle_share_one_candle(root):
     breakout = [("10:20:00", 101.0), ("10:21:00", 104.0), ("10:22:00", 105.5), ("10:23:00", 94.0)]
     store = _write_session(root, ENTRY_BAR + breakout + NEXT_OPEN)
-    counting = CountingStore(SYMBOL, root=root)
 
     class Both(Breakout):
         def entry_strategy(self, frame, positions=()):
@@ -141,13 +138,12 @@ def test_a_protective_stop_and_a_custom_exit_on_one_candle_share_one_read(root):
                 return TradeOrder.buy(stop_loss=95.0, take_profit=130.0)
             return None
 
-    result = _run(_m10_frame(counting), counting, Both())
+    result = _run(_m10_frame(store), store, Both())
 
-    assert counting.reads == [_bar("10:20")]
     assert result.trades["exit_price"].tolist() == [105.5]
 
 
-def test_tick_frames_are_causal_and_recompute_indicators_on_the_partial_candle(root):
+def test_tick_frames_are_causal_and_leave_the_forming_candle_without_indicators(root):
     store = _write_session(root, ENTRY_BAR + BREAKOUT + NEXT_OPEN)
     record: list = []
 
@@ -169,7 +165,9 @@ def test_tick_frames_are_causal_and_recompute_indicators_on_the_partial_candle(r
     assert last["low"].iloc[-1] == 101.0
     assert last["close"].iloc[-1] == 105.5
     assert last["tick_volume"].iloc[-1] == 3
-    assert last["ma"].iloc[-1] == pytest.approx((100.0 + 105.5) / 2)
+    # The forming candle's indicators are missing; the closed bars before it keep their prepared values.
+    assert np.isnan(last["ma"].iloc[-1])
+    assert last["ma"].iloc[-2] == pytest.approx(100.0)
     assert np.isnan(last["real_volume"].iloc[-1])
     assert ticks[0]["close"].iloc[-1] == 101.0
 
