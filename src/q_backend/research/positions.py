@@ -25,6 +25,10 @@ class ResearchPosition:
         Actual execution fill price.
     quantity : float
         Filled contract or share quantity.
+    stop_loss : float, optional
+        Stop-loss level in force at the decision boundary, after any amendment; ``None`` if unset.
+    take_profit : float, optional
+        Take-profit level in force at the decision boundary, after any amendment; ``None`` if unset.
     """
 
     symbol: str
@@ -32,3 +36,5 @@ class ResearchPosition:
     entry_time: pd.Timestamp
     entry_price: float
     quantity: float
+    stop_loss: float | None = None
+    take_profit: float | None = None

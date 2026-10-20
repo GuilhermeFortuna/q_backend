@@ -52,6 +52,15 @@ def detect_hook_call(strategy: ResearchStrategy, name: str) -> HookCall:
     return HookCall(positions=mode, phase=phase)
 
 
+def _permitted_actions(name: str, phase: str | None) -> tuple[str, ...]:
+    """Actions a hook may return: ``amend`` is limited to the bar phase and hooks without a phase."""
+    if name == "entry_strategy":
+        return ("buy", "sell", "cancel")
+    if phase in (None, "bar"):
+        return ("close", "amend")
+    return ("close",)
+
+
 def invoke_hook(
     strategy: ResearchStrategy,
     call: HookCall,
@@ -82,7 +91,7 @@ def invoke_hook(
     if decision is not None:
         if not isinstance(decision, TradeOrder):
             raise TypeError(f"{label} returned {type(decision).__name__}, expected TradeOrder or None")
-        allowed = ("close",) if name == "exit_strategy" else ("buy", "sell")
+        allowed = _permitted_actions(name, phase)
         if decision.action not in allowed:
             raise ValueError(f"{label} returned illegal action {decision.action!r}; permitted actions: {allowed}")
     return decision
