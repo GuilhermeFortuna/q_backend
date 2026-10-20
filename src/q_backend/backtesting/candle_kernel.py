@@ -29,7 +29,7 @@ from q_backend.backtesting.strategy import TradingStrategy
 from q_backend.market_data.timezone import BRASILIA_TZ
 
 REQUIRED_ENGINE_FUNCTIONS: Final = ("run_candle", "DecisionStep", "size_entry", "required_columns")
-REQUIRED_ENGINE_CAPABILITIES: Final = ("PROTECTIVE_ORDERS", "RESTING_ORDERS")
+REQUIRED_ENGINE_CAPABILITIES: Final = ("PROTECTIVE_ORDERS", "RESTING_ORDERS", "SESSION_TICK_SOURCE")
 # Entry kinds in the q_core ledger, by code: an open fill, a priced entry, and resting stop and limit orders.
 ENTRY_KIND_ORDER: Final = ("market", "priced", "stop", "limit")
 _RESTING_KINDS: Final = (2, 3)

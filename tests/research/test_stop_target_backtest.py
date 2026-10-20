@@ -254,19 +254,22 @@ def test_an_empty_needed_interval_fails_with_bar_context(root):
     assert "TickStore.sync" in str(exc_info.value)
 
 
-def test_only_candidate_candles_read_ticks(root):
+def test_only_candidate_candles_need_ticks(root):
     store = _write_session(
         root,
         FLAT_0
         + [("10:10:00", 100.0), ("10:11:00", 101.0), ("10:12:00", 99.0)]
         + [("10:20:00", 100.0), ("10:21:00", 96.0), ("10:22:00", 94.0)],
     )
-    counting = CountingStore(SYMBOL, root=root)
-    frame = _m10_frame(counting)
-    result = _run(frame, {0: TradeOrder.buy(stop_loss=95.0, take_profit=110.0)}, counting)
+    frame = _m10_frame(store)
+    # A candle on a day with no stored ticks that no level or screen reaches is never priced.
+    extra = frame.iloc[[1]].copy()
+    extra.index = pd.DatetimeIndex([pd.Timestamp("2026-10-06 10:00", tz=BRASILIA_TZ)], name="time")
+    extra.loc[:, ["open", "high", "low", "close"]] = [100.0, 101.0, 99.0, 100.0]
+    frame = pd.concat([frame, extra])
+    result = _run(frame, {0: TradeOrder.buy(stop_loss=95.0, take_profit=110.0)}, store)
 
     assert result.trades["exit_tick_time"].tolist() == [_stamp("10:22")]
-    assert counting.reads == [_bar("10:20")]
 
 
 def test_a_strategy_without_levels_is_identical_with_and_without_ticks(root):
@@ -324,17 +327,15 @@ def test_an_empty_frame_returns_the_complete_schemas(root):
 
 
 def test_a_candle_interval_ends_at_the_next_bar_or_the_session_end(root):
-    store = _write_session(root, FLAT_0 + [("10:10:00", 100.0), ("10:11:00", 96.0), ("10:12:00", 94.0)])
-    seen: list[tuple[pd.Timestamp, pd.Timestamp]] = []
+    store = _write_session(root, FLAT_0 + [("10:10:00", 100.0), ("10:11:00", 98.0), ("23:30:00", 93.0)])
+    # The 23:30 print is in the last candle's interval, so the candle has to span it to match its OHLC.
+    frame = _m10_frame(store).iloc[:2].copy()
+    frame.iloc[1, frame.columns.get_loc("low")] = 93.0
+    frame.iloc[1, frame.columns.get_loc("close")] = 93.0
+    result = _run(frame, {0: TradeOrder.buy(stop_loss=95.0, take_profit=110.0)}, store)
 
-    class Recording(CountingStore):
-        def trade_prices(self, start, end):
-            seen.append((pd.Timestamp(start), pd.Timestamp(end)))
-            return super().trade_prices(start, end)
-
-    recording = Recording(SYMBOL, root=root)
-    _run(_m10_frame(recording), {0: TradeOrder.buy(stop_loss=95.0, take_profit=110.0)}, recording)
-    assert seen == [(_bar("10:10"), pd.Timestamp("2026-10-06 00:00", tz=BRASILIA_TZ))]
+    assert result.trades["exit_price"].tolist() == [93.0]
+    assert result.trades["exit_tick_time"].tolist() == [_stamp("23:30")]
 
 
 def test_protective_fills_pay_the_configured_per_side_cost(root):

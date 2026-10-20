@@ -175,7 +175,7 @@ class _RuntimeHooks:
     def _new_plan(self, bar: int, raw_positions: tuple) -> _TickPlan:
         if self._intrabar is None:
             raise RuntimeError("Tick replay requires the candle price source")
-        _times, prices = self._intrabar(bar)
+        _times, prices = self._intrabar.prices(bar)
         high = np.maximum.accumulate(prices)
         low = np.minimum.accumulate(prices)
         candles = np.column_stack((np.full(len(prices), prices[0]), high, low, prices))

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 import pandas as pd
 
+from q_backend.backtesting.candle_kernel import engine as kernel
 from q_backend.backtesting.costs import TransactionCostConfig
 from q_backend.backtesting.engine import BacktestEngine
 from q_backend.backtesting.exit_rules.registry import all_param_specs
@@ -27,6 +28,7 @@ from q_backend.market_data.timezone import BRASILIA_TZ
 from q_backend.research.adapter import ResearchStrategyAdapter
 from q_backend.research.charting import STYLE_FIELDS, ChartIndicator
 from q_backend.research.frame import _validate_prices
+from q_backend.research.intrabar import intrabar_error, native_tick_source
 from q_backend.research.progress import backtest_progress
 from q_backend.research.results import (
     BacktestResult,
@@ -370,7 +372,7 @@ def backtest(
         day_trade_end_time=day_trade_end_time,
         day_trade_close_time=day_trade_close_time,
         costs=costs,
-        intrabar_factory=None if ticks is None else _tick_replay_factory(ticks),
+        intrabar_factory=None if ticks is None else _tick_source_factory(ticks),
         tick_size=tick_size,
     )
 
@@ -440,16 +442,16 @@ def backtest(
                 strategy=strategy,
             )
             reporter.finish(len(result.trades))
+    except kernel.IntrabarDataError as exc:
+        raise intrabar_error(exc, validated_frame, ticks) from exc
     finally:
         if isinstance(trading_strategy, ResearchStrategyAdapter):
             trading_strategy.close()
     return result
 
 
-def _tick_replay_factory(ticks: TickStore) -> Callable[[pd.DataFrame], Callable[[int], tuple]]:
-    from q_backend.research.intrabar import TickReplay
-
-    return lambda chunk: TickReplay(ticks, chunk)
+def _tick_source_factory(ticks: TickStore) -> Callable[[pd.DataFrame], Any]:
+    return lambda chunk: native_tick_source(ticks, chunk)
 
 
 def _execute_backtest(

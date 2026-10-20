@@ -320,6 +320,11 @@ class TickStore:
         """Whether ticks for one exchange calendar day are on disk."""
         return self._day_path(day).is_file()
 
+    def session_path(self, day: date) -> Path | None:
+        """Path of one exchange calendar day's session file, or None when it is not on disk."""
+        path = self._day_path(day)
+        return path if path.is_file() else None
+
     def sessions(self) -> list[date]:
         """
         List all calendar dates currently synchronized on disk.
