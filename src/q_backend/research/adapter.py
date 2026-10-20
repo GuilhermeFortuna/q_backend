@@ -15,9 +15,6 @@ from q_backend.backtesting.signal_columns import (
     BAR_INDEX,
     LEVEL_COLUMNS,
     SIGNAL_COLUMNS,
-    SIGNAL_ENTRY_PRICE,
-    SIGNAL_STOP_PRICE,
-    SIGNAL_TARGET_PRICE,
     write_signal_columns,
 )
 from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy
@@ -43,6 +40,19 @@ def _owned_prefix(frame: pd.DataFrame, end: int) -> pd.DataFrame:
     return prefix
 
 
+def _level(value: float) -> float | None:
+    return None if np.isnan(value) else float(value)
+
+
+def _same_positions(left: tuple, right: tuple) -> bool:
+    """Whether two position snapshots match, with unset (NaN) levels equal to each other."""
+    if len(left) != len(right):
+        return False
+    return all(
+        a == b or (a != a and b != b) for left_row, right_row in zip(left, right) for a, b in zip(left_row, right_row)
+    )
+
+
 @dataclass
 class _TickPlan:
     """Tick-phase decisions for one screened candle.
@@ -66,9 +76,10 @@ class _TickPlan:
 class _RuntimeHooks:
     """Per-chunk decisions for the candle kernel's runtime callbacks.
 
-    ``strategy`` runs once per bar after intrabar fills. ``screen`` and ``tick`` exist only
-    for a phase-aware exit and are None otherwise. Recorded levels are indexed by the bar
-    that queued the entry, which opens on the following bar.
+    ``strategy`` runs once per bar after intrabar fills and returns the kernel's decision
+    ``dict``. ``screen`` and ``tick`` exist only for a phase-aware exit and are None otherwise.
+    Recorded levels are indexed by the bar that queued the entry. ``entry_placed`` marks the
+    bars that queued a buy or sell, which a resting fill is attributed to.
     """
 
     def __init__(
@@ -86,29 +97,49 @@ class _RuntimeHooks:
         self.stop_price = np.full(len(chunk), np.nan)
         self.target_price = np.full(len(chunk), np.nan)
         self.entry_price = np.full(len(chunk), np.nan)
+        self.entry_placed = np.zeros(len(chunk), dtype=bool)
         self._plan: _TickPlan | None = None
         self.screen: Callable[[int, tuple], bool] | None = self._screen if adapter._phased_exit else None
         self.tick: Callable[[int, int, int, float, tuple], bool] | None = self._tick if adapter._phased_exit else None
 
-    def strategy(self, bar: int, raw_positions: tuple) -> tuple[int, bool, bool, float, float, float, float]:
+    def strategy(self, bar: int, raw_positions: tuple) -> dict[str, Any]:
         adapter = self._adapter
         positions = self._positions(raw_positions)
         end = int(self._history_positions[bar]) + 1
+        timestamp = self._chunk.index[bar]
         phase = "bar" if adapter._phased_exit else None
         exit_decision = adapter._invoke_hook(
             "exit_strategy", _owned_prefix(adapter._decision_frame, end), positions, phase=phase
         )
         entry_decision = adapter._invoke_hook("entry_strategy", _owned_prefix(adapter._decision_frame, end), positions)
-        entry = 0 if entry_decision is None else (1 if entry_decision.action == "buy" else -1)
-        stop = target = price = np.nan
-        if entry_decision is not None and entry_decision.action in ("buy", "sell"):
-            stop, target, price = adapter._levels_of(entry_decision, self._chunk.index[bar])
+        decision: dict[str, Any] = {}
+        if exit_decision is not None:
+            if exit_decision.action == "close":
+                decision.update(exit_long=True, exit_short=True)
+            else:
+                adapter._require_ticks(
+                    "amend", timestamp, "moves stop or take-profit levels, which are confirmed from ticks"
+                )
+                decision.update(amend_stop=exit_decision.stop_loss, amend_target=exit_decision.take_profit)
+        if entry_decision is not None and entry_decision.action == "cancel":
+            decision["cancel_entry"] = True
+        elif entry_decision is not None:
+            stop, target, price = adapter._levels_of(entry_decision, timestamp)
             self.stop_price[bar] = stop
             self.target_price[bar] = target
-            self.entry_price[bar] = price
-        exit_flag = exit_decision is not None
-        self._progress.bar(bar + 1, self._chunk.index[bar], _position_label(positions))
-        return entry, exit_flag, exit_flag, 1.0 if entry else 0.0, stop, target, price
+            self.entry_price[bar] = price if entry_decision.kind == "market" else np.nan
+            self.entry_placed[bar] = True
+            decision.update(
+                entry=1 if entry_decision.action == "buy" else -1,
+                strength=1.0,
+                stop_price=stop,
+                target_price=target,
+                entry_price=price,
+            )
+            if entry_decision.kind != "market":
+                decision.update(entry_kind=entry_decision.kind, expire_bars=entry_decision.expire_bars)
+        self._progress.bar(bar + 1, timestamp, _position_label(positions))
+        return decision
 
     def _screen(self, bar: int, raw_positions: tuple) -> bool:
         adapter = self._adapter
@@ -128,7 +159,7 @@ class _RuntimeHooks:
         if plan is None or plan.bar != bar or plan.next_tick != tick or plan.prices[tick] != price:
             raise RuntimeError(f"Tick replay for bar {bar} arrived out of order at tick {tick}")
         plan.next_tick += 1
-        if raw_positions != plan.positions:
+        if not _same_positions(raw_positions, plan.positions):
             # Decisions were taken for other positions: start over from this tick.
             plan.positions = raw_positions
             plan.pending = np.concatenate(([tick], plan.pending[plan.pending > tick]))
@@ -186,8 +217,10 @@ class _RuntimeHooks:
                 entry_time=chunk.index[entry_bar],
                 entry_price=price,
                 quantity=quantity,
+                stop_loss=_level(stop),
+                take_profit=_level(target),
             )
-            for _ordinal, side, entry_bar, price, quantity in raw_positions
+            for _ordinal, side, entry_bar, price, quantity, stop, target in raw_positions
         )
 
 
@@ -227,12 +260,7 @@ class ResearchStrategyAdapter(TradingStrategy):
         self._hook_calls = {
             name: detect_hook_call(research_strategy, name) for name in ("exit_strategy", "entry_strategy")
         }
-        self._uses_positions = any(
-            call.positions != "legacy" and getattr(type(research_strategy), name) is not getattr(ResearchStrategy, name)
-            for name, call in self._hook_calls.items()
-        )
         self._phased_exit = self._hook_calls["exit_strategy"].phase
-        self._uses_runtime = self._uses_positions or self._phased_exit
         self._decision_frame: pd.DataFrame | None = None
         self._tick_decisions: TickDecisions | None = None
 
@@ -315,126 +343,50 @@ class ResearchStrategyAdapter(TradingStrategy):
 
         self._chart_indicators = self._declare_chart_indicators(augmented)
 
-        # 2. Iterate bar by bar: evaluate exit_strategy then entry_strategy on owned prefix
-        entry_long = np.zeros(orig_len, dtype=bool)
-        entry_short = np.zeros(orig_len, dtype=bool)
-        exit_long = np.zeros(orig_len, dtype=bool)
-        exit_short = np.zeros(orig_len, dtype=bool)
-
-        if self._uses_runtime:
-            self._decision_frame = augmented.copy()
-            self._decision_frame.attrs = {}
-            if self._phased_exit:
-                raw_history = data.copy()
-                raw_history.attrs = {}
-                self.close()
-                evaluator = TickEvaluator(self.research_strategy, raw_history, self._hook_calls["exit_strategy"])
-                self._tick_decisions = evaluator if self._workers == 1 else TickWorkerPool(evaluator, self._workers)
-            self.progress.start(orig_len)
-            return write_signal_columns(
-                augmented,
-                entry_long=pd.Series(entry_long, index=augmented.index, dtype=bool),
-                entry_short=pd.Series(entry_short, index=augmented.index, dtype=bool),
-                exit_long=pd.Series(exit_long, index=augmented.index, dtype=bool),
-                exit_short=pd.Series(exit_short, index=augmented.index, dtype=bool),
-                strategy_name=type(self.research_strategy).__name__,
-            )
-
-        stop_price = np.full(orig_len, np.nan)
-        target_price = np.full(orig_len, np.nan)
-        entry_price = np.full(orig_len, np.nan)
+        # Decisions are taken by the kernel's runtime callbacks, once per bar, through runtime_callback.
+        self._decision_frame = augmented.copy()
+        self._decision_frame.attrs = {}
+        if self._phased_exit:
+            raw_history = data.copy()
+            raw_history.attrs = {}
+            self.close()
+            evaluator = TickEvaluator(self.research_strategy, raw_history, self._hook_calls["exit_strategy"])
+            self._tick_decisions = evaluator if self._workers == 1 else TickWorkerPool(evaluator, self._workers)
         self.progress.start(orig_len)
-        for i in range(orig_len):
-            timestamp = augmented.index[i]
-
-            # 2a. exit_strategy on an isolated owned copy of prefix
-            prefix_exit = _owned_prefix(augmented, i + 1)
-
-            try:
-                exit_decision = self.research_strategy.exit_strategy(prefix_exit)
-            except Exception as exc:
-                raise RuntimeError(
-                    f"Error in {type(self.research_strategy).__name__}.exit_strategy at bar {timestamp}: {exc}"
-                ) from exc
-
-            if exit_decision is not None:
-                if not isinstance(exit_decision, TradeOrder):
-                    raise TypeError(
-                        f"{type(self.research_strategy).__name__}.exit_strategy at bar {timestamp} "
-                        f"returned {type(exit_decision).__name__}, expected TradeOrder or None"
-                    )
-                if exit_decision.action != "close":
-                    raise ValueError(
-                        f"{type(self.research_strategy).__name__}.exit_strategy at bar {timestamp} "
-                        f"returned illegal action {exit_decision.action!r}; only 'close' is permitted"
-                    )
-                exit_long[i] = True
-                exit_short[i] = True
-
-            # 2b. entry_strategy on an isolated owned copy of prefix
-            prefix_entry = _owned_prefix(augmented, i + 1)
-
-            try:
-                entry_decision = self.research_strategy.entry_strategy(prefix_entry)
-            except Exception as exc:
-                raise RuntimeError(
-                    f"Error in {type(self.research_strategy).__name__}.entry_strategy at bar {timestamp}: {exc}"
-                ) from exc
-
-            if entry_decision is not None:
-                if not isinstance(entry_decision, TradeOrder):
-                    raise TypeError(
-                        f"{type(self.research_strategy).__name__}.entry_strategy at bar {timestamp} "
-                        f"returned {type(entry_decision).__name__}, expected TradeOrder or None"
-                    )
-                if entry_decision.action == "buy":
-                    entry_long[i] = True
-                elif entry_decision.action == "sell":
-                    entry_short[i] = True
-                else:
-                    raise ValueError(
-                        f"{type(self.research_strategy).__name__}.entry_strategy at bar {timestamp} "
-                        f"returned illegal action {entry_decision.action!r}; only 'buy' or 'sell' is permitted"
-                    )
-                stop_price[i], target_price[i], entry_price[i] = self._levels_of(entry_decision, timestamp)
-            self.progress.bar(i + 1, timestamp)
-
-        # Write signal columns onto augmented frame
-        result_df = write_signal_columns(
+        return write_signal_columns(
             augmented,
-            entry_long=pd.Series(entry_long, index=augmented.index, dtype=bool),
-            entry_short=pd.Series(entry_short, index=augmented.index, dtype=bool),
-            exit_long=pd.Series(exit_long, index=augmented.index, dtype=bool),
-            exit_short=pd.Series(exit_short, index=augmented.index, dtype=bool),
+            entry_long=pd.Series(np.zeros(orig_len, dtype=bool), index=augmented.index, dtype=bool),
+            entry_short=pd.Series(np.zeros(orig_len, dtype=bool), index=augmented.index, dtype=bool),
+            exit_long=pd.Series(np.zeros(orig_len, dtype=bool), index=augmented.index, dtype=bool),
+            exit_short=pd.Series(np.zeros(orig_len, dtype=bool), index=augmented.index, dtype=bool),
             strategy_name=type(self.research_strategy).__name__,
         )
-        if not (np.isnan(stop_price).all() and np.isnan(target_price).all()):
-            result_df[SIGNAL_STOP_PRICE] = stop_price
-            result_df[SIGNAL_TARGET_PRICE] = target_price
-        if not np.isnan(entry_price).all():
-            result_df[SIGNAL_ENTRY_PRICE] = entry_price
-        return result_df
 
     def _levels_of(self, decision: TradeOrder, timestamp: pd.Timestamp) -> tuple[float, float, float]:
-        """Entry levels and price as floats, NaN where unset; stop/target need ticks to be confirmed intrabar."""
+        """Entry levels and price as floats, NaN where unset; levels and resting orders are confirmed from ticks."""
         stop = np.nan if decision.stop_loss is None else float(decision.stop_loss)
         target = np.nan if decision.take_profit is None else float(decision.take_profit)
         price = np.nan if decision.price is None else float(decision.price)
-        if (decision.stop_loss is not None or decision.take_profit is not None) and not self._ticks_available:
-            raise ValueError(
-                f"{type(self.research_strategy).__name__} entry at bar {timestamp} carries stop or take-profit "
-                "levels, which are confirmed from ticks; pass ticks= to backtest()"
+        if decision.stop_loss is not None or decision.take_profit is not None:
+            self._require_ticks(
+                "entry", timestamp, "carries stop or take-profit levels, which are confirmed from ticks"
             )
+        if decision.kind != "market":
+            self._require_ticks("entry", timestamp, f"rests a {decision.kind} order, which fills from ticks")
         return stop, target, price
+
+    def _require_ticks(self, action: str, timestamp: pd.Timestamp, reason: str) -> None:
+        if not self._ticks_available:
+            raise ValueError(
+                f"{type(self.research_strategy).__name__} {action} at bar {timestamp} {reason}; pass ticks= to backtest()"
+            )
 
     def runtime_callback(
         self,
         chunk: pd.DataFrame,
         intrabar: Callable[[int], tuple[np.ndarray, np.ndarray]] | None = None,
-    ) -> _RuntimeHooks | None:
+    ) -> _RuntimeHooks:
         """Bind one prepared chunk to its original, isolated indicator history."""
-        if not self._uses_runtime:
-            return None
         history = self._decision_frame
         if history is None:
             raise RuntimeError("Research indicators must be prepared before runtime decisions")

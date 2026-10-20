@@ -34,6 +34,10 @@ TRADE_COLUMNS = [
     "exit_tick_time",
     "stop_loss",
     "take_profit",
+    "order_kind",
+    "entry_tick_time",
+    "final_stop_loss",
+    "final_take_profit",
 ]
 
 REJECTED_COLUMNS = ["time", "side", "fill_price", "stop_loss", "take_profit"]
@@ -131,6 +135,10 @@ def empty_trades_frame() -> pd.DataFrame:
         "exit_tick_time": "datetime64[ns, America/Sao_Paulo]",
         "stop_loss": "float64",
         "take_profit": "float64",
+        "order_kind": "object",
+        "entry_tick_time": "datetime64[ns, America/Sao_Paulo]",
+        "final_stop_loss": "float64",
+        "final_take_profit": "float64",
     }
     df = pd.DataFrame({col: pd.Series(dtype=dt) for col, dt in dtypes.items()})
     return df[TRADE_COLUMNS]
@@ -214,11 +222,15 @@ def trades_to_frame(registry: TradeRegistry) -> pd.DataFrame:
                 "exit_tick_time": _brasilia_or_nat(t.exit_tick_time),
                 "stop_loss": np.nan if t.stop_loss is None else float(t.stop_loss),
                 "take_profit": np.nan if t.take_profit is None else float(t.take_profit),
+                "order_kind": t.order_kind,
+                "entry_tick_time": _brasilia_or_nat(t.entry_tick_time),
+                "final_stop_loss": np.nan if t.final_stop_loss is None else float(t.final_stop_loss),
+                "final_take_profit": np.nan if t.final_take_profit is None else float(t.final_take_profit),
             }
         )
 
     df = pd.DataFrame(rows)
-    for column in ("entry_time", "exit_time", "exit_tick_time"):
+    for column in ("entry_time", "exit_time", "exit_tick_time", "entry_tick_time"):
         df[column] = pd.array([row[column] for row in rows], dtype="datetime64[ns, America/Sao_Paulo]")
     return df[TRADE_COLUMNS]
 

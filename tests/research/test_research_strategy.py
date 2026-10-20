@@ -77,6 +77,16 @@ def test_trade_order_levels_are_validated_at_construction() -> None:
         TradeOrder.buy(9.0)  # type: ignore[misc]
 
 
+def _first_bar_decisions(adapter: ResearchStrategyAdapter, bars: pd.DataFrame) -> dict:
+    """Decide the first bar through the runtime callback, as the candle kernel does."""
+    return adapter.runtime_callback(adapter.compute_indicators(bars)).strategy(0, ())
+
+
+def _all_bar_decisions(adapter: ResearchStrategyAdapter, bars: pd.DataFrame) -> list[dict]:
+    hooks = adapter.runtime_callback(adapter.compute_indicators(bars))
+    return [hooks.strategy(bar, ()) for bar in range(len(bars))]
+
+
 def test_scripted_strategy_lifecycle_and_isolation(sample_bars: pd.DataFrame) -> None:
     calls = []
 
@@ -113,6 +123,8 @@ def test_scripted_strategy_lifecycle_and_isolation(sample_bars: pd.DataFrame) ->
     caller_bars.attrs["q_research"] = {"dummy": "metadata"}
 
     res = adapter.compute_indicators(caller_bars)
+    hooks = adapter.runtime_callback(res)
+    decisions = [hooks.strategy(bar, ()) for bar in range(5)]
 
     # 1. compute_indicators called once on full frame
     assert calls[0] == ("compute_indicators", 5)
@@ -130,14 +142,14 @@ def test_scripted_strategy_lifecycle_and_isolation(sample_bars: pd.DataFrame) ->
     assert caller_bars.attrs["q_research"] == {"dummy": "metadata"}
     pd.testing.assert_frame_equal(caller_bars[["open", "high", "low", "close", "tick_volume"]], sample_bars)
 
-    # 4. Result signal columns
+    # 4. Decisions by bar
     # Bar 1 (len=2): buy
     # Bar 2 (len=3): close
     # Bar 3 (len=4): sell
-    np.testing.assert_array_equal(res[SIGNAL_ENTRY], [0, 1, 0, -1, 0])
-    np.testing.assert_array_equal(res[SIGNAL_EXIT_LONG], [False, False, True, False, False])
-    np.testing.assert_array_equal(res[SIGNAL_EXIT_SHORT], [False, False, True, False, False])
-    np.testing.assert_array_equal(res[SIGNAL_STRENGTH], [0.0, 1.0, 0.0, 1.0, 0.0])
+    assert [d.get("entry", 0) for d in decisions] == [0, 1, 0, -1, 0]
+    assert [d.get("exit_long", False) for d in decisions] == [False, False, True, False, False]
+    assert [d.get("exit_short", False) for d in decisions] == [False, False, True, False, False]
+    assert [d.get("strength", 0.0) for d in decisions] == [0.0, 1.0, 0.0, 1.0, 0.0]
     assert "custom_ind" in res.columns
     assert "temp" in res.columns
 
@@ -214,7 +226,7 @@ def test_invalid_return_and_action_types(sample_bars: pd.DataFrame) -> None:
 
     adapter = ResearchStrategyAdapter(BadEntryType(), symbol="WIN$")
     with pytest.raises(TypeError, match="returned str, expected TradeOrder or None"):
-        adapter.compute_indicators(sample_bars)
+        _first_bar_decisions(adapter, sample_bars)
 
     # 3. entry_strategy returns illegal action ('close')
     class IllegalEntryAction(ResearchStrategy):
@@ -222,8 +234,8 @@ def test_invalid_return_and_action_types(sample_bars: pd.DataFrame) -> None:
             return TradeOrder.close()
 
     adapter = ResearchStrategyAdapter(IllegalEntryAction(), symbol="WIN$")
-    with pytest.raises(ValueError, match="only 'buy' or 'sell' is permitted"):
-        adapter.compute_indicators(sample_bars)
+    with pytest.raises(ValueError, match="illegal action 'close'; permitted actions"):
+        _first_bar_decisions(adapter, sample_bars)
 
     # 4. exit_strategy returns illegal action ('buy')
     class IllegalExitAction(ResearchStrategy):
@@ -234,8 +246,8 @@ def test_invalid_return_and_action_types(sample_bars: pd.DataFrame) -> None:
             return TradeOrder.buy()
 
     adapter = ResearchStrategyAdapter(IllegalExitAction(), symbol="WIN$")
-    with pytest.raises(ValueError, match="only 'close' is permitted"):
-        adapter.compute_indicators(sample_bars)
+    with pytest.raises(ValueError, match="illegal action 'buy'; permitted actions"):
+        _first_bar_decisions(adapter, sample_bars)
 
 
 def test_reserved_columns_and_tampered_market_data(sample_bars: pd.DataFrame) -> None:
@@ -306,7 +318,7 @@ def test_hook_exceptions_preserve_cause_and_timestamp(sample_bars: pd.DataFrame)
 
     adapter = ResearchStrategyAdapter(FailingExit(), symbol="WIN$")
     with pytest.raises(RuntimeError, match=f"exit_strategy at bar {target_ts}") as exc_info:
-        adapter.compute_indicators(sample_bars)
+        _all_bar_decisions(adapter, sample_bars)
     assert isinstance(exc_info.value.__cause__, ZeroDivisionError)
 
     class FailingEntry(ResearchStrategy):
@@ -317,7 +329,7 @@ def test_hook_exceptions_preserve_cause_and_timestamp(sample_bars: pd.DataFrame)
 
     adapter = ResearchStrategyAdapter(FailingEntry(), symbol="WIN$")
     with pytest.raises(RuntimeError, match=f"entry_strategy at bar {target_ts}") as exc_info:
-        adapter.compute_indicators(sample_bars)
+        _all_bar_decisions(adapter, sample_bars)
     assert isinstance(exc_info.value.__cause__, ValueError)
 
 
@@ -407,3 +419,107 @@ def test_chart_indicators_hook_defaults_to_empty() -> None:
             return None
 
     assert tuple(Plain().chart_indicators()) == ()
+
+
+def test_resting_order_constructors_set_kind_price_and_expiry() -> None:
+    stop = TradeOrder.buy_stop(12.0, stop_loss=9.0, take_profit=15.0, expire_bars=2)
+    assert (stop.action, stop.kind, stop.price, stop.expire_bars) == ("buy", "stop", 12.0, 2)
+    assert (stop.stop_loss, stop.take_profit) == (9.0, 15.0)
+    assert TradeOrder.buy_stop(12.0).expire_bars == 1
+    assert TradeOrder.sell_stop(9.0, stop_loss=10.0).kind == "stop"
+    assert TradeOrder.buy_limit(9.0, stop_loss=8.0).kind == "limit"
+    assert TradeOrder.sell_limit(12.0, take_profit=10.0, expire_bars=None).expire_bars is None
+
+    market = TradeOrder.buy()
+    assert (market.kind, market.expire_bars) == ("market", None)
+    assert TradeOrder.buy(price=10.0).kind == "market"
+
+
+@pytest.mark.parametrize(
+    ("build", "message"),
+    [
+        (lambda: TradeOrder("buy", kind="stop"), "stop order needs a price"),
+        (lambda: TradeOrder("sell", kind="limit"), "limit order needs a price"),
+        (lambda: TradeOrder("buy", kind="iceberg", price=10.0), "Invalid TradeOrder kind"),
+        (lambda: TradeOrder("buy", expire_bars=1), "expire_bars applies to stop and limit orders only"),
+        (lambda: TradeOrder.buy_stop(10.0, expire_bars=0), "expire_bars must be a positive integer"),
+        (lambda: TradeOrder.buy_stop(10.0, expire_bars=-2), "expire_bars must be a positive integer"),
+        (lambda: TradeOrder.buy_stop(10.0, expire_bars=1.5), "expire_bars must be a positive integer"),
+        (lambda: TradeOrder.buy_stop(10.0, expire_bars=True), "expire_bars must be a positive integer"),
+        (lambda: TradeOrder.buy_stop(10.0, stop_loss=10.0), "stop_loss must be below price for a buy"),
+        (lambda: TradeOrder.sell_limit(10.0, take_profit=10.0), "take_profit must be below price for a sell"),
+        (lambda: TradeOrder.buy_limit(float("nan")), "price must be a finite positive price"),
+        (lambda: TradeOrder.amend(), "amend needs at least one of stop_loss or take_profit"),
+        (lambda: TradeOrder.amend(stop_loss=-1.0), "stop_loss must be a finite positive price"),
+        (lambda: TradeOrder("amend", price=10.0, stop_loss=9.0), "amend orders carry no price"),
+        (lambda: TradeOrder("amend", kind="stop", stop_loss=9.0), "amend orders carry no order kind or expiry"),
+        (lambda: TradeOrder("cancel", stop_loss=9.0), "cancel orders carry no levels"),
+        (lambda: TradeOrder("cancel", price=10.0), "cancel orders carry no price"),
+        (lambda: TradeOrder("close", expire_bars=1), "close orders carry no order kind or expiry"),
+    ],
+)
+def test_resting_order_construction_errors(build, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        build()
+
+
+def test_amend_and_cancel_are_immutable_management_orders() -> None:
+    amend = TradeOrder.amend(take_profit=15.0)
+    assert (amend.action, amend.stop_loss, amend.take_profit, amend.price) == ("amend", None, 15.0, None)
+    assert TradeOrder.cancel().action == "cancel"
+    with pytest.raises(AttributeError):
+        amend.stop_loss = 9.0  # type: ignore[misc]
+
+
+def test_hook_action_permissions_follow_hook_and_phase(sample_bars: pd.DataFrame) -> None:
+    from q_backend.research.hooks import detect_hook_call, invoke_hook
+
+    frame = sample_bars.iloc[:1]
+
+    class EntryHook(ResearchStrategy):
+        def __init__(self, order: TradeOrder) -> None:
+            self.order = order
+
+        def entry_strategy(self, frame: pd.DataFrame, positions=()) -> TradeOrder | None:
+            return self.order
+
+    def call(strategy: ResearchStrategy, name: str, **kwargs) -> TradeOrder | None:
+        return invoke_hook(strategy, detect_hook_call(strategy, name), name, frame, (), **kwargs)
+
+    assert call(EntryHook(TradeOrder.cancel()), "entry_strategy") is not None
+    assert call(EntryHook(TradeOrder.buy_stop(12.0)), "entry_strategy").kind == "stop"
+    with pytest.raises(ValueError, match="illegal action 'amend'"):
+        call(EntryHook(TradeOrder.amend(stop_loss=9.0)), "entry_strategy")
+    with pytest.raises(ValueError, match="illegal action 'close'"):
+        call(EntryHook(TradeOrder.close()), "entry_strategy")
+
+    class PlainExit(ResearchStrategy):
+        def __init__(self, order: TradeOrder) -> None:
+            self.order = order
+
+        def entry_strategy(self, frame: pd.DataFrame, positions=()) -> TradeOrder | None:
+            return None
+
+        def exit_strategy(self, frame: pd.DataFrame, positions=()) -> TradeOrder | None:
+            return self.order
+
+    assert call(PlainExit(TradeOrder.amend(stop_loss=9.0)), "exit_strategy").action == "amend"
+    with pytest.raises(ValueError, match="illegal action 'cancel'"):
+        call(PlainExit(TradeOrder.cancel()), "exit_strategy")
+
+    class PhasedExit(ResearchStrategy):
+        def __init__(self, order: TradeOrder) -> None:
+            self.order = order
+
+        def entry_strategy(self, frame: pd.DataFrame, positions=()) -> TradeOrder | None:
+            return None
+
+        def exit_strategy(self, frame: pd.DataFrame, positions=(), *, phase: str) -> TradeOrder | None:
+            return self.order
+
+    assert call(PhasedExit(TradeOrder.amend(stop_loss=9.0)), "exit_strategy", phase="bar").action == "amend"
+    assert call(PhasedExit(TradeOrder.close()), "exit_strategy", phase="tick").action == "close"
+    with pytest.raises(ValueError, match=r"\(phase screen\) returned illegal action 'amend'"):
+        call(PhasedExit(TradeOrder.amend(stop_loss=9.0)), "exit_strategy", phase="screen")
+    with pytest.raises(ValueError, match=r"\(phase tick\) returned illegal action 'amend'"):
+        call(PhasedExit(TradeOrder.amend(stop_loss=9.0)), "exit_strategy", phase="tick")

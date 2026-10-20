@@ -74,7 +74,8 @@ class ResearchStrategy(ABC):
         Returns
         -------
         TradeOrder or None
-            A buy/sell order request, or ``None`` to take no action.
+            A buy or sell order request of any kind, ``TradeOrder.cancel()`` to remove the working
+            entry order, or ``None`` to take no action.
         """
         ...
 
@@ -94,6 +95,7 @@ class ResearchStrategy(ABC):
         Returns
         -------
         TradeOrder or None
-            A close request (:meth:`TradeOrder.close()`), or ``None``.
+            A close request (:meth:`TradeOrder.close()`), an amendment of the open position's levels
+            (:meth:`TradeOrder.amend`), or ``None``.
         """
         return None

@@ -78,6 +78,20 @@ class Trade(BaseModel):
     )
     stop_loss: Optional[float] = Field(None, description="Stop level the trade was opened with", exclude=True)
     take_profit: Optional[float] = Field(None, description="Target level the trade was opened with", exclude=True)
+    order_kind: str = Field(
+        "market",
+        description="Entry order type: 'market', 'priced', 'stop' or 'limit'",
+        exclude=True,
+    )
+    entry_tick_time: Optional[datetime] = Field(
+        None, description="Tick time that filled a resting entry; null otherwise", exclude=True
+    )
+    final_stop_loss: Optional[float] = Field(
+        None, description="Stop level in force when the trade closed", exclude=True
+    )
+    final_take_profit: Optional[float] = Field(
+        None, description="Target level in force when the trade closed", exclude=True
+    )
 
 
 class SignalAction(str, Enum):
