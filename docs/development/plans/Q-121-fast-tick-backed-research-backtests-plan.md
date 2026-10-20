@@ -71,8 +71,17 @@
 
 **Files:** `docs/research-library.md`, `examples/research/stop_target_backtest.py`, `examples/research/tick_backtest_benchmark.py`, `tests/research/test_examples.py`.
 
-- [ ] Document as specified. Update the existing example, and add the benchmark and its test.
-- [ ] Run the benchmark on 60 synthetic sessions with `workers` 1 and 4. Record the timings beside the baseline in this plan. Commit.
+- [x] Document as specified. Update the existing example, and add the benchmark and its test.
+- [x] Run the benchmark on 60 synthetic sessions with `workers` 1 and 4. Record the timings beside the baseline in this plan. Commit.
+
+  After the change, `uv run python examples/research/tick_backtest_benchmark.py --sessions 60 --workers 4` (two runs, both shown):
+
+  | strategy | baseline w=1 | after w=1 | baseline w=4 | after w=4 | trades |
+  |---|---|---|---|---|---|
+  | amend | 0.58 | 0.39 / 0.40 | 0.58 | 1.89 / 1.89 | 354 |
+  | phase | 1.16 | 0.89 / 0.91 | 5.68 | 1.28 / 1.29 | 177 |
+
+  Trades match the baseline in every run. Parallel sessions cost a fixed ~0.9 s per run to start the forkserver with the research stack preloaded, which exceeds the amend run's whole serial time at 60 sessions. A 240-session check (not part of the required figures) gave amend 1.62 s serial and 2.53 s with four workers, and phase 3.70 s serial and 2.42 s with four workers, so parallel sessions pay off once a run has enough sessions to amortise that start-up.
 
 ## Review focus
 
@@ -84,8 +93,8 @@
 
 ## Validation and handoff
 
-- [ ] Run `uv run pytest tests/research tests/backtesting tests/execution -q`, `uv run ruff check src tests examples/research` and `uv run black --check` on the changed paths.
-- [ ] Record the commands actually run, their results and the benchmark timings in this plan.
-- [ ] Run `./work board set Q-121 in-review -m "<changes; checks and results; timings; follow-ups>"`.
+- [x] Run `uv run pytest tests/research tests/backtesting tests/execution -q`, `uv run ruff check src tests examples/research` and `uv run black --check` on the changed paths.
+- [x] Record the commands actually run, their results and the benchmark timings in this plan.
+- [x] Run `./work board set Q-121 in-review -m "<changes; checks and results; timings; follow-ups>"`.
 
 `make contracts-check` is not needed: this task changes no contract.

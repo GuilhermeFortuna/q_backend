@@ -391,6 +391,18 @@ def test_stop_target_backtest_example_runs_over_a_store(tmp_path: Path) -> None:
     assert result.rejected_entries.empty
 
 
+def test_tick_backtest_benchmark_times_both_exits_with_and_without_workers(capsys: pytest.CaptureFixture[str]) -> None:
+    from examples.research.tick_backtest_benchmark import main
+
+    main(["--sessions", "2", "--workers", "2"])
+
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0] == "sessions: 2, workers: 2"
+    rows = {line.split()[0]: line.split() for line in lines[2:]}
+    assert set(rows) == {"amend", "phase"}
+    assert all(float(rows[name][1]) >= 0.0 and int(rows[name][3]) > 0 for name in rows)
+
+
 def test_resting_orders_example_runs_over_a_temporary_store(capsys: pytest.CaptureFixture[str]) -> None:
     from examples.research.resting_orders_backtest import main, run_example
 
