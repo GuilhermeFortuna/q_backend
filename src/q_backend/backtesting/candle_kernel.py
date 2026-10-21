@@ -395,8 +395,8 @@ def run_chunk(
         raise
     entry_bar = np.asarray(result["entry_bar"], dtype=np.int64)
     entry_kind = np.asarray(result["entry_kind"], dtype=np.int64)
-    # A resting fill belongs to the last buy or sell decided before its bar: a later decision would have replaced it.
-    placed_bars = np.flatnonzero(runtime.entry_placed) if runtime is not None else np.empty(0, dtype=np.int64)
+    # Only accepted decisions replace a working order; hook requests may be gated out.
+    placed_bars = np.flatnonzero(result["entry"]) if runtime is not None else np.empty(0, dtype=np.int64)
 
     def decided_bar(i: int) -> int:
         b = int(entry_bar[i])

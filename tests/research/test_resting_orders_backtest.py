@@ -65,6 +65,78 @@ class Scripted(ResearchStrategy):
         return self.orders.get(len(frame) - 1)
 
 
+def test_a_gated_request_does_not_replace_a_resting_trades_original_levels(tmp_path):
+    store = _write_session(
+        tmp_path,
+        [
+            ("10:00:00", 100.0),
+            ("10:10:00", 100.0),
+            ("10:20:00", 106.0),
+            ("10:30:00", 106.0),
+        ],
+    )
+    result = _run(
+        _m10_frame(store),
+        Scripted(
+            {
+                0: TradeOrder.buy_stop(105.0, stop_loss=90.0, take_profit=120.0, expire_bars=None),
+                1: TradeOrder.buy_stop(110.0, stop_loss=95.0, take_profit=130.0, expire_bars=None),
+            }
+        ),
+        store,
+        day_trade=True,
+        day_trade_end_time="10:00",
+    )
+    trade = result.trades.iloc[0]
+    assert trade["entry_price"] == 106.0
+    assert trade["stop_loss"] == trade["final_stop_loss"] == 90.0
+    assert trade["take_profit"] == trade["final_take_profit"] == 120.0
+
+
+class ScreenedReentry(ResearchStrategy):
+    def __init__(self):
+        self.seen = []
+
+    def entry_strategy(self, frame, positions=()):
+        if len(frame) == 1:
+            return TradeOrder.buy(stop_loss=98.0)
+        if len(frame) == 2:
+            return TradeOrder.sell_stop(97.0, stop_loss=110.0, expire_bars=None)
+        return None
+
+    def exit_strategy(self, frame, positions=(), *, phase="bar"):
+        if phase == "screen":
+            return TradeOrder.close()
+        if phase == "tick":
+            self.seen.append((frame.index[-1], frame.iloc[-1]["tick_volume"], len(positions), frame.iloc[-1]["high"]))
+        return None
+
+
+def test_phase_replay_continues_across_a_protective_exit_and_resting_reentry(tmp_path):
+    store = _write_session(
+        tmp_path,
+        [
+            ("10:00:00", 100.0),
+            ("10:10:00", 100.0),
+            ("10:20:00", 100.0),
+            ("10:21:00", 98.0),
+            ("10:21:30", 101.0),
+            ("10:22:00", 97.0),
+            ("10:23:00", 96.0),
+            ("10:30:00", 96.0),
+        ],
+    )
+    strategy = ScreenedReentry()
+    result = _run(_m10_frame(store), strategy, store)
+    assert result.trades["side"].tolist() == ["long", "short"]
+    assert result.trades.iloc[0]["exit_reason"] == "STOP_LOSS"
+    assert result.trades.iloc[1]["entry_price"] == 97.0
+    assert [(count, positions, high) for bar, count, positions, high in strategy.seen if bar == _bar("10:20")] == [
+        (1, 1, 100.0),
+        (5, 1, 101.0),
+    ]
+
+
 @pytest.fixture
 def root(tmp_path):
     return tmp_path / "ticks"

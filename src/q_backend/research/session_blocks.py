@@ -13,16 +13,35 @@ import pickle
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from concurrent.futures.process import BrokenProcessPool
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 
-from q_backend.backtesting.candle_kernel import ChunkRun, merge_chunk_runs
+from q_backend.backtesting.candle_kernel import ChunkRun, engine as kernel, merge_chunk_runs
 from q_backend.backtesting.engine import BacktestEngine
 from q_backend.market_data.timezone import BRASILIA_TZ
 
 # The engine and the prepared history of the run in this worker process.
 _worker_state: tuple[BacktestEngine, pd.DataFrame] | None = None
+
+
+@dataclass(frozen=True)
+class _IntrabarFailure:
+    """Picklable native error details, with the bar relative to the complete history."""
+
+    bar: int
+    reason: str
+    session: int | None
+    observed: list[float] | None
+    expected: list[float] | None
+
+    def exception(self) -> ValueError:
+        # Rebuild in the parent so the facade uses its normal domain-error mapping.
+        error = kernel.IntrabarDataError(f"bar {self.bar}: {self.reason}")
+        for name in ("bar", "reason", "session", "observed", "expected"):
+            setattr(error, name, getattr(self, name))
+        return error
 
 
 def session_blocks(index: pd.DatetimeIndex, workers: int) -> list[tuple[int, int]] | None:
@@ -82,7 +101,10 @@ def run_session_blocks(
             }
             for future in as_completed(futures):
                 position = futures[future]
-                runs[position] = future.result()
+                result = future.result()
+                if isinstance(result, _IntrabarFailure):
+                    raise result.exception()
+                runs[position] = result
                 start, stop = blocks[position]
                 finished += stop - start
                 on_block_done(finished, prepared.index[stop - 1])
@@ -100,10 +122,13 @@ def _start_worker(payload: bytes) -> None:
     _worker_state = pickle.loads(payload)
 
 
-def _run_block(start: int, stop: int, force_close_at_end: bool) -> ChunkRun:
+def _run_block(start: int, stop: int, force_close_at_end: bool) -> ChunkRun | _IntrabarFailure:
     if _worker_state is None:
         raise RuntimeError("Session worker was not initialised")
     engine, prepared = _worker_state
     block = prepared.iloc[start:stop]
     block.attrs = prepared.attrs
-    return engine.run_prepared_block(block, force_close_at_end=force_close_at_end)
+    try:
+        return engine.run_prepared_block(block, force_close_at_end=force_close_at_end)
+    except kernel.IntrabarDataError as exc:
+        return _IntrabarFailure(start + exc.bar, exc.reason, exc.session, exc.observed, exc.expected)

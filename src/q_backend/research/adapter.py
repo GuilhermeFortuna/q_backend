@@ -80,8 +80,8 @@ class _RuntimeHooks:
 
     ``strategy`` runs once per bar after intrabar fills and returns the kernel's decision
     ``dict``. ``screen`` and ``tick`` exist only for a phase-aware exit and are None otherwise.
-    Recorded levels are indexed by the bar that queued the entry. ``entry_placed`` marks the
-    bars that queued a buy or sell, which a resting fill is attributed to.
+    Recorded levels are indexed by the bar that requested the entry. The kernel's decision
+    trace identifies which requests passed the entry gates.
     """
 
     def __init__(self, adapter: ResearchStrategyAdapter, chunk: pd.DataFrame, history_positions: np.ndarray) -> None:
@@ -92,7 +92,6 @@ class _RuntimeHooks:
         self.stop_price = np.full(len(chunk), np.nan)
         self.target_price = np.full(len(chunk), np.nan)
         self.entry_price = np.full(len(chunk), np.nan)
-        self.entry_placed = np.zeros(len(chunk), dtype=bool)
         self._candle: _Candle | None = None
         self.screen: Callable[[int, tuple], bool] | None = self._screen if adapter._phased_exit else None
         self.tick: Callable[[int, int, int, float, tuple], bool] | None = self._tick if adapter._phased_exit else None
@@ -124,7 +123,6 @@ class _RuntimeHooks:
             self.stop_price[bar] = stop
             self.target_price[bar] = target
             self.entry_price[bar] = price if entry_decision.kind == "market" else np.nan
-            self.entry_placed[bar] = True
             decision.update(
                 entry=1 if entry_decision.action == "buy" else -1,
                 strength=1.0,
@@ -166,6 +164,10 @@ class _RuntimeHooks:
         candle.high = max(candle.high, price)
         candle.low = min(candle.low, price)
         candle.price = price
+        # Keep observing a screened scan while a resting order waits, but user exit hooks
+        # still run only with an open position.
+        if not raw_positions:
+            return False
         if not moved and candle.decided is not None and _same_positions(raw_positions, candle.decided):
             return False
         candle.decided = raw_positions

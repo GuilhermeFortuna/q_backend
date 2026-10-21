@@ -10,7 +10,53 @@ import pytest
 import q_backend.research.engine as research_engine
 from examples.research.tick_backtest_benchmark import FIRST_DAY, SYMBOL, write_sessions
 from q_backend.research import ResearchStrategy, TradeOrder, backtest
+from q_backend.research.errors import NoMarketDataError
 from q_backend.research.session_blocks import session_blocks
+from tests.research.test_resting_orders_backtest import _write_session
+
+
+class SessionBuyer(ResearchStrategy):
+    def entry_strategy(self, frame, positions=()):
+        if frame.index[-1].strftime("%H:%M") == "10:00":
+            return TradeOrder.buy(stop_loss=99.0)
+        return None
+
+
+@pytest.mark.parametrize("reason", ["mismatch", "missing_session", "empty"])
+def test_parallel_tick_data_errors_keep_the_sequential_type_and_global_bar(tmp_path, reason):
+    from datetime import date
+
+    for day in (date(2026, 10, 5), date(2026, 10, 6)):
+        store = _write_session(
+            tmp_path,
+            [
+                ("10:00:00", 100.0),
+                ("10:10:00", 100.0),
+                ("10:11:00", 98.0),
+                ("10:20:00", 100.0),
+            ],
+            day=day,
+            symbol=SYMBOL,
+        )
+    bars = store.bars("M10", start="2026-10-05", end="2026-10-07")
+    if reason == "mismatch":
+        bars.iloc[4, bars.columns.get_loc("high")] = 101.0
+    elif reason == "missing_session":
+        store.session_path(date(2026, 10, 6)).unlink()
+    else:
+        bars.index = bars.index.where(
+            bars.index != pd.Timestamp("2026-10-06 10:10", tz="America/Sao_Paulo"),
+            pd.Timestamp("2026-10-06 10:12", tz="America/Sao_Paulo"),
+        )
+    error_type = ValueError if reason == "mismatch" else NoMarketDataError
+    with pytest.raises(error_type) as sequential:
+        _run(bars, store, SessionBuyer(), workers=1)
+    with pytest.raises(error_type) as parallel:
+        _run(bars, store, SessionBuyer(), workers=2)
+    assert type(parallel.value) is type(sequential.value)
+    assert str(parallel.value) == str(sequential.value)
+    assert "2026-10-06" in str(parallel.value)
+
 
 SESSIONS = 6
 COMPARED = [
