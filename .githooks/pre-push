@@ -5,6 +5,12 @@ echo "==> Running pre-push hook (full CI pipeline)..."
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
+# Git exports repository-local context to hooks. CI checks out other repositories,
+# so let each nested Git command discover its own object database and worktree.
+while IFS= read -r git_variable; do
+  unset "$git_variable"
+done < <(git rev-parse --local-env-vars)
+
 # shellcheck source=.githooks/_common.sh
 source "$REPO_ROOT/.githooks/_common.sh"
 ensure_uv_on_path
