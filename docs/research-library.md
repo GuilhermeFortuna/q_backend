@@ -478,6 +478,64 @@ class StopTargetBreakout(ResearchStrategy):
         return TradeOrder.close() if reached else None
 ```
 
+#### Tick data in hooks
+
+`compute_indicators`, `entry_strategy` and `exit_strategy` can declare a `ticks` parameter and read the backtest's tick store through `q_backend.research.TickData`. The parameter is passed by keyword and only when it is named explicitly; `**kwargs` alone does not receive it.
+
+- **Optional:** `ticks=None` (or any default). The hook receives a `TickData` when `backtest()` has `ticks=`, and `None` otherwise.
+- **Required:** `ticks` with no default. `backtest()` without `ticks=` raises `ValueError` before any hook runs, naming the strategy class and the hook.
+
+`TickData` has three members:
+
+- `ticks.bar(timestamp=None)` returns the stored ticks of the candle that opens at `timestamp`, a value of `frame.index`. `None` means the frame's last bar. A candle spans from its open to the next bar's open in the same session, or to the end of the session day for the session's last bar. A timestamp that is not a bar of the backtest, or that opens at or after the cutoff, raises `ValueError`.
+- `ticks.between(start, end)` returns the stored ticks in `[start, end)` across sessions, with the same bounds as `TickStore.ticks`. `end` is clipped to the cutoff. A `start` at or after the cutoff raises `ValueError`.
+- `ticks.cutoff` is the latest moment the instance can return ticks for.
+
+Frames have the columns and index of `TickStore.ticks` (`bid`, `ask`, `last`, `volume`, `flags`, indexed in `America/Sao_Paulo`). Writing to a returned frame changes nothing that later calls see. A session the frame has bars in but the store does not hold raises `NoMarketDataError` naming the session; days without bars in the frame, such as weekends, are skipped. Nothing is read until a hook calls `bar` or `between`, and each session is read once per run.
+
+| Call | Cutoff |
+|---|---|
+| `compute_indicators` | end of the frame's last bar |
+| `entry_strategy`, `exit_strategy` without `phase`, `exit_strategy` with `phase="bar"` | end of the current bar |
+| `exit_strategy` with `phase="screen"` | open of the current bar, so `bar()` with no timestamp raises |
+| `exit_strategy` with `phase="tick"` | the current trade tick, inclusive |
+
+In the tick phase the cutoff is a row, not only a time: `bar()` returns the current candle's stored rows up to and including the decided trade, so a later row with the same `time_msc` is not returned. `ticks.cutoff` is that trade's time.
+
+With `check_causality=True`, each prefix re-run of `compute_indicators` receives a `TickData` cut off at the prefix's end, so a column that reads later ticks is reported by the causality check.
+
+A per-bar entry filter, from the current candle's traded volume:
+
+```python
+from q_backend.research import ResearchStrategy, TradeOrder
+
+
+class BusyCandleEntry(ResearchStrategy):
+    def entry_strategy(self, frame, positions=(), ticks=None):
+        if ticks is None or positions:
+            return None
+        return TradeOrder.buy() if ticks.bar()["volume"].sum() > 100 else None
+```
+
+A `compute_indicators` column built with `between` once per session. Each bar gets the traded volume of the previous session, which is known at the session's open:
+
+```python
+import pandas as pd
+
+from q_backend.market_data.timezone import BRASILIA_TZ
+from q_backend.research import ResearchStrategy
+
+
+class PriorSessionVolume(ResearchStrategy):
+    def compute_indicators(self, frame, *, ticks):
+        sessions = frame.index.tz_convert(BRASILIA_TZ).normalize()
+        prior = {day: ticks.between(day - pd.Timedelta(days=1), day)["volume"].sum() for day in sessions.unique()}
+        return frame.assign(prior_volume=[prior[day] for day in sessions])
+
+    def entry_strategy(self, frame, positions=()):
+        return None
+```
+
 #### Trailing stops with `amend`
 
 Write a trailing stop with `amend` rather than a phase-aware exit whenever its trigger is a price level. The `amend` form decides once per closed bar, while a phase-aware exit decides at each price that moves the candle. The kernel fills the stop from ticks and the strategy keeps no state: `positions[0].stop_loss` is the level in force.
