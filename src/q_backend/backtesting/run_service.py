@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import pandas as pd
 from fastapi import HTTPException
@@ -20,7 +20,10 @@ from q_backend.api.schemas.backtest import (
     MLFilterReference,
 )
 from q_backend.api.schemas.common import BulkDeleteBacktestsRequest
+from q_backend.backtesting.analytics import compute_backtest_performance, naive_utc
+from q_backend.backtesting.models import Trade
 from q_backend.market_data.timezone import mt5_datetime_to_utc_iso
+from q_backend.storage.db.engine import session_scope
 from q_backend.storage.db.models import BacktestRun
 from q_backend.storage.db.repositories import (
     delete_backtest_run,
@@ -188,6 +191,53 @@ def get_run(session: Session, run_id: str) -> BacktestRunDetailResponse:
     if run is None:
         raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.")
     return backtest_run_detail(run, session)
+
+
+def _config_datetime(value: Any) -> Optional[datetime]:
+    return datetime.fromisoformat(value) if isinstance(value, str) else None
+
+
+def _run_span(config: Dict[str, Any], trades: List[Trade]) -> Optional[Tuple[datetime, datetime]]:
+    """The run's span from its config; a missing bound falls back to the first entry or the last exit."""
+    start = _config_datetime(config.get("start"))
+    end = _config_datetime(config.get("end"))
+    if start is None and trades:
+        start = min(naive_utc(t.entry_time) for t in trades)
+    if end is None and any(t.exit_time is not None for t in trades):
+        end = max(naive_utc(t.exit_time) for t in trades if t.exit_time is not None)
+    if start is None or end is None:
+        return None
+    start, end = naive_utc(start), naive_utc(end)
+    return (start, end) if start < end else None
+
+
+def stored_result_performance(run_id: str, trades: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Compute ``performance`` for a stored result that predates it, from the run's config and trades.
+
+    Nothing is written back. Returns ``None`` when the run's initial capital or span is unknown, or
+    when the stored data cannot be computed, so the result read still serves the chart payload.
+    """
+    try:
+        with session_scope() as session:
+            run = get_backtest_run(session, uuid.UUID(run_id))
+            config = dict(run.config) if run is not None else {}
+    except Exception:  # noqa: BLE001 - optional field; a lookup failure must not fail the result read
+        logger.warning("Could not load run %s to compute its performance", run_id, exc_info=True)
+        return None
+
+    initial_capital = config.get("initial_capital")
+    if initial_capital is None:
+        return None
+    try:
+        closed = [Trade.model_validate(trade) for trade in trades]
+        span = _run_span(config, closed)
+        if span is None:
+            return None
+        performance = compute_backtest_performance(closed, float(initial_capital), *span)
+    except Exception:  # noqa: BLE001 - optional field; malformed stored trades degrade to null
+        logger.warning("Could not compute performance for run %s", run_id, exc_info=True)
+        return None
+    return performance.model_dump(mode="json")
 
 
 def patch_run(

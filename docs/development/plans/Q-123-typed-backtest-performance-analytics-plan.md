@@ -41,15 +41,15 @@
 - New: `src/q_backend/backtesting/analytics.py`, `tests/backtesting/test_analytics.py`.
 - Modified: `src/q_backend/api/schemas/backtest.py`, `src/q_backend/optimization/metrics.py`.
 
-- [ ] Write failing tests for spec acceptance items 1, 2 and 5.
-- [ ] Add the Pydantic models. Implement trade stats, the side split, exit reasons, the drawdown period scan and the portfolio ratios. Move the daily-return helper and keep optimization importing it. Commit.
+- [x] Write failing tests for spec acceptance items 1, 2 and 5.
+- [x] Add the Pydantic models. Implement trade stats, the side split, exit reasons, the drawdown period scan and the portfolio ratios. Move the daily-return helper and keep optimization importing it. Commit.
 
 ### 3. Jobs and the result endpoint
 
 **Files:** `src/q_backend/api/backtest_jobs.py`, `src/q_backend/api/routers/backtest.py`, and the job and router tests.
 
-- [ ] Write failing tests for spec acceptance items 3 and 4.
-- [ ] Add `performance` to the candle and tick payloads. In `get_backtest_result`, fill a missing `performance` from the run row's config with no write-back, and degrade to `null` when capital is unknown. Commit.
+- [x] Write failing tests for spec acceptance items 3 and 4.
+- [x] Add `performance` to the candle and tick payloads. In `get_backtest_result`, fill a missing `performance` from the run row's config with no write-back, and degrade to `null` when capital is unknown. Commit.
 
 ### 4. Consumers and docs
 
@@ -58,7 +58,7 @@
 - q_frontend: `CONTRACTS_REV`, the vendored contracts, and `src/types/backtesting.ts`.
 
 - [ ] Pin and vendor in both consumers, and add `performance?: BacktestPerformance | null` to the frontend type.
-- [ ] Document the metric definitions and basis.
+- [x] Document the metric definitions and basis.
 - [ ] Run `make contracts-check` in both consumers and `pnpm typecheck` in q_frontend, then commit.
 
 ## Verification

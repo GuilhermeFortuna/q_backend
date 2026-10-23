@@ -16,6 +16,7 @@ import pandas as pd
 
 from q_backend.api.backtest_progress import BacktestProgressReporter
 from q_backend.api.schemas.backtest import BacktestRequest
+from q_backend.backtesting.analytics import compute_backtest_performance
 from q_backend.backtesting.chart_data import market_data_frame, serialize_chart_data
 from q_backend.backtesting.costs import TransactionCostConfig
 from q_backend.backtesting.engine import BacktestEngine, ParallelMode
@@ -321,6 +322,9 @@ def _execute_candle(
         "bars": chart_data["bars"],
         "indicators": chart_data["indicators"],
         "notes": notes,
+        "performance": compute_backtest_performance(
+            closed_trade_objects, request.initial_capital, start, end
+        ).model_dump(mode="json"),
     }
     if request.ml_filter is not None and ml_filter_manifest is not None:
         payload["ml_filter"] = request.ml_filter.model_dump(mode="json")
@@ -405,6 +409,9 @@ def _execute_tick(
         "bars": chart_data["bars"],
         "indicators": chart_data["indicators"],
         "notes": [],
+        "performance": compute_backtest_performance(
+            closed_trade_objects, request.initial_capital, start, end
+        ).model_dump(mode="json"),
     }
     return payload, closed_trade_objects, equity_df, market_data
 
