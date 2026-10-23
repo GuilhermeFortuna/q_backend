@@ -24,6 +24,8 @@ class ResearchStrategy(ABC):
     Decision hooks (``entry_strategy`` and ``exit_strategy``) run per closed bar.
     Both hooks can optionally declare a ``positions`` parameter to receive an immutable
     tuple of currently filled :class:`~q_backend.research.ResearchPosition` snapshots.
+    ``compute_indicators`` and both decision hooks can declare a ``ticks`` parameter to read
+    the backtest's tick data through :class:`~q_backend.research.TickData`.
     All hook calculations must remain strictly causal: no looking ahead into future bars.
     """
 
@@ -50,6 +52,10 @@ class ResearchStrategy(ABC):
         ----------
         frame : pandas.DataFrame
             Complete historical OHLCV frame.
+        ticks : TickData, optional
+            Declare a ``ticks`` parameter to read the tick data up to the end of the frame's last
+            bar. It is ``None`` when the backtest has no ``ticks=`` store and the parameter has a
+            default; a parameter without a default makes ``backtest()`` require ``ticks=``.
 
         Returns
         -------
@@ -70,6 +76,9 @@ class ResearchStrategy(ABC):
             Closed-bar history up to and including the current bar.
         positions : tuple of ResearchPosition, optional
             Tuple of currently filled open positions.
+        ticks : TickData, optional
+            Declare a ``ticks`` parameter to read the current bar's ticks, up to the bar's end.
+            Same ``None`` and required rules as ``compute_indicators``.
 
         Returns
         -------
@@ -91,6 +100,10 @@ class ResearchStrategy(ABC):
             Closed-bar history up to and including the current bar.
         positions : tuple of ResearchPosition, optional
             Tuple of currently filled open positions.
+        ticks : TickData, optional
+            Declare a ``ticks`` parameter to read ticks up to the decision moment: the bar's end
+            for a bar-phase hook, the bar's open for ``phase="screen"``, and the decided trade for
+            ``phase="tick"``. Same ``None`` and required rules as ``compute_indicators``.
 
         Returns
         -------
