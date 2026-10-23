@@ -1,55 +1,18 @@
 import math
-from datetime import datetime, timezone
 from typing import Any
 
 import pandas as pd
 
+from q_backend.backtesting.analytics import (
+    build_equity_curve,
+    daily_equity_returns,
+    daily_sharpe_ratio,
+)
 from q_backend.backtesting.models import Trade
 
+__all__ = ["DRAWDOWN_FLOOR", "build_equity_curve", "compute_extended_metrics"]
+
 DRAWDOWN_FLOOR = 1e-9
-
-
-def _normalize_timestamp(dt: datetime) -> datetime:
-    if dt.tzinfo is not None:
-        return dt.astimezone(timezone.utc).replace(tzinfo=None)
-    return dt
-
-
-def build_equity_curve(
-    closed_trades: list[Trade],
-    initial_capital: float,
-    start: datetime,
-    end: datetime,
-) -> pd.Series:
-    equity = initial_capital
-    points: list[tuple[datetime, float]] = [(_normalize_timestamp(start), equity)]
-
-    sorted_trades = sorted(
-        closed_trades,
-        key=lambda trade: trade.exit_time or trade.entry_time,
-    )
-    for trade in sorted_trades:
-        if trade.exit_time is None:
-            continue
-        equity += trade.pnl or 0.0
-        points.append((_normalize_timestamp(trade.exit_time), equity))
-
-    points.append((_normalize_timestamp(end), equity))
-
-    series = pd.Series(
-        [value for _, value in points],
-        index=pd.DatetimeIndex([timestamp for timestamp, _ in points]),
-    )
-    return series[~series.index.duplicated(keep="last")].sort_index()
-
-
-def _sharpe_from_daily_returns(daily_returns: pd.Series) -> float | None:
-    if len(daily_returns) < 2:
-        return None
-    std = daily_returns.std()
-    if std == 0 or math.isnan(std):
-        return None
-    return float(daily_returns.mean() / std * math.sqrt(252))
 
 
 def _trade_sharpe_ratio(
@@ -86,9 +49,7 @@ def compute_extended_metrics(
     trade_sharpe_ratio = _trade_sharpe_ratio(closed_trades, initial_capital, backtest_days)
 
     if equity_curve is not None and len(equity_curve) >= 2:
-        daily_equity = equity_curve.resample("D").last().ffill()
-        daily_returns = daily_equity.pct_change().dropna()
-        sharpe_ratio = _sharpe_from_daily_returns(daily_returns)
+        sharpe_ratio = daily_sharpe_ratio(daily_equity_returns(equity_curve))
 
     if sharpe_ratio is None:
         sharpe_ratio = trade_sharpe_ratio

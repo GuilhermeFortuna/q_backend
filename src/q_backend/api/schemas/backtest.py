@@ -15,6 +15,7 @@ __all__ = [
     "BacktestRequest",
     "MLFilterConfig",
     "ChartIndicatorSeries",
+    "BacktestPerformance",
     "BacktestResponse",
     "BacktestStartResponse",
     "BacktestStatusResponse",
@@ -89,6 +90,89 @@ class BacktestNote(BaseModel):
     details: Dict[str, Any] = Field(default_factory=dict)
 
 
+class PerformanceBasis(BaseModel):
+    """What the performance measures are computed from, so a client can state it."""
+
+    equity: Literal["closed_trade"]
+    periods_per_year: int
+    risk_free_rate: float
+
+
+class PortfolioStats(BaseModel):
+    """Equity-curve measures. Percentages are fractions (0.1 is 10%)."""
+
+    net_pnl: float
+    gross_profit: float
+    gross_loss: float
+    total_commission: float
+    return_pct: Optional[float]
+    cagr_pct: Optional[float]
+    max_drawdown_value: float
+    max_drawdown_pct: float
+    max_drawdown_duration_days: float
+    avg_drawdown_pct: Optional[float]
+    recovery_factor: Optional[float]
+    calmar_ratio: Optional[float]
+    sharpe_ratio: Optional[float]
+    sortino_ratio: Optional[float]
+    annual_volatility_pct: Optional[float]
+    time_in_market_pct: Optional[float]
+    trades_per_month: Optional[float]
+
+
+class TradeStats(BaseModel):
+    """Trade-level statistics for one group. An empty group has zero counts and null ratios."""
+
+    total: int
+    winning: int
+    losing: int
+    breakeven: int
+    win_rate: Optional[float]
+    profit_factor: Optional[float]
+    expectancy: Optional[float]
+    avg_win: Optional[float]
+    avg_loss: Optional[float]
+    payoff_ratio: Optional[float]
+    largest_win: Optional[float]
+    largest_loss: Optional[float]
+    max_consecutive_wins: int
+    max_consecutive_losses: int
+    avg_hold_seconds: Optional[float]
+    avg_win_hold_seconds: Optional[float]
+    avg_loss_hold_seconds: Optional[float]
+
+
+class SideTradeStats(BaseModel):
+    all: TradeStats
+    long: TradeStats
+    short: TradeStats
+
+
+class DrawdownPeriod(BaseModel):
+    peak_time: datetime
+    trough_time: datetime
+    recovery_time: Optional[datetime]
+    depth_value: float
+    depth_pct: float
+    duration_days: float
+    trades: int
+
+
+class ExitReasonStats(BaseModel):
+    reason: str
+    trades: int
+    pnl: float
+    win_rate: float
+
+
+class BacktestPerformance(BaseModel):
+    basis: PerformanceBasis
+    portfolio: PortfolioStats
+    trades: SideTradeStats
+    drawdowns: List[DrawdownPeriod]
+    exit_reasons: List[ExitReasonStats]
+
+
 class BacktestResponse(BaseModel):
     metrics: Dict[str, Any]
     trades: List[Dict[str, Any]]
@@ -98,6 +182,7 @@ class BacktestResponse(BaseModel):
     ml_filter: Optional[MLFilterConfig] = Field(default=None, exclude_if=lambda value: value is None)
     ml_filter_summary: Optional[Dict[str, Any]] = Field(default=None, exclude_if=lambda value: value is None)
     notes: List[BacktestNote] = Field(default_factory=list)
+    performance: Optional[BacktestPerformance] = None
 
 
 class BacktestStartResponse(BaseModel):
