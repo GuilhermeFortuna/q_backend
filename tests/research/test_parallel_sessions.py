@@ -103,7 +103,7 @@ class Mixed(ResearchStrategy):
 
 class FailingOnTicks(Mixed):
     def exit_strategy(self, frame: pd.DataFrame, positions: tuple = (), *, phase: str = "bar") -> TradeOrder | None:
-        if phase == "tick":
+        if phase == "tick" and frame.index[-1].strftime("%Y-%m-%d") == "2026-01-05":
             raise KeyError("feed")
         return super().exit_strategy(frame, positions, phase=phase)
 
