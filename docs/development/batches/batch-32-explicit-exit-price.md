@@ -19,8 +19,8 @@ A research strategy can close a position at a price it computed before the candl
 
 | Task | Repository | Depends on | Specification | Implementation plan |
 | --- | --- | --- | --- | --- |
-| Q-127 — Explicit exit price in the candle kernel | q_core | — | [Spec](../../../q_core/docs/development/specs/Q-127-explicit-exit-price-kernel-spec.md) | [Plan](../../../q_core/docs/development/plans/Q-127-explicit-exit-price-kernel-plan.md) |
-| Q-128 — Explicit exit price and removal of phase in research hooks | q_backend | Q-127 | [Spec](../specs/Q-128-explicit-exit-price-research-spec.md) | [Plan](../plans/Q-128-explicit-exit-price-research-plan.md) |
+| [Q-127](https://github.com/GuilhermeFortuna/q_core/issues/20) — Explicit exit price in the candle kernel | q_core | — | `q_core/docs/development/specs/Q-127-explicit-exit-price-kernel-spec.md` | `q_core/docs/development/plans/Q-127-explicit-exit-price-kernel-plan.md` |
+| [Q-128](https://github.com/GuilhermeFortuna/q_backend/issues/53) — Explicit exit price and removal of phase in research hooks | q_backend | Q-127 | [Spec](../specs/Q-128-explicit-exit-price-research-spec.md) | [Plan](../plans/Q-128-explicit-exit-price-research-plan.md) |
 
 The tasks run in sequence: Q-127 is tagged and released before Q-128 pins it.
 
