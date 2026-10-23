@@ -98,8 +98,6 @@ def test_check_engine_requires_resting_orders_and_snapshot_levels() -> None:
         entry_price,
         intrabar,
         strategy_callback,
-        exit_screen_callback,
-        exit_tick_callback,
     ) -> None:
         raise NotImplementedError
 
@@ -110,6 +108,10 @@ def test_check_engine_requires_resting_orders_and_snapshot_levels() -> None:
     values.update(RESTING_ORDERS=True, SESSION_TICK_SOURCE=True)
     with pytest.raises(ImportError, match="snapshot_levels"):
         check_engine(types.SimpleNamespace(**values))
+    values["run_candle"] = (
+        lambda *, time_us, stop_price, target_price, entry_price, intrabar, strategy_callback, snapshot_levels: None
+    )
+    check_engine(types.SimpleNamespace(**values))
 
 
 def test_check_engine_requires_the_native_session_tick_source() -> None:

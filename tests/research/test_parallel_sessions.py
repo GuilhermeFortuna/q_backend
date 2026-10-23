@@ -76,7 +76,7 @@ COMPARED = [
 
 
 class Mixed(ResearchStrategy):
-    """Market and resting buy stops, stops amended to each closed bar's low, and a phase-aware exit."""
+    """Market and resting buy stops, amended stops and priced closes."""
 
     def entry_strategy(self, frame: pd.DataFrame, positions: tuple = ()) -> TradeOrder | None:
         if positions:
@@ -89,23 +89,24 @@ class Mixed(ResearchStrategy):
             return TradeOrder.buy_stop(float(last["high"]) + 0.5, stop_loss=float(last["low"]) - 2.0, expire_bars=2)
         return None
 
-    def exit_strategy(self, frame: pd.DataFrame, positions: tuple = (), *, phase: str = "bar") -> TradeOrder | None:
+    def exit_strategy(self, frame: pd.DataFrame, positions: tuple = (), *, ticks) -> TradeOrder | None:
         if not positions:
             return None
-        if phase == "bar":
-            low = float(frame["low"].iloc[-1])
-            current = positions[0].stop_loss
-            return TradeOrder.amend(stop_loss=low) if current is None or low > current else None
-        floor = frame["low"].iloc[-6:-1].min()
-        reached = frame["low"].iloc[-1] <= floor if phase == "screen" else frame["close"].iloc[-1] <= floor
-        return TradeOrder.close() if reached else None
+        floor = float(frame["low"].iloc[-6:-1].min())
+        low_bar = float(frame["low"].iloc[-1])
+        high_bar = float(frame["high"].iloc[-1])
+        if low_bar <= floor <= high_bar and (ticks.bar()["last"] <= floor).any():
+            return TradeOrder.close(price=floor)
+        low = low_bar
+        current = positions[0].stop_loss
+        return TradeOrder.amend(stop_loss=low) if current is None or low > current else None
 
 
 class FailingOnTicks(Mixed):
-    def exit_strategy(self, frame: pd.DataFrame, positions: tuple = (), *, phase: str = "bar") -> TradeOrder | None:
-        if phase == "tick" and frame.index[-1].strftime("%Y-%m-%d") == "2026-01-05":
+    def exit_strategy(self, frame: pd.DataFrame, positions: tuple = (), *, ticks) -> TradeOrder | None:
+        if frame.index[-1].strftime("%Y-%m-%d") == "2026-01-05":
             raise KeyError("feed")
-        return super().exit_strategy(frame, positions, phase=phase)
+        return super().exit_strategy(frame, positions, ticks=ticks)
 
 
 @pytest.fixture
@@ -149,10 +150,10 @@ def test_without_day_trade_the_run_is_not_split(bars_and_store, monkeypatch):
     pd.testing.assert_frame_equal(requested.trades[COMPARED], sequential.trades[COMPARED])
 
 
-def test_a_tick_hook_failure_in_a_session_names_the_phase_and_bar(bars_and_store):
+def test_an_exit_hook_failure_in_a_session_names_the_bar(bars_and_store):
     bars, store = bars_and_store
 
-    with pytest.raises(RuntimeError, match="phase tick") as exc_info:
+    with pytest.raises(RuntimeError, match="Error in FailingOnTicks.exit_strategy at bar") as exc_info:
         _run(bars, store, FailingOnTicks(), workers=2)
     assert "2026-01-05" in str(exc_info.value)
 

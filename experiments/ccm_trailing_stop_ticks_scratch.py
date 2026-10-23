@@ -84,36 +84,20 @@ class SmartMaCrossoverTrailingStop(ResearchStrategy):
             return TradeOrder.sell()
         return None
 
-    def exit_strategy(self, frame, positions=(), *, phase: str = "bar"):
+    def exit_strategy(self, frame, positions=(), *, ticks):
         if not positions or len(frame) < 2:
             return None
 
         position = positions[0]
-
-        # Trailing N-bar stops (tick-accurate when ticks= is passed).
-        if phase in ("screen", "tick"):
-            if position.side == "short":
-                level = frame["short_trail_stop"].iat[-1]
-                if pd.notna(level):
-                    if phase == "screen":
-                        hit = frame["high"].iat[-1] >= level
-                    else:
-                        hit = frame["close"].iat[-1] >= level
-                    if hit:
-                        return TradeOrder.close()
-            elif position.side == "long":
-                level = frame["long_trail_stop"].iat[-1]
-                if pd.notna(level):
-                    if phase == "screen":
-                        hit = frame["low"].iat[-1] <= level
-                    else:
-                        hit = frame["close"].iat[-1] <= level
-                    if hit:
-                        return TradeOrder.close()
-
-        # Other exits: closed-bar only (fill at next open).
-        if phase != "bar":
-            return None
+        # Use the previous closed bar's level, which was available before this candle opened.
+        if position.side == "short":
+            level = frame["short_trail_stop"].iat[-2]
+            crossed = pd.notna(level) and frame["high"].iat[-1] >= level and (ticks.bar()["last"] >= level).any()
+        else:
+            level = frame["long_trail_stop"].iat[-2]
+            crossed = pd.notna(level) and frame["low"].iat[-1] <= level and (ticks.bar()["last"] <= level).any()
+        if crossed:
+            return TradeOrder.close(price=float(level))
 
         if frame.iloc[-1].isna().any():
             return None

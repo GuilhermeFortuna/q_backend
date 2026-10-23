@@ -30,13 +30,11 @@ class TickSource:
         self.store = store
         self._day: date | None = None
         self._columns: dict[str, np.ndarray] | None = None
-        self._trades: np.ndarray | None = None
 
     def __getstate__(self) -> dict[str, Any]:
         state = self.__dict__.copy()
         state["_day"] = None
         state["_columns"] = None
-        state["_trades"] = None
         return state
 
     def session(self, day: date) -> dict[str, np.ndarray]:
@@ -52,18 +50,9 @@ class TickSource:
                     hint=f"No stored ticks for session {day.isoformat()}; run TickStore.sync for that day.",
                 )
             self._columns = self.store._session_columns(day)
-            self._trades = None
             self._day = day
         assert self._columns is not None
         return self._columns
-
-    def trade_rows(self, day: date) -> np.ndarray:
-        """Positions in the session's columns of its trade prints (finite, positive ``last``), in order."""
-        columns = self.session(day)
-        if self._trades is None:
-            last = columns["last"]
-            self._trades = np.flatnonzero(np.isfinite(last) & (last > 0))
-        return self._trades
 
 
 def _msc(moment: pd.Timestamp) -> int:
@@ -87,7 +76,7 @@ class TickData:
     """The ticks a hook may read, up to its cutoff.
 
     Hooks receive instances from the engine. ``bar`` and ``between`` read a session only when
-    called, and the cutoff in the tick phase is resolved from the trade being decided only then.
+    called, and every hook sees ticks only through the end of its current bar.
     """
 
     def __init__(
@@ -95,30 +84,23 @@ class TickData:
         source: TickSource,
         index: pd.DatetimeIndex,
         current: int,
-        *,
-        cutoff: pd.Timestamp | None = None,
-        tick: int | None = None,
     ) -> None:
         self._source = source
         self._index = index
         self._current = current
-        self._tick = tick
-        self._row: int | None = None
-        self._cutoff = cutoff
-        if tick is None and cutoff is None:
-            self._cutoff = bar_end(index, current)
+        self._cutoff = bar_end(index, current)
 
     @property
     def cutoff(self) -> pd.Timestamp:
         """The latest moment this instance can return ticks for."""
-        return self._horizon()[0]
+        return self._cutoff
 
     def bar(self, timestamp: Any = None) -> pd.DataFrame:
         """The stored ticks of the candle that opens at ``timestamp``; ``None`` means the current bar."""
         position = self._current if timestamp is None else self._position_of(timestamp)
-        cutoff, row = self._horizon()
+        cutoff = self._cutoff
         start = self._index[position]
-        if start > cutoff or (start == cutoff and row is None):
+        if start >= cutoff:
             raise ValueError(f"The bar at {start} opens at or after the cutoff {cutoff}; its ticks are not yet known")
         day = _session_day(start)
         columns = self._source.session(day)
@@ -130,7 +112,7 @@ class TickData:
 
     def between(self, start: Any, end: Any) -> pd.DataFrame:
         """The stored ticks in ``[start, end)``, across sessions, with ``end`` clipped to the cutoff."""
-        cutoff, _row = self._horizon()
+        cutoff = self._cutoff
         start_ts = parse_query_bound(start)
         end_ts = parse_query_bound(end)
         if start_ts >= cutoff:
@@ -153,39 +135,14 @@ class TickData:
             return _empty_frame()
         return pd.concat(pieces)
 
-    def _horizon(self) -> tuple[pd.Timestamp, int | None]:
-        """The cutoff and, in the tick phase, the last stored row this instance may return."""
-        if self._tick is not None and self._row is None:
-            self._resolve_trade()
-        assert self._cutoff is not None
-        return self._cutoff, self._row
-
-    def _resolve_trade(self) -> None:
-        """Find the decided trade: the ``tick``-th trade print of the current candle."""
-        position = self._current
-        start = self._index[position]
-        day = _session_day(start)
-        columns = self._source.session(day)
-        trades = self._source.trade_rows(day)
-        trade_times = columns["time_msc"][trades]
-        lower = int(np.searchsorted(trade_times, _msc(start), "left"))
-        upper = int(np.searchsorted(trade_times, _msc(bar_end(self._index, position)), "left"))
-        if lower + self._tick >= upper:
-            raise RuntimeError(f"Trade {self._tick} of the bar at {start} is not in the stored ticks")
-        row = int(trades[lower + self._tick])
-        self._row = row
-        self._cutoff = _moment(columns["time_msc"][row])
-
     def _visible(self, day: date, time_msc: np.ndarray) -> int:
         """How many leading rows of a session are at or before the cutoff."""
-        cutoff, row = self._horizon()
+        cutoff = self._cutoff
         cutoff_day = _session_day(cutoff)
         if day < cutoff_day:
             return len(time_msc)
         if day > cutoff_day:
             return 0
-        if row is not None:
-            return row + 1
         return int(np.searchsorted(time_msc, _msc(cutoff), "left"))
 
     def _has_bars(self, day: date) -> bool:

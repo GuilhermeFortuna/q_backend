@@ -40,8 +40,8 @@ class TradeOrder:
     take_profit : float, optional
         Take-profit exit level. On ``amend``, the new take-profit of every open position.
     price : float, optional
-        Entry order price. A market entry with a price fills on the same bar; a stop or
-        limit entry rests and fills from ticks.
+        Entry order price, or the explicit fill price for a close. A market entry with a
+        price fills on the same bar; a stop or limit entry rests and fills from ticks.
     kind : {'market', 'stop', 'limit'}, optional
         Entry order type. ``stop`` and ``limit`` orders require ``price``.
     expire_bars : int, optional
@@ -53,7 +53,7 @@ class TradeOrder:
     -----
     On a buy order, ``stop_loss`` must be strictly below ``price`` (or entry) and
     ``take_profit`` must be strictly above. On a sell order, the reverse applies.
-    Close, amend and cancel orders carry no order kind, price or expiry.
+    Close orders may carry an explicit exit price. Amend and cancel orders carry no price.
     """
 
     action: OrderActionLiteral
@@ -123,8 +123,6 @@ class TradeOrder:
         if self.action == "close":
             if self.stop_loss is not None or self.take_profit is not None:
                 raise ValueError("close orders carry no levels")
-            if self.price is not None:
-                raise ValueError("close orders carry no price")
         elif self.action == "cancel":
             if self.stop_loss is not None or self.take_profit is not None:
                 raise ValueError("cancel orders carry no levels")
@@ -325,16 +323,21 @@ class TradeOrder:
         )
 
     @classmethod
-    def close(cls) -> TradeOrder:
+    def close(cls, *, price: float | None = None) -> TradeOrder:
         """
         Create a position close order.
+
+        Parameters
+        ----------
+        price : float, optional
+            Explicit exit price, confirmed from ticks in the current candle.
 
         Returns
         -------
         TradeOrder
             Close order request.
         """
-        return cls("close")
+        return cls("close", price=price)
 
     @classmethod
     def amend(cls, *, stop_loss: float | None = None, take_profit: float | None = None) -> TradeOrder:

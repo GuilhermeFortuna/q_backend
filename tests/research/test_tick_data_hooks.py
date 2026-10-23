@@ -101,7 +101,7 @@ class RequiresInExit(ResearchStrategy):
     def entry_strategy(self, frame, positions=()):
         return None
 
-    def exit_strategy(self, frame, positions=(), *, phase="bar", ticks):
+    def exit_strategy(self, frame, positions=(), *, ticks):
         return None
 
 
@@ -110,26 +110,16 @@ class Probe(ResearchStrategy):
 
     def __init__(self) -> None:
         self.entry_views: list[tuple] = []
-        self.screen_views: list[tuple] = []
-        self.tick_views: list[tuple] = []
+        self.exit_views: list[tuple] = []
 
     def entry_strategy(self, frame, positions=(), ticks=None):
         if ticks is not None:
             self.entry_views.append((frame.index[-1], ticks.cutoff, ticks.bar()["last"].tolist()))
         return TradeOrder.buy() if len(frame) == 1 else None
 
-    def exit_strategy(self, frame, positions=(), *, phase="bar", ticks=None):
-        if phase == "screen" and positions:
-            # A screen that asks for a close hands the candle to the tick phase.
-            try:
-                ticks.bar()
-                raised = False
-            except ValueError as exc:
-                raised = "opens at or after the cutoff" in str(exc)
-            self.screen_views.append((ticks.cutoff, raised))
-            return TradeOrder.close()
-        if phase == "tick":
-            self.tick_views.append((ticks.cutoff, ticks.bar()["last"].tolist()))
+    def exit_strategy(self, frame, positions=(), *, ticks=None):
+        if ticks is not None:
+            self.exit_views.append((frame.index[-1], ticks.cutoff, ticks.bar()["last"].tolist()))
         return None
 
 
@@ -142,7 +132,7 @@ class NeverReads(ResearchStrategy):
     def entry_strategy(self, frame, positions=(), ticks=None):
         return TradeOrder.buy() if len(frame) == 1 else None
 
-    def exit_strategy(self, frame, positions=(), *, phase="bar", ticks=None):
+    def exit_strategy(self, frame, positions=(), *, ticks=None):
         return None
 
 
@@ -271,38 +261,19 @@ def test_an_entry_hook_sees_the_bars_ticks_up_to_its_bar_end_only(root):
     assert last_bar[2] == [100.0, 96.0, 94.0, 97.0]
 
 
-def test_a_screen_hook_cannot_read_the_candle_it_is_screening(root):
+def test_an_exit_hook_with_ticks_is_called_once_per_bar_with_bar_end_cutoff(root):
     store = _write_session(root, BREAKOUT_SESSION)
     probe = Probe()
 
     _backtest(_m10_frame(store), probe, store)
 
-    assert probe.screen_views
-    assert all(raised for _cutoff, raised in probe.screen_views)
-    assert _stamp("10:20") in [cutoff for cutoff, _raised in probe.screen_views]
-
-
-def test_a_tick_hook_reads_up_to_the_decided_trade_even_with_a_same_millisecond_row(root):
-    store = _write_session(root, BREAKOUT_SESSION)
-    probe = Probe()
-
-    _backtest(_m10_frame(store), probe, store)
-
-    breakout = [view for view in probe.tick_views if view[0] >= _stamp("10:20")]
-    assert [cutoff for cutoff, _ in breakout] == [
+    assert [time for time, _cutoff, _last in probe.exit_views] == [_stamp("10:00"), _stamp("10:10"), _stamp("10:20")]
+    assert [cutoff for _time, cutoff, _last in probe.exit_views] == [
+        _stamp("10:10"),
         _stamp("10:20"),
-        _stamp("10:21"),
-        _stamp("10:21"),
-        _stamp("10:22"),
-        _stamp("10:23"),
+        _moment(NEXT_DAY, "00:00:00"),
     ]
-    assert [last for _, last in breakout] == [
-        [101.0],
-        [101.0, 104.0],
-        [101.0, 104.0, 104.5],
-        [101.0, 104.0, 104.5, 105.5],
-        [101.0, 104.0, 104.5, 105.5, 103.0],
-    ]
+    assert probe.exit_views[-1][2] == [101.0, 104.0, 104.5, 105.5, 103.0]
 
 
 def test_a_strategy_that_never_calls_ticks_reads_no_session(root, reads):

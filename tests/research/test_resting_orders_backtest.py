@@ -93,50 +93,6 @@ def test_a_gated_request_does_not_replace_a_resting_trades_original_levels(tmp_p
     assert trade["take_profit"] == trade["final_take_profit"] == 120.0
 
 
-class ScreenedReentry(ResearchStrategy):
-    def __init__(self):
-        self.seen = []
-
-    def entry_strategy(self, frame, positions=()):
-        if len(frame) == 1:
-            return TradeOrder.buy(stop_loss=98.0)
-        if len(frame) == 2:
-            return TradeOrder.sell_stop(97.0, stop_loss=110.0, expire_bars=None)
-        return None
-
-    def exit_strategy(self, frame, positions=(), *, phase="bar"):
-        if phase == "screen":
-            return TradeOrder.close()
-        if phase == "tick":
-            self.seen.append((frame.index[-1], frame.iloc[-1]["tick_volume"], len(positions), frame.iloc[-1]["high"]))
-        return None
-
-
-def test_phase_replay_continues_across_a_protective_exit_and_resting_reentry(tmp_path):
-    store = _write_session(
-        tmp_path,
-        [
-            ("10:00:00", 100.0),
-            ("10:10:00", 100.0),
-            ("10:20:00", 100.0),
-            ("10:21:00", 98.0),
-            ("10:21:30", 101.0),
-            ("10:22:00", 97.0),
-            ("10:23:00", 96.0),
-            ("10:30:00", 96.0),
-        ],
-    )
-    strategy = ScreenedReentry()
-    result = _run(_m10_frame(store), strategy, store)
-    assert result.trades["side"].tolist() == ["long", "short"]
-    assert result.trades.iloc[0]["exit_reason"] == "STOP_LOSS"
-    assert result.trades.iloc[1]["entry_price"] == 97.0
-    assert [(count, positions, high) for bar, count, positions, high in strategy.seen if bar == _bar("10:20")] == [
-        (1, 1, 100.0),
-        (5, 1, 101.0),
-    ]
-
-
 @pytest.fixture
 def root(tmp_path):
     return tmp_path / "ticks"
@@ -243,22 +199,19 @@ def test_cancel_removes_the_working_order(root):
     assert len(result.trades) == 0
 
 
-class PhasedTrail(ResearchStrategy):
-    """A long trailing stop written as a phase-aware exit: the stop is 95 or the lowest closed low so far."""
+class PricedTrail(ResearchStrategy):
+    """A long trailing stop closed at its previously calculated price level."""
 
     def entry_strategy(self, frame: pd.DataFrame, positions: tuple = ()) -> TradeOrder | None:
         return TradeOrder.buy(stop_loss=95.0) if len(frame) == 1 else None
 
-    def exit_strategy(self, frame: pd.DataFrame, positions: tuple = (), *, phase: str = "bar") -> TradeOrder | None:
-        if phase == "bar" or not positions:
+    def exit_strategy(self, frame: pd.DataFrame, positions: tuple = (), *, ticks) -> TradeOrder | None:
+        if not positions or len(frame) < 3:
             return None
-        # The amendment decided on bar k applies from bar k+1, so bar j is stopped at the lows of bars 1..j-1.
         stop = max([95.0, *frame["low"].iloc[1:-1]])
-        if phase == "screen":
-            reached = frame["low"].iloc[-1] <= stop
-        else:
-            reached = frame["close"].iloc[-1] <= stop
-        return TradeOrder.close() if reached else None
+        if frame["low"].iloc[-1] <= stop and (ticks.bar()["last"] <= stop).any():
+            return TradeOrder.close(price=stop)
+        return None
 
 
 class AmendTrail(ResearchStrategy):
@@ -312,15 +265,15 @@ def test_amended_stop_exits_at_the_latest_level_and_positions_show_each_amendmen
     assert strategy.seen == [95.0, 100.0]
 
 
-def test_amend_trailing_stop_matches_the_phase_aware_exit(root):
+def test_amend_trailing_stop_matches_the_priced_close_exit(root):
     store = _write_session(root, TRAIL_ROWS)
-    phased = _run(_m10_frame(store), PhasedTrail(), store).trades
+    priced = _run(_m10_frame(store), PricedTrail(), store).trades
     amended = _run(_m10_frame(store), AmendTrail(), store).trades
 
-    assert phased["exit_time"].tolist() == amended["exit_time"].tolist() == [_bar("10:30")]
-    assert phased["exit_tick_time"].tolist() == amended["exit_tick_time"].tolist() == [_bar("10:34")]
-    assert phased["exit_price"].tolist() == amended["exit_price"].tolist() == [102.5]
-    assert phased["exit_reason"].tolist() == ["SIGNAL"]
+    assert priced["exit_time"].tolist() == amended["exit_time"].tolist() == [_bar("10:30")]
+    assert priced["exit_tick_time"].tolist() == amended["exit_tick_time"].tolist() == [_bar("10:34")]
+    assert priced["exit_price"].tolist() == amended["exit_price"].tolist() == [102.5]
+    assert priced["exit_reason"].tolist() == ["SIGNAL"]
     assert amended["exit_reason"].tolist() == ["STOP_LOSS"]
 
 
@@ -355,7 +308,7 @@ def test_resting_orders_and_amendments_require_ticks(root):
         _run(frame, AmendOnly())
 
 
-def test_misplaced_actions_raise_with_hook_phase_and_bar(root):
+def test_misplaced_actions_raise_with_hook_and_bar(root):
     class AmendFromEntry(ResearchStrategy):
         def entry_strategy(self, frame: pd.DataFrame, positions: tuple = ()) -> TradeOrder | None:
             return TradeOrder.amend(stop_loss=99.0)
@@ -367,17 +320,9 @@ def test_misplaced_actions_raise_with_hook_phase_and_bar(root):
         def exit_strategy(self, frame: pd.DataFrame, positions: tuple = ()) -> TradeOrder | None:
             return TradeOrder.cancel()
 
-    class AmendInScreen(PhasedTrail):
-        def exit_strategy(self, frame: pd.DataFrame, positions: tuple = (), *, phase: str = "bar") -> TradeOrder | None:
-            return TradeOrder.amend(stop_loss=99.0) if phase == "screen" and positions else None
-
     store = _write_session(root, TRAIL_ROWS)
     frame = _m10_frame(store)
     with pytest.raises(ValueError, match=r"AmendFromEntry\.entry_strategy at bar .*illegal action 'amend'"):
         _run(frame, AmendFromEntry(), store)
     with pytest.raises(ValueError, match=r"CancelFromExit\.exit_strategy at bar .*illegal action 'cancel'"):
         _run(frame, CancelFromExit(), store)
-    with pytest.raises(
-        ValueError, match=r"AmendInScreen\.exit_strategy at bar .*\(phase screen\) returned illegal action 'amend'"
-    ):
-        _run(frame, AmendInScreen(), store)

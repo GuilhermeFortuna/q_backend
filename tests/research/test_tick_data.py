@@ -83,18 +83,6 @@ def test_a_bar_that_opens_at_or_after_the_cutoff_raises(root):
         ticks.bar(index[1])
 
 
-def test_a_screen_cutoff_at_the_bar_open_gives_no_bar_of_that_candle(root):
-    store = _write_session(root, SESSION)
-    index = _bars(store, DAY, DAY).index
-    ticks = TickData(TickSource(store), index, current=1, cutoff=index[1])
-
-    with pytest.raises(ValueError, match="opens at or after the cutoff"):
-        ticks.bar()
-    with pytest.raises(ValueError, match="opens at or after the cutoff"):
-        ticks.bar(index[1])
-    assert ticks.bar(index[0])["last"].tolist() == [100.0, 100.0]
-
-
 def test_between_is_clipped_to_the_cutoff_and_raises_from_at_or_after_it(root):
     store = _write_session(root, SESSION)
     index = _bars(store, DAY, DAY).index
@@ -117,30 +105,10 @@ def test_between_returns_an_empty_frame_with_the_store_columns_when_no_ticks_fal
     assert empty.index.tz is not None
 
 
-def test_a_tick_cutoff_is_the_decided_trade_and_excludes_later_rows_with_the_same_time(root):
-    rows = FLAT_0 + [("10:10:00", 100.0), ("10:11:00", 96.0), ("10:11:00", 95.0), ("10:12:00", 94.0)]
-    store = _write_session(root, rows)
-    index = _bars(store, DAY, DAY).index
-    source = TickSource(store)
-
-    first_of_two = TickData(source, index, current=1, tick=1)
-    assert first_of_two.cutoff == _moment(DAY, "10:11:00")
-    assert first_of_two.bar()["last"].tolist() == [100.0, 96.0]
-
-    second_of_two = TickData(source, index, current=1, tick=2)
-    assert second_of_two.bar()["last"].tolist() == [100.0, 96.0, 95.0]
-    assert second_of_two.between(_moment(DAY, "10:00:00"), _moment(DAY, "10:30:00"))["last"].tolist() == [
-        100.0,
-        100.0,
-        100.0,
-    ]
-
-
 def test_hooks_that_never_ask_for_ticks_read_no_session(root, reads):
     store = _write_session(root, SESSION)
     index = _bars(store, DAY, DAY).index
 
-    TickData(TickSource(store), index, current=1, tick=0)
     TickData(TickSource(store), index, current=1)
 
     assert reads == []
