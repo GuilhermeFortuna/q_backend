@@ -25,9 +25,9 @@ The Backtests **Simulation › Results › Performance** tab becomes a complete 
 
 | Task | Repository | Depends on | Specification | Implementation plan |
 | --- | --- | --- | --- | --- |
-| Q-123 — Typed backtest performance analytics | q_backend (with q_contracts, q_frontend vendoring) | — | [Spec](../specs/Q-123-typed-backtest-performance-analytics-spec.md) | [Plan](../plans/Q-123-typed-backtest-performance-analytics-plan.md) |
-| Q-124 — Performance tab metrics panel and drawdown analysis | q_frontend | Q-123 | `q_frontend/docs/development/specs/Q-124-performance-tab-metrics-panel-and-drawdown-analysis-spec.md` | `q_frontend/docs/development/plans/Q-124-performance-tab-metrics-panel-and-drawdown-analysis-plan.md` |
-| Q-125 — Performance tab rolling metrics and trade distribution | q_frontend | Q-124 | `q_frontend/docs/development/specs/Q-125-performance-tab-rolling-metrics-and-trade-distribution-spec.md` | `q_frontend/docs/development/plans/Q-125-performance-tab-rolling-metrics-and-trade-distribution-plan.md` |
+| [Q-123](https://github.com/GuilhermeFortuna/q_backend/issues/51) — Typed backtest performance analytics | q_backend (with q_contracts, q_frontend vendoring) | — | [Spec](../specs/Q-123-typed-backtest-performance-analytics-spec.md) | [Plan](../plans/Q-123-typed-backtest-performance-analytics-plan.md) |
+| [Q-124](https://github.com/GuilhermeFortuna/q_frontend/issues/11) — Performance tab metrics panel and drawdown analysis | q_frontend | Q-123 | `q_frontend/docs/development/specs/Q-124-performance-tab-metrics-panel-and-drawdown-analysis-spec.md` | `q_frontend/docs/development/plans/Q-124-performance-tab-metrics-panel-and-drawdown-analysis-plan.md` |
+| [Q-125](https://github.com/GuilhermeFortuna/q_frontend/issues/12) — Performance tab rolling metrics and trade distribution | q_frontend | Q-124 | `q_frontend/docs/development/specs/Q-125-performance-tab-rolling-metrics-and-trade-distribution-spec.md` | `q_frontend/docs/development/plans/Q-125-performance-tab-rolling-metrics-and-trade-distribution-plan.md` |
 
 The tasks run in sequence. Q-123 pins the new contract in both consumers, so the frontend tasks start with the `performance` type available.
 
