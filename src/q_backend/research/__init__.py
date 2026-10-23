@@ -10,6 +10,7 @@ __all__ = (
     "resample_ticks",
     "TickStore",
     "TickSyncReport",
+    "TickData",
     "sync_ticks",
     "AdjustedSeriesWarning",
     "NoMarketDataError",
@@ -42,6 +43,7 @@ if TYPE_CHECKING:
     from q_backend.research.charting import ChartIndicator
     from q_backend.research.data import load_bars
     from q_backend.research.data import load_ticks, resample_ticks
+    from q_backend.research.tick_data import TickData
     from q_backend.research.tick_store import TickStore, TickSyncReport
     from q_backend.research.errors import AdjustedSeriesWarning, NoMarketDataError
     from q_backend.research.orders import TradeOrder
@@ -67,6 +69,10 @@ def __getattr__(name: str):
         from q_backend.research.tick_store import TickStore
 
         return TickStore
+    if name == "TickData":
+        from q_backend.research.tick_data import TickData
+
+        return TickData
     if name == "TickSyncReport":
         from q_backend.research.tick_store import TickSyncReport
 

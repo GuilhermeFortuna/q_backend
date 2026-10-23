@@ -20,11 +20,12 @@ from q_backend.backtesting.signal_columns import (
 from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy
 from q_backend.research.charting import ChartIndicator, indicator_style
 from q_backend.research.frame import FRAME_COLUMNS
-from q_backend.research.hooks import detect_hook_call, invoke_hook
+from q_backend.research.hooks import detect_hook_call, invoke_hook, ticks_mode
 from q_backend.research.orders import TradeOrder
 from q_backend.research.positions import ResearchPosition
 from q_backend.research.progress import BacktestProgress
 from q_backend.research.strategy import ResearchStrategy
+from q_backend.research.tick_data import TickData, TickSource
 from q_backend.research.tick_phase import FormingRow, forming_compatible
 
 _RESERVED_COLUMNS = frozenset((*SIGNAL_COLUMNS, *LEVEL_COLUMNS, BAR_INDEX))
@@ -100,13 +101,23 @@ class _RuntimeHooks:
         adapter = self._adapter
         self._restore_forming_row()
         positions = self._positions(raw_positions)
-        end = int(self._history_positions[bar]) + 1
+        position = int(self._history_positions[bar])
+        end = position + 1
         timestamp = self._chunk.index[bar]
         phase = "bar" if adapter._phased_exit else None
         exit_decision = adapter._invoke_hook(
-            "exit_strategy", _prefix(adapter._decision_frame, end), positions, phase=phase
+            "exit_strategy",
+            _prefix(adapter._decision_frame, end),
+            positions,
+            phase=phase,
+            ticks=adapter._ticks_for("exit_strategy", bar_position=position),
         )
-        entry_decision = adapter._invoke_hook("entry_strategy", _prefix(adapter._decision_frame, end), positions)
+        entry_decision = adapter._invoke_hook(
+            "entry_strategy",
+            _prefix(adapter._decision_frame, end),
+            positions,
+            ticks=adapter._ticks_for("entry_strategy", bar_position=position),
+        )
         decision: dict[str, Any] = {}
         if exit_decision is not None:
             if exit_decision.action == "close":
@@ -138,12 +149,16 @@ class _RuntimeHooks:
     def _screen(self, bar: int, raw_positions: tuple) -> bool:
         adapter = self._adapter
         self._restore_forming_row()
-        end = int(self._history_positions[bar]) + 1
+        position = int(self._history_positions[bar])
         decision = adapter._invoke_hook(
             "exit_strategy",
-            _prefix(adapter._decision_frame, end),
+            _prefix(adapter._decision_frame, position + 1),
             self._positions(raw_positions),
             phase="screen",
+            # A screen sees the candle as it opens: its ticks are not yet known.
+            ticks=adapter._ticks_for(
+                "exit_strategy", bar_position=position, cutoff=adapter._decision_frame.index[position]
+            ),
         )
         return decision is not None
 
@@ -184,6 +199,7 @@ class _RuntimeHooks:
             self._positions(raw_positions),
             phase="tick",
             detail=f" tick {tick}",
+            ticks=adapter._ticks_for("exit_strategy", bar_position=int(self._history_positions[bar]), tick=tick),
         )
         return decision is not None
 
@@ -223,7 +239,7 @@ class ResearchStrategyAdapter(TradingStrategy):
         symbol: str,
         exit_params: Mapping[str, Any] | None = None,
         *,
-        ticks_available: bool = False,
+        tick_source: TickSource | None = None,
         progress: BacktestProgress | None = None,
     ) -> None:
         if not isinstance(research_strategy, ResearchStrategy):
@@ -236,11 +252,23 @@ class ResearchStrategyAdapter(TradingStrategy):
         # Retain engine exit strategy on the adapter so it does not shadow user's exit_strategy method
         self.exit_strategy = ExitStrategy(self.parameters)
         self._chart_indicators: tuple[ChartIndicator, ...] = ()
-        self._ticks_available = ticks_available
+        self._tick_source = tick_source
         self.progress = progress if progress is not None else BacktestProgress()
         self._hook_calls = {
             name: detect_hook_call(research_strategy, name) for name in ("exit_strategy", "entry_strategy")
         }
+        self._ticks_modes = {
+            "compute_indicators": ticks_mode(research_strategy.compute_indicators),
+            "entry_strategy": self._hook_calls["entry_strategy"].ticks,
+            "exit_strategy": self._hook_calls["exit_strategy"].ticks,
+        }
+        if tick_source is None:
+            for name, mode in self._ticks_modes.items():
+                if mode == "required":
+                    raise ValueError(
+                        f"{type(research_strategy).__name__}.{name} has a required ticks parameter; "
+                        "pass a TickStore as ticks= to backtest()"
+                    )
         self._phased_exit = self._hook_calls["exit_strategy"].phase
         self._decision_frame: pd.DataFrame | None = None
         self._forming: FormingRow | None = None
@@ -294,8 +322,10 @@ class ResearchStrategyAdapter(TradingStrategy):
         if hasattr(data, "attrs"):
             data_copy.attrs = {}  # Strip caller attrs
 
+        ticks = self._ticks_for("compute_indicators", index=data_copy.index, bar_position=orig_len - 1)
+        kwargs = {} if ticks is None else {"ticks": ticks}
         try:
-            augmented = self.research_strategy.compute_indicators(data_copy)
+            augmented = self.research_strategy.compute_indicators(data_copy, **kwargs)
         except Exception as exc:
             raise RuntimeError(f"Error in {type(self.research_strategy).__name__}.compute_indicators: {exc}") from exc
 
@@ -362,7 +392,7 @@ class ResearchStrategyAdapter(TradingStrategy):
         return stop, target, price
 
     def _require_ticks(self, action: str, timestamp: pd.Timestamp, reason: str) -> None:
-        if not self._ticks_available:
+        if self._tick_source is None:
             raise ValueError(
                 f"{type(self.research_strategy).__name__} {action} at bar {timestamp} {reason}; pass ticks= to backtest()"
             )
@@ -384,8 +414,29 @@ class ResearchStrategyAdapter(TradingStrategy):
         positions: tuple[ResearchPosition, ...],
         *,
         phase: str | None = None,
+        ticks: TickData | None = None,
     ) -> TradeOrder | None:
-        return invoke_hook(self.research_strategy, self._hook_calls[name], name, prefix, positions, phase=phase)
+        return invoke_hook(
+            self.research_strategy, self._hook_calls[name], name, prefix, positions, phase=phase, ticks=ticks
+        )
+
+    def _ticks_for(
+        self,
+        hook: str,
+        *,
+        bar_position: int,
+        index: pd.DatetimeIndex | None = None,
+        cutoff: pd.Timestamp | None = None,
+        tick: int | None = None,
+    ) -> TickData | None:
+        """A ``TickData`` for one hook call, or None when the run has no store or the hook takes no ticks.
+
+        ``bar_position`` is the bar's position in ``index``, the prepared history by default.
+        """
+        if self._tick_source is None or self._ticks_modes[hook] == "none":
+            return None
+        history = self._decision_frame.index if index is None else index
+        return TickData(self._tick_source, history, bar_position, cutoff=cutoff, tick=tick)
 
     def _declare_chart_indicators(self, augmented: pd.DataFrame) -> tuple[ChartIndicator, ...]:
         name = type(self.research_strategy).__name__

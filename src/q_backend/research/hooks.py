@@ -11,26 +11,43 @@ import pandas as pd
 from q_backend.research.orders import TradeOrder
 from q_backend.research.positions import ResearchPosition
 from q_backend.research.strategy import ResearchStrategy
+from q_backend.research.tick_data import TickData
+
+_KEYWORD_KINDS = (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
 
 
 @dataclass(frozen=True)
 class HookCall:
-    """How a hook accepts ``positions`` and ``phase``, detected from its signature."""
+    """How a hook accepts ``positions``, ``phase`` and ``ticks``, detected from its signature."""
 
     positions: str
     phase: bool
+    ticks: str = "none"
+
+
+def ticks_mode(hook: Any) -> str:
+    """How a hook takes ``ticks``: ``"none"``, ``"optional"`` (defaults to None) or ``"required"``.
+
+    Only a keyword-capable ``ticks`` parameter counts; ``**kwargs`` alone does not receive ticks.
+    """
+    parameter = inspect.signature(hook).parameters.get("ticks")
+    if parameter is None or parameter.kind not in _KEYWORD_KINDS:
+        return "none"
+    return "optional" if parameter.default is not inspect.Parameter.empty else "required"
 
 
 def detect_hook_call(strategy: ResearchStrategy, name: str) -> HookCall:
-    """Detect how a hook takes ``positions`` and ``phase``; only explicit parameters count."""
+    """Detect how a hook takes ``positions``, ``phase`` and ``ticks``; only explicit parameters count."""
     hook = getattr(strategy, name)
-    keyword_kinds = (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
     try:
         signature = inspect.signature(hook)
         parameters = signature.parameters
         phase_param = parameters.get("phase")
-        phase = name == "exit_strategy" and phase_param is not None and phase_param.kind in keyword_kinds
+        phase = name == "exit_strategy" and phase_param is not None and phase_param.kind in _KEYWORD_KINDS
+        ticks = ticks_mode(hook)
         extra: dict[str, object] = {"phase": "bar"} if phase else {}
+        if ticks != "none":
+            extra["ticks"] = None
         positions_param = parameters.get("positions")
         if positions_param is None or positions_param.kind in (
             inspect.Parameter.VAR_POSITIONAL,
@@ -47,9 +64,9 @@ def detect_hook_call(strategy: ResearchStrategy, name: str) -> HookCall:
     except (TypeError, ValueError) as exc:
         raise TypeError(
             f"{type(strategy).__name__}.{name} has an incompatible signature; "
-            "expected (frame), (frame, positions), or either with a keyword-only phase"
+            "expected (frame), (frame, positions), or either with a keyword-only phase or ticks"
         ) from exc
-    return HookCall(positions=mode, phase=phase)
+    return HookCall(positions=mode, phase=phase, ticks=ticks)
 
 
 def _permitted_actions(name: str, phase: str | None) -> tuple[str, ...]:
@@ -70,6 +87,7 @@ def invoke_hook(
     *,
     phase: str | None = None,
     detail: str = "",
+    ticks: TickData | None = None,
 ) -> TradeOrder | None:
     """Call one decision hook and validate the order it returns."""
     hook = getattr(strategy, name)
@@ -84,6 +102,8 @@ def invoke_hook(
         kwargs["positions"] = positions
     if call.phase and phase is not None:
         kwargs["phase"] = phase
+    if call.ticks != "none":
+        kwargs["ticks"] = ticks
     try:
         decision = hook(*args, **kwargs)
     except Exception as exc:

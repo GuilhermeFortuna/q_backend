@@ -668,6 +668,10 @@ class TickStore:
             requested_end=end_ts,
         )
 
+    def _session_columns(self, day: date) -> dict[str, np.ndarray]:
+        """One stored session's columns in ``time_msc`` order, the order q_core replays them in."""
+        return _sort_columnar(_read_day_columnar(self._day_path(day)))
+
     def _ensure_trade_prices_session(self, day: date) -> tuple[np.ndarray, np.ndarray]:
         """One session's positive trade prices as time-ordered ``(time_msc, last)`` arrays."""
         if self._trade_prices_cache_day == day and self._trade_prices_cache is not None:

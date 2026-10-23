@@ -31,6 +31,7 @@ from q_backend.market_data.timezone import BRASILIA_TZ
 from q_backend.research.adapter import ResearchStrategyAdapter
 from q_backend.research.charting import STYLE_FIELDS, ChartIndicator
 from q_backend.research.frame import _validate_prices
+from q_backend.research.hooks import ticks_mode
 from q_backend.research.intrabar import intrabar_error, native_tick_source
 from q_backend.research.progress import BacktestProgress, backtest_progress
 from q_backend.research.results import (
@@ -42,6 +43,7 @@ from q_backend.research.results import (
 )
 from q_backend.research.strategy import ResearchStrategy
 from q_backend.research.session_blocks import run_session_blocks, session_blocks
+from q_backend.research.tick_data import TickData, TickSource
 from q_backend.research.tick_phase import resolve_workers
 from q_backend.research.tick_store import TickStore
 
@@ -246,7 +248,10 @@ def backtest(
     force_close_at_end : bool, default False
         Whether to liquidate any open position on the final bar.
     ticks : TickStore, optional
-        TickStore providing tick replay for intrabar stop/target confirmation.
+        TickStore providing tick replay for intrabar stop/target confirmation. Hooks can also read
+        it: a ``ticks`` parameter on ``compute_indicators``, ``entry_strategy`` or ``exit_strategy``
+        receives a :class:`~q_backend.research.TickData` (``None`` without a store when it has a
+        default), and a required ``ticks`` parameter makes this argument mandatory.
     tick_size : float, optional
         Instrument price increment for the Breakeven Emergency Stop. Defaults to
         ``frame.attrs['q_research']['tick_size']`` when recorded by the data loader.
@@ -323,6 +328,7 @@ def backtest(
     reporter = backtest_progress(progress, " ".join(part for part in (symbol, timeframe) if part))
 
     # 2. Strategy instantiation
+    tick_source = None if ticks is None else TickSource(ticks)
     if isinstance(strategy, ResearchStrategy):
         if strategy_params is not None:
             raise ValueError("strategy_params cannot be passed when strategy is a ResearchStrategy instance")
@@ -331,7 +337,7 @@ def backtest(
             research_strategy=strategy,
             symbol=symbol,
             exit_params=exit_params,
-            ticks_available=ticks is not None,
+            tick_source=tick_source,
             progress=reporter,
         )
         if trading_strategy.requires_ticks and ticks is None:
@@ -463,6 +469,7 @@ def backtest(
                 workers=worker_count,
                 reporter=reporter,
                 check_causality=check_causality,
+                tick_source=tick_source,
             )
             reporter.finish(len(result.trades))
     except kernel.IntrabarDataError as exc:
@@ -473,7 +480,12 @@ def backtest(
     return result
 
 
-def _check_causality(strategy: ResearchStrategy, frame: pd.DataFrame, prepared: pd.DataFrame) -> None:
+def _check_causality(
+    strategy: ResearchStrategy,
+    frame: pd.DataFrame,
+    prepared: pd.DataFrame,
+    tick_source: TickSource | None,
+) -> None:
     """Recompute indicators on prefixes ending at session ends, and compare them with the full run.
 
     An indicator that reads a later bar takes a different value on a prefix that lacks that bar,
@@ -486,10 +498,14 @@ def _check_causality(strategy: ResearchStrategy, frame: pd.DataFrame, prepared: 
     if len(ends) == 0:
         return
     picks = np.unique(np.linspace(0, len(ends) - 1, min(_CAUSALITY_PREFIXES, len(ends))).round().astype(int))
+    takes_ticks = ticks_mode(strategy.compute_indicators) != "none"
     for end in ends[picks]:
         stop = int(end) + 1
+        kwargs: dict[str, Any] = {}
+        if takes_ticks and tick_source is not None:
+            kwargs["ticks"] = TickData(tick_source, frame.index, stop - 1)
         try:
-            computed = strategy.compute_indicators(frame.iloc[:stop].copy())
+            computed = strategy.compute_indicators(frame.iloc[:stop].copy(), **kwargs)
         except Exception as exc:
             raise RuntimeError(f"Error in {name}.compute_indicators during the causality check: {exc}") from exc
         for column in computed.columns:
@@ -534,11 +550,12 @@ def _execute_backtest(
     workers: int,
     reporter: BacktestProgress,
     check_causality: bool,
+    tick_source: TickSource | None,
 ) -> BacktestResult:
     # Prepare once, then reuse explicitly for execution and result data.
     augmented_data = augment_indicator_frame(trading_strategy, validated_frame)
     if check_causality:
-        _check_causality(strategy, validated_frame, augmented_data)
+        _check_causality(strategy, validated_frame, augmented_data, tick_source)
     blocks = session_blocks(augmented_data.index, workers) if engine.day_trade else None
     if blocks is None:
         registry, run = engine.run_prepared_detailed(augmented_data, force_close_at_end=force_close_at_end)
