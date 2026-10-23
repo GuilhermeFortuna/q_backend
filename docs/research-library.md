@@ -536,6 +536,47 @@ class PriorSessionVolume(ResearchStrategy):
         return None
 ```
 
+The same `ticks` argument serves three smaller patterns. Reading an earlier candle, as long as it is a bar of the frame, with `bar(timestamp)`:
+
+```python
+from q_backend.research import ResearchStrategy, TradeOrder
+
+
+class FollowsBusyPreviousCandle(ResearchStrategy):
+    def entry_strategy(self, frame, positions=(), ticks=None):
+        if ticks is None or len(frame) < 2 or positions:
+            return None
+        previous_trades = ticks.bar(frame.index[-2])["last"].size
+        return TradeOrder.buy() if previous_trades > 50 else None
+```
+
+A running total from the current candle's open up to the cutoff. Here `between` reads the trades so far in the bar, so the value is known when the bar closes:
+
+```python
+class RunningBarVolume(ResearchStrategy):
+    def entry_strategy(self, frame, positions=(), ticks=None):
+        if ticks is None or positions:
+            return None
+        so_far = ticks.between(frame.index[-1], ticks.cutoff)["volume"].sum()
+        return TradeOrder.buy() if so_far > 500 else None
+```
+
+A tick-phase exit that closes at the decided trade's price, read from `ticks`. The phase is set by the exit's signature, so the strategy needs `ticks=` in `backtest()`:
+
+```python
+class TickStopExit(ResearchStrategy):
+    def entry_strategy(self, frame, positions=()):
+        return None
+
+    def exit_strategy(self, frame, positions=(), *, phase="bar", ticks=None):
+        if phase == "bar" or not positions:
+            return None
+        if phase == "screen":
+            return TradeOrder.close() if frame["low"].iloc[-1] <= positions[0].entry_price - 2 else None
+        decided = ticks.bar()["last"].iloc[-1]
+        return TradeOrder.close() if decided <= positions[0].entry_price - 2 else None
+```
+
 #### Trailing stops with `amend`
 
 Write a trailing stop with `amend` rather than a phase-aware exit whenever its trigger is a price level. The `amend` form decides once per closed bar, while a phase-aware exit decides at each price that moves the candle. The kernel fills the stop from ticks and the strategy keeps no state: `positions[0].stop_loss` is the level in force.
