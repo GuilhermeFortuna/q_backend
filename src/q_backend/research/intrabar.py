@@ -12,7 +12,7 @@ from q_backend.research.frame import bounds_to_brasilia_naive
 from q_backend.research.tick_store import TICK_STORE_SOURCE, TickStore, naive_local_to_time_msc
 
 
-def _bar_end(index: pd.DatetimeIndex, bar: int) -> pd.Timestamp:
+def bar_end(index: pd.DatetimeIndex, bar: int) -> pd.Timestamp:
     """A candle spans ``[index[i], index[i + 1])`` in the same session, and otherwise to the session end."""
     start = index[bar]
     if bar + 1 < len(index):
@@ -35,7 +35,7 @@ def native_tick_source(store: TickStore, chunk: pd.DataFrame):  # -> q_core.engi
     starts: list[int] = []
     ends: list[int] = []
     for bar in range(len(index)):
-        start_naive, end_naive = bounds_to_brasilia_naive(index[bar], _bar_end(index, bar))
+        start_naive, end_naive = bounds_to_brasilia_naive(index[bar], bar_end(index, bar))
         starts.append(naive_local_to_time_msc(start_naive))
         ends.append(naive_local_to_time_msc(end_naive))
     paths = [None if (path := store.session_path(day)) is None else str(path) for day in days]
@@ -55,7 +55,7 @@ def intrabar_error(exc: Exception, chunk: pd.DataFrame, store: TickStore) -> Exc
     """Translate a q_core intrabar failure into the research errors, naming the candle that needed ticks."""
     bar = exc.bar
     start = chunk.index[bar]
-    end = _bar_end(chunk.index, bar)
+    end = bar_end(chunk.index, bar)
     if exc.reason == "missing_session":
         session = start.tz_convert(BRASILIA_TZ).date()
         return NoMarketDataError(
