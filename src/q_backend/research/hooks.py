@@ -18,10 +18,9 @@ _KEYWORD_KINDS = (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEY
 
 @dataclass(frozen=True)
 class HookCall:
-    """How a hook accepts ``positions``, ``phase`` and ``ticks``, detected from its signature."""
+    """How a hook accepts ``positions`` and ``ticks``, detected from its signature."""
 
     positions: str
-    phase: bool
     ticks: str = "none"
 
 
@@ -37,15 +36,15 @@ def ticks_mode(hook: Any) -> str:
 
 
 def detect_hook_call(strategy: ResearchStrategy, name: str) -> HookCall:
-    """Detect how a hook takes ``positions``, ``phase`` and ``ticks``; only explicit parameters count."""
+    """Detect how a hook takes ``positions`` and ``ticks``; only explicit parameters count."""
     hook = getattr(strategy, name)
+    if name == "exit_strategy" and "phase" in inspect.signature(hook).parameters:
+        raise TypeError(f"{type(strategy).__name__}.{name} parameter 'phase' was removed; remove it from the hook")
     try:
         signature = inspect.signature(hook)
         parameters = signature.parameters
-        phase_param = parameters.get("phase")
-        phase = name == "exit_strategy" and phase_param is not None and phase_param.kind in _KEYWORD_KINDS
         ticks = ticks_mode(hook)
-        extra: dict[str, object] = {"phase": "bar"} if phase else {}
+        extra: dict[str, object] = {}
         if ticks != "none":
             extra["ticks"] = None
         positions_param = parameters.get("positions")
@@ -64,18 +63,16 @@ def detect_hook_call(strategy: ResearchStrategy, name: str) -> HookCall:
     except (TypeError, ValueError) as exc:
         raise TypeError(
             f"{type(strategy).__name__}.{name} has an incompatible signature; "
-            "expected (frame), (frame, positions), or either with a keyword-only phase or ticks"
+            "expected (frame), (frame, positions), or either with a keyword-only ticks"
         ) from exc
-    return HookCall(positions=mode, phase=phase, ticks=ticks)
+    return HookCall(positions=mode, ticks=ticks)
 
 
-def _permitted_actions(name: str, phase: str | None) -> tuple[str, ...]:
-    """Actions a hook may return: ``amend`` is limited to the bar phase and hooks without a phase."""
+def _permitted_actions(name: str) -> tuple[str, ...]:
+    """Actions a hook may return."""
     if name == "entry_strategy":
         return ("buy", "sell", "cancel")
-    if phase in (None, "bar"):
-        return ("close", "amend")
-    return ("close",)
+    return ("close", "amend")
 
 
 def invoke_hook(
@@ -85,23 +82,18 @@ def invoke_hook(
     prefix: pd.DataFrame,
     positions: tuple[ResearchPosition, ...],
     *,
-    phase: str | None = None,
-    detail: str = "",
     ticks: TickData | None = None,
 ) -> TradeOrder | None:
     """Call one decision hook and validate the order it returns."""
     hook = getattr(strategy, name)
     timestamp = prefix.index[-1]
-    suffix = f" (phase {phase}{detail})" if phase is not None else ""
-    label = f"{type(strategy).__name__}.{name} at bar {timestamp}{suffix}"
+    label = f"{type(strategy).__name__}.{name} at bar {timestamp}"
     args: tuple[Any, ...] = (prefix,)
     kwargs: dict[str, Any] = {}
     if call.positions == "positional":
         args = (prefix, positions)
     elif call.positions == "keyword":
         kwargs["positions"] = positions
-    if call.phase and phase is not None:
-        kwargs["phase"] = phase
     if call.ticks != "none":
         kwargs["ticks"] = ticks
     try:
@@ -111,7 +103,7 @@ def invoke_hook(
     if decision is not None:
         if not isinstance(decision, TradeOrder):
             raise TypeError(f"{label} returned {type(decision).__name__}, expected TradeOrder or None")
-        allowed = _permitted_actions(name, phase)
+        allowed = _permitted_actions(name)
         if decision.action not in allowed:
             raise ValueError(f"{label} returned illegal action {decision.action!r}; permitted actions: {allowed}")
     return decision

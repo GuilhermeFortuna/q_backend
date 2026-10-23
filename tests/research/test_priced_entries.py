@@ -109,11 +109,7 @@ def test_trade_order_priced_construction_and_validation() -> None:
     with pytest.raises(ValueError, match="take_profit must be below price"):
         TradeOrder.sell(price=10.0, take_profit=10.5)
 
-    # Close rejects price
-    with pytest.raises(TypeError):
-        TradeOrder.close(price=10.0)  # type: ignore[call-arg]
-    with pytest.raises(ValueError, match="close orders carry no price"):
-        TradeOrder("close", price=10.0)
+    assert TradeOrder.close(price=10.0).price == 10.0
 
 
 # Criterion 2: Example strategy fills at previous high on deciding bar
@@ -289,7 +285,7 @@ def test_priced_order_with_runtime_position_hook(tmp_path) -> None:
     assert bar2_obs[1][0].side == "long"
 
 
-# Review focus: A price outside [low, high] on a bar the screen skipped still raises
+# A priced entry outside [low, high] is rejected even when the strategy has no tick-based exits.
 def test_price_outside_range_on_skipped_screen_still_raises(tmp_path) -> None:
     rows = [
         ("10:00:00", 100.0),
@@ -302,10 +298,7 @@ def test_price_outside_range_on_skipped_screen_still_raises(tmp_path) -> None:
     store = _write_session(tmp_path / "ticks", rows)
     frame = _m10_frame(store)
 
-    class PhasedScreenSkipped(ResearchStrategy):
-        def exit_strategy(self, frame: pd.DataFrame, positions: tuple = (), *, phase: str = "bar") -> TradeOrder | None:
-            # Screen explicitly returns None (skips tick replay)
-            return None
+    class PricedEntry(ResearchStrategy):
 
         def entry_strategy(self, frame: pd.DataFrame) -> TradeOrder | None:
             if len(frame) == 2:
@@ -313,10 +306,10 @@ def test_price_outside_range_on_skipped_screen_still_raises(tmp_path) -> None:
             return None
 
     with pytest.raises(ValueError) as exc_info:
-        backtest(frame, strategy=PhasedScreenSkipped(), symbol=SYMBOL, ticks=store)
+        backtest(frame, strategy=PricedEntry(), symbol=SYMBOL, ticks=store)
 
     msg = str(exc_info.value)
-    assert "PhasedScreenSkipped" in msg
+    assert "PricedEntry" in msg
     assert "105" in msg
     assert "bar 1" in msg or "10:10" in msg
     assert "99" in msg and "101" in msg

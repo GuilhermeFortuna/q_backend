@@ -39,8 +39,6 @@ REQUIRED_RUN_CANDLE_PARAMETERS: Final = (
     "entry_price",
     "intrabar",
     "strategy_callback",
-    "exit_screen_callback",
-    "exit_tick_callback",
     "snapshot_levels",
 )
 
@@ -343,9 +341,6 @@ def run_chunk(
         decided_target = runtime.target_price
         decided_entry = runtime.entry_price
         level_args = {"strategy_callback": runtime.strategy}
-        if runtime.screen is not None:
-            level_args["exit_screen_callback"] = runtime.screen
-            level_args["exit_tick_callback"] = runtime.tick
     if intrabar is not None:
         level_args["intrabar"] = intrabar
     if runtime is not None:
@@ -391,6 +386,18 @@ def run_chunk(
             high = match.group("high")
             raise ValueError(
                 f"{strat_name} entry price {price} at bar {bar_idx} ({bar_time}) is outside the bar range [{low}, {high}]"
+            ) from exc
+        exit_match = re.search(r"exit_price\[(?P<bar>\d+)\]: must lie within the bar's low and high", msg)
+        if exit_match and runtime is not None:
+            bar_idx = int(exit_match.group("bar"))
+            bar_time = chunk.index[bar_idx]
+            price = runtime.exit_price[bar_idx]
+            low = _column(chunk, "low")[bar_idx]
+            high = _column(chunk, "high")[bar_idx]
+            strat_name = type(getattr(strategy, "research_strategy", strategy)).__name__
+            raise ValueError(
+                f"{strat_name} exit price {price:g} at bar {bar_idx} ({bar_time}) is outside the bar range "
+                f"[{low:g}, {high:g}]"
             ) from exc
         raise
     entry_bar = np.asarray(result["entry_bar"], dtype=np.int64)

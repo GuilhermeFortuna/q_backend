@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Breakout with stop and target orders and a phase-aware exit, confirmed from a TickStore.
+"""Breakout with stop and target orders and a price-level exit confirmed from a TickStore.
 
-The entry carries its stop and target. The exit screens each candle on its low and confirms
-with the trade price of a tick, so a candle is replayed only when the screen qualifies.
+The entry carries its stop and target. The exit decides once per closed bar and requests its
+previously calculated floor when the candle and its stored trades cross that level.
 Requires the sessions of the backtest window on disk; see sync_ticks.py.
 See docs/research-library.md for documentation.
 """
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from q_backend.research import ResearchStrategy, TickStore, TradeOrder, backtest
+from q_backend.research import ResearchStrategy, TickData, TickStore, TradeOrder, backtest
 from q_backend.research.results import BacktestResult
 
 BREAKOUT_BARS = 20
@@ -43,17 +43,13 @@ class StopTargetBreakout(ResearchStrategy):
             take_profit=float(last["close"] + TARGET_ATR * last["atr"]),
         )
 
-    def exit_strategy(self, frame: pd.DataFrame, positions: tuple = (), *, phase: str = "bar") -> TradeOrder | None:
-        if phase == "bar" or not positions:
+    def exit_strategy(self, frame: pd.DataFrame, positions: tuple = (), *, ticks: TickData) -> TradeOrder | None:
+        if not positions or len(frame) <= EXIT_BARS:
             return None
-        # A tick decision sees the forming candle with no indicators, so the floor is read from the
-        # EXIT_BARS closed candles before the current one: the last row is the candle being decided.
-        floor = frame["low"].iloc[-EXIT_BARS - 1 : -1].min()
-        if phase == "screen":
-            reached = frame["low"].iloc[-1] <= floor
-        else:
-            reached = frame["close"].iloc[-1] <= floor
-        return TradeOrder.close() if reached else None
+        floor = float(frame["low"].iloc[-EXIT_BARS - 1 : -1].min())
+        if frame["low"].iloc[-1] <= floor and (ticks.bar()["last"] <= floor).any():
+            return TradeOrder.close(price=floor)
+        return None
 
 
 def run_stop_target_backtest(

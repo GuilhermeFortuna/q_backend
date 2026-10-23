@@ -399,7 +399,7 @@ def test_tick_backtest_benchmark_times_both_exits_with_and_without_workers(capsy
     lines = capsys.readouterr().out.splitlines()
     assert lines[0] == "sessions: 2, workers: 2"
     rows = {line.split()[0]: line.split() for line in lines[2:]}
-    assert set(rows) == {"amend", "phase"}
+    assert set(rows) == {"amend", "priced"}
     assert all(float(rows[name][1]) >= 0.0 and int(rows[name][3]) > 0 for name in rows)
 
 

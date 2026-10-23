@@ -248,7 +248,7 @@ def backtest(
     force_close_at_end : bool, default False
         Whether to liquidate any open position on the final bar.
     ticks : TickStore, optional
-        TickStore providing tick replay for intrabar stop/target confirmation. Hooks can also read
+        TickStore providing intrabar stop/target and priced-close confirmation. Hooks can also read
         it: a ``ticks`` parameter on ``compute_indicators``, ``entry_strategy`` or ``exit_strategy``
         receives a :class:`~q_backend.research.TickData` (``None`` without a store when it has a
         default), and a required ``ticks`` parameter makes this argument mandatory.
@@ -340,11 +340,6 @@ def backtest(
             tick_source=tick_source,
             progress=reporter,
         )
-        if trading_strategy.requires_ticks and ticks is None:
-            raise ValueError(
-                f"{type(strategy).__name__} has a phase-aware exit_strategy, which requires ticks; "
-                "pass a TickStore as ticks= to backtest()"
-            )
     elif isinstance(strategy, str):
         # Built-in strategy
         try:
@@ -474,9 +469,6 @@ def backtest(
             reporter.finish(len(result.trades))
     except kernel.IntrabarDataError as exc:
         raise intrabar_error(exc, validated_frame, ticks) from exc
-    finally:
-        if isinstance(trading_strategy, ResearchStrategyAdapter):
-            trading_strategy.close()
     return result
 
 

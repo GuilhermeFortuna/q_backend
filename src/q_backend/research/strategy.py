@@ -101,14 +101,18 @@ class ResearchStrategy(ABC):
         positions : tuple of ResearchPosition, optional
             Tuple of currently filled open positions.
         ticks : TickData, optional
-            Declare a ``ticks`` parameter to read ticks up to the decision moment: the bar's end
-            for a bar-phase hook, the bar's open for ``phase="screen"``, and the decided trade for
-            ``phase="tick"``. Same ``None`` and required rules as ``compute_indicators``.
+            Declare a ``ticks`` parameter to read ticks through the current bar's end. Same
+            ``None`` and required rules as ``compute_indicators``.
 
         Returns
         -------
         TradeOrder or None
-            A close request (:meth:`TradeOrder.close()`), an amendment of the open position's levels
-            (:meth:`TradeOrder.amend`), or ``None``.
+            A close request (:meth:`TradeOrder.close()`), optionally with an explicit traded exit
+            price, an amendment of the open position's levels (:meth:`TradeOrder.amend`), or ``None``.
+
+        Notes
+        -----
+        Declaring ``ticks`` does not change when the hook runs: it is called once on each closed bar.
+        A ``phase`` parameter was removed and is rejected during adapter setup.
         """
         return None

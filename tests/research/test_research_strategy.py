@@ -41,6 +41,8 @@ def test_trade_order_immutability_and_validation() -> None:
     assert order_sell.action == "sell"
     order_close = TradeOrder.close()
     assert order_close.action == "close"
+    priced_close = TradeOrder.close(price=10.0)
+    assert (priced_close.action, priced_close.price) == ("close", 10.0)
 
     with pytest.raises(AttributeError):
         order.action = "sell"  # type: ignore[misc]
@@ -73,6 +75,9 @@ def test_trade_order_levels_are_validated_at_construction() -> None:
         TradeOrder.close(stop_loss=9.0)  # type: ignore[call-arg]
     with pytest.raises(ValueError, match="close orders carry no levels"):
         TradeOrder("close", stop_loss=9.0)
+    for bad in (0.0, -1.0, float("nan"), float("inf"), True, "9"):
+        with pytest.raises(ValueError, match="price must be a finite positive price"):
+            TradeOrder.close(price=bad)  # type: ignore[arg-type]
     with pytest.raises(TypeError):
         TradeOrder.buy(9.0)  # type: ignore[misc]
 
@@ -471,7 +476,7 @@ def test_amend_and_cancel_are_immutable_management_orders() -> None:
         amend.stop_loss = 9.0  # type: ignore[misc]
 
 
-def test_hook_action_permissions_follow_hook_and_phase(sample_bars: pd.DataFrame) -> None:
+def test_hook_action_permissions_follow_hook_and_reject_removed_phase(sample_bars: pd.DataFrame) -> None:
     from q_backend.research.hooks import detect_hook_call, invoke_hook
 
     frame = sample_bars.iloc[:1]
@@ -507,19 +512,12 @@ def test_hook_action_permissions_follow_hook_and_phase(sample_bars: pd.DataFrame
     with pytest.raises(ValueError, match="illegal action 'cancel'"):
         call(PlainExit(TradeOrder.cancel()), "exit_strategy")
 
-    class PhasedExit(ResearchStrategy):
-        def __init__(self, order: TradeOrder) -> None:
-            self.order = order
-
+    class OldExit(ResearchStrategy):
         def entry_strategy(self, frame: pd.DataFrame, positions=()) -> TradeOrder | None:
             return None
 
-        def exit_strategy(self, frame: pd.DataFrame, positions=(), *, phase: str) -> TradeOrder | None:
-            return self.order
+        def exit_strategy(self, frame: pd.DataFrame, positions=(), *, phase: str = "bar") -> TradeOrder | None:
+            return None
 
-    assert call(PhasedExit(TradeOrder.amend(stop_loss=9.0)), "exit_strategy", phase="bar").action == "amend"
-    assert call(PhasedExit(TradeOrder.close()), "exit_strategy", phase="tick").action == "close"
-    with pytest.raises(ValueError, match=r"\(phase screen\) returned illegal action 'amend'"):
-        call(PhasedExit(TradeOrder.amend(stop_loss=9.0)), "exit_strategy", phase="screen")
-    with pytest.raises(ValueError, match=r"\(phase tick\) returned illegal action 'amend'"):
-        call(PhasedExit(TradeOrder.amend(stop_loss=9.0)), "exit_strategy", phase="tick")
+    with pytest.raises(TypeError, match="phase.*removed"):
+        detect_hook_call(OldExit(), "exit_strategy")
