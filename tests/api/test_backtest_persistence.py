@@ -120,6 +120,8 @@ def test_run_backtest_persists_and_appears_in_history(run_jobs_sync, api_db_sess
 
     assert run_id is not None
     assert "metrics" in run_payload
+    assert run_payload["performance"]["basis"]["periods_per_year"] == 252
+    assert run_payload["performance"]["trades"]["all"]["total"] == run_payload["metrics"]["total_trades"]
 
     list_payload = list_backtests(session=api_db_session, limit=50, offset=0)
     assert list_payload["total"] == 1

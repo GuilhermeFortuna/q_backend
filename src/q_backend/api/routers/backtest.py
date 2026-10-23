@@ -87,14 +87,21 @@ def cancel_backtest(run_id: str):
 
 @router.get("/api/v1/backtest/{run_id}/result", response_model=BacktestResponse)
 def get_backtest_result(run_id: str):
-    """Return the full chart payload for a completed async backtest run."""
+    """Return the full chart payload for a completed async backtest run.
+
+    Results stored before ``performance`` existed, and imported runs, get it computed here from the
+    run's config and trades. The stored file is not rewritten.
+    """
     try:
-        return read_backtest_result(run_id)
+        payload = read_backtest_result(run_id)
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=404,
             detail=f"Backtest result not ready or not found for run '{run_id}'.",
         ) from exc
+    if payload.get("performance") is None:
+        payload["performance"] = backtest_run_service.stored_result_performance(run_id, payload.get("trades", []))
+    return payload
 
 
 @router.get("/api/v1/backtests", response_model=BacktestRunListResponse)

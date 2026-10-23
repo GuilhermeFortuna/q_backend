@@ -218,6 +218,110 @@
       "winning_trades": 0
     },
     "notes": [],
+    "performance": {
+      "basis": {
+        "equity": "closed_trade",
+        "periods_per_year": 252,
+        "risk_free_rate": 0.0
+      },
+      "drawdowns": [
+        {
+          "depth_pct": 1.2e-05,
+          "depth_value": 1.191806,
+          "duration_days": 14.0,
+          "peak_time": "<NORMALIZED_TIMESTAMP>",
+          "recovery_time": null,
+          "trades": 1,
+          "trough_time": "<NORMALIZED_TIMESTAMP>"
+        }
+      ],
+      "exit_reasons": [
+        {
+          "pnl": -1.191806,
+          "reason": "SIGNAL",
+          "trades": 1,
+          "win_rate": 0.0
+        }
+      ],
+      "portfolio": {
+        "annual_volatility_pct": 5.1e-05,
+        "avg_drawdown_pct": 1.2e-05,
+        "cagr_pct": -0.000311,
+        "calmar_ratio": -26.085386,
+        "gross_loss": -1.191806,
+        "gross_profit": 0.0,
+        "max_drawdown_duration_days": 14.0,
+        "max_drawdown_pct": 1.2e-05,
+        "max_drawdown_value": 1.191806,
+        "net_pnl": -1.191806,
+        "recovery_factor": -1.0,
+        "return_pct": -1.2e-05,
+        "sharpe_ratio": -4.242641,
+        "sortino_ratio": -4.242641,
+        "time_in_market_pct": 0.428571,
+        "total_commission": 0.0,
+        "trades_per_month": 2.174107
+      },
+      "trades": {
+        "all": {
+          "avg_hold_seconds": 518400.0,
+          "avg_loss": -1.191806,
+          "avg_loss_hold_seconds": 518400.0,
+          "avg_win": null,
+          "avg_win_hold_seconds": null,
+          "breakeven": 0,
+          "expectancy": -1.191806,
+          "largest_loss": -1.191806,
+          "largest_win": null,
+          "losing": 1,
+          "max_consecutive_losses": 1,
+          "max_consecutive_wins": 0,
+          "payoff_ratio": null,
+          "profit_factor": 0.0,
+          "total": 1,
+          "win_rate": 0.0,
+          "winning": 0
+        },
+        "long": {
+          "avg_hold_seconds": null,
+          "avg_loss": null,
+          "avg_loss_hold_seconds": null,
+          "avg_win": null,
+          "avg_win_hold_seconds": null,
+          "breakeven": 0,
+          "expectancy": null,
+          "largest_loss": null,
+          "largest_win": null,
+          "losing": 0,
+          "max_consecutive_losses": 0,
+          "max_consecutive_wins": 0,
+          "payoff_ratio": null,
+          "profit_factor": null,
+          "total": 0,
+          "win_rate": null,
+          "winning": 0
+        },
+        "short": {
+          "avg_hold_seconds": 518400.0,
+          "avg_loss": -1.191806,
+          "avg_loss_hold_seconds": 518400.0,
+          "avg_win": null,
+          "avg_win_hold_seconds": null,
+          "breakeven": 0,
+          "expectancy": -1.191806,
+          "largest_loss": -1.191806,
+          "largest_win": null,
+          "losing": 1,
+          "max_consecutive_losses": 1,
+          "max_consecutive_wins": 0,
+          "payoff_ratio": null,
+          "profit_factor": 0.0,
+          "total": 1,
+          "win_rate": 0.0,
+          "winning": 0
+        }
+      }
+    },
     "run_id": "<NORMALIZED_ID>",
     "trades": [
       {
