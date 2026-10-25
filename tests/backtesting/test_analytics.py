@@ -90,7 +90,9 @@ def test_empty_run_has_zero_counts_and_null_ratios():
 
 
 def test_excursion_statistics_are_reported_in_money_and_resolution_counts():
-    trade = _trade(80.0, _day(2), _day(2, 1))
+    trade = _trade(76.0, _day(2), _day(2, 1))
+    trade.exit_price = 104.0
+    trade.commission = 4.0
     trade.quantity = 2
     trade.point_value = 10
     trade.mfe_points = 10

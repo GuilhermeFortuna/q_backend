@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
+import pytest
 
 from q_backend.backtesting.excursions import DealBar, measure_trades
 from q_backend.backtesting.models import OrderAction, Trade
@@ -38,11 +39,13 @@ def test_measure_trades_uses_open_bar_path_and_post_exit_window():
         index=pd.date_range(start, periods=4, freq="min"),
     )
     trade = _trade()
+    trade.quantity = 2
+    trade.point_value = 10
     measure_trades([trade], bars, post_exit_bars=1)
 
     assert trade.mfe_points == 5
     assert trade.mae_points == 2
-    assert trade.mfe_capture == 0.4
+    assert trade.mfe_capture == pytest.approx(40 / 100)
     assert trade.post_exit_mfe_points == 4
     assert trade.post_exit_mae_points == 4
     assert trade.post_exit_return_points == 3
