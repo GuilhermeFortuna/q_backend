@@ -7,6 +7,7 @@
 - A post-simulation pass in `q_backend.backtesting.excursions` measures trades from bars plus an optional deal source. Whole bars come from their high and low; only partial and extreme bars read deals.
 - Three deal-source adapters cover the three run paths: `MarketTickReplay` for service runs, `TickStore` for research, and the tick engine's arrays.
 - Analytics aggregates the stored per-trade values, so stored runs need no bars to recompute.
+- Each trade also stores the deal extremes of its exit bar after the exit. With the stored bars, these let a synchronous endpoint recompute the post-exit window for any bar count without reading deals. The Research UI uses that endpoint for its Post-exit bars control.
 - The contract and the frontend expose the results.
 
 **Tech stack:** Python 3.12, Pydantic v2, NumPy, pandas, pytest; OpenAPI and the q_contracts generators; React 19, TypeScript, Recharts, Vitest.
@@ -30,6 +31,8 @@
 - **Bounded reads.** No interior bar is read, a partial bar is read only when it could move an extreme, and each bar is read at most once.
 - **Post-exit truncation.** The window is cut at `post_exit_bars`, at the day-trade close and at the end of the data.
 - **Read-path recompute.** It triggers on a missing `excursions` and never writes.
+- **One post-exit computation.** Run-time measurement and `/post-exit` share `post_exit_from_stored`, and the parity test compares them across exit kinds and day-trade truncation.
+- **Frontend control.** Requests are debounced, out-of-range values are never sent, and a stale response must not overwrite a newer one.
 
 ## Ordered implementation
 
@@ -37,7 +40,8 @@
 
 **Files:** `q_contracts/schema/api/openapi.yaml`, the generated outputs, and `q_contracts/tests/test_backtest_performance_contract.py`.
 
-- [ ] Add the new `TradeStats` fields, `ExcursionSummary`, `BacktestPerformance.excursions` (required), `BacktestRequest.post_exit_bars`, and `measuring` in the phase enums. Update the contract test fixture.
+- [ ] Add the new `TradeStats` fields, `ExcursionSummary`, `BacktestPerformance.excursions` (required), `BacktestRequest.post_exit_bars`, and `measuring` in the phase enums.
+- [ ] Add `GET /api/v1/backtests/{run_id}/post-exit` with `PostExitAnalysis`, and the optional `post_exit_bars` on the trades export. Update the contract test fixture.
 - [ ] Run the generators and `make check`, then commit.
 
 ### 2. Measurement module
@@ -52,7 +56,8 @@
   - vectorised whole-bar extremes;
   - pruned partial-bar reads;
   - extreme-bar timing;
-  - the post-exit window with its truncation;
+  - the exit-bar rest extremes;
+  - the post-exit window with its truncation, through `post_exit_from_stored`;
   - the coarsest resolution.
 - [ ] Commit.
 
@@ -83,29 +88,39 @@
 - [ ] Add the `TradeStats` aggregates and `ExcursionSummary`. Recompute on read when `excursions` is missing, taking `post_exit_bars` from the run config (default 10).
 - [ ] Pin and vendor the contract in q_backend, run `make contracts-check`, then commit.
 
-### 5. Frontend
+### 5. Post-exit recalculation endpoint
+
+**Files:** `src/q_backend/api/routers/backtest.py`, `src/q_backend/backtesting/run_service.py`, `src/q_backend/api/schemas/backtest.py`, and `tests/api/test_backtest_post_exit.py` (new).
+
+- [ ] Write failing tests for spec acceptance item 6, including the parity test against a fresh run and a market-data service that fails on any call.
+- [ ] Read the stored trades and `market_data` artifacts and the run config, call `post_exit_from_stored`, and aggregate per side. Add `post_exit_bars` to the trades CSV export.
+- [ ] Commit.
+
+### 6. Frontend
 
 **Files:**
 - `CONTRACTS_REV` and the vendored contracts;
 - `src/types/backtesting.ts`;
 - `src/components/backtests/BacktestResultsTabs.tsx` (Trade List), `TradeHoverCard.tsx`, `TradeDistributionPanels.tsx` (the excursions panel);
-- `src/components/backtests/setup/BacktestSetupPanel.tsx`, `src/lib/backtesting/backtestProgress.ts`;
+- `src/api/queries/backtests.ts`: `usePostExitAnalysis` and the export parameter;
+- `src/lib/backtesting/backtestProgress.ts`;
 - `src/mocks/backtest.ts`, and the matching `__tests__`.
 
 - [ ] Pin and vendor the contract, and add the `Trade` fields.
 - [ ] Write failing tests for spec acceptance item 10.
-- [ ] Add the five sortable columns with the resolution marker, the hover-card rows, the Trade excursions panel (aggregates, two scatters, resolution note), the Post-exit bars setup field, and the `measuring` phase label.
+- [ ] Add the five sortable columns with the resolution marker, the hover-card rows, the Trade excursions panel (aggregates, two scatters, resolution note), and the `measuring` phase label.
+- [ ] Add the Post-exit bars control: per-run view state, a debounced `usePostExitAnalysis` that keeps previous data while loading, Reset, and an inline error. Feed the selected figures to the panel, the Post-exit column, the hover card and the CSV export.
 - [ ] Update the mocks. Run `make contracts-check`, `pnpm typecheck`, lint and focused vitest with `TZ=America/Sao_Paulo`, then commit.
 
-### 6. Docs
+### 7. Docs
 
 **Files:** `docs/research/user_guide/`, plus the docstrings in `excursions.py` and `research/engine.py`.
 
-- [ ] Document the definitions, the resolution levels and when each occurs, and `post_exit_bars`, with a short research example. Commit.
+- [ ] Document the definitions, the resolution levels and when each occurs, `post_exit_bars` and recalculating it from the results, with a short research example. Commit.
 
 ## Verification
 
 - In q_contracts: `make check`.
-- In q_backend: `make contracts-check`, the backend lint, and pytest for `tests/backtesting/test_excursions.py`, `test_analytics.py`, `tests/backtesting/tick/test_tick_engine.py`, `tests/research/test_backtest.py`, `test_publishing.py`, and `tests/api/test_backtest_performance.py`, `test_backtest_progress.py`, `test_backtest_import.py`.
-- In q_frontend: `make contracts-check`, `pnpm typecheck`, lint, and vitest for the backtest results tabs, the trade distribution panels, the hover card, the setup panel and the backtest progress helpers, with `TZ=America/Sao_Paulo`.
+- In q_backend: `make contracts-check`, the backend lint, and pytest for `tests/backtesting/test_excursions.py`, `test_analytics.py`, `tests/backtesting/tick/test_tick_engine.py`, `tests/research/test_backtest.py`, `test_publishing.py`, and `tests/api/test_backtest_performance.py`, `test_backtest_post_exit.py`, `test_backtest_progress.py`, `test_backtest_import.py`.
+- In q_frontend: `make contracts-check`, `pnpm typecheck`, lint, and vitest for the backtest results tabs, the trade distribution panels, the hover card, the backtest queries and the backtest progress helpers, with `TZ=America/Sao_Paulo`.
 - Review the whole change, then run `./work board set Q-130 in-review` with the results and any open follow-ups.
