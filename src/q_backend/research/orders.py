@@ -371,7 +371,8 @@ class TradeOrder:
         Parameters
         ----------
         price : float, optional
-            Explicit exit price, confirmed from ticks in the current candle.
+            Explicit exit price. The close fills at this price once a trade of the current candle
+            reaches it, from either side.
         reason : str, optional
             Label recorded as the ``exit_reason`` of the trades it closes, unless a stop,
             target or engine exit closes them first.
