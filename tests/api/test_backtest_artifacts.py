@@ -320,7 +320,7 @@ def test_export_trades_csv_columns_and_values(
 
     assert header == (
         "trade_id,symbol,side,entry_time,entry_price,exit_time,exit_price,pnl,"
-        "quantity,commission,point_value,exit_reason"
+        "quantity,commission,point_value,entry_reason,exit_reason"
     )
     assert len(rows) == len(run_payload["trades"])
     first, expected = rows[0], run_payload["trades"][0]

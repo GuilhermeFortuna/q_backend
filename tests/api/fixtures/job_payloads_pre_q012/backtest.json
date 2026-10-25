@@ -235,6 +235,14 @@
           "trough_time": "<NORMALIZED_TIMESTAMP>"
         }
       ],
+      "entry_reasons": [
+        {
+          "pnl": -1.191806,
+          "reason": "unspecified",
+          "trades": 1,
+          "win_rate": 0.0
+        }
+      ],
       "exit_reasons": [
         {
           "pnl": -1.191806,
@@ -328,6 +336,7 @@
         "action": "SELL",
         "commission": 0.0,
         "entry_price": 96.842168,
+        "entry_reason": null,
         "entry_time": "<NORMALIZED_TIMESTAMP>",
         "exit_price": 102.8012,
         "exit_reason": "SIGNAL",

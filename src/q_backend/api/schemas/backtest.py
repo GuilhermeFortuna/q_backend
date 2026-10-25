@@ -158,7 +158,7 @@ class DrawdownPeriod(BaseModel):
     trades: int
 
 
-class ExitReasonStats(BaseModel):
+class ReasonStats(BaseModel):
     reason: str
     trades: int
     pnl: float
@@ -170,7 +170,8 @@ class BacktestPerformance(BaseModel):
     portfolio: PortfolioStats
     trades: SideTradeStats
     drawdowns: List[DrawdownPeriod]
-    exit_reasons: List[ExitReasonStats]
+    exit_reasons: List[ReasonStats]
+    entry_reasons: List[ReasonStats]
 
 
 class BacktestResponse(BaseModel):

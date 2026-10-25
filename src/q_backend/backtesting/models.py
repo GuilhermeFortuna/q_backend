@@ -68,6 +68,9 @@ class Trade(BaseModel):
     pnl: Optional[float] = Field(None, description="Profit and loss for the trade")
     commission: float = Field(0.0, description="Transaction costs")
     point_value: float = Field(1.0, description="Multiplier representing value per point/contract size")
+    entry_reason: Optional[str] = Field(
+        None, description="Reason the strategy gave for the entry order that opened the trade; null when none"
+    )
     exit_reason: Optional[str] = Field(None, description="The reason or strategy that triggered the trade exit")
     exit_resolution: Optional[str] = Field(
         None,

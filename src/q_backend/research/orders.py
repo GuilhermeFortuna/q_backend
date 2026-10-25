@@ -18,6 +18,13 @@ def _validate_level(name: str, value: float | None) -> None:
         raise ValueError(f"{name} must be a finite positive price, got {value!r}")
 
 
+def _validate_reason(value: str | None) -> None:
+    if value is None:
+        return
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"reason must be a non-blank string or None, got {value!r}")
+
+
 def _validate_expiry(value: int | None) -> None:
     if value is None:
         return
@@ -48,6 +55,11 @@ class TradeOrder:
         Number of bars after the deciding bar on which a stop or limit order may fill.
         ``None`` keeps the order until it fills, is replaced or is cancelled. Only stop
         and limit orders accept it.
+    reason : str, optional
+        Free-text label for why the order was placed. On an entry it becomes the
+        ``entry_reason`` of the trade it opens; on ``close`` it becomes the ``exit_reason``
+        of the trades it closes, when the exit would otherwise be a plain signal exit.
+        Blank strings are rejected; ``amend`` and ``cancel`` carry no reason.
 
     Notes
     -----
@@ -62,6 +74,7 @@ class TradeOrder:
     price: float | None = None
     kind: OrderKindLiteral = "market"
     expire_bars: int | None = None
+    reason: str | None = None
 
     _VALID_ACTIONS: ClassVar[frozenset[str]] = frozenset({"buy", "sell", "close", "amend", "cancel"})
     _VALID_KINDS: ClassVar[frozenset[str]] = frozenset({"market", "stop", "limit"})
@@ -78,6 +91,7 @@ class TradeOrder:
         _validate_level("take_profit", self.take_profit)
         _validate_level("price", self.price)
         _validate_expiry(self.expire_bars)
+        _validate_reason(self.reason)
         if self.action in self._MANAGEMENT_ACTIONS:
             self._validate_management()
             return
@@ -120,6 +134,8 @@ class TradeOrder:
     def _validate_management(self) -> None:
         if self.kind != "market" or self.expire_bars is not None:
             raise ValueError(f"{self.action} orders carry no order kind or expiry")
+        if self.action in ("amend", "cancel") and self.reason is not None:
+            raise ValueError(f"{self.action} orders carry no reason")
         if self.action == "close":
             if self.stop_loss is not None or self.take_profit is not None:
                 raise ValueError("close orders carry no levels")
@@ -141,6 +157,7 @@ class TradeOrder:
         stop_loss: float | None = None,
         take_profit: float | None = None,
         price: float | None = None,
+        reason: str | None = None,
     ) -> TradeOrder:
         """
         Create a long entry order.
@@ -153,13 +170,15 @@ class TradeOrder:
             Protective take-profit exit price level above entry.
         price : float, optional
             Priced entry fill level for same-bar execution.
+        reason : str, optional
+            Label recorded as the trade's ``entry_reason``.
 
         Returns
         -------
         TradeOrder
             Configured buy order instance.
         """
-        return cls("buy", stop_loss=stop_loss, take_profit=take_profit, price=price)
+        return cls("buy", stop_loss=stop_loss, take_profit=take_profit, price=price, reason=reason)
 
     @classmethod
     def sell(
@@ -168,6 +187,7 @@ class TradeOrder:
         stop_loss: float | None = None,
         take_profit: float | None = None,
         price: float | None = None,
+        reason: str | None = None,
     ) -> TradeOrder:
         """
         Create a short entry order.
@@ -180,13 +200,15 @@ class TradeOrder:
             Protective take-profit exit price level below entry.
         price : float, optional
             Priced entry fill level for same-bar execution.
+        reason : str, optional
+            Label recorded as the trade's ``entry_reason``.
 
         Returns
         -------
         TradeOrder
             Configured sell order instance.
         """
-        return cls("sell", stop_loss=stop_loss, take_profit=take_profit, price=price)
+        return cls("sell", stop_loss=stop_loss, take_profit=take_profit, price=price, reason=reason)
 
     @classmethod
     def buy_stop(
@@ -196,6 +218,7 @@ class TradeOrder:
         stop_loss: float | None = None,
         take_profit: float | None = None,
         expire_bars: int | None = 1,
+        reason: str | None = None,
     ) -> TradeOrder:
         """
         Create a long stop entry that fills at the first trade at or above ``price``.
@@ -210,13 +233,15 @@ class TradeOrder:
             Protective take-profit level above ``price``.
         expire_bars : int or None, default 1
             Bars after the deciding bar on which the order may fill; ``None`` keeps it working.
+        reason : str, optional
+            Label recorded as the entry reason of the trade the order opens.
 
         Returns
         -------
         TradeOrder
             Configured resting buy order.
         """
-        return cls._resting("buy", "stop", price, stop_loss, take_profit, expire_bars)
+        return cls._resting("buy", "stop", price, stop_loss, take_profit, expire_bars, reason)
 
     @classmethod
     def buy_limit(
@@ -226,6 +251,7 @@ class TradeOrder:
         stop_loss: float | None = None,
         take_profit: float | None = None,
         expire_bars: int | None = 1,
+        reason: str | None = None,
     ) -> TradeOrder:
         """
         Create a long limit entry that fills at ``price`` once a trade prints strictly below it.
@@ -240,13 +266,15 @@ class TradeOrder:
             Protective take-profit level above ``price``.
         expire_bars : int or None, default 1
             Bars after the deciding bar on which the order may fill; ``None`` keeps it working.
+        reason : str, optional
+            Label recorded as the entry reason of the trade the order opens.
 
         Returns
         -------
         TradeOrder
             Configured resting buy order.
         """
-        return cls._resting("buy", "limit", price, stop_loss, take_profit, expire_bars)
+        return cls._resting("buy", "limit", price, stop_loss, take_profit, expire_bars, reason)
 
     @classmethod
     def sell_stop(
@@ -256,6 +284,7 @@ class TradeOrder:
         stop_loss: float | None = None,
         take_profit: float | None = None,
         expire_bars: int | None = 1,
+        reason: str | None = None,
     ) -> TradeOrder:
         """
         Create a short stop entry that fills at the first trade at or below ``price``.
@@ -270,13 +299,15 @@ class TradeOrder:
             Protective take-profit level below ``price``.
         expire_bars : int or None, default 1
             Bars after the deciding bar on which the order may fill; ``None`` keeps it working.
+        reason : str, optional
+            Label recorded as the entry reason of the trade the order opens.
 
         Returns
         -------
         TradeOrder
             Configured resting sell order.
         """
-        return cls._resting("sell", "stop", price, stop_loss, take_profit, expire_bars)
+        return cls._resting("sell", "stop", price, stop_loss, take_profit, expire_bars, reason)
 
     @classmethod
     def sell_limit(
@@ -286,6 +317,7 @@ class TradeOrder:
         stop_loss: float | None = None,
         take_profit: float | None = None,
         expire_bars: int | None = 1,
+        reason: str | None = None,
     ) -> TradeOrder:
         """
         Create a short limit entry that fills at ``price`` once a trade prints strictly above it.
@@ -300,13 +332,15 @@ class TradeOrder:
             Protective take-profit level below ``price``.
         expire_bars : int or None, default 1
             Bars after the deciding bar on which the order may fill; ``None`` keeps it working.
+        reason : str, optional
+            Label recorded as the entry reason of the trade the order opens.
 
         Returns
         -------
         TradeOrder
             Configured resting sell order.
         """
-        return cls._resting("sell", "limit", price, stop_loss, take_profit, expire_bars)
+        return cls._resting("sell", "limit", price, stop_loss, take_profit, expire_bars, reason)
 
     @classmethod
     def _resting(
@@ -317,13 +351,20 @@ class TradeOrder:
         stop_loss: float | None,
         take_profit: float | None,
         expire_bars: int | None,
+        reason: str | None,
     ) -> TradeOrder:
         return cls(
-            action, stop_loss=stop_loss, take_profit=take_profit, price=price, kind=kind, expire_bars=expire_bars
+            action,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            price=price,
+            kind=kind,
+            expire_bars=expire_bars,
+            reason=reason,
         )
 
     @classmethod
-    def close(cls, *, price: float | None = None) -> TradeOrder:
+    def close(cls, *, price: float | None = None, reason: str | None = None) -> TradeOrder:
         """
         Create a position close order.
 
@@ -331,13 +372,16 @@ class TradeOrder:
         ----------
         price : float, optional
             Explicit exit price, confirmed from ticks in the current candle.
+        reason : str, optional
+            Label recorded as the ``exit_reason`` of the trades it closes, unless a stop,
+            target or engine exit closes them first.
 
         Returns
         -------
         TradeOrder
             Close order request.
         """
-        return cls("close", price=price)
+        return cls("close", price=price, reason=reason)
 
     @classmethod
     def amend(cls, *, stop_loss: float | None = None, take_profit: float | None = None) -> TradeOrder:

@@ -327,6 +327,7 @@ TRADES_CSV_COLUMNS: Dict[str, str] = {
     "quantity": "quantity",
     "commission": "commission",
     "point_value": "point_value",
+    "entry_reason": "entry_reason",
     "exit_reason": "exit_reason",
 }
 

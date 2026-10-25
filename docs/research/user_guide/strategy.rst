@@ -74,6 +74,38 @@ the entry price. The exit fills at the next open; it is not an intrabar stop.
                    return TradeOrder.close()
            return None
 
+Label orders with reasons
+-------------------------
+
+Every entry factory (:meth:`~q_backend.research.TradeOrder.buy`, ``sell``, ``buy_stop``,
+``buy_limit``, ``sell_stop`` and ``sell_limit``) and :meth:`~q_backend.research.TradeOrder.close`
+accept an optional ``reason``. It says why the order was placed and is shown verbatim:
+
+- An entry reason becomes the ``entry_reason`` of the trade the order opens. For a resting
+  stop or limit order, it is the reason of the order that placed it.
+- A close reason becomes the ``exit_reason`` of the trades it closes, in place of the engine's
+  ``SIGNAL`` label. Only ``SIGNAL`` exits take it: stop-loss, take-profit, end-of-day, force-close
+  and exit-rule exits keep their engine labels.
+
+``reason`` must be a non-blank string. :meth:`~q_backend.research.TradeOrder.amend` and
+:meth:`~q_backend.research.TradeOrder.cancel` do not accept one. Orders without a reason behave as
+before: the entry reason is null and the exit stays ``SIGNAL``.
+
+.. code-block:: python
+
+   class BreakoutLabels(ResearchStrategy):
+       def entry_strategy(self, frame, positions=()):
+           if positions or len(frame) < 2:
+               return None
+           if frame["close"].iloc[-1] > frame["high"].iloc[-2]:
+               return TradeOrder.buy(reason="Breakout above prior high")
+           return None
+
+       def exit_strategy(self, frame, positions=()):
+           if positions and frame["close"].iloc[-1] < frame["open"].iloc[-1]:
+               return TradeOrder.close(reason="Bearish candle")
+           return None
+
 Keep indicator calculations causal
 ----------------------------------
 

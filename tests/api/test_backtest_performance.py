@@ -37,8 +37,9 @@ def run_service_db(api_session_scope):
         yield
 
 
-def _trade(pnl: float, entry: datetime, exit_: datetime) -> dict:
+def _trade(pnl: float, entry: datetime, exit_: datetime, entry_reason: str | None = None) -> dict:
     trade = Trade(
+        entry_reason=entry_reason,
         id=str(uuid.uuid4()),
         order_id=str(uuid.uuid4()),
         symbol="WIN$N",
@@ -127,9 +128,24 @@ def test_malformed_stored_trades_degrade_to_null(lake, api_session_scope, run_se
 
 
 def test_stored_performance_is_served_unchanged(lake, api_session_scope, run_service_db):
-    marker = {"sentinel": True}
+    marker = {"sentinel": True, "entry_reasons": []}
     run_id = _stored_run(api_session_scope, {"initial_capital": 10_000.0}, [], extra={"performance": marker})
 
     payload = get_backtest_result(run_id)
 
     assert payload["performance"] == marker
+
+
+def test_stored_performance_without_entry_reasons_is_recomputed_on_read(lake, api_session_scope, run_service_db):
+    trades = [_trade(200.0, datetime(2024, 1, 2), datetime(2024, 1, 4), entry_reason="breakout")]
+    config = {"initial_capital": 10_000.0, "start": "2024-01-01T00:00:00", "end": "2024-01-31T00:00:00"}
+    run_id = _stored_run(api_session_scope, config, trades, extra={"performance": {"sentinel": True}})
+    stored_path = lake / "backtests" / run_id / "result.json"
+    before = stored_path.read_bytes()
+
+    payload = get_backtest_result(run_id)
+
+    assert payload["performance"]["entry_reasons"][0]["reason"] == "breakout"
+    assert payload["performance"]["entry_reasons"][0]["trades"] == 1
+    BacktestResponse.model_validate(payload)
+    assert stored_path.read_bytes() == before

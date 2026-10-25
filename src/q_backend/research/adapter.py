@@ -69,6 +69,9 @@ class _RuntimeHooks:
         self.target_price = np.full(len(chunk), np.nan)
         self.entry_price = np.full(len(chunk), np.nan)
         self.exit_price = np.full(len(chunk), np.nan)
+        self.entry_reason = np.full(len(chunk), None, dtype=object)
+        self.close_reason = np.full(len(chunk), None, dtype=object)
+        self.close_requested = np.zeros(len(chunk), dtype=bool)
 
     def strategy(self, bar: int, raw_positions: tuple) -> dict[str, Any]:
         adapter = self._adapter
@@ -98,6 +101,10 @@ class _RuntimeHooks:
                     )
                     decision["exit_price"] = float(exit_decision.price)
                     self.exit_price[bar] = float(exit_decision.price)
+                # A close with no position open does nothing, so it takes no reason.
+                if positions:
+                    self.close_requested[bar] = True
+                    self.close_reason[bar] = exit_decision.reason
             else:
                 adapter._require_ticks(
                     "amend", timestamp, "moves stop or take-profit levels, which are confirmed from ticks"
@@ -110,6 +117,7 @@ class _RuntimeHooks:
             self.stop_price[bar] = stop
             self.target_price[bar] = target
             self.entry_price[bar] = price if entry_decision.kind == "market" else np.nan
+            self.entry_reason[bar] = entry_decision.reason
             decision.update(
                 entry=1 if entry_decision.action == "buy" else -1,
                 strength=1.0,

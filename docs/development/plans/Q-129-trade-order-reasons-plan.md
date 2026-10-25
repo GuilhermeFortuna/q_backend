@@ -11,7 +11,7 @@
 
 **Tech stack:** Python 3.12, Pydantic v2, NumPy, pytest; OpenAPI and the q_contracts generators; React 19, TypeScript, Recharts, Vitest.
 **Spec:** [Specification](../specs/Q-129-trade-order-reasons-spec.md)
-**Status:** written plan awaiting human review.
+**Status:** implemented across q_contracts, q_backend and q_frontend.
 
 ## Global constraints
 
@@ -39,8 +39,8 @@
 
 **Files:** `q_contracts/schema/api/openapi.yaml`, the generated outputs, and `q_contracts/tests/test_backtest_performance_contract.py`.
 
-- [ ] Rename `ExitReasonStats` to `ReasonStats`. Add the required `entry_reasons` to `BacktestPerformance`, and update the contract test fixture.
-- [ ] Run the generators and `make check`, then commit.
+- [x] Rename `ExitReasonStats` to `ReasonStats`. Add the required `entry_reasons` to `BacktestPerformance`, and update the contract test fixture.
+- [x] Run the generators and `make check`, then commit.
 
 ### 2. Orders, adapter and kernel attribution
 
@@ -49,13 +49,13 @@
 - `src/q_backend/backtesting/candle_kernel.py`, `src/q_backend/backtesting/models.py`, `src/q_backend/research/results.py`;
 - tests in `tests/research/` (the order tests, the priced, resting-order and parallel-session modules).
 
-- [ ] Write failing tests for spec acceptance items 1–3.
-- [ ] Add `reason` and its validation to `TradeOrder` and the seven factories (`_resting` passes it on), and reject it on `amend` and `cancel`.
-- [ ] In `_RuntimeHooks`, record the entry and close reasons per bar in object arrays sized like `stop_price`.
-- [ ] Carry them into `ChunkRun` and `merge_chunk_runs`:
+- [x] Write failing tests for spec acceptance items 1–3.
+- [x] Add `reason` and its validation to `TradeOrder` and the seven factories (`_resting` passes it on), and reject it on `amend` and `cancel`.
+- [x] In `_RuntimeHooks`, record the entry and close reasons per bar in object arrays sized like `stop_price`.
+- [x] Carry them into `ChunkRun` and `merge_chunk_runs`:
   - map entry reasons with `decided_bar`;
   - replace `SIGNAL` text with the close reason of the deciding bar.
-- [ ] Set `Trade.entry_reason` in `ledger_to_registry`, add the column to the research trades frame, and commit.
+- [x] Set `Trade.entry_reason` in `ledger_to_registry`, add the column to the research trades frame, and commit.
 
 ### 3. Analytics, API and CSV
 
@@ -65,10 +65,10 @@
 - `src/q_backend/backtesting/run_service.py` (`TRADES_CSV_COLUMNS`);
 - their tests.
 
-- [ ] Write failing tests for spec acceptance items 4 and 5.
-- [ ] Generalize `_exit_reason_stats` into one grouping helper used for both lists, and rename the model `ReasonStats`.
-- [ ] Recompute on read when the stored `performance` lacks `entry_reasons`, and add the CSV column.
-- [ ] Pin and vendor the contract in q_backend, run `make contracts-check`, then commit.
+- [x] Write failing tests for spec acceptance items 4 and 5.
+- [x] Generalize `_exit_reason_stats` into one grouping helper used for both lists, and rename the model `ReasonStats`.
+- [x] Recompute on read when the stored `performance` lacks `entry_reasons`, and add the CSV column.
+- [x] Pin and vendor the contract in q_backend, run `make contracts-check`, then commit.
 
 ### 4. Frontend
 
@@ -78,20 +78,20 @@
 - `src/components/backtests/BacktestResultsTabs.tsx`, `chartUtils.ts`, `TradeDistributionPanels.tsx`, `TradeHoverCard.tsx`;
 - `src/mocks/backtest.ts`, and the matching `__tests__`.
 
-- [ ] Pin and vendor the contract, add `entry_reason`, and switch the `ExitReasonStats` re-export to `ReasonStats`.
-- [ ] Write failing tests for spec acceptance item 6.
-- [ ] `DataTable`: add the optional `sortValue` and the nulls-last comparator. Existing internal-sort users must not change.
-- [ ] Trade List: add the Entry Reason column, and make Size, Entry Reason, Exit Reason and PnL sortable, with `sortValue` set to the displayed label for both reasons.
-- [ ] `formatExitReason`: map every q_core rule id and engine code, and return other strings verbatim.
-- [ ] Turn `ExitReasonPanel` into a "By reason" panel with `SegmentedToggle` (Entry / Exit, default Exit) and an empty-list message.
-- [ ] Add the Entry Reason row to the hover card, and update the mocks.
-- [ ] Run `make contracts-check`, `pnpm typecheck`, lint and focused vitest with `TZ=America/Sao_Paulo`, then commit.
+- [x] Pin and vendor the contract, add `entry_reason`, and switch the `ExitReasonStats` re-export to `ReasonStats`.
+- [x] Write failing tests for spec acceptance item 6.
+- [x] `DataTable`: add the optional `sortValue` and the nulls-last comparator. Existing internal-sort users must not change.
+- [x] Trade List: add the Entry Reason column, and make Size, Entry Reason, Exit Reason and PnL sortable, with `sortValue` set to the displayed label for both reasons.
+- [x] `formatExitReason`: map every q_core rule id and engine code, and return other strings verbatim.
+- [x] Turn `ExitReasonPanel` into a "By reason" panel with `SegmentedToggle` (Entry / Exit, default Exit) and an empty-list message.
+- [x] Add the Entry Reason row to the hover card, and update the mocks.
+- [x] Run `make contracts-check`, `pnpm typecheck`, lint and focused vitest with `TZ=America/Sao_Paulo`, then commit.
 
 ### 5. Docs
 
 **Files:** `docs/research/user_guide/strategy.rst`, and the `TradeOrder` docstrings (done in step 2).
 
-- [ ] Document `reason`: where each label appears and which exits keep engine labels. Add an example, then commit.
+- [x] Document `reason`: where each label appears and which exits keep engine labels. Add an example, then commit.
 
 ## Verification
 

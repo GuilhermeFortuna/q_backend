@@ -133,6 +133,7 @@ def wall_clock_us(index: pd.DatetimeIndex) -> np.ndarray:
 class ChunkRun:
     trades: dict[str, np.ndarray]
     exit_reason_text: list[str | None]
+    entry_reason: list[str | None]
     rejected: dict[str, np.ndarray]
 
 
@@ -402,6 +403,7 @@ def run_chunk(
         raise
     entry_bar = np.asarray(result["entry_bar"], dtype=np.int64)
     entry_kind = np.asarray(result["entry_kind"], dtype=np.int64)
+    exit_bar = np.asarray(result["exit_bar"], dtype=np.int64)
     # Only accepted decisions replace a working order; hook requests may be gated out.
     placed_bars = np.flatnonzero(result["entry"]) if runtime is not None else np.empty(0, dtype=np.int64)
 
@@ -425,6 +427,29 @@ def run_chunk(
                 if bar >= 0:
                     out[i] = decided[bar]
         return out
+
+    def close_reason_at(fill_bar: int) -> str | None:
+        # A plain close decided on the bar before the fill exits there, and blocks a priced close on the fill bar,
+        # which then finds no position. Otherwise the exit is a priced close filled on its own bar.
+        if fill_bar >= 1 and runtime.close_requested[fill_bar - 1] and np.isnan(runtime.exit_price[fill_bar - 1]):
+            return runtime.close_reason[fill_bar - 1]
+        if runtime.close_requested[fill_bar] and not np.isnan(runtime.exit_price[fill_bar]):
+            return runtime.close_reason[fill_bar]
+        return None
+
+    exit_reason_text = list(result["exit_reason_text"])
+    entry_reason: list[str | None] = [None] * len(entry_bar)
+    if runtime is not None:
+        for i in range(len(entry_bar)):
+            bar = decided_bar(i)
+            if bar >= 0:
+                entry_reason[i] = runtime.entry_reason[bar]
+        # Only a SIGNAL exit takes the close reason; stop, target and other engine exits keep their label.
+        for i, text in enumerate(exit_reason_text):
+            if text == "SIGNAL" and exit_bar[i] >= 0:
+                reason = close_reason_at(int(exit_bar[i]))
+                if reason is not None:
+                    exit_reason_text[i] = reason
 
     trades = {
         name: np.asarray(result[name])
@@ -450,7 +475,7 @@ def run_chunk(
         name: np.asarray(result[f"rejected_{name}"])
         for name in ("bar", "side", "fill_price", "stop_price", "target_price")
     }
-    return ChunkRun(trades, list(result["exit_reason_text"]), rejected)
+    return ChunkRun(trades, exit_reason_text, entry_reason, rejected)
 
 
 def merge_chunk_runs(runs: list[ChunkRun], starts: list[int]) -> ChunkRun:
@@ -470,7 +495,8 @@ def merge_chunk_runs(runs: list[ChunkRun], starts: list[int]) -> ChunkRun:
     }
     rejected = {name: join(name, name == "bar", [run.rejected[name] for run in runs]) for name in runs[0].rejected}
     exit_reason_text = [text for run in runs for text in run.exit_reason_text]
-    return ChunkRun(trades, exit_reason_text, rejected)
+    entry_reason = [reason for run in runs for reason in run.entry_reason]
+    return ChunkRun(trades, exit_reason_text, entry_reason, rejected)
 
 
 def ledger_to_registry(run: ChunkRun, index: pd.DatetimeIndex, *, symbol: str, point_value: float) -> TradeRegistry:
@@ -496,6 +522,7 @@ def ledger_to_registry(run: ChunkRun, index: pd.DatetimeIndex, *, symbol: str, p
             stop_loss=_level(run.trades["stop_loss"][i]),
             take_profit=_level(run.trades["take_profit"][i]),
             order_kind=ENTRY_KIND_ORDER[int(run.trades["entry_kind"][i])],
+            entry_reason=run.entry_reason[i],
             final_stop_loss=_level(run.trades["final_stop_loss"][i]),
             final_take_profit=_level(run.trades["final_take_profit"][i]),
         )

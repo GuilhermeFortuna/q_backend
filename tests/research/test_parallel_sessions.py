@@ -64,6 +64,7 @@ COMPARED = [
     "entry_time",
     "entry_price",
     "order_kind",
+    "entry_reason",
     "stop_loss",
     "take_profit",
     "final_stop_loss",
@@ -76,7 +77,7 @@ COMPARED = [
 
 
 class Mixed(ResearchStrategy):
-    """Market and resting buy stops, amended stops and priced closes."""
+    """Market and resting buy stops, amended stops and priced closes, each labelled with a reason."""
 
     def entry_strategy(self, frame: pd.DataFrame, positions: tuple = ()) -> TradeOrder | None:
         if positions:
@@ -84,9 +85,11 @@ class Mixed(ResearchStrategy):
         last = frame.iloc[-1]
         step = len(frame) % 5
         if step == 0:
-            return TradeOrder.buy(stop_loss=float(last["close"]) - 4.0)
+            return TradeOrder.buy(stop_loss=float(last["close"]) - 4.0, reason="Mixed market")
         if step == 2:
-            return TradeOrder.buy_stop(float(last["high"]) + 0.5, stop_loss=float(last["low"]) - 2.0, expire_bars=2)
+            return TradeOrder.buy_stop(
+                float(last["high"]) + 0.5, stop_loss=float(last["low"]) - 2.0, expire_bars=2, reason="Mixed stop"
+            )
         return None
 
     def exit_strategy(self, frame: pd.DataFrame, positions: tuple = (), *, ticks) -> TradeOrder | None:
@@ -96,7 +99,7 @@ class Mixed(ResearchStrategy):
         low_bar = float(frame["low"].iloc[-1])
         high_bar = float(frame["high"].iloc[-1])
         if low_bar <= floor <= high_bar and (ticks.bar()["last"] <= floor).any():
-            return TradeOrder.close(price=floor)
+            return TradeOrder.close(price=floor, reason="Floor")
         low = low_bar
         current = positions[0].stop_loss
         return TradeOrder.amend(stop_loss=low) if current is None or low > current else None
@@ -126,6 +129,8 @@ def test_sessions_joined_from_worker_blocks_match_the_sequential_run(bars_and_st
 
     kinds = set(sequential.trades["order_kind"])
     assert {"market", "stop"} <= kinds
+    assert {"Mixed market", "Mixed stop"} <= set(sequential.trades["entry_reason"].dropna())
+    assert "Floor" in set(sequential.trades["exit_reason"])
     assert sequential.trades["exit_tick_time"].notna().any()
     assert (sequential.trades["final_stop_loss"] != sequential.trades["stop_loss"]).any()
     for workers in (2, 4):
