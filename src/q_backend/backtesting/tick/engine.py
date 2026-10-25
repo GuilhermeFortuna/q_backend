@@ -79,6 +79,7 @@ def _events_to_registry(
             entry_time=_msc_to_datetime(int(time_msc[int(entry_idx[i])])),
             entry_price=float(entry_prices[i]),
             point_value=point_value,
+            entry_tick_time=_msc_to_datetime(int(time_msc[int(entry_idx[i])])),
         )
         registry.register_trade(trade)
 
@@ -88,12 +89,14 @@ def _events_to_registry(
         except ValueError:
             exit_reason_str = "UNKNOWN"
 
-        registry.close_trade(
+        closed = registry.close_trade(
             trade.id,
             _msc_to_datetime(int(time_msc[int(exit_idx[i])])),
             float(exit_prices[i]),
             exit_reason=exit_reason_str,
         )
+        if closed is not None:
+            closed.exit_tick_time = _msc_to_datetime(int(time_msc[int(exit_idx[i])]))
 
     return registry
 

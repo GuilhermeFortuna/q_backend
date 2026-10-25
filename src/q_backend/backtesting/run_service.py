@@ -17,11 +17,15 @@ from q_backend.api.schemas.backtest import (
     BacktestRunDetailResponse,
     BacktestRunListItem,
     BacktestRunPatchRequest,
+    PostExitAnalysis,
+    PostExitSideStats,
+    PostExitTradeAnalysis,
     MLFilterReference,
 )
 from q_backend.api.schemas.common import BulkDeleteBacktestsRequest
 from q_backend.backtesting.analytics import compute_backtest_performance, naive_utc
-from q_backend.backtesting.models import Trade
+from q_backend.backtesting.excursions import post_exit_from_stored
+from q_backend.backtesting.models import OrderAction, Trade
 from q_backend.market_data.timezone import mt5_datetime_to_utc_iso
 from q_backend.storage.db.engine import session_scope
 from q_backend.storage.db.models import BacktestRun
@@ -233,7 +237,12 @@ def stored_result_performance(run_id: str, trades: List[Dict[str, Any]]) -> Opti
         span = _run_span(config, closed)
         if span is None:
             return None
-        performance = compute_backtest_performance(closed, float(initial_capital), *span)
+        performance = compute_backtest_performance(
+            closed,
+            float(initial_capital),
+            *span,
+            post_exit_bars=int(config.get("post_exit_bars", 10)),
+        )
     except Exception:  # noqa: BLE001 - optional field; malformed stored trades degrade to null
         logger.warning("Could not compute performance for run %s", run_id, exc_info=True)
         return None
@@ -329,6 +338,20 @@ TRADES_CSV_COLUMNS: Dict[str, str] = {
     "point_value": "point_value",
     "entry_reason": "entry_reason",
     "exit_reason": "exit_reason",
+    "mfe_points": "mfe_points",
+    "mae_points": "mae_points",
+    "mfe_value": "mfe_value",
+    "mae_value": "mae_value",
+    "mfe_value": "mfe_value",
+    "mae_value": "mae_value",
+    "mfe_time": "mfe_time",
+    "mae_time": "mae_time",
+    "mfe_capture": "mfe_capture",
+    "post_exit_mfe_points": "post_exit_mfe_points",
+    "post_exit_mae_points": "post_exit_mae_points",
+    "post_exit_return_points": "post_exit_return_points",
+    "post_exit_bars_observed": "post_exit_bars_observed",
+    "excursion_resolution": "excursion_resolution",
 }
 
 
@@ -349,8 +372,95 @@ def export_market_data_csv(run_id: str) -> str:
     return _read_export_artifact(run_id, "market_data").to_csv(index=False)
 
 
-def export_trades_csv(run_id: str) -> str:
+def export_trades_csv(run_id: str, post_exit_bars: int | None = None) -> str:
     """Return the closed trades of a run as CSV."""
     records = serialize_trades_artifact(_read_export_artifact(run_id, "trades"))
+    for record in records:
+        record["mfe_value"] = (
+            None
+            if record.get("mfe_points") is None
+            else record["mfe_points"] * record.get("quantity", 0) * record.get("point_value", 1)
+        )
+        record["mae_value"] = (
+            None
+            if record.get("mae_points") is None
+            else record["mae_points"] * record.get("quantity", 0) * record.get("point_value", 1)
+        )
+    if post_exit_bars is not None:
+        records = _replace_post_exit_values(run_id, records, post_exit_bars)
     frame = pd.DataFrame(records, columns=list(TRADES_CSV_COLUMNS)).rename(columns=TRADES_CSV_COLUMNS)
     return frame.to_csv(index=False)
+
+
+def _stored_run_config(run_id: str) -> Dict[str, Any]:
+    try:
+        run_uuid = uuid.UUID(run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.") from exc
+    with session_scope() as session:
+        run = get_backtest_run(session, run_uuid)
+        if run is None:
+            raise HTTPException(status_code=404, detail=f"Backtest run '{run_id}' not found.")
+        return dict(run.config)
+
+
+def _market_data_frame(run_id: str) -> pd.DataFrame:
+    try:
+        frame = _read_export_artifact(run_id, "market_data")
+    except HTTPException:
+        raise
+    if "time" not in frame.columns:
+        raise HTTPException(status_code=404, detail="Backtest market_data artifact is missing its time column.")
+    frame.index = pd.DatetimeIndex(pd.to_datetime(frame.pop("time"), utc=True), name="time")
+    return frame
+
+
+def _replace_post_exit_values(run_id: str, records: List[Dict[str, Any]], bars: int) -> List[Dict[str, Any]]:
+    if not 1 <= bars <= 500:
+        raise HTTPException(status_code=422, detail="post_exit_bars must be between 1 and 500")
+    config = _stored_run_config(run_id)
+    frame = _market_data_frame(run_id)
+    trades = [Trade.model_validate(record) for record in records]
+    values = post_exit_from_stored(
+        trades,
+        frame,
+        post_exit_bars=bars,
+        day_trade_close=config.get("day_trade_close_time") if config.get("day_trade") else None,
+    )
+    by_id = {value["trade_id"]: value for value in values}
+    return [
+        {**record, **{k: value for k, value in by_id[record["id"]].items() if k != "trade_id"}} for record in records
+    ]
+
+
+def post_exit_analysis(run_id: str, bars: int) -> PostExitAnalysis:
+    records = serialize_trades_artifact(_read_export_artifact(run_id, "trades"))
+    records = _replace_post_exit_values(run_id, records, bars)
+    trades = [Trade.model_validate(record) for record in records]
+
+    def side_stats(group: list[Trade]) -> PostExitSideStats:
+        measured = [trade for trade in group if trade.post_exit_return_points is not None]
+        money = [trade.post_exit_return_points * trade.quantity * trade.point_value for trade in measured]
+        return PostExitSideStats(
+            avg_post_exit_return=sum(money) / len(money) if money else None,
+            post_exit_continuation_rate=(
+                sum(t.post_exit_return_points > 0 for t in measured) / len(measured) if measured else None
+            ),
+        )
+
+    return PostExitAnalysis(
+        post_exit_bars=bars,
+        trades=[
+            PostExitTradeAnalysis(
+                trade_id=t.id,
+                post_exit_mfe_points=t.post_exit_mfe_points,
+                post_exit_mae_points=t.post_exit_mae_points,
+                post_exit_return_points=t.post_exit_return_points,
+                post_exit_bars_observed=t.post_exit_bars_observed or 0,
+            )
+            for t in trades
+        ],
+        all=side_stats(trades),
+        long=side_stats([t for t in trades if t.action == OrderAction.BUY]),
+        short=side_stats([t for t in trades if t.action == OrderAction.SELL]),
+    )

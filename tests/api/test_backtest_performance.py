@@ -127,13 +127,19 @@ def test_malformed_stored_trades_degrade_to_null(lake, api_session_scope, run_se
     assert payload["performance"] is None
 
 
-def test_stored_performance_is_served_unchanged(lake, api_session_scope, run_service_db):
-    marker = {"sentinel": True, "entry_reasons": []}
-    run_id = _stored_run(api_session_scope, {"initial_capital": 10_000.0}, [], extra={"performance": marker})
+def test_stored_performance_without_excursions_is_recomputed_on_read(lake, api_session_scope, run_service_db):
+    trades = [_trade(25.0, datetime(2024, 1, 2), datetime(2024, 1, 3))]
+    config = {"initial_capital": 10_000.0, "start": "2024-01-01T00:00:00", "end": "2024-01-31T00:00:00"}
+    run_id = _stored_run(api_session_scope, config, trades, extra={"performance": {"sentinel": True}})
+    stored_path = lake / "backtests" / run_id / "result.json"
+    before = stored_path.read_bytes()
 
     payload = get_backtest_result(run_id)
 
-    assert payload["performance"] == marker
+    assert payload["performance"]["trades"]["all"]["total"] == 1
+    assert "excursions" in payload["performance"]
+    assert "sentinel" not in payload["performance"]
+    assert stored_path.read_bytes() == before
 
 
 def test_stored_performance_without_entry_reasons_is_recomputed_on_read(lake, api_session_scope, run_service_db):

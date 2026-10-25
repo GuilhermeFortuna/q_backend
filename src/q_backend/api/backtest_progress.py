@@ -20,7 +20,7 @@ from q_backend.api.schemas.backtest import BacktestActivityKind
 
 logger = logging.getLogger(__name__)
 
-BacktestPhase = Literal["queued", "loading_data", "preparing", "simulating", "saving"]
+BacktestPhase = Literal["queued", "loading_data", "preparing", "simulating", "measuring", "saving"]
 
 REPLAY_REPORT_INTERVAL_SECONDS = 0.5
 
@@ -77,7 +77,7 @@ class BacktestProgressReporter:
             self._phase_history[-1]["finished_at"] = entered_at
             self._phase_history.append({"phase": phase, "started_at": entered_at, "finished_at": None})
         self._activity = None
-        if phase in {"preparing", "simulating", "saving"}:
+        if phase in {"preparing", "simulating", "measuring", "saving"}:
             self._activity = {
                 "kind": "saving" if phase == "saving" else "computing",
                 "started_at": entered_at,
@@ -135,6 +135,18 @@ class BacktestProgressReporter:
         if self._last_published is not None and now - self._last_published < REPLAY_REPORT_INTERVAL_SECONDS:
             return
         self._emit(now)
+
+    def measured(self, count: int, total: int) -> None:
+        """Report excursion measurement progress by completed trade."""
+        self._progress = count / total if total else 1.0
+        self._message = f"Measuring trade excursions · {count}/{total} trades"
+        now = self._clock()
+        if (
+            self._last_published is None
+            or now - self._last_published >= REPLAY_REPORT_INTERVAL_SECONDS
+            or count == total
+        ):
+            self._emit(now)
 
     def _emit(self, now: Optional[float] = None) -> None:
         if self._publish is None:

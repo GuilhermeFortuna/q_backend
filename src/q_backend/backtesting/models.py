@@ -95,6 +95,20 @@ class Trade(BaseModel):
     final_take_profit: Optional[float] = Field(
         None, description="Target level in force when the trade closed", exclude=True
     )
+    entry_bar: Optional[int] = Field(None, exclude=True)
+    exit_bar: Optional[int] = Field(None, exclude=True)
+    mfe_points: Optional[float] = None
+    mae_points: Optional[float] = None
+    mfe_time: Optional[datetime] = None
+    mae_time: Optional[datetime] = None
+    mfe_capture: Optional[float] = None
+    post_exit_mfe_points: Optional[float] = None
+    post_exit_mae_points: Optional[float] = None
+    post_exit_return_points: Optional[float] = None
+    post_exit_bars_observed: Optional[int] = None
+    exit_bar_rest_high: Optional[float] = None
+    exit_bar_rest_low: Optional[float] = None
+    excursion_resolution: Optional[str] = None
 
 
 class SignalAction(str, Enum):

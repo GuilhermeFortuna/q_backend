@@ -18,6 +18,7 @@ from q_backend.api.schemas.backtest import (
     BacktestStartResponse,
     BacktestStatusResponse,
     BacktestTradesArtifactResponse,
+    PostExitAnalysis,
 )
 from q_backend.api.schemas.common import BulkDeleteBacktestsRequest, BulkDeleteResponse
 from q_backend.backtesting import run_import
@@ -100,7 +101,7 @@ def get_backtest_result(run_id: str):
             detail=f"Backtest result not ready or not found for run '{run_id}'.",
         ) from exc
     performance = payload.get("performance")
-    if performance is None or "entry_reasons" not in performance:
+    if performance is None or "entry_reasons" not in performance or "excursions" not in performance:
         payload["performance"] = backtest_run_service.stored_result_performance(run_id, payload.get("trades", []))
     return payload
 
@@ -204,6 +205,12 @@ def export_backtest_market_data(run_id: str):
     response_class=Response,
     responses=_CSV_RESPONSES,
 )
-def export_backtest_trades(run_id: str):
+def export_backtest_trades(run_id: str, post_exit_bars: Optional[int] = None):
     """Return the closed trades of a backtest run as CSV."""
-    return _csv_response(backtest_run_service.export_trades_csv(run_id), "trades.csv")
+    return _csv_response(backtest_run_service.export_trades_csv(run_id, post_exit_bars), "trades.csv")
+
+
+@router.get("/api/v1/backtests/{run_id}/post-exit", response_model=PostExitAnalysis)
+def get_backtest_post_exit(run_id: str, bars: int = Query(10, ge=1, le=500)):
+    """Recalculate a stored run's post-exit move using its market-data artifact only."""
+    return backtest_run_service.post_exit_analysis(run_id, bars)

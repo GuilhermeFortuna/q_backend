@@ -161,3 +161,35 @@ Runs stored before this measure existed, and imported script runs, get
 ``performance`` computed when their result is read. The stored result is not
 changed. When the run's config has no ``initial_capital``, ``performance`` is
 ``null``.
+
+Trade excursions
+----------------
+
+Closed trades include maximum favorable excursion (MFE) and maximum adverse
+excursion (MAE) in price points, the gross share of MFE captured at exit, and
+timestamps for each extreme. ``mfe_time`` and ``mae_time`` mark the first deal
+at the extreme; time to MFE is ``mfe_time - entry_tick_time`` when an entry
+deal time exists, or ``mfe_time - entry_time`` otherwise. MFE and MAE money
+values multiply points by quantity and point value.
+
+``excursion_resolution`` describes the coarsest source used for a trade:
+``tick`` means deals or complete bars with deal-exact extremes, ``minute``
+means a one-minute fallback supplied part of the path, and ``candle`` means an
+incomplete partial bar was represented by its full range. The candle value can
+overstate MFE and MAE; its extreme time is accurate only to that bar.
+
+Post-exit MFE, MAE and return measure price movement in the trade's original
+direction after its exit. The default window covers the next 10 bars and can
+be changed from 1 to 500 with ``post_exit_bars``:
+
+.. code-block:: python
+
+   result = backtest(
+       bars, strategy=strategy, symbol="WDO$N", post_exit_bars=20,
+   )
+   excursions = result.performance.excursions
+   print(result.trades[["mfe_points", "mae_points", "mfe_time"]].head())
+
+Published results can recalculate the post-exit window from their stored
+market-data artifact without rerunning the strategy. The Research results
+view exposes the same control and updates the post-exit figures and CSV export.

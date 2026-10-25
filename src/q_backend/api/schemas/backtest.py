@@ -53,6 +53,7 @@ class BacktestRequest(BaseModel):
     day_trade_start_time: str = "09:00"
     day_trade_end_time: str = "16:00"
     day_trade_close_time: str = "17:00"
+    post_exit_bars: int = Field(default=10, ge=1, le=500)
 
 
 class ChartIndicatorSeries(BaseModel):
@@ -140,6 +141,14 @@ class TradeStats(BaseModel):
     avg_hold_seconds: Optional[float]
     avg_win_hold_seconds: Optional[float]
     avg_loss_hold_seconds: Optional[float]
+    excursion_trades: int = 0
+    avg_mfe: Optional[float] = None
+    avg_mae: Optional[float] = None
+    mfe_capture: Optional[float] = None
+    median_mfe_capture: Optional[float] = None
+    median_time_to_mfe_seconds: Optional[float] = None
+    avg_post_exit_return: Optional[float] = None
+    post_exit_continuation_rate: Optional[float] = None
 
 
 class SideTradeStats(BaseModel):
@@ -172,6 +181,39 @@ class BacktestPerformance(BaseModel):
     drawdowns: List[DrawdownPeriod]
     exit_reasons: List[ReasonStats]
     entry_reasons: List[ReasonStats]
+    excursions: "ExcursionSummary" = Field(default_factory=lambda: ExcursionSummary())
+
+
+class ExcursionResolutionCounts(BaseModel):
+    tick: int = 0
+    minute: int = 0
+    candle: int = 0
+
+
+class ExcursionSummary(BaseModel):
+    post_exit_bars: int = 10
+    resolution: ExcursionResolutionCounts = Field(default_factory=ExcursionResolutionCounts)
+
+
+class PostExitTradeAnalysis(BaseModel):
+    trade_id: str
+    post_exit_mfe_points: Optional[float]
+    post_exit_mae_points: Optional[float]
+    post_exit_return_points: Optional[float]
+    post_exit_bars_observed: int
+
+
+class PostExitSideStats(BaseModel):
+    avg_post_exit_return: Optional[float]
+    post_exit_continuation_rate: Optional[float]
+
+
+class PostExitAnalysis(BaseModel):
+    post_exit_bars: int
+    trades: List[PostExitTradeAnalysis]
+    all: PostExitSideStats
+    long: PostExitSideStats
+    short: PostExitSideStats
 
 
 class BacktestResponse(BaseModel):

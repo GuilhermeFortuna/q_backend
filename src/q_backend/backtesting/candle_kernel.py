@@ -516,6 +516,7 @@ def ledger_to_registry(run: ChunkRun, index: pd.DatetimeIndex, *, symbol: str, p
             action=action,
             quantity=quantity,
             entry_time=index[int(entry_bar)],
+            entry_bar=int(entry_bar),
             entry_price=float(run.trades["entry_price"][i]),
             point_value=point_value,
             commission=float(run.trades["commission"][i]),
@@ -536,6 +537,7 @@ def ledger_to_registry(run: ChunkRun, index: pd.DatetimeIndex, *, symbol: str, p
                 trade.id, index[exit_bar], float(run.trades["exit_price"][i]), run.exit_reason_text[i]
             )
             assert closed is not None
+            closed.exit_bar = exit_bar
             assert closed.pnl == float(run.trades["pnl"][i]), "q_core and TradeRegistry PnL diverged"
             tick_us = int(run.trades["exit_time_us"][i])
             if tick_us >= 0:
