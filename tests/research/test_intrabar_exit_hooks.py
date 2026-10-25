@@ -59,7 +59,7 @@ def test_exit_with_ticks_runs_once_per_closed_bar_at_bar_end(root):
     assert all(cutoff > moment for moment, cutoff in strategy.calls)
 
 
-def test_priced_close_fills_at_the_first_trade_reaching_the_price(root):
+def test_priced_close_fills_at_the_requested_price_when_a_trade_reaches_it(root):
     class Priced(EnterOnce):
         def entry_strategy(self, frame, positions=()):
             return TradeOrder.sell() if len(frame) == 1 else None
@@ -70,8 +70,20 @@ def test_priced_close_fills_at_the_first_trade_reaching_the_price(root):
             return None
 
     trade = _run(root, Priced()).trades.iloc[0]
-    assert trade["exit_price"] == 105.5
+    assert trade["exit_price"] == 105.0
     assert trade["exit_tick_time"] == _stamp("10:22")
+
+
+def test_long_priced_close_above_the_open_fills_at_the_price_not_the_open(root):
+    class Target(EnterOnce):
+        def exit_strategy(self, frame, positions=(), *, ticks=None):
+            if positions and frame.index[-1] == _bar("10:20"):
+                return TradeOrder.close(price=104.0)
+            return None
+
+    trade = _run(root, Target()).trades.iloc[0]
+    assert trade["exit_price"] == 104.0
+    assert trade["exit_tick_time"] == _stamp("10:21")
 
 
 def test_priced_close_outside_bar_range_names_bar_and_price(root):

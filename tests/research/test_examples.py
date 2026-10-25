@@ -385,9 +385,10 @@ def test_stop_target_backtest_example_runs_over_a_store(tmp_path: Path) -> None:
 
     trade = result.trades.iloc[0]
     assert trade["exit_reason"] == "SIGNAL"
-    assert trade["exit_price"] == 98.0
+    # The tape jumps from 102 to 98 through the 99 floor; the close fills at the floor itself.
+    assert trade["exit_price"] == 99.0
     assert trade["exit_tick_time"] == pd.Timestamp("2026-10-05 14:50:06", tz=BRASILIA_TZ)
-    assert trade["stop_loss"] < 98.0 < trade["take_profit"]
+    assert trade["stop_loss"] < 99.0 < trade["take_profit"]
     assert result.rejected_entries.empty
 
 

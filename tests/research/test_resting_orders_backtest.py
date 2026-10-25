@@ -265,14 +265,17 @@ def test_amended_stop_exits_at_the_latest_level_and_positions_show_each_amendmen
     assert strategy.seen == [95.0, 100.0]
 
 
-def test_amend_trailing_stop_matches_the_priced_close_exit(root):
+def test_amend_trailing_stop_exits_on_the_same_trade_as_the_priced_close(root):
     store = _write_session(root, TRAIL_ROWS)
     priced = _run(_m10_frame(store), PricedTrail(), store).trades
     amended = _run(_m10_frame(store), AmendTrail(), store).trades
 
     assert priced["exit_time"].tolist() == amended["exit_time"].tolist() == [_bar("10:30")]
     assert priced["exit_tick_time"].tolist() == amended["exit_tick_time"].tolist() == [_bar("10:34")]
-    assert priced["exit_price"].tolist() == amended["exit_price"].tolist() == [102.5]
+    # The tape jumps from 106 to 102.5 through the 103 stop: the priced close fills at its price,
+    # the protective stop at the trade that crossed it.
+    assert priced["exit_price"].tolist() == [103.0]
+    assert amended["exit_price"].tolist() == [102.5]
     assert priced["exit_reason"].tolist() == ["SIGNAL"]
     assert amended["exit_reason"].tolist() == ["STOP_LOSS"]
 
