@@ -49,13 +49,13 @@
 - `src/q_backend/backtesting/candle_kernel.py`, `src/q_backend/backtesting/models.py`, `src/q_backend/research/results.py`;
 - tests in `tests/research/` (the order tests, the priced, resting-order and parallel-session modules).
 
-- [ ] Write failing tests for spec acceptance items 1–3.
-- [ ] Add `reason` and its validation to `TradeOrder` and the seven factories (`_resting` passes it on), and reject it on `amend` and `cancel`.
-- [ ] In `_RuntimeHooks`, record the entry and close reasons per bar in object arrays sized like `stop_price`.
-- [ ] Carry them into `ChunkRun` and `merge_chunk_runs`:
+- [x] Write failing tests for spec acceptance items 1–3.
+- [x] Add `reason` and its validation to `TradeOrder` and the seven factories (`_resting` passes it on), and reject it on `amend` and `cancel`.
+- [x] In `_RuntimeHooks`, record the entry and close reasons per bar in object arrays sized like `stop_price`.
+- [x] Carry them into `ChunkRun` and `merge_chunk_runs`:
   - map entry reasons with `decided_bar`;
   - replace `SIGNAL` text with the close reason of the deciding bar.
-- [ ] Set `Trade.entry_reason` in `ledger_to_registry`, add the column to the research trades frame, and commit.
+- [x] Set `Trade.entry_reason` in `ledger_to_registry`, add the column to the research trades frame, and commit.
 
 ### 3. Analytics, API and CSV
 
@@ -65,9 +65,9 @@
 - `src/q_backend/backtesting/run_service.py` (`TRADES_CSV_COLUMNS`);
 - their tests.
 
-- [ ] Write failing tests for spec acceptance items 4 and 5.
-- [ ] Generalize `_exit_reason_stats` into one grouping helper used for both lists, and rename the model `ReasonStats`.
-- [ ] Recompute on read when the stored `performance` lacks `entry_reasons`, and add the CSV column.
+- [x] Write failing tests for spec acceptance items 4 and 5.
+- [x] Generalize `_exit_reason_stats` into one grouping helper used for both lists, and rename the model `ReasonStats`.
+- [x] Recompute on read when the stored `performance` lacks `entry_reasons`, and add the CSV column.
 - [ ] Pin and vendor the contract in q_backend, run `make contracts-check`, then commit.
 
 ### 4. Frontend
@@ -91,7 +91,7 @@
 
 **Files:** `docs/research/user_guide/strategy.rst`, and the `TradeOrder` docstrings (done in step 2).
 
-- [ ] Document `reason`: where each label appears and which exits keep engine labels. Add an example, then commit.
+- [x] Document `reason`: where each label appears and which exits keep engine labels. Add an example, then commit.
 
 ## Verification
 
