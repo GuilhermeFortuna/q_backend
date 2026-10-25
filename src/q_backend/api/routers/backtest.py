@@ -89,8 +89,8 @@ def cancel_backtest(run_id: str):
 def get_backtest_result(run_id: str):
     """Return the full chart payload for a completed async backtest run.
 
-    Results stored before ``performance`` existed, and imported runs, get it computed here from the
-    run's config and trades. The stored file is not rewritten.
+    Results stored before ``performance`` existed, or before it carried ``entry_reasons``, and imported
+    runs, get it computed here from the run's config and trades. The stored file is not rewritten.
     """
     try:
         payload = read_backtest_result(run_id)
@@ -99,7 +99,8 @@ def get_backtest_result(run_id: str):
             status_code=404,
             detail=f"Backtest result not ready or not found for run '{run_id}'.",
         ) from exc
-    if payload.get("performance") is None:
+    performance = payload.get("performance")
+    if performance is None or "entry_reasons" not in performance:
         payload["performance"] = backtest_run_service.stored_result_performance(run_id, payload.get("trades", []))
     return payload
 

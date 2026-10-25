@@ -25,6 +25,7 @@ def _trade(
     exit_: datetime,
     action: OrderAction = OrderAction.BUY,
     reason: str | None = None,
+    entry_reason: str | None = None,
 ) -> Trade:
     return Trade(
         id=f"trade-{next(_ids)}",
@@ -38,6 +39,7 @@ def _trade(
         exit_price=100.0 + pnl,
         status=TradeStatus.CLOSED,
         pnl=pnl,
+        entry_reason=entry_reason,
         exit_reason=reason,
     )
 
@@ -268,6 +270,20 @@ def test_unknown_exit_reason_is_grouped_as_unspecified():
 
     assert set(reasons) == {"unspecified", "signal"}
     assert reasons["unspecified"].pnl == pytest.approx(10.0)
+
+
+def test_entry_reasons_group_like_exit_reasons_with_unspecified_fallback():
+    trades = [
+        _trade(10.0, _day(2), _day(3), entry_reason="breakout"),
+        _trade(-5.0, _day(4), _day(5), entry_reason="breakout"),
+        _trade(20.0, _day(6), _day(7)),
+    ]
+    perf = _performance(trades)
+
+    assert [(s.reason, s.trades, s.pnl, s.win_rate) for s in perf.entry_reasons] == [
+        ("breakout", 2, pytest.approx(5.0), 0.5),
+        ("unspecified", 1, pytest.approx(20.0), 1.0),
+    ]
 
 
 def test_non_finite_values_serialize_as_null():

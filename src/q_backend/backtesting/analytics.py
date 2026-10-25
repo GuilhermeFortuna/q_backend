@@ -11,16 +11,16 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 
 import pandas as pd
 
 from q_backend.api.schemas.backtest import (
     BacktestPerformance,
     DrawdownPeriod,
-    ExitReasonStats,
     PerformanceBasis,
     PortfolioStats,
+    ReasonStats,
     SideTradeStats,
     TradeStats,
 )
@@ -32,7 +32,7 @@ CALENDAR_DAYS_PER_YEAR = 365.25
 DAYS_PER_MONTH = 30.4375
 SECONDS_PER_DAY = 86400.0
 TOP_DRAWDOWN_COUNT = 10
-UNSPECIFIED_EXIT_REASON = "unspecified"
+UNSPECIFIED_REASON = "unspecified"
 
 
 def naive_utc(dt: datetime) -> datetime:
@@ -336,13 +336,13 @@ def _portfolio_stats(
     return portfolio, drawdowns
 
 
-def _exit_reason_stats(trades: list[Trade]) -> list[ExitReasonStats]:
+def _reason_stats(trades: list[Trade], reason_of: Callable[[Trade], str | None]) -> list[ReasonStats]:
     groups: dict[str, list[Trade]] = {}
     for trade in trades:
-        groups.setdefault(trade.exit_reason or UNSPECIFIED_EXIT_REASON, []).append(trade)
+        groups.setdefault(reason_of(trade) or UNSPECIFIED_REASON, []).append(trade)
 
     stats = [
-        ExitReasonStats(
+        ReasonStats(
             reason=reason,
             trades=len(group),
             pnl=sum(_pnl(t) for t in group),
@@ -387,5 +387,6 @@ def compute_backtest_performance(
         portfolio=portfolio,
         trades=_side_stats(trades),
         drawdowns=drawdowns,
-        exit_reasons=_exit_reason_stats(trades),
+        exit_reasons=_reason_stats(trades, lambda t: t.exit_reason),
+        entry_reasons=_reason_stats(trades, lambda t: t.entry_reason),
     )
