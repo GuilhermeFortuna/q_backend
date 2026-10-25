@@ -289,6 +289,7 @@ def test_candle_run_reports_its_phases_in_order_before_completion(
         "loading_data",
         "preparing",
         "simulating",
+        "measuring",
         "saving",
         None,
     ]

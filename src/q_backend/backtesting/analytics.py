@@ -17,6 +17,8 @@ import pandas as pd
 
 from q_backend.api.schemas.backtest import (
     BacktestPerformance,
+    ExcursionResolutionCounts,
+    ExcursionSummary,
     DrawdownPeriod,
     PerformanceBasis,
     PortfolioStats,
@@ -105,6 +107,7 @@ def _mean(values: list[float]) -> Optional[float]:
 
 def _trade_stats(trades: list[Trade]) -> TradeStats:
     """Statistics for trades given in exit order. An empty group has null ratios and zero counts."""
+    measured = [t for t in trades if t.mfe_points is not None and t.mae_points is not None]
     if not trades:
         return TradeStats(
             total=0,
@@ -124,6 +127,7 @@ def _trade_stats(trades: list[Trade]) -> TradeStats:
             avg_hold_seconds=None,
             avg_win_hold_seconds=None,
             avg_loss_hold_seconds=None,
+            excursion_trades=0,
         )
 
     winners = [t for t in trades if _pnl(t) > 0]
@@ -148,6 +152,21 @@ def _trade_stats(trades: list[Trade]) -> TradeStats:
         max_wins = max(max_wins, win_streak)
         max_losses = max(max_losses, loss_streak)
 
+    mfe_money = [t.mfe_points * t.quantity * t.point_value for t in measured]
+    mae_money = [t.mae_points * t.quantity * t.point_value for t in measured]
+    captures = [t.mfe_capture for t in measured if t.mfe_capture is not None]
+    mfe_total = sum(mfe_money)
+    capture = sum(_pnl(t) + t.commission for t in measured) / mfe_total if mfe_total else None
+    time_to_mfe = [
+        (naive_utc(t.mfe_time) - naive_utc(t.entry_tick_time or t.entry_time)).total_seconds()
+        for t in measured
+        if t.mfe_time is not None
+    ]
+    post_exit_money = [
+        t.post_exit_return_points * t.quantity * t.point_value for t in trades if t.post_exit_return_points is not None
+    ]
+    continuation = [t.post_exit_return_points for t in trades if t.post_exit_return_points is not None]
+
     return TradeStats(
         total=len(trades),
         winning=len(winners),
@@ -166,6 +185,16 @@ def _trade_stats(trades: list[Trade]) -> TradeStats:
         avg_hold_seconds=_mean([_hold_seconds(t) for t in trades]),
         avg_win_hold_seconds=_mean([_hold_seconds(t) for t in winners]),
         avg_loss_hold_seconds=_mean([_hold_seconds(t) for t in losers]),
+        excursion_trades=len(measured),
+        avg_mfe=_mean(mfe_money),
+        avg_mae=_mean(mae_money),
+        mfe_capture=capture,
+        median_mfe_capture=float(pd.Series(captures).median()) if captures else None,
+        median_time_to_mfe_seconds=float(pd.Series(time_to_mfe).median()) if time_to_mfe else None,
+        avg_post_exit_return=_mean(post_exit_money),
+        post_exit_continuation_rate=(
+            sum(value > 0 for value in continuation) / len(continuation) if continuation else None
+        ),
     )
 
 
@@ -367,6 +396,7 @@ def compute_backtest_performance(
     initial_capital: float,
     start: datetime,
     end: datetime,
+    post_exit_bars: int = 10,
 ) -> BacktestPerformance:
     """Compute the typed performance of a finished run from its closed trades.
 
@@ -389,4 +419,12 @@ def compute_backtest_performance(
         drawdowns=drawdowns,
         exit_reasons=_reason_stats(trades, lambda t: t.exit_reason),
         entry_reasons=_reason_stats(trades, lambda t: t.entry_reason),
+        excursions=ExcursionSummary(
+            post_exit_bars=post_exit_bars,
+            resolution=ExcursionResolutionCounts(
+                tick=sum(t.excursion_resolution == "tick" for t in trades),
+                minute=sum(t.excursion_resolution == "minute" for t in trades),
+                candle=sum(t.excursion_resolution == "candle" for t in trades),
+            ),
+        ),
     )

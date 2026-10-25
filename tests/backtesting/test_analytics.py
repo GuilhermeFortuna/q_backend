@@ -72,7 +72,6 @@ def test_empty_run_has_zero_counts_and_null_ratios():
     assert perf.trades.all.expectancy is None
     assert perf.trades.all.avg_hold_seconds is None
     assert perf.trades.long.total == 0 and perf.trades.short.total == 0
-
     portfolio = perf.portfolio
     assert portfolio.net_pnl == 0.0
     assert portfolio.return_pct == 0.0
@@ -89,6 +88,31 @@ def test_empty_run_has_zero_counts_and_null_ratios():
     assert perf.drawdowns == []
     assert perf.exit_reasons == []
 
+
+def test_excursion_statistics_are_reported_in_money_and_resolution_counts():
+    trade = _trade(80.0, _day(2), _day(2, 1))
+    trade.quantity = 2
+    trade.point_value = 10
+    trade.mfe_points = 10
+    trade.mae_points = 5
+    trade.mfe_time = trade.entry_time + timedelta(seconds=20)
+    trade.mfe_capture = 0.4
+    trade.post_exit_return_points = 1
+    trade.excursion_resolution = "minute"
+
+    performance = compute_backtest_performance([trade], CAPITAL, START, END, post_exit_bars=4)
+    stats = performance.trades.all
+
+    assert stats.excursion_trades == 1
+    assert stats.avg_mfe == 200
+    assert stats.avg_mae == 100
+    assert stats.mfe_capture == pytest.approx(0.4)
+    assert stats.median_mfe_capture == pytest.approx(0.4)
+    assert stats.median_time_to_mfe_seconds == 20
+    assert stats.avg_post_exit_return == 20
+    assert stats.post_exit_continuation_rate == 1
+    assert performance.excursions.post_exit_bars == 4
+    assert performance.excursions.resolution.minute == 1
 
 def test_all_winners_have_null_profit_factor_and_loss_fields():
     trades = [_trade(100.0, _day(2), _day(5)), _trade(100.0, _day(6), _day(10)), _trade(100.0, _day(11), _day(20))]

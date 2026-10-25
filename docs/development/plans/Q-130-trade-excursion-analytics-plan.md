@@ -40,18 +40,18 @@
 
 **Files:** `q_contracts/schema/api/openapi.yaml`, the generated outputs, and `q_contracts/tests/test_backtest_performance_contract.py`.
 
-- [ ] Add the new `TradeStats` fields, `ExcursionSummary`, `BacktestPerformance.excursions` (required), `BacktestRequest.post_exit_bars`, and `measuring` in the phase enums.
-- [ ] Add `GET /api/v1/backtests/{run_id}/post-exit` with `PostExitAnalysis`, and the optional `post_exit_bars` on the trades export. Update the contract test fixture.
-- [ ] Run the generators and `make check`, then commit.
+- [x] Add the new `TradeStats` fields, `ExcursionSummary`, `BacktestPerformance.excursions` (required), `BacktestRequest.post_exit_bars`, and `measuring` in the phase enums.
+- [x] Add `GET /api/v1/backtests/{run_id}/post-exit` with `PostExitAnalysis`, and the optional `post_exit_bars` on the trades export. Update the contract test fixture.
+- [x] Run the generators and `make check`, then commit.
 
 ### 2. Measurement module
 
 **Files:** `src/q_backend/backtesting/excursions.py` (new), `src/q_backend/backtesting/models.py`, and `tests/backtesting/test_excursions.py` (new).
 
-- [ ] Write failing tests for spec acceptance items 1, 3, 4 and 5 with a fake, call-counting deal source.
-- [ ] Add the `Trade` fields.
-- [ ] Implement the deal-source protocol: one bar's times, prices and resolution, cached per bar.
-- [ ] Implement `measure_trades`:
+- [x] Write failing tests for spec acceptance items 1, 3, 4 and 5 with a fake, call-counting deal source.
+- [x] Add the `Trade` fields.
+- [x] Implement the deal-source protocol: one bar's times, prices and resolution, cached per bar.
+- [x] Implement `measure_trades`:
   - per-trade entry and exit moments;
   - vectorised whole-bar extremes;
   - pruned partial-bar reads;
@@ -59,7 +59,7 @@
   - the exit-bar rest extremes;
   - the post-exit window with its truncation, through `post_exit_from_stored`;
   - the coarsest resolution.
-- [ ] Commit.
+- [x] Commit.
 
 ### 3. Run-path integration
 
@@ -71,30 +71,30 @@
 - `src/q_backend/backtesting/run_service.py` (`TRADES_CSV_COLUMNS`);
 - tests: `tests/backtesting/test_excursions.py` (kernel conventions), `tests/backtesting/tick/test_tick_engine.py`, `tests/research/test_backtest.py`, `tests/research/test_publishing.py`, `tests/api/test_backtest_progress.py`, `tests/api/test_backtest_import.py`.
 
-- [ ] Write failing tests for spec acceptance items 2, 6, 7 and 9.
-- [ ] Candle jobs:
+- [x] Write failing tests for spec acceptance items 2, 6, 7 and 9.
+- [x] Candle jobs:
   - reuse the run's replay when one exists;
   - otherwise build one for measurement only;
   - report progress per measured trade.
-- [ ] Tick jobs: measure from the engine's tick arrays.
-- [ ] Research `backtest()`: measure with the `TickStore` when one is given, and from bars only otherwise. Add `post_exit_bars` and the frame columns.
-- [ ] Add the CSV columns and `BacktestRequest.post_exit_bars`, then commit.
+- [x] Tick jobs: measure from the engine's tick arrays.
+- [x] Research `backtest()`: measure with the `TickStore` when one is given, and from bars only otherwise. Add `post_exit_bars` and the frame columns.
+- [x] Add the CSV columns and `BacktestRequest.post_exit_bars`, then commit.
 
 ### 4. Analytics and API
 
 **Files:** `src/q_backend/backtesting/analytics.py`, `src/q_backend/api/schemas/backtest.py`, `src/q_backend/backtesting/run_service.py`, and `tests/backtesting/test_analytics.py` and `tests/api/test_backtest_performance.py`.
 
-- [ ] Write failing tests for spec acceptance item 8.
-- [ ] Add the `TradeStats` aggregates and `ExcursionSummary`. Recompute on read when `excursions` is missing, taking `post_exit_bars` from the run config (default 10).
-- [ ] Pin and vendor the contract in q_backend, run `make contracts-check`, then commit.
+- [x] Write failing tests for spec acceptance item 8.
+- [x] Add the `TradeStats` aggregates and `ExcursionSummary`. Recompute on read when `excursions` is missing, taking `post_exit_bars` from the run config (default 10).
+- [x] Pin and vendor the contract in q_backend, run `make contracts-check`, then commit.
 
 ### 5. Post-exit recalculation endpoint
 
 **Files:** `src/q_backend/api/routers/backtest.py`, `src/q_backend/backtesting/run_service.py`, `src/q_backend/api/schemas/backtest.py`, and `tests/api/test_backtest_post_exit.py` (new).
 
-- [ ] Write failing tests for spec acceptance item 6, including the parity test against a fresh run and a market-data service that fails on any call.
-- [ ] Read the stored trades and `market_data` artifacts and the run config, call `post_exit_from_stored`, and aggregate per side. Add `post_exit_bars` to the trades CSV export.
-- [ ] Commit.
+- [x] Write failing tests for spec acceptance item 6, including the parity test against a fresh run and a market-data service that fails on any call.
+- [x] Read the stored trades and `market_data` artifacts and the run config, call `post_exit_from_stored`, and aggregate per side. Add `post_exit_bars` to the trades CSV export.
+- [x] Commit.
 
 ### 6. Frontend
 
@@ -106,17 +106,17 @@
 - `src/lib/backtesting/backtestProgress.ts`;
 - `src/mocks/backtest.ts`, and the matching `__tests__`.
 
-- [ ] Pin and vendor the contract, and add the `Trade` fields.
-- [ ] Write failing tests for spec acceptance item 10.
-- [ ] Add the five sortable columns with the resolution marker, the hover-card rows, the Trade excursions panel (aggregates, two scatters, resolution note), and the `measuring` phase label.
-- [ ] Add the Post-exit bars control: per-run view state, a debounced `usePostExitAnalysis` that keeps previous data while loading, Reset, and an inline error. Feed the selected figures to the panel, the Post-exit column, the hover card and the CSV export.
-- [ ] Update the mocks. Run `make contracts-check`, `pnpm typecheck`, lint and focused vitest with `TZ=America/Sao_Paulo`, then commit.
+- [x] Pin and vendor the contract, and add the `Trade` fields.
+- [x] Write failing tests for spec acceptance item 10.
+- [x] Add the five sortable columns with the resolution marker, the hover-card rows, the Trade excursions panel (aggregates, two scatters, resolution note), and the `measuring` phase label.
+- [x] Add the Post-exit bars control: per-run view state, a debounced `usePostExitAnalysis` that keeps previous data while loading, Reset, and an inline error. Feed the selected figures to the panel, the Post-exit column, the hover card and the CSV export.
+- [x] Update the mocks. Run `make contracts-check`, `pnpm typecheck`, lint and focused vitest with `TZ=America/Sao_Paulo`, then commit.
 
 ### 7. Docs
 
 **Files:** `docs/research/user_guide/`, plus the docstrings in `excursions.py` and `research/engine.py`.
 
-- [ ] Document the definitions, the resolution levels and when each occurs, `post_exit_bars` and recalculating it from the results, with a short research example. Commit.
+- [x] Document the definitions, the resolution levels and when each occurs, `post_exit_bars` and recalculating it from the results, with a short research example. Commit.
 
 ## Verification
 

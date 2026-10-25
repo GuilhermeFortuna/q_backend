@@ -17,6 +17,7 @@ import pandas as pd
 from q_backend.api.backtest_progress import BacktestProgressReporter
 from q_backend.api.schemas.backtest import BacktestRequest
 from q_backend.backtesting.analytics import compute_backtest_performance
+from q_backend.backtesting.excursions import DealBar, measure_trades
 from q_backend.backtesting.chart_data import market_data_frame, serialize_chart_data
 from q_backend.backtesting.costs import TransactionCostConfig
 from q_backend.backtesting.engine import BacktestEngine, ParallelMode
@@ -311,6 +312,28 @@ def _execute_candle(
     metrics = registry.get_performance_metrics(request.initial_capital)
     closed_trade_objects = registry.get_closed_trades()
     classify_exit_resolutions(closed_trade_objects, replay_report)
+    reporter.phase("measuring", "Measuring trade excursions")
+    from q_backend.backtesting.intrabar import MarketTickReplay, ReplayReport
+
+    measurement_report = ReplayReport()
+    measurement_replay = MarketTickReplay(
+        market_data_service, request.symbol, request.timeframe, df, report=measurement_report
+    )
+
+    def measurement_deals(bar: int) -> DealBar:
+        time_us, prices = measurement_replay(bar)
+        resolutions = [measurement_report.resolutions.get(int(value)) for value in time_us]
+        resolution = next((r for r in ("candle", "minute") if r in resolutions), "tick")
+        return DealBar(pd.to_datetime(time_us, unit="us", utc=True), prices, resolution)
+
+    measure_trades(
+        closed_trade_objects,
+        df,
+        deals=measurement_deals,
+        post_exit_bars=request.post_exit_bars,
+        day_trade_close=request.day_trade_close_time if request.day_trade else None,
+        on_trade=reporter.measured,
+    )
     notes = intrabar_notes(closed_trade_objects, replay_report)
     trades = [t.model_dump(mode="json") for t in closed_trade_objects]
     equity = build_equity_curve(closed_trade_objects, request.initial_capital, start, end)
@@ -323,7 +346,11 @@ def _execute_candle(
         "indicators": chart_data["indicators"],
         "notes": notes,
         "performance": compute_backtest_performance(
-            closed_trade_objects, request.initial_capital, start, end
+            closed_trade_objects,
+            request.initial_capital,
+            start,
+            end,
+            post_exit_bars=request.post_exit_bars,
         ).model_dump(mode="json"),
     }
     if request.ml_filter is not None and ml_filter_manifest is not None:
@@ -399,6 +426,30 @@ def _execute_tick(
 
     metrics = registry.get_performance_metrics(request.initial_capital)
     closed_trade_objects = registry.get_closed_trades()
+    reporter.phase("measuring", "Measuring trade excursions")
+    bars = market_data.copy()
+    bars.index = pd.DatetimeIndex(pd.to_datetime(bars.pop("time"), utc=True), name="time")
+
+    def tick_deals(bar: int) -> DealBar:
+        start_us = int(pd.Timestamp(bars.index[bar]).timestamp() * 1_000_000)
+        if bar + 1 < len(bars):
+            end_us = int(pd.Timestamp(bars.index[bar + 1]).timestamp() * 1_000_000)
+        else:
+            from q_backend.market_data.exogenous_context import bar_duration
+
+            end_us = start_us + int(bar_duration(request.display_timeframe).total_seconds() * 1_000_000)
+        tick_us = ticks.time_msc.astype("int64") * 1000
+        selected = (tick_us >= start_us) & (tick_us < end_us)
+        return DealBar(pd.to_datetime(tick_us[selected], unit="us", utc=True), ticks.last[selected], "tick")
+
+    measure_trades(
+        closed_trade_objects,
+        bars,
+        deals=tick_deals,
+        post_exit_bars=request.post_exit_bars,
+        day_trade_close=request.day_trade_close_time if request.day_trade else None,
+        on_trade=reporter.measured,
+    )
     trades = [t.model_dump(mode="json") for t in closed_trade_objects]
     equity = build_equity_curve(closed_trade_objects, request.initial_capital, start, end)
     equity_df = pd.DataFrame({"time": equity.index, "equity": equity.values})
@@ -410,7 +461,11 @@ def _execute_tick(
         "indicators": chart_data["indicators"],
         "notes": [],
         "performance": compute_backtest_performance(
-            closed_trade_objects, request.initial_capital, start, end
+            closed_trade_objects,
+            request.initial_capital,
+            start,
+            end,
+            post_exit_bars=request.post_exit_bars,
         ).model_dump(mode="json"),
     }
     return payload, closed_trade_objects, equity_df, market_data

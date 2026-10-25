@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from dataclasses import replace
 from numbers import Integral, Real
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
@@ -207,6 +208,7 @@ def backtest(
     day_trade_start_time: str = "09:00",
     day_trade_end_time: str = "16:00",
     day_trade_close_time: str = "17:00",
+    post_exit_bars: int = 10,
     force_close_at_end: bool = False,
     ticks: TickStore | None = None,
     tick_size: float | None = None,
@@ -397,6 +399,8 @@ def backtest(
         tick_size=tick_size,
     )
 
+    if isinstance(post_exit_bars, bool) or not 1 <= post_exit_bars <= 500:
+        raise ValueError("post_exit_bars must be an integer between 1 and 500")
     if isinstance(strategy, str):
         strat_name = strategy
         strat_params = dict(strategy_params or {})
@@ -419,6 +423,7 @@ def backtest(
         "day_trade_close_time": day_trade_close_time,
         "force_close_at_end": force_close_at_end,
         "timeframe": timeframe,
+        "post_exit_bars": post_exit_bars,
     }
     from q_backend.backtesting.candle_kernel import _exit_params_from_strategy
 
@@ -469,6 +474,67 @@ def backtest(
             reporter.finish(len(result.trades))
     except kernel.IntrabarDataError as exc:
         raise intrabar_error(exc, validated_frame, ticks) from exc
+    closed = list(result._closed_trades)
+    if closed and not result.data.empty:
+        from q_backend.backtesting.excursions import DealBar, measure_trades
+        from q_backend.market_data.exogenous_context import bar_duration
+
+        def deal_source(bar: int) -> DealBar | None:
+            if ticks is None:
+                return None
+            start = result.data.index[bar]
+            end = result.data.index[bar + 1] if bar + 1 < len(result.data) else start + bar_duration(timeframe or "M1")
+            times, prices = ticks.trade_prices(start.to_pydatetime(), end.to_pydatetime())
+            return DealBar(pd.to_datetime(times, unit="us", utc=True), prices, "tick")
+
+        measure_trades(
+            closed,
+            result.data,
+            deals=deal_source if ticks is not None else None,
+            post_exit_bars=post_exit_bars,
+            day_trade_close=day_trade_close_time if day_trade else None,
+        )
+        by_id = {trade.id: trade for trade in closed}
+        output = result.trades.copy()
+        for row_index, trade_id in output["trade_id"].items():
+            trade = by_id.get(trade_id)
+            if trade is None:
+                continue
+            output.loc[
+                row_index,
+                [
+                    "mfe_points",
+                    "mae_points",
+                    "mfe_value",
+                    "mae_value",
+                    "mfe_time",
+                    "mae_time",
+                    "mfe_capture",
+                    "post_exit_mfe_points",
+                    "post_exit_mae_points",
+                    "post_exit_return_points",
+                    "post_exit_bars_observed",
+                    "exit_bar_rest_high",
+                    "exit_bar_rest_low",
+                    "excursion_resolution",
+                ],
+            ] = [
+                trade.mfe_points,
+                trade.mae_points,
+                None if trade.mfe_points is None else trade.mfe_points * trade.quantity * trade.point_value,
+                None if trade.mae_points is None else trade.mae_points * trade.quantity * trade.point_value,
+                trade.mfe_time,
+                trade.mae_time,
+                trade.mfe_capture,
+                trade.post_exit_mfe_points,
+                trade.post_exit_mae_points,
+                trade.post_exit_return_points,
+                trade.post_exit_bars_observed,
+                trade.exit_bar_rest_high,
+                trade.exit_bar_rest_low,
+                trade.excursion_resolution,
+            ]
+        result = replace(result, trades=output, _closed_trades=tuple(closed))
     return result
 
 
