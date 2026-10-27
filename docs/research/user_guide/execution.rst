@@ -46,6 +46,15 @@ On a candle where a stop, target, breakeven or priced close closed a trade,
 a priced entry fills only from a trade at or after that exit. Otherwise it
 appears in ``result.rejected_entries`` with reason ``touch_before_exit``.
 
+The candle's ``exit_strategy`` call runs before a priced entry fills, so it
+does not see the new position. Once the entry fills and is still open,
+``exit_strategy`` is called again on the same candle with that position in
+``positions``. A ``TradeOrder.close()`` returned there exits at the next
+candle's open, ahead of that candle's stops and targets. This is how to write a
+time-based exit known in advance, such as holding for a fixed number of
+candles: return the close on the candle before the exit. A priced close or an
+amend returned from this second call raises ``ValueError``.
+
 .. important::
 
    The hook sees the whole completed candle. Checking its close and then asking

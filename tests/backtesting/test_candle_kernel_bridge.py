@@ -87,7 +87,7 @@ def test_check_engine_requires_protective_and_callback_capabilities() -> None:
         check_engine(types.SimpleNamespace(**values))
 
 
-def test_check_engine_requires_resting_orders_and_snapshot_levels() -> None:
+def test_check_engine_requires_resting_orders_and_runtime_callbacks() -> None:
     from q_backend.backtesting.candle_kernel import REQUIRED_ENGINE_FUNCTIONS, check_engine
 
     def run_candle(
@@ -111,6 +111,23 @@ def test_check_engine_requires_resting_orders_and_snapshot_levels() -> None:
     values["run_candle"] = (
         lambda *, time_us, stop_price, target_price, entry_price, intrabar, strategy_callback, snapshot_levels: None
     )
+    with pytest.raises(ImportError, match="entry_fill_callback"):
+        check_engine(types.SimpleNamespace(**values))
+
+    def complete_run_candle(
+        *,
+        time_us,
+        stop_price,
+        target_price,
+        entry_price,
+        intrabar,
+        strategy_callback,
+        snapshot_levels,
+        entry_fill_callback,
+    ) -> None:
+        raise NotImplementedError
+
+    values["run_candle"] = complete_run_candle
     check_engine(types.SimpleNamespace(**values))
 
 
