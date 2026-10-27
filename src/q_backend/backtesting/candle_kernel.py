@@ -473,7 +473,7 @@ def run_chunk(
     trades["final_take_profit"] = np.asarray(result["final_target_price"], dtype=np.float64)
     rejected = {
         name: np.asarray(result[f"rejected_{name}"])
-        for name in ("bar", "side", "fill_price", "stop_price", "target_price")
+        for name in ("bar", "side", "fill_price", "stop_price", "target_price", "reason")
     }
     return ChunkRun(trades, exit_reason_text, entry_reason, rejected)
 

@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Final
 
 import numpy as np
 import pandas as pd
@@ -55,7 +55,7 @@ TRADE_COLUMNS = [
     "entry_reason",
 ]
 
-REJECTED_COLUMNS = ["time", "side", "fill_price", "stop_loss", "take_profit"]
+REJECTED_COLUMNS = ["time", "side", "fill_price", "stop_loss", "take_profit", "reason"]
 
 
 @dataclass(frozen=True)
@@ -80,7 +80,10 @@ class BacktestResult:
     config : Mapping of str to Any
         Read-only dictionary of the arguments used for this backtest.
     rejected_entries : pandas.DataFrame
-        DataFrame listing entries rejected due to invalid protective price levels.
+        DataFrame listing entries rejected due to invalid protective price levels
+        (``level_on_wrong_side``) or priced entries that traded only before a
+        same-bar exit (``touch_before_exit``). Includes columns ``time``, ``side``,
+        ``fill_price``, ``stop_loss``, ``take_profit``, and ``reason``.
     """
 
     metrics: dict[str, Any]
@@ -181,17 +184,32 @@ def empty_rejected_frame() -> pd.DataFrame:
         "fill_price": "float64",
         "stop_loss": "float64",
         "take_profit": "float64",
+        "reason": "object",
     }
     df = pd.DataFrame({col: pd.Series(dtype=dt) for col, dt in dtypes.items()})
     return df[REJECTED_COLUMNS]
 
 
+REASON_MAP: Final[dict[int, str]] = {
+    0: "level_on_wrong_side",
+    1: "touch_before_exit",
+}
+
+
+def _map_rejection_reason(code: int | np.integer) -> str:
+    try:
+        return REASON_MAP[int(code)]
+    except KeyError:
+        raise ValueError(f"Unknown rejection reason code: {code}") from None
+
+
 def rejected_entries_frame(run: ChunkRun, index: pd.DatetimeIndex) -> pd.DataFrame:
-    """Entries refused because a level was already on the wrong side of the fill."""
+    """Entries refused because a level was invalid or a priced entry traded only before an exit."""
     rejected = run.rejected
     if len(rejected["bar"]) == 0:
         return empty_rejected_frame()
     times = [index[int(bar)] for bar in rejected["bar"]]
+    reasons = [_map_rejection_reason(code) for code in rejected["reason"]]
     df = pd.DataFrame(
         {
             "time": pd.array(times, dtype="datetime64[ns, America/Sao_Paulo]"),
@@ -199,6 +217,7 @@ def rejected_entries_frame(run: ChunkRun, index: pd.DatetimeIndex) -> pd.DataFra
             "fill_price": rejected["fill_price"].astype(np.float64),
             "stop_loss": rejected["stop_price"].astype(np.float64),
             "take_profit": rejected["target_price"].astype(np.float64),
+            "reason": pd.Series(reasons, dtype="object"),
         }
     )
     return df[REJECTED_COLUMNS]
