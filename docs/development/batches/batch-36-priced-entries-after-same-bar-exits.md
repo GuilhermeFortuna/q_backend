@@ -20,8 +20,8 @@ still open. Research backtests report why each entry was refused.
 
 | Task | Repository | Depends on | Specification | Implementation plan |
 | --- | --- | --- | --- | --- |
-| Q-132 — Priced entries after same-bar exits in the candle kernel | q_core | — | `q_core/docs/development/specs/Q-132-priced-entries-after-same-bar-exits-spec.md` | `q_core/docs/development/plans/Q-132-priced-entries-after-same-bar-exits-plan.md` |
-| Q-133 — Priced entries after same-bar exits in research backtests | q_backend | Q-132 | [Spec](../specs/Q-133-priced-entries-after-same-bar-exits-research-spec.md) | [Plan](../plans/Q-133-priced-entries-after-same-bar-exits-research-plan.md) |
+| [Q-132](https://github.com/GuilhermeFortuna/q_core/issues/21) — Priced entries after same-bar exits in the candle kernel | q_core | — | `q_core/docs/development/specs/Q-132-priced-entries-after-same-bar-exits-spec.md` | `q_core/docs/development/plans/Q-132-priced-entries-after-same-bar-exits-plan.md` |
+| [Q-133](https://github.com/GuilhermeFortuna/q_backend/issues/57) — Priced entries after same-bar exits in research backtests | q_backend | Q-132 | [Spec](../specs/Q-133-priced-entries-after-same-bar-exits-research-spec.md) | [Plan](../plans/Q-133-priced-entries-after-same-bar-exits-research-plan.md) |
 
 The tasks run in sequence: Q-132 is tagged and released before Q-133 pins it.
 
