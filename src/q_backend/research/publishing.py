@@ -207,6 +207,9 @@ def publish_backtest_result(
         day_trade_end_time=str(result.config.get("day_trade_end_time", "16:00")),
         day_trade_close_time=str(result.config.get("day_trade_close_time", "17:00")),
     )
+    config_payload = config_model.model_dump(mode="json")
+    if "excursions" in result.config:
+        config_payload["excursions"] = result.config["excursions"]
 
     import_result = BacktestImportResult(
         metrics=clean_metrics,
@@ -218,7 +221,7 @@ def publish_backtest_result(
     provenance = _collect_provenance(getattr(result, "_strategy", None))
 
     req_model = BacktestImportRequest(
-        config=config_model,
+        config=config_payload,
         result=import_result,
         provenance=provenance,
     )

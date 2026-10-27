@@ -296,8 +296,14 @@ class BacktestImportResult(BacktestResponse):
     bars: List[BacktestImportBar]
 
 
+class BacktestImportConfig(BacktestRequest):
+    """Script-run configuration, including research-only options recorded for provenance."""
+
+    excursions: Optional[bool] = Field(default=None, exclude_if=lambda value: value is None)
+
+
 class BacktestImportRequest(BaseModel):
-    config: BacktestRequest
+    config: BacktestImportConfig
     result: BacktestImportResult
     provenance: BacktestProvenance
 

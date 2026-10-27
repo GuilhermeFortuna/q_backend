@@ -39,6 +39,7 @@ from q_backend.research.results import (
     BacktestResult,
     build_equity_curve,
     empty_rejected_frame,
+    empty_trades_frame,
     rejected_entries_frame,
     trades_to_frame,
 )
@@ -209,6 +210,7 @@ def backtest(
     day_trade_end_time: str = "16:00",
     day_trade_close_time: str = "17:00",
     post_exit_bars: int = 10,
+    excursions: bool = True,
     force_close_at_end: bool = False,
     ticks: TickStore | None = None,
     tick_size: float | None = None,
@@ -247,6 +249,11 @@ def backtest(
         Latest allowable entry time (HH:MM).
     day_trade_close_time : str, default '17:00'
         Mandatory end-of-day square-off time (HH:MM).
+    post_exit_bars : int, default 10
+        Number of bars after exit included in post-exit excursion measurements.
+    excursions : bool, default True
+        Measure per-trade excursions. Disable this for parameter searches that do not use the
+        excursion fields; those fields remain null and no deal data is read for measurement.
     force_close_at_end : bool, default False
         Whether to liquidate any open position on the final bar.
     ticks : TickStore, optional
@@ -315,6 +322,8 @@ def backtest(
         raise TypeError(f"progress must be a bool or None, got {type(progress).__name__}")
     if not isinstance(check_causality, bool):
         raise TypeError(f"check_causality must be a bool, got {type(check_causality).__name__}")
+    if not isinstance(excursions, bool):
+        raise ValueError(f"excursions must be a bool, got {excursions!r}")
 
     if ticks is not None and ticks.symbol != symbol:
         raise ValueError(f"ticks is a store for {ticks.symbol!r}, but the backtest symbol is {symbol!r}")
@@ -424,6 +433,7 @@ def backtest(
         "force_close_at_end": force_close_at_end,
         "timeframe": timeframe,
         "post_exit_bars": post_exit_bars,
+        "excursions": excursions,
     }
     from q_backend.backtesting.candle_kernel import _exit_params_from_strategy
 
@@ -475,7 +485,23 @@ def backtest(
     except kernel.IntrabarDataError as exc:
         raise intrabar_error(exc, validated_frame, ticks) from exc
     closed = list(result._closed_trades)
-    if closed and not result.data.empty:
+    columns = [
+        "mfe_points",
+        "mae_points",
+        "mfe_value",
+        "mae_value",
+        "mfe_time",
+        "mae_time",
+        "mfe_capture",
+        "post_exit_mfe_points",
+        "post_exit_mae_points",
+        "post_exit_return_points",
+        "post_exit_bars_observed",
+        "exit_bar_rest_high",
+        "exit_bar_rest_low",
+        "excursion_resolution",
+    ]
+    if excursions and closed and not result.data.empty:
         from q_backend.backtesting.excursions import DealBar, measure_trades
         from q_backend.market_data.exogenous_context import bar_duration
 
@@ -494,31 +520,9 @@ def backtest(
             post_exit_bars=post_exit_bars,
             day_trade_close=day_trade_close_time if day_trade else None,
         )
-        by_id = {trade.id: trade for trade in closed}
         output = result.trades.copy()
-        for row_index, trade_id in output["trade_id"].items():
-            trade = by_id.get(trade_id)
-            if trade is None:
-                continue
-            output.loc[
-                row_index,
-                [
-                    "mfe_points",
-                    "mae_points",
-                    "mfe_value",
-                    "mae_value",
-                    "mfe_time",
-                    "mae_time",
-                    "mfe_capture",
-                    "post_exit_mfe_points",
-                    "post_exit_mae_points",
-                    "post_exit_return_points",
-                    "post_exit_bars_observed",
-                    "exit_bar_rest_high",
-                    "exit_bar_rest_low",
-                    "excursion_resolution",
-                ],
-            ] = [
+        by_id = {
+            trade.id: (
                 trade.mfe_points,
                 trade.mae_points,
                 None if trade.mfe_points is None else trade.mfe_points * trade.quantity * trade.point_value,
@@ -533,8 +537,27 @@ def backtest(
                 trade.exit_bar_rest_high,
                 trade.exit_bar_rest_low,
                 trade.excursion_resolution,
-            ]
+            )
+            for trade in closed
+        }
+        schema = empty_trades_frame()
+        arrays = {
+            column: pd.array(
+                [by_id.get(trade_id, (None,) * len(columns))[position] for trade_id in output["trade_id"]],
+                dtype=schema[column].dtype,
+            )
+            for position, column in enumerate(columns)
+        }
+        output[columns] = pd.DataFrame(arrays, index=output.index)
         result = replace(result, trades=output, _closed_trades=tuple(closed))
+    elif not excursions and len(result.trades):
+        output = result.trades.copy()
+        schema = empty_trades_frame()
+        output[columns] = pd.DataFrame(
+            {column: pd.array([None] * len(output), dtype=schema[column].dtype) for column in columns},
+            index=output.index,
+        )
+        result = replace(result, trades=output)
     return result
 
 

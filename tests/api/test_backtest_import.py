@@ -135,7 +135,8 @@ def test_import_is_listed_detailed_and_served_by_read_endpoints(api_db_session, 
     assert detail.provenance.model_dump(exclude_none=True) == _body()["provenance"]
     assert detail.config["engine"] == "candle"
 
-    result = get_backtest_result(run_id)
+    with patch("q_backend.backtesting.run_service.session_scope", api_session_scope):
+        result = get_backtest_result(run_id)
     assert result["run_id"] == run_id
     assert result["metrics"] == {"total_pnl": 500.0, "trade_count": 1}
     assert [bar["timestamp"] for bar in result["bars"]] == [
@@ -148,6 +149,36 @@ def test_import_is_listed_detailed_and_served_by_read_endpoints(api_db_session, 
     assert result["bars"][0]["open"] == 128500.0
     assert result["indicators"][0]["key"] == "ma_fast"
     assert result["indicators"][0]["values"] == [None, 128501.0, 128502.0, 128503.0, 128504.0]
+
+
+def test_import_of_unmeasured_trades_reads_back_with_zero_excursion_counts(api_session_scope, lake):
+    body = _body()
+    body["config"]["excursions"] = False
+    for name in (
+        "mfe_points",
+        "mae_points",
+        "mfe_value",
+        "mae_value",
+        "mfe_time",
+        "mae_time",
+        "mfe_capture",
+        "post_exit_mfe_points",
+        "post_exit_mae_points",
+        "post_exit_return_points",
+        "post_exit_bars_observed",
+        "exit_bar_rest_high",
+        "exit_bar_rest_low",
+        "excursion_resolution",
+    ):
+        body["result"]["trades"][0][name] = None
+
+    with api_session_scope() as session:
+        run_id = _import(body, session)
+
+    with patch("q_backend.backtesting.run_service.session_scope", api_session_scope):
+        result = get_backtest_result(run_id)
+    assert result["trades"][0]["mfe_points"] is None
+    assert result["performance"]["excursions"]["resolution"] == {"tick": 0, "minute": 0, "candle": 0}
     assert result["trades"][0]["id"] == "trade-1"
 
 

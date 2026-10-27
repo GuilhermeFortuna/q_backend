@@ -142,6 +142,27 @@ def test_publish_posts_valid_request_shape(ohlcv_bars: pd.DataFrame) -> None:
     assert body["result"]["metrics"] == result.metrics
 
 
+def test_publish_keeps_disabled_excursion_setting_and_null_trade_fields(ohlcv_bars: pd.DataFrame) -> None:
+    result = backtest(ohlcv_bars, strategy=MockPublishedStrategy(), symbol="WIN$", excursions=False)
+    captured_requests: list[httpx.Request] = []
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        captured_requests.append(request)
+        return httpx.Response(200, json={"run_id": "no-excursions"})
+
+    mock_client = httpx.Client(transport=httpx.MockTransport(mock_handler))
+    with patch("q_backend.research.publishing.httpx.Client", return_value=mock_client):
+        result.publish()
+
+    body = json.loads(captured_requests[0].content.decode())
+    validated = BacktestImportRequest.model_validate(body)
+    assert validated.config.excursions is False
+    assert body["config"]["excursions"] is False
+    assert body["result"]["trades"]
+    assert all(trade["mfe_points"] is None for trade in body["result"]["trades"])
+    assert all(trade["excursion_resolution"] is None for trade in body["result"]["trades"])
+
+
 def test_publish_overrides_name_timeframe_and_api_url(ohlcv_bars: pd.DataFrame) -> None:
     frame = ohlcv_bars.copy()
     frame.attrs = {}  # no timeframe in attrs
