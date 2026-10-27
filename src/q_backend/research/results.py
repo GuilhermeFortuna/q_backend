@@ -81,8 +81,9 @@ class BacktestResult:
         Read-only dictionary of the arguments used for this backtest.
     rejected_entries : pandas.DataFrame
         DataFrame listing entries rejected due to invalid protective price levels
-        (``level_on_wrong_side``) or priced entries that traded only before a
-        same-bar exit (``touch_before_exit``). Includes columns ``time``, ``side``,
+        (``level_on_wrong_side``), priced entries that traded only before a
+        same-bar exit (``touch_before_exit``) or that the bar's trades never filled
+        (``not_filled``). Includes columns ``time``, ``side``,
         ``fill_price``, ``stop_loss``, ``take_profit``, and ``reason``.
     """
 
@@ -193,6 +194,7 @@ def empty_rejected_frame() -> pd.DataFrame:
 REASON_MAP: Final[dict[int, str]] = {
     0: "level_on_wrong_side",
     1: "touch_before_exit",
+    2: "not_filled",
 }
 
 

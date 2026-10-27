@@ -52,7 +52,8 @@ def test_the_close_the_tape_reaches_first_wins_whatever_its_place_in_the_list(fr
 
     trades = backtest(frame, strategy=strategy, symbol=SYMBOL, ticks=store).trades
 
-    assert trades["exit_price"].tolist() == [95.0]
+    # The stop at 95 is a jump to 94, its fill.
+    assert trades["exit_price"].tolist() == [94.0]
     assert trades["exit_reason"].tolist() == ["Stop"]
     assert trades["exit_tick_time"].tolist() == [_bar("10:12")]
 
@@ -68,7 +69,8 @@ def test_the_entry_the_tape_touches_first_fills_and_cancels_the_other(frame_and_
     trades = backtest(frame, strategy=strategy, symbol=SYMBOL, ticks=store).trades
 
     assert trades["side"].tolist() == ["short"]
-    assert trades["entry_price"].tolist() == [95.0]
+    # The sell stop at 95 fills at the jump to 94.
+    assert trades["entry_price"].tolist() == [94.0]
     assert trades["entry_reason"].tolist() == ["Sell stop"]
     assert trades["stop_loss"].tolist() == [110.0]
 
@@ -86,7 +88,7 @@ def test_an_entry_after_a_same_bar_close_sees_the_position_gone(frame_and_store)
     assert ("exit", 1, 1) in strategy.seen and ("entry", 1, 0) in strategy.seen
     assert trades["side"].tolist() == ["long", "short"]
     assert trades["exit_reason"].tolist()[0] == "Stop"
-    # The short traded only on the way back up, after the 94.0 that stopped the long.
+    # The short at 100 is a limit above the 94 that stopped the long; the 106 trades beyond it.
     assert trades["entry_price"].tolist() == [100.0, 100.0]
     assert trades["entry_reason"].tolist() == ["Open", "Reverse"]
 

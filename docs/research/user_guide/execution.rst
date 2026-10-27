@@ -37,10 +37,24 @@ same candle can reverse the position at the next open.
 Priced entries
 --------------
 
-A priced entry fills exactly at ``price`` if it lies between the deciding
-candle's low and high. The model does not declare a limit or stop order type.
-A price outside the candle's range raises ``ValueError``; it is not queued for
-a later candle.
+A priced entry fills on the deciding candle if ``price`` lies between its low
+and high. A price outside the candle's range raises ``ValueError``; it is not
+queued for a later candle.
+
+Priced entries and priced closes fill from the candle's ticks as a stop or a
+limit, told apart by the side the price comes from:
+
+* **Stop**: the price moves toward the order, as for a buy above the market or
+  a long's stop below it. It fills at the first trade at or beyond the price,
+  at that trade's price, so a jump through the level fills at the jump.
+* **Limit**: the price comes back to the order, as for a buy below the market
+  or a long's target above it. It fills at its own price once a trade goes
+  strictly beyond it; a trade exactly at the price may not have reached the
+  order in the queue.
+
+A priced entry the ticks never fill appears in ``result.rejected_entries`` with
+reason ``not_filled``. When the candle opens beyond your level, pass the open
+as the price.
 
 On a candle where a stop, target, breakeven or priced close closed a trade,
 a priced entry fills only from a trade at or after that exit. Otherwise it
