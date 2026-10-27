@@ -337,6 +337,7 @@ def test_an_empty_frame_returns_the_complete_schemas(root):
         "fill_price",
         "stop_loss",
         "take_profit",
+        "reason",
     ]
     assert result.trades.empty and result.rejected_entries.empty
 
