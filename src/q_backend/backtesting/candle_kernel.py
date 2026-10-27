@@ -40,6 +40,7 @@ REQUIRED_RUN_CANDLE_PARAMETERS: Final = (
     "intrabar",
     "strategy_callback",
     "snapshot_levels",
+    "entry_fill_callback",
 )
 
 
@@ -341,7 +342,7 @@ def run_chunk(
         decided_stop = runtime.stop_price
         decided_target = runtime.target_price
         decided_entry = runtime.entry_price
-        level_args = {"strategy_callback": runtime.strategy}
+        level_args = {"strategy_callback": runtime.strategy, "entry_fill_callback": runtime.entry_filled}
     if intrabar is not None:
         level_args["intrabar"] = intrabar
     if runtime is not None:
@@ -431,6 +432,8 @@ def run_chunk(
     def close_reason_at(fill_bar: int) -> str | None:
         # A plain close decided on the bar before the fill exits there, and blocks a priced close on the fill bar,
         # which then finds no position. Otherwise the exit is a priced close filled on its own bar.
+        if fill_bar >= 1 and runtime.fill_close_requested[fill_bar - 1]:
+            return runtime.fill_close_reason[fill_bar - 1]
         if fill_bar >= 1 and runtime.close_requested[fill_bar - 1] and np.isnan(runtime.exit_price[fill_bar - 1]):
             return runtime.close_reason[fill_bar - 1]
         if runtime.close_requested[fill_bar] and not np.isnan(runtime.exit_price[fill_bar]):

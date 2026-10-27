@@ -92,7 +92,10 @@ class ResearchStrategy(ABC):
         """
         Evaluate exit logic for the current bar given historical prefix.
 
-        Evaluated prior to ``entry_strategy`` on each bar.
+        Evaluated prior to ``entry_strategy`` on each bar. When a priced entry fills on the
+        bar and stays open, it is evaluated once more with that position, and only a
+        ``TradeOrder.close()`` without a price, which exits at the next bar's open, is
+        accepted from that call.
 
         Parameters
         ----------

@@ -55,7 +55,8 @@ class _RuntimeHooks:
     """Per-chunk decisions for the candle kernel's runtime callbacks.
 
     ``strategy`` runs once per bar after intrabar fills and returns the kernel's decision
-    ``dict``.
+    ``dict``. ``entry_filled`` runs after a same-bar priced entry fills and returns whether to
+    close at the next bar's open.
     Recorded levels are indexed by the bar that requested the entry. The kernel's decision
     trace identifies which requests passed the entry gates.
     """
@@ -72,6 +73,9 @@ class _RuntimeHooks:
         self.entry_reason = np.full(len(chunk), None, dtype=object)
         self.close_reason = np.full(len(chunk), None, dtype=object)
         self.close_requested = np.zeros(len(chunk), dtype=bool)
+        # A close requested right after a same-bar priced entry filled, for the next bar's open.
+        self.fill_close_requested = np.zeros(len(chunk), dtype=bool)
+        self.fill_close_reason = np.full(len(chunk), None, dtype=object)
 
     def strategy(self, bar: int, raw_positions: tuple) -> dict[str, Any]:
         adapter = self._adapter
@@ -129,6 +133,33 @@ class _RuntimeHooks:
                 decision.update(entry_kind=entry_decision.kind, expire_bars=entry_decision.expire_bars)
         self._progress.bar(bar + 1, timestamp, _position_label(positions))
         return decision
+
+    def entry_filled(self, bar: int, raw_positions: tuple) -> bool:
+        """Ask ``exit_strategy`` again once a same-bar priced entry has filled.
+
+        The bar's first call ran before the fill, so this is the only one that sees the new
+        position on its entry bar. A plain close exits at the next bar's open, ahead of that
+        bar's stops and targets.
+        """
+        adapter = self._adapter
+        position = int(self._history_positions[bar])
+        decision = adapter._invoke_hook(
+            "exit_strategy",
+            _prefix(adapter._decision_frame, position + 1),
+            self._positions(raw_positions),
+            ticks=adapter._ticks_for("exit_strategy", bar_position=position),
+        )
+        if decision is None:
+            return False
+        if decision.action != "close" or decision.price is not None:
+            raise ValueError(
+                f"{type(adapter.research_strategy).__name__}.exit_strategy at {self._chunk.index[bar]} returned "
+                f"{decision!r} for a position its priced entry opened on this bar; only TradeOrder.close() "
+                "without a price, which exits at the next bar's open, is supported there"
+            )
+        self.fill_close_requested[bar] = True
+        self.fill_close_reason[bar] = decision.reason
+        return True
 
     def _positions(self, raw_positions: tuple) -> tuple[ResearchPosition, ...]:
         chunk = self._chunk
