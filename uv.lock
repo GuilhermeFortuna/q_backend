@@ -2235,7 +2235,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.7.0" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "q-core", git = "https://github.com/GuilhermeFortuna/q_core.git?tag=v2026.10.27" },
+    { name = "q-core", git = "https://github.com/GuilhermeFortuna/q_core.git?tag=v2026.10.27.2" },
     { name = "redis", specifier = ">=5.2.0" },
     { name = "rich", specifier = ">=15.0.0" },
     { name = "scikit-learn", specifier = ">=1.5.0" },
@@ -2267,7 +2267,7 @@ docs = [
 [[package]]
 name = "q-core"
 version = "2026.10.27"
-source = { git = "https://github.com/GuilhermeFortuna/q_core.git?tag=v2026.10.27#70fb32340ea971d7bfa2c3e6ca16dca9ee71ef5b" }
+source = { git = "https://github.com/GuilhermeFortuna/q_core.git?tag=v2026.10.27.2#c022fdd3ead11c730548898b16bbea605d6cf022" }
 dependencies = [
     { name = "numpy" },
 ]
