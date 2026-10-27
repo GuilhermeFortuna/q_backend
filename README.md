@@ -1222,7 +1222,9 @@ path is configured. Enable them once per checkout:
 make hooks
 ```
 
-`pre-commit` runs `ruff` and `black`; `pre-push` runs `scripts/ci.sh`.
+`pre-commit` runs `ruff` and `black`. `pre-push` runs `scripts/ci.sh` in a
+temporary detached worktree at each distinct commit being pushed, then removes
+the worktree. When a branch and tag point to the same commit, CI runs once.
 
 ### ML filter worker imports and validation scores
 

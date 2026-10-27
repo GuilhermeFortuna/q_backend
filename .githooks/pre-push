@@ -15,4 +15,55 @@ done < <(git rev-parse --local-env-vars)
 source "$REPO_ROOT/.githooks/_common.sh"
 ensure_uv_on_path
 
-./scripts/ci.sh
+push_revisions=()
+while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
+    [[ -n "${local_sha:-}" ]] || continue
+    [[ "$local_sha" =~ ^0+$ ]] && continue
+
+    already_seen=0
+    for pushed_revision in "${push_revisions[@]}"; do
+        if [[ "$pushed_revision" == "$local_sha" ]]; then
+            already_seen=1
+            break
+        fi
+    done
+    if [[ "$already_seen" -eq 0 ]]; then
+        push_revisions+=("$local_sha")
+    fi
+done
+
+if [[ "${#push_revisions[@]}" -eq 0 ]]; then
+    echo "==> No pushed revisions to validate."
+    exit 0
+fi
+
+tmp_root="$(mktemp -d "${TMPDIR:-/tmp}/q-backend-pre-push.XXXXXX")"
+worktree="$tmp_root/checkout"
+
+cleanup() {
+    local status=$?
+    trap - EXIT INT TERM
+    if [[ -d "$worktree" ]]; then
+        if ! git -C "$REPO_ROOT" worktree remove --force "$worktree"; then
+            echo "ERROR: Could not remove temporary CI worktree: $worktree" >&2
+            [[ "$status" -ne 0 ]] || status=1
+        fi
+    fi
+    rm -rf "$tmp_root"
+    exit "$status"
+}
+
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+for pushed_revision in "${push_revisions[@]}"; do
+    echo "==> Running CI for pushed revision ${pushed_revision}..."
+    git -C "$REPO_ROOT" worktree add --quiet --detach "$worktree" "$pushed_revision"
+    (
+        cd "$worktree"
+        export UV_PROJECT_ENVIRONMENT="$worktree/.venv"
+        ./scripts/ci.sh
+    )
+    git -C "$REPO_ROOT" worktree remove --force "$worktree"
+done
