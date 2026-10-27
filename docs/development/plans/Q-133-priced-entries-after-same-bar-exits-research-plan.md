@@ -23,8 +23,8 @@ priced-entry rule.
 
 **Files:** `pyproject.toml`, `uv.lock`.
 
-- [ ] Set the `q-core` tag to the Q-132 release and run `uv lock --upgrade-package q-core`.
-- [ ] Run `tests/research/test_priced_entries.py` and `tests/research/test_resting_orders_backtest.py` to
+- [x] Set the `q-core` tag to the Q-132 release and run `uv lock --upgrade-package q-core`.
+- [x] Run `tests/research/test_priced_entries.py` and `tests/research/test_resting_orders_backtest.py` to
   confirm nothing else moved. Commit.
 
 ### 2. Rejection reason
@@ -32,22 +32,22 @@ priced-entry rule.
 **Files:** `src/q_backend/backtesting/candle_kernel.py`, `src/q_backend/research/results.py`,
 `tests/research/test_priced_entries_after_exit.py` (new).
 
-- [ ] Write failing tests for acceptance 1–4.
-- [ ] Add `"reason"` to the arrays `run_chunk` copies. Add a `reason` column to `REJECTED_COLUMNS`,
+- [x] Write failing tests for acceptance 1–4.
+- [x] Add `"reason"` to the arrays `run_chunk` copies. Add a `reason` column to `REJECTED_COLUMNS`,
   `empty_rejected_frame` and `rejected_entries_frame`, mapping codes to `level_on_wrong_side` and
   `touch_before_exit` and raising on any other code.
-- [ ] Run the new tests, the existing tests in acceptance 5, and `ruff`/`black`. Commit.
+- [x] Run the new tests, the existing tests in acceptance 5, and `ruff`/`black`. Commit.
 
 ### 3. Documentation
 
 **Files:** `docs/research/user_guide/execution.rst`, `docs/research/user_guide/backtesting.rst`,
 `src/q_backend/research/orders.py`, `src/q_backend/research/results.py`.
 
-- [ ] Document the rule and the reason column as the spec lists. Commit.
+- [x] Document the rule and the reason column as the spec lists. Commit.
 
 ### 4. Experiment rerun
 
-- [ ] Run `BracketMomentumStrategy` with its `main()` setup from `experiments/strategies/ind_strategies.py`
+- [x] Run `BracketMomentumStrategy` with its `main()` setup from `experiments/strategies/ind_strategies.py`
   (on the `research/experiments` branch, not `development`) on the new pin, with a throwaway script outside the
   repository. Record its trades, PnL, drawdown and
   `touch_before_exit` count for the board message. The pre-fix figures are 9,090 trades, PnL 185,705 and
