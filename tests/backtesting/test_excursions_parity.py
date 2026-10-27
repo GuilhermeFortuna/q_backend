@@ -101,9 +101,46 @@ def test_measurement_matches_q130_reference_for_seeded_trade_matrix():
 
     assert len(observed) >= 500
     assert [_fields(trade) for trade in observed] == [_fields(trade) for trade in expected]
+    expected_without_source, observed_without_source = deepcopy(trades), deepcopy(trades)
+    reference.measure_trades(expected_without_source, bars, post_exit_bars=3)
+    actual.measure_trades(observed_without_source, bars, post_exit_bars=3)
+    assert [_fields(trade) for trade in observed_without_source] == [
+        _fields(trade) for trade in expected_without_source
+    ]
     for window in (1, 4, 10):
         expected_post = reference.post_exit_from_stored(
             expected, bars, post_exit_bars=window, day_trade_close=time(0, 20)
         )
         actual_post = actual.post_exit_from_stored(observed, bars, post_exit_bars=window, day_trade_close=time(0, 20))
         assert actual_post == expected_post
+
+
+def test_measurement_preserves_non_utc_timezones():
+    bars, deal_bars, trades = _fixture()
+    bars.index = bars.index.tz_convert("America/Sao_Paulo")
+    localized_deals = {
+        key: (
+            None
+            if value is None
+            else actual.DealBar(
+                times=pd.DatetimeIndex(value.times).tz_convert("America/Sao_Paulo"),
+                prices=value.prices,
+                resolution=value.resolution,
+            )
+        )
+        for key, value in deal_bars.items()
+    }
+    for trade in trades:
+        trade.entry_time = pd.Timestamp(trade.entry_time).tz_convert("America/Sao_Paulo").to_pydatetime()
+        trade.exit_time = pd.Timestamp(trade.exit_time).tz_convert("America/Sao_Paulo").to_pydatetime()
+        if trade.entry_tick_time:
+            trade.entry_tick_time = pd.Timestamp(trade.entry_tick_time).tz_convert("America/Sao_Paulo").to_pydatetime()
+        if trade.exit_tick_time:
+            trade.exit_tick_time = pd.Timestamp(trade.exit_tick_time).tz_convert("America/Sao_Paulo").to_pydatetime()
+
+    expected, observed = deepcopy(trades), deepcopy(trades)
+    reference.measure_trades(expected, bars, deals=lambda bar: localized_deals[(bar % 3, bar)], post_exit_bars=4)
+    actual.measure_trades(observed, bars, deals=lambda bar: localized_deals[(bar % 3, bar)], post_exit_bars=4)
+    assert [_fields(trade) for trade in observed] == [_fields(trade) for trade in expected]
+    assert [str(trade.mfe_time.tzinfo) for trade in observed] == [str(trade.mfe_time.tzinfo) for trade in expected]
+    assert [str(trade.mae_time.tzinfo) for trade in observed] == [str(trade.mae_time.tzinfo) for trade in expected]

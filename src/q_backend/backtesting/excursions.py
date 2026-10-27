@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, time
 from typing import Callable, Iterable, Protocol
 
+import numpy as np
 import pandas as pd
 
 from q_backend.backtesting.models import OrderAction, Trade
@@ -44,6 +45,32 @@ def _direction(trade: Trade) -> float:
     return 1.0 if trade.action == OrderAction.BUY else -1.0
 
 
+def _time_array(values: Iterable[datetime]) -> tuple[np.ndarray, object]:
+    index = pd.DatetimeIndex(values)
+    source_timezone = index.tz if index.tz is not None else "UTC"
+    if index.tz is None:
+        index = index.tz_localize("UTC")
+    else:
+        index = index.tz_convert("UTC")
+    return index.as_unit("ns").asi8, source_timezone
+
+
+def _times_ns(values: Iterable[datetime]) -> np.ndarray:
+    return _time_array(values)[0]
+
+
+def _bar_positions(trade: Trade, index: pd.DatetimeIndex) -> tuple[int, int] | None:
+    entry = trade.entry_bar
+    exit_ = trade.exit_bar
+    if entry is None:
+        entry = int(index.get_indexer([_timestamp(trade.entry_tick_time or trade.entry_time)], method="pad")[0])
+    if exit_ is None and trade.exit_time is not None:
+        exit_ = int(index.get_indexer([_timestamp(trade.exit_tick_time or trade.exit_time)], method="pad")[0])
+    if entry is None or exit_ is None or entry < 0 or exit_ < 0:
+        return None
+    return entry, exit_
+
+
 def post_exit_from_stored(
     trades: Iterable[Trade], bars: pd.DataFrame, *, post_exit_bars: int, day_trade_close: str | time | None = None
 ) -> list[dict]:
@@ -51,6 +78,12 @@ def post_exit_from_stored(
     if not 1 <= post_exit_bars <= 500:
         raise ValueError("post_exit_bars must be between 1 and 500")
     output = []
+    index = pd.DatetimeIndex(bars.index)
+    high = bars["high"].to_numpy(dtype=np.float64)
+    low = bars["low"].to_numpy(dtype=np.float64)
+    close = bars["close"].to_numpy(dtype=np.float64)
+    close_time = time.fromisoformat(day_trade_close) if isinstance(day_trade_close, str) else day_trade_close
+    times_of_day = index.time
     for trade in trades:
         empty = {
             "trade_id": trade.id,
@@ -59,7 +92,7 @@ def post_exit_from_stored(
             "post_exit_return_points": None,
             "post_exit_bars_observed": 0,
         }
-        positions = _indices(trade, bars)
+        positions = _bar_positions(trade, index)
         if (
             positions is None
             or trade.exit_price is None
@@ -80,31 +113,22 @@ def post_exit_from_stored(
             -(trade.exit_bar_rest_high - trade.exit_price) * direction,
             -(trade.exit_bar_rest_low - trade.exit_price) * direction,
         )
-        last_close = float(bars.iloc[exit_bar]["close"])
+        last_close = close[exit_bar]
         observed = 0
-        for i in range(exit_bar + 1, min(exit_bar + post_exit_bars + 1, len(bars))):
-            row = bars.iloc[i]
-            if day_trade_close is not None:
-                close_time = (
-                    time.fromisoformat(day_trade_close) if isinstance(day_trade_close, str) else day_trade_close
-                )
-                bar_time = _timestamp(bars.index[i]).to_pydatetime().timetz()
-                if bar_time.replace(tzinfo=None) > close_time:
+        stop = min(exit_bar + post_exit_bars + 1, len(bars))
+        end = stop
+        if close_time is not None:
+            for i in range(exit_bar + 1, stop):
+                if times_of_day[i].replace(tzinfo=None) > close_time:
+                    end = i
                     break
-            best = max(
-                best,
-                (float(row.high) - trade.exit_price) * direction,
-                (float(row.low) - trade.exit_price) * direction,
-                0.0,
-            )
-            worst = max(
-                worst,
-                -(float(row.high) - trade.exit_price) * direction,
-                -(float(row.low) - trade.exit_price) * direction,
-                0.0,
-            )
-            last_close = float(row.close)
-            observed += 1
+        if end > exit_bar + 1:
+            future_high = (high[exit_bar + 1 : end] - trade.exit_price) * direction
+            future_low = (low[exit_bar + 1 : end] - trade.exit_price) * direction
+            best = max(best, float(future_high.max()), float(future_low.max()), 0.0)
+            worst = max(worst, float(-future_high.min()), float(-future_low.min()), 0.0)
+            last_close = close[end - 1]
+            observed = end - exit_bar - 1
         if (
             exit_bar + 1 >= len(bars)
             and trade.exit_bar_rest_high == trade.exit_price
@@ -135,86 +159,109 @@ def measure_trades(
 ) -> None:
     """Measure closed trade excursions in place, using deal data only where needed."""
     trades = list(trades)
-    cache: dict[int, DealBar | None] = {}
+    cache: dict[int, tuple[np.ndarray, np.ndarray, str, object] | None] = {}
+    index = pd.DatetimeIndex(bars.index)
+    bar_times = _times_ns(index)
+    highs = bars["high"].to_numpy(dtype=np.float64)
+    lows = bars["low"].to_numpy(dtype=np.float64)
 
-    def get_deals(i: int) -> DealBar | None:
+    def get_deals(i: int) -> tuple[np.ndarray, np.ndarray, str, object] | None:
         if i not in cache:
-            cache[i] = deals(i) if deals is not None else None
+            result = deals(i) if deals is not None else None
+            if result is None:
+                cache[i] = None
+            else:
+                times_ns, source_timezone = _time_array(result.times)
+                cache[i] = (
+                    times_ns,
+                    np.asarray(result.prices, dtype=np.float64),
+                    result.resolution,
+                    source_timezone,
+                )
         return cache[i]
 
     for trade_number, trade in enumerate(trades, start=1):
-        positions = _indices(trade, bars)
+        positions = _bar_positions(trade, index)
         if positions is None or trade.exit_price is None:
             continue
         entry_bar, exit_bar = positions
         direction = _direction(trade)
         entry_time = _timestamp(trade.entry_tick_time or trade.entry_time)
         exit_time = _timestamp(trade.exit_tick_time or trade.exit_time)
-        candidates: list[tuple[float, pd.Timestamp, str]] = [
-            (trade.entry_price, entry_time, "tick"),
-            (trade.exit_price, exit_time, "tick"),
-        ]
+        candidate_prices = [np.asarray([trade.entry_price, trade.exit_price], dtype=np.float64)]
+        candidate_times = [np.asarray([entry_time.value, exit_time.value], dtype=np.int64)]
+        candidate_resolutions = [np.asarray(["tick", "tick"], dtype=object)]
+        candidate_timezones = [np.asarray([entry_time.tz, exit_time.tz], dtype=object)]
         resolution = "tick"
         partial_bars = set()
-        if trade.entry_tick_time is None and trade.order_kind == "market":
-            # Entry at bar open includes the full candle.
-            partial_bars.discard(entry_bar)
-        else:
+        if not (trade.entry_tick_time is None and trade.order_kind == "market"):
             partial_bars.add(entry_bar)
         if trade.exit_tick_time is None:
-            partial_bars.discard(exit_bar)  # open fill includes only the opening deal
+            partial_bars.discard(exit_bar)
         else:
             partial_bars.add(exit_bar)
         for i in range(entry_bar, exit_bar + 1):
-            row = bars.iloc[i]
             if i not in partial_bars:
-                candidates.extend(
-                    [
-                        (float(row.high), _timestamp(bars.index[i]), "tick"),
-                        (float(row.low), _timestamp(bars.index[i]), "tick"),
-                    ]
-                )
+                candidate_prices.append(np.asarray([highs[i], lows[i]], dtype=np.float64))
+                candidate_times.append(np.asarray([bar_times[i], bar_times[i]], dtype=np.int64))
+                candidate_resolutions.append(np.asarray(["tick", "tick"], dtype=object))
+                candidate_timezones.append(np.asarray([index.tz or "UTC", index.tz or "UTC"], dtype=object))
                 continue
             deals_in_bar = get_deals(i)
             if deals_in_bar is None:
                 resolution = "candle"
-                candidates.extend(
-                    [
-                        (float(row.high), _timestamp(bars.index[i]), "candle"),
-                        (float(row.low), _timestamp(bars.index[i]), "candle"),
-                    ]
-                )
+                candidate_prices.append(np.asarray([highs[i], lows[i]], dtype=np.float64))
+                candidate_times.append(np.asarray([bar_times[i], bar_times[i]], dtype=np.int64))
+                candidate_resolutions.append(np.asarray(["candle", "candle"], dtype=object))
+                candidate_timezones.append(np.asarray([index.tz or "UTC", index.tz or "UTC"], dtype=object))
                 continue
-            if deals_in_bar.resolution == "minute":
+            deal_times, deal_prices, deal_resolution, deal_timezone = deals_in_bar
+            if deal_resolution == "minute":
                 resolution = "minute"
-            times = [_timestamp(v) for v in deals_in_bar.times]
-            prices = list(deals_in_bar.prices)
-            for stamp, price in zip(times, prices):
-                if i == entry_bar and stamp < entry_time:
-                    continue
-                if i == exit_bar and stamp > exit_time:
-                    continue
-                candidates.append((float(price), stamp, deals_in_bar.resolution))
-        values = [(price - trade.entry_price) * direction for price, _, _ in candidates]
-        max_value, min_value = max(values), min(values)
-        max_i = values.index(max_value)
-        min_i = values.index(min_value)
+            count = min(len(deal_times), len(deal_prices))
+            deal_times, deal_prices = deal_times[:count], deal_prices[:count]
+            mask = np.ones(count, dtype=bool)
+            if i == entry_bar:
+                mask &= deal_times >= entry_time.value
+            if i == exit_bar:
+                mask &= deal_times <= exit_time.value
+            candidate_prices.append(deal_prices[mask])
+            candidate_times.append(deal_times[mask])
+            candidate_resolutions.append(np.full(int(mask.sum()), deal_resolution, dtype=object))
+            candidate_timezones.append(np.full(int(mask.sum()), deal_timezone, dtype=object))
+        prices = np.concatenate(candidate_prices)
+        times = np.concatenate(candidate_times)
+        resolutions = np.concatenate(candidate_resolutions)
+        timezones = np.concatenate(candidate_timezones)
+        values = (prices - trade.entry_price) * direction
+        max_i, min_i = int(np.argmax(values)), int(np.argmin(values))
+        max_value, min_value = values[max_i], values[min_i]
         trade.mfe_points = max(0.0, max_value)
         trade.mae_points = max(0.0, -min_value)
-        trade.mfe_time = candidates[max_i][1].to_pydatetime() if max_value > 0 else entry_time.to_pydatetime()
-        trade.mae_time = candidates[min_i][1].to_pydatetime() if min_value < 0 else entry_time.to_pydatetime()
+        trade.mfe_time = (
+            pd.Timestamp(times[max_i], tz="UTC").tz_convert(timezones[max_i]).to_pydatetime()
+            if max_value > 0
+            else entry_time.to_pydatetime()
+        )
+        trade.mae_time = (
+            pd.Timestamp(times[min_i], tz="UTC").tz_convert(timezones[min_i]).to_pydatetime()
+            if min_value < 0
+            else entry_time.to_pydatetime()
+        )
         realised_money = (trade.exit_price - trade.entry_price) * direction * trade.quantity * trade.point_value
         mfe_money = trade.mfe_points * trade.quantity * trade.point_value
         trade.mfe_capture = realised_money / mfe_money if mfe_money else None
         trade.excursion_resolution = max(
-            (resolution, candidates[max_i][2], candidates[min_i][2]), key={"tick": 0, "minute": 1, "candle": 2}.get
+            (resolution, resolutions[max_i], resolutions[min_i]), key={"tick": 0, "minute": 1, "candle": 2}.get
         )
         exit_deals = get_deals(exit_bar) if trade.exit_tick_time is not None else None
         if trade.exit_tick_time is None:
             trade.exit_bar_rest_high = float(bars.iloc[exit_bar].high)
             trade.exit_bar_rest_low = float(bars.iloc[exit_bar].low)
         elif exit_deals is not None:
-            post_prices = [float(p) for t, p in zip(exit_deals.times, exit_deals.prices) if _timestamp(t) >= exit_time]
+            exit_times, exit_prices, _, _ = exit_deals
+            count = min(len(exit_times), len(exit_prices))
+            post_prices = exit_prices[:count][exit_times[:count] >= exit_time.value].tolist()
             post_prices.append(trade.exit_price)
             trade.exit_bar_rest_high, trade.exit_bar_rest_low = max(post_prices), min(post_prices)
         else:
