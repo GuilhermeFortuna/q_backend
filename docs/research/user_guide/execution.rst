@@ -63,6 +63,61 @@ amend returned from this second call raises ``ValueError``.
    Same-candle priced fills are a research model; live deployment does not
    reproduce them.
 
+Order lists
+-----------
+
+A hook may return a list of orders when it cannot know which of them the
+candle traded first. The engine replays the candle's ticks and fills the first
+one the tape reaches:
+
+* ``exit_strategy`` may list any number of priced closes, at most one close
+  without a price and at most one amend. The position closes at the priced
+  close its ticks reach first, under that close's ``reason``; on a tie the
+  earlier listed close wins. A close without a price beside them exits at the
+  next open when none is reached.
+* ``entry_strategy`` may list priced market entries. The first one the ticks
+  touch fills with its own levels and reason; the others are cancelled. After
+  a same-candle exit only touches from that exit on count, and if none comes,
+  each entry appears in ``result.rejected_entries`` with reason
+  ``touch_before_exit``. A list cannot mix priced entries with unpriced,
+  stop or limit entries.
+
+``entry_strategy`` runs after the candle's priced closes, so its ``positions``
+no longer holds a position they closed, and it can open on the same candle.
+
+A stop and a target that a strategy tracks itself, where one candle can reach
+both:
+
+.. code-block:: python
+
+   def exit_strategy(self, frame, positions):
+       if not positions:
+           return None
+       open_, high, low = frame["open"].iat[-1], frame["high"].iat[-1], frame["low"].iat[-1]
+       orders = []
+       if low <= self.stop:
+           orders.append(TradeOrder.close(price=min(open_, self.stop), reason="Stop"))
+       if high >= self.target:
+           orders.append(TradeOrder.close(price=max(open_, self.target), reason="Target"))
+       return orders
+
+A bracket around the previous close, one side cancelling the other:
+
+.. code-block:: python
+
+   def entry_strategy(self, frame, positions):
+       high_level, low_level = frame["bracket_high"].iat[-2], frame["bracket_low"].iat[-2]
+       orders = []
+       if frame["high"].iat[-1] >= high_level:
+           orders.append(TradeOrder.buy(price=max(frame["open"].iat[-1], high_level)))
+       if frame["low"].iat[-1] <= low_level:
+           orders.append(TradeOrder.sell(price=min(frame["open"].iat[-1], low_level)))
+       return orders
+
+The tick replay orders the listed prices, but cannot tell whether the strategy
+could have known them before the candle. List only levels fixed in advance,
+such as stops, targets and brackets.
+
 Stops and targets from ticks
 ----------------------------
 

@@ -51,7 +51,8 @@ class TradeOrder:
         price fills on the same bar; on a candle with an intrabar exit (stop, target,
         breakeven or priced close), it fills only from a trade at or after that exit,
         otherwise appearing in ``rejected_entries`` with reason ``touch_before_exit``.
-        A stop or limit entry rests and fills from ticks.
+        A stop or limit entry rests and fills from ticks. A hook may return several priced
+        entries or closes in a list; the first the candle's ticks reach fills.
     kind : {'market', 'stop', 'limit'}, optional
         Entry order type. ``stop`` and ``limit`` orders require ``price``.
     expire_bars : int, optional

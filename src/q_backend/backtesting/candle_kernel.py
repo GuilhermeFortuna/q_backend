@@ -32,6 +32,7 @@ REQUIRED_ENGINE_FUNCTIONS: Final = ("run_candle", "DecisionStep", "size_entry", 
 REQUIRED_ENGINE_CAPABILITIES: Final = ("PROTECTIVE_ORDERS", "RESTING_ORDERS", "SESSION_TICK_SOURCE")
 # Entry kinds in the q_core ledger, by code: an open fill, a priced entry, and resting stop and limit orders.
 ENTRY_KIND_ORDER: Final = ("market", "priced", "stop", "limit")
+_PRICED_KIND: Final = 1
 _RESTING_KINDS: Final = (2, 3)
 REQUIRED_RUN_CANDLE_PARAMETERS: Final = (
     "stop_price",
@@ -41,6 +42,7 @@ REQUIRED_RUN_CANDLE_PARAMETERS: Final = (
     "strategy_callback",
     "snapshot_levels",
     "entry_fill_callback",
+    "entry_callback",
 )
 
 
@@ -339,10 +341,13 @@ def run_chunk(
         if decided_entry is not None:
             level_args["entry_price"] = np.ascontiguousarray(decided_entry)
     else:
-        decided_stop = runtime.stop_price
-        decided_target = runtime.target_price
-        decided_entry = runtime.entry_price
-        level_args = {"strategy_callback": runtime.strategy, "entry_fill_callback": runtime.entry_filled}
+        # Runtime levels are read per order from the hooks' records.
+        decided_stop = decided_target = None
+        level_args = {
+            "strategy_callback": runtime.strategy,
+            "entry_callback": runtime.entry,
+            "entry_fill_callback": runtime.entry_filled,
+        }
     if intrabar is not None:
         level_args["intrabar"] = intrabar
     if runtime is not None:
@@ -393,12 +398,12 @@ def run_chunk(
         if exit_match and runtime is not None:
             bar_idx = int(exit_match.group("bar"))
             bar_time = chunk.index[bar_idx]
-            price = runtime.exit_price[bar_idx]
+            prices = ", ".join(f"{price:g}" for price in runtime.exit_prices[bar_idx] or ())
             low = _column(chunk, "low")[bar_idx]
             high = _column(chunk, "high")[bar_idx]
             strat_name = type(getattr(strategy, "research_strategy", strategy)).__name__
             raise ValueError(
-                f"{strat_name} exit price {price:g} at bar {bar_idx} ({bar_time}) is outside the bar range "
+                f"{strat_name} exit price {prices} at bar {bar_idx} ({bar_time}) is outside the bar range "
                 f"[{low:g}, {high:g}]"
             ) from exc
         raise
@@ -408,49 +413,59 @@ def run_chunk(
     # Only accepted decisions replace a working order; hook requests may be gated out.
     placed_bars = np.flatnonzero(result["entry"]) if runtime is not None else np.empty(0, dtype=np.int64)
 
+    entry_candidate = np.asarray(result["entry_candidate"], dtype=np.int64)
+    exit_candidate = np.asarray(result["exit_candidate"], dtype=np.int64)
+
     def decided_bar(i: int) -> int:
         b = int(entry_bar[i])
         if entry_kind[i] in _RESTING_KINDS:
             before = int(np.searchsorted(placed_bars, b)) - 1
             return int(placed_bars[before]) if before >= 0 else -1
-        is_priced = (
-            decided_entry is not None
-            and not np.isnan(decided_entry[b])
-            and (decided_entry[b] == result["entry_price"][i] or np.isclose(decided_entry[b], result["entry_price"][i]))
-        )
-        return b if is_priced else b - 1
+        # A priced entry fills on its deciding bar; a market entry opens on the bar after it.
+        return b if entry_kind[i] == _PRICED_KIND else b - 1
 
-    def levels_of(decided: np.ndarray | None) -> np.ndarray:
+    def entry_order(i: int) -> tuple[float, float, float, str | None] | None:
+        """The (stop, target, price, reason) of the runtime order that opened trade ``i``."""
+        bar = decided_bar(i)
+        orders = runtime.entry_orders[bar] if bar >= 0 else None
+        if not orders:
+            return None
+        return orders[max(int(entry_candidate[i]), 0)]
+
+    def levels_of(decided: np.ndarray | None, column: int) -> np.ndarray:
         out = np.full(len(entry_bar), np.nan)
-        if decided is not None:
-            for i in range(len(entry_bar)):
-                bar = decided_bar(i)
-                if bar >= 0:
-                    out[i] = decided[bar]
+        for i in range(len(entry_bar)):
+            if runtime is not None:
+                order = entry_order(i)
+                if order is not None:
+                    out[i] = order[column]
+            elif decided is not None and (bar := decided_bar(i)) >= 0:
+                out[i] = decided[bar]
         return out
 
-    def close_reason_at(fill_bar: int) -> str | None:
-        # A plain close decided on the bar before the fill exits there, and blocks a priced close on the fill bar,
-        # which then finds no position. Otherwise the exit is a priced close filled on its own bar.
+    def close_reason_at(fill_bar: int, candidate: int) -> str | None:
+        # A close requested after a same-bar priced entry filled, or a close without a price decided
+        # on the bar before the fill, exits at the fill bar's open. A priced close fills on its own
+        # bar under the reason of the price that won.
         if fill_bar >= 1 and runtime.fill_close_requested[fill_bar - 1]:
             return runtime.fill_close_reason[fill_bar - 1]
-        if fill_bar >= 1 and runtime.close_requested[fill_bar - 1] and np.isnan(runtime.exit_price[fill_bar - 1]):
+        if candidate >= 0 and runtime.exit_reasons[fill_bar] is not None:
+            return runtime.exit_reasons[fill_bar][candidate]
+        if fill_bar >= 1 and runtime.close_requested[fill_bar - 1]:
             return runtime.close_reason[fill_bar - 1]
-        if runtime.close_requested[fill_bar] and not np.isnan(runtime.exit_price[fill_bar]):
-            return runtime.close_reason[fill_bar]
         return None
 
     exit_reason_text = list(result["exit_reason_text"])
     entry_reason: list[str | None] = [None] * len(entry_bar)
     if runtime is not None:
         for i in range(len(entry_bar)):
-            bar = decided_bar(i)
-            if bar >= 0:
-                entry_reason[i] = runtime.entry_reason[bar]
+            order = entry_order(i)
+            if order is not None:
+                entry_reason[i] = order[3]
         # Only a SIGNAL exit takes the close reason; stop, target and other engine exits keep their label.
         for i, text in enumerate(exit_reason_text):
             if text == "SIGNAL" and exit_bar[i] >= 0:
-                reason = close_reason_at(int(exit_bar[i]))
+                reason = close_reason_at(int(exit_bar[i]), int(exit_candidate[i]))
                 if reason is not None:
                     exit_reason_text[i] = reason
 
@@ -470,8 +485,8 @@ def run_chunk(
         )
     }
     trades["entry_kind"] = entry_kind
-    trades["stop_loss"] = levels_of(decided_stop)
-    trades["take_profit"] = levels_of(decided_target)
+    trades["stop_loss"] = levels_of(decided_stop, 0)
+    trades["take_profit"] = levels_of(decided_target, 1)
     trades["final_stop_loss"] = np.asarray(result["final_stop_price"], dtype=np.float64)
     trades["final_take_profit"] = np.asarray(result["final_target_price"], dtype=np.float64)
     rejected = {

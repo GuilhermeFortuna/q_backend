@@ -54,11 +54,12 @@ def _level(value: float) -> float | None:
 class _RuntimeHooks:
     """Per-chunk decisions for the candle kernel's runtime callbacks.
 
-    ``strategy`` runs once per bar after intrabar fills and returns the kernel's decision
-    ``dict``. ``entry_filled`` runs after a same-bar priced entry fills and returns whether to
-    close at the next bar's open.
-    Recorded levels are indexed by the bar that requested the entry. The kernel's decision
-    trace identifies which requests passed the entry gates.
+    Each bar calls ``strategy`` (``exit_strategy``) after intrabar fills, then ``entry``
+    (``entry_strategy``) once the bar's priced closes have resolved, and returns each one's kernel
+    decision ``dict``. ``entry_filled`` runs after a same-bar priced entry fills and returns
+    whether to close at the next bar's open.
+    Records are indexed by the bar that decided them, one item per order of a list; the ledger's
+    ``entry_candidate`` and ``exit_candidate`` name the order that filled.
     """
 
     def __init__(self, adapter: ResearchStrategyAdapter, chunk: pd.DataFrame, history_positions: np.ndarray) -> None:
@@ -66,72 +67,93 @@ class _RuntimeHooks:
         self._chunk = chunk
         self._history_positions = history_positions
         self._progress = adapter.progress
-        self.stop_price = np.full(len(chunk), np.nan)
-        self.target_price = np.full(len(chunk), np.nan)
-        self.entry_price = np.full(len(chunk), np.nan)
-        self.exit_price = np.full(len(chunk), np.nan)
-        self.entry_reason = np.full(len(chunk), None, dtype=object)
+        # Per bar: one (stop, target, price, reason) per entry order, NaN where unset.
+        self.entry_orders = np.full(len(chunk), None, dtype=object)
+        # Per bar: the priced closes' prices and reasons, in list order.
+        self.exit_prices = np.full(len(chunk), None, dtype=object)
+        self.exit_reasons = np.full(len(chunk), None, dtype=object)
+        # A close without a price, for the next bar's open.
         self.close_reason = np.full(len(chunk), None, dtype=object)
         self.close_requested = np.zeros(len(chunk), dtype=bool)
         # A close requested right after a same-bar priced entry filled, for the next bar's open.
         self.fill_close_requested = np.zeros(len(chunk), dtype=bool)
         self.fill_close_reason = np.full(len(chunk), None, dtype=object)
 
+    def _hook(self, name: str, bar: int, positions: tuple[ResearchPosition, ...]) -> tuple[TradeOrder, ...]:
+        adapter = self._adapter
+        position = int(self._history_positions[bar])
+        return adapter._invoke_hook(
+            name,
+            _prefix(adapter._decision_frame, position + 1),
+            positions,
+            ticks=adapter._ticks_for(name, bar_position=position),
+        )
+
     def strategy(self, bar: int, raw_positions: tuple) -> dict[str, Any]:
+        """The bar's exits: closes, priced closes the tape chooses among, and an amend."""
         adapter = self._adapter
         positions = self._positions(raw_positions)
-        position = int(self._history_positions[bar])
-        end = position + 1
         timestamp = self._chunk.index[bar]
-        exit_decision = adapter._invoke_hook(
-            "exit_strategy",
-            _prefix(adapter._decision_frame, end),
-            positions,
-            ticks=adapter._ticks_for("exit_strategy", bar_position=position),
-        )
-        entry_decision = adapter._invoke_hook(
-            "entry_strategy",
-            _prefix(adapter._decision_frame, end),
-            positions,
-            ticks=adapter._ticks_for("entry_strategy", bar_position=position),
-        )
+        orders = self._hook("exit_strategy", bar, positions)
         decision: dict[str, Any] = {}
-        if exit_decision is not None:
-            if exit_decision.action == "close":
-                decision.update(exit_long=True, exit_short=True)
-                if exit_decision.price is not None:
-                    adapter._require_hook_ticks(
-                        "exit_strategy", timestamp, "returned a priced close, which is confirmed from ticks"
-                    )
-                    decision["exit_price"] = float(exit_decision.price)
-                    self.exit_price[bar] = float(exit_decision.price)
-                # A close with no position open does nothing, so it takes no reason.
-                if positions:
-                    self.close_requested[bar] = True
-                    self.close_reason[bar] = exit_decision.reason
-            else:
-                adapter._require_ticks(
-                    "amend", timestamp, "moves stop or take-profit levels, which are confirmed from ticks"
-                )
-                decision.update(amend_stop=exit_decision.stop_loss, amend_target=exit_decision.take_profit)
-        if entry_decision is not None and entry_decision.action == "cancel":
-            decision["cancel_entry"] = True
-        elif entry_decision is not None:
-            stop, target, price = adapter._levels_of(entry_decision, timestamp)
-            self.stop_price[bar] = stop
-            self.target_price[bar] = target
-            self.entry_price[bar] = price if entry_decision.kind == "market" else np.nan
-            self.entry_reason[bar] = entry_decision.reason
+        priced = [order for order in orders if order.action == "close" and order.price is not None]
+        plain = [order for order in orders if order.action == "close" and order.price is None]
+        if priced or plain:
+            decision.update(exit_long=True, exit_short=True)
+        if priced:
+            adapter._require_hook_ticks(
+                "exit_strategy", timestamp, "returned a priced close, which is confirmed from ticks"
+            )
+            prices = [float(order.price) for order in priced]
+            decision["exit_prices"] = prices
+            self.exit_prices[bar] = tuple(prices)
+            self.exit_reasons[bar] = tuple(order.reason for order in priced)
+            if plain:
+                decision["close_next_open"] = True
+        # A close with no position open does nothing, so it takes no reason.
+        if plain and positions:
+            self.close_requested[bar] = True
+            self.close_reason[bar] = plain[0].reason
+        for amend in (order for order in orders if order.action == "amend"):
+            adapter._require_ticks(
+                "amend", timestamp, "moves stop or take-profit levels, which are confirmed from ticks"
+            )
+            decision.update(amend_stop=amend.stop_loss, amend_target=amend.take_profit)
+        self._progress.bar(bar + 1, timestamp, _position_label(positions))
+        return decision
+
+    def entry(self, bar: int, raw_positions: tuple) -> dict[str, Any]:
+        """The bar's entry, decided with the positions left after its priced closes."""
+        adapter = self._adapter
+        timestamp = self._chunk.index[bar]
+        orders = self._hook("entry_strategy", bar, self._positions(raw_positions))
+        if not orders:
+            return {}
+        if orders[0].action == "cancel":
+            return {"cancel_entry": True}
+        records = []
+        for order in orders:
+            stop, target, price = adapter._levels_of(order, timestamp)
+            records.append((stop, target, price if order.kind == "market" else np.nan, order.reason))
+        self.entry_orders[bar] = tuple(records)
+        first = orders[0]
+        decision: dict[str, Any] = {"entry": 1 if first.action == "buy" else -1, "strength": 1.0}
+        stop, target, _price, _reason = records[0]
+        if first.kind != "market":
             decision.update(
-                entry=1 if entry_decision.action == "buy" else -1,
-                strength=1.0,
                 stop_price=stop,
                 target_price=target,
-                entry_price=price,
+                entry_price=float(first.price),
+                entry_kind=first.kind,
+                expire_bars=first.expire_bars,
             )
-            if entry_decision.kind != "market":
-                decision.update(entry_kind=entry_decision.kind, expire_bars=entry_decision.expire_bars)
-        self._progress.bar(bar + 1, timestamp, _position_label(positions))
+        elif first.price is None:
+            decision.update(stop_price=stop, target_price=target)
+        else:
+            decision["entry_candidates"] = [
+                (1 if order.action == "buy" else -1, price, stop, target)
+                for order, (stop, target, price, _reason) in zip(orders, records, strict=True)
+            ]
         return decision
 
     def entry_filled(self, bar: int, raw_positions: tuple) -> bool:
@@ -141,24 +163,17 @@ class _RuntimeHooks:
         position on its entry bar. A plain close exits at the next bar's open, ahead of that
         bar's stops and targets.
         """
-        adapter = self._adapter
-        position = int(self._history_positions[bar])
-        decision = adapter._invoke_hook(
-            "exit_strategy",
-            _prefix(adapter._decision_frame, position + 1),
-            self._positions(raw_positions),
-            ticks=adapter._ticks_for("exit_strategy", bar_position=position),
-        )
-        if decision is None:
+        orders = self._hook("exit_strategy", bar, self._positions(raw_positions))
+        if not orders:
             return False
-        if decision.action != "close" or decision.price is not None:
+        if len(orders) > 1 or orders[0].action != "close" or orders[0].price is not None:
             raise ValueError(
-                f"{type(adapter.research_strategy).__name__}.exit_strategy at {self._chunk.index[bar]} returned "
-                f"{decision!r} for a position its priced entry opened on this bar; only TradeOrder.close() "
-                "without a price, which exits at the next bar's open, is supported there"
+                f"{type(self._adapter.research_strategy).__name__}.exit_strategy at {self._chunk.index[bar]} "
+                f"returned {orders!r} for a position its priced entry opened on this bar; only "
+                "TradeOrder.close() without a price, which exits at the next bar's open, is supported there"
             )
         self.fill_close_requested[bar] = True
-        self.fill_close_reason[bar] = decision.reason
+        self.fill_close_reason[bar] = orders[0].reason
         return True
 
     def _positions(self, raw_positions: tuple) -> tuple[ResearchPosition, ...]:
@@ -359,7 +374,7 @@ class ResearchStrategyAdapter(TradingStrategy):
         positions: tuple[ResearchPosition, ...],
         *,
         ticks: TickData | None = None,
-    ) -> TradeOrder | None:
+    ) -> tuple[TradeOrder, ...]:
         return invoke_hook(self.research_strategy, self._hook_calls[name], name, prefix, positions, ticks=ticks)
 
     def _ticks_for(
