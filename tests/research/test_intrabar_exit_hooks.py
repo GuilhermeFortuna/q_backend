@@ -59,7 +59,7 @@ def test_exit_with_ticks_runs_once_per_closed_bar_at_bar_end(root):
     assert all(cutoff > moment for moment, cutoff in strategy.calls)
 
 
-def test_priced_close_fills_at_the_requested_price_when_a_trade_reaches_it(root):
+def test_a_short_close_above_the_market_is_a_stop_that_fills_at_the_trade_reaching_it(root):
     class Priced(EnterOnce):
         def entry_strategy(self, frame, positions=()):
             return TradeOrder.sell() if len(frame) == 1 else None
@@ -70,11 +70,12 @@ def test_priced_close_fills_at_the_requested_price_when_a_trade_reaches_it(root)
             return None
 
     trade = _run(root, Priced()).trades.iloc[0]
-    assert trade["exit_price"] == 105.0
+    # The tape jumps from 104 to 105.5 through the 105 stop.
+    assert trade["exit_price"] == 105.5
     assert trade["exit_tick_time"] == _stamp("10:22")
 
 
-def test_long_priced_close_above_the_open_fills_at_the_price_not_the_open(root):
+def test_a_long_close_above_the_market_is_a_limit_that_fills_at_its_price_once_traded_beyond(root):
     class Target(EnterOnce):
         def exit_strategy(self, frame, positions=(), *, ticks=None):
             if positions and frame.index[-1] == _bar("10:20"):
@@ -82,8 +83,9 @@ def test_long_priced_close_above_the_open_fills_at_the_price_not_the_open(root):
             return None
 
     trade = _run(root, Target()).trades.iloc[0]
+    # 104 trades at 10:21, but only the 105.5 at 10:22 goes beyond it.
     assert trade["exit_price"] == 104.0
-    assert trade["exit_tick_time"] == _stamp("10:21")
+    assert trade["exit_tick_time"] == _stamp("10:22")
 
 
 def test_priced_close_outside_bar_range_names_bar_and_price(root):

@@ -44,7 +44,6 @@ def test_actual_positions_close_and_reverse(bars):
     assert computed == [6]
     for exit_call, entry_call in zip(seen[::2], seen[1::2]):
         assert exit_call[1:] == entry_call[1:]
-        assert exit_call[2] is entry_call[2]
     assert seen[0][2] == ()
     long = seen[2][2][0]
     assert long == ResearchPosition("TEST", "long", bars.index[1], 101.0, 2.0)
@@ -173,7 +172,9 @@ def test_positional_only_context_and_frame_attributes(bars):
         ("entry_strategy", TradeOrder.close(), ValueError),
         ("exit_strategy", TradeOrder.buy(), ValueError),
         ("entry_strategy", "buy", TypeError),
-        ("exit_strategy", [], TypeError),
+        ("exit_strategy", [TradeOrder.close(), "close"], TypeError),
+        ("exit_strategy", [TradeOrder.close(), TradeOrder.close()], ValueError),
+        ("entry_strategy", [TradeOrder.buy(price=100.0), TradeOrder.buy()], ValueError),
     ],
 )
 def test_invalid_runtime_orders(bars, hook, decision, error):

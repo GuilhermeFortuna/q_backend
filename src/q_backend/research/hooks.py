@@ -83,8 +83,11 @@ def invoke_hook(
     positions: tuple[ResearchPosition, ...],
     *,
     ticks: TickData | None = None,
-) -> TradeOrder | None:
-    """Call one decision hook and validate the order it returns."""
+) -> tuple[TradeOrder, ...]:
+    """Call one decision hook and validate the orders it returns.
+
+    A hook returns ``None``, one ``TradeOrder`` or a list of them; the result is always a tuple.
+    """
     hook = getattr(strategy, name)
     timestamp = prefix.index[-1]
     label = f"{type(strategy).__name__}.{name} at bar {timestamp}"
@@ -100,10 +103,42 @@ def invoke_hook(
         decision = hook(*args, **kwargs)
     except Exception as exc:
         raise RuntimeError(f"Error in {label}: {exc}") from exc
-    if decision is not None:
-        if not isinstance(decision, TradeOrder):
-            raise TypeError(f"{label} returned {type(decision).__name__}, expected TradeOrder or None")
-        allowed = _permitted_actions(name)
-        if decision.action not in allowed:
-            raise ValueError(f"{label} returned illegal action {decision.action!r}; permitted actions: {allowed}")
-    return decision
+    if decision is None:
+        orders: tuple[TradeOrder, ...] = ()
+    elif isinstance(decision, TradeOrder):
+        orders = (decision,)
+    elif isinstance(decision, (list, tuple)):
+        orders = tuple(decision)
+    else:
+        raise TypeError(f"{label} returned {type(decision).__name__}, expected TradeOrder, a list of them, or None")
+    allowed = _permitted_actions(name)
+    for order in orders:
+        if not isinstance(order, TradeOrder):
+            raise TypeError(f"{label} returned a list holding {type(order).__name__}, expected only TradeOrder")
+        if order.action not in allowed:
+            raise ValueError(f"{label} returned illegal action {order.action!r}; permitted actions: {allowed}")
+    _check_order_list(label, name, orders)
+    return orders
+
+
+def _check_order_list(label: str, name: str, orders: tuple[TradeOrder, ...]) -> None:
+    """A list's orders must be ones the engine can resolve together on one bar."""
+    if len(orders) <= 1:
+        return
+    if name == "exit_strategy":
+        plain = sum(order.action == "close" and order.price is None for order in orders)
+        amends = sum(order.action == "amend" for order in orders)
+        if plain > 1 or amends > 1:
+            raise ValueError(
+                f"{label} returned {orders!r}; an exit list holds any number of priced closes, "
+                "at most one close without a price and at most one amend"
+            )
+        return
+    priced = [
+        order.action in ("buy", "sell") and order.kind == "market" and order.price is not None for order in orders
+    ]
+    if not all(priced):
+        raise ValueError(
+            f"{label} returned {orders!r}; an entry list holds only priced market entries "
+            "(TradeOrder.buy/sell with price=...), of which the first the tape touches fills"
+        )

@@ -124,6 +124,7 @@ def test_check_engine_requires_resting_orders_and_runtime_callbacks() -> None:
         strategy_callback,
         snapshot_levels,
         entry_fill_callback,
+        entry_callback,
     ) -> None:
         raise NotImplementedError
 

@@ -82,14 +82,19 @@ def test_trade_order_levels_are_validated_at_construction() -> None:
         TradeOrder.buy(9.0)  # type: ignore[misc]
 
 
+def _decide(hooks, bar: int) -> dict:
+    """Decide one flat bar as the candle kernel does: exits, then entries."""
+    return {**hooks.strategy(bar, ()), **hooks.entry(bar, ())}
+
+
 def _first_bar_decisions(adapter: ResearchStrategyAdapter, bars: pd.DataFrame) -> dict:
-    """Decide the first bar through the runtime callback, as the candle kernel does."""
-    return adapter.runtime_callback(adapter.compute_indicators(bars)).strategy(0, ())
+    """Decide the first bar through the runtime callbacks, as the candle kernel does."""
+    return _decide(adapter.runtime_callback(adapter.compute_indicators(bars)), 0)
 
 
 def _all_bar_decisions(adapter: ResearchStrategyAdapter, bars: pd.DataFrame) -> list[dict]:
     hooks = adapter.runtime_callback(adapter.compute_indicators(bars))
-    return [hooks.strategy(bar, ()) for bar in range(len(bars))]
+    return [_decide(hooks, bar) for bar in range(len(bars))]
 
 
 def test_scripted_strategy_lifecycle_and_isolation(sample_bars: pd.DataFrame) -> None:
@@ -129,7 +134,7 @@ def test_scripted_strategy_lifecycle_and_isolation(sample_bars: pd.DataFrame) ->
 
     res = adapter.compute_indicators(caller_bars)
     hooks = adapter.runtime_callback(res)
-    decisions = [hooks.strategy(bar, ()) for bar in range(5)]
+    decisions = [_decide(hooks, bar) for bar in range(5)]
 
     # 1. compute_indicators called once on full frame
     assert calls[0] == ("compute_indicators", 5)
@@ -230,7 +235,7 @@ def test_invalid_return_and_action_types(sample_bars: pd.DataFrame) -> None:
             return "buy"  # string instead of TradeOrder
 
     adapter = ResearchStrategyAdapter(BadEntryType(), symbol="WIN$")
-    with pytest.raises(TypeError, match="returned str, expected TradeOrder or None"):
+    with pytest.raises(TypeError, match="returned str, expected TradeOrder, a list of them, or None"):
         _first_bar_decisions(adapter, sample_bars)
 
     # 3. entry_strategy returns illegal action ('close')
@@ -489,7 +494,9 @@ def test_hook_action_permissions_follow_hook_and_reject_removed_phase(sample_bar
             return self.order
 
     def call(strategy: ResearchStrategy, name: str, **kwargs) -> TradeOrder | None:
-        return invoke_hook(strategy, detect_hook_call(strategy, name), name, frame, (), **kwargs)
+        orders = invoke_hook(strategy, detect_hook_call(strategy, name), name, frame, (), **kwargs)
+        assert len(orders) <= 1
+        return orders[0] if orders else None
 
     assert call(EntryHook(TradeOrder.cancel()), "entry_strategy") is not None
     assert call(EntryHook(TradeOrder.buy_stop(12.0)), "entry_strategy").kind == "stop"
