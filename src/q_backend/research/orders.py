@@ -48,7 +48,10 @@ class TradeOrder:
         Take-profit exit level. On ``amend``, the new take-profit of every open position.
     price : float, optional
         Entry order price, or the explicit fill price for a close. A market entry with a
-        price fills on the same bar; a stop or limit entry rests and fills from ticks.
+        price fills on the same bar; on a candle with an intrabar exit (stop, target,
+        breakeven or priced close), it fills only from a trade at or after that exit,
+        otherwise appearing in ``rejected_entries`` with reason ``touch_before_exit``.
+        A stop or limit entry rests and fills from ticks.
     kind : {'market', 'stop', 'limit'}, optional
         Entry order type. ``stop`` and ``limit`` orders require ``price``.
     expire_bars : int, optional

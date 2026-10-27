@@ -94,7 +94,7 @@ Read the result
    * - ``data``
      - Input prices enriched with strategy and exit indicators
    * - ``rejected_entries``
-     - Entries whose protective levels were invalid at the fill price
+     - Entries rejected because protective levels were invalid (``level_on_wrong_side``) or a priced entry traded only before a same-bar exit (``touch_before_exit``)
    * - ``config``
      - The recorded run arguments, exposed as a read-only mapping
    * - ``indicators``

@@ -42,6 +42,10 @@ candle's low and high. The model does not declare a limit or stop order type.
 A price outside the candle's range raises ``ValueError``; it is not queued for
 a later candle.
 
+On a candle where a stop, target, breakeven or priced close closed a trade,
+a priced entry fills only from a trade at or after that exit. Otherwise it
+appears in ``result.rejected_entries`` with reason ``touch_before_exit``.
+
 .. important::
 
    The hook sees the whole completed candle. Checking its close and then asking

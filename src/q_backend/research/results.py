@@ -80,7 +80,10 @@ class BacktestResult:
     config : Mapping of str to Any
         Read-only dictionary of the arguments used for this backtest.
     rejected_entries : pandas.DataFrame
-        DataFrame listing entries rejected due to invalid protective price levels.
+        DataFrame listing entries rejected due to invalid protective price levels
+        (``level_on_wrong_side``) or priced entries that traded only before a
+        same-bar exit (``touch_before_exit``). Includes columns ``time``, ``side``,
+        ``fill_price``, ``stop_loss``, ``take_profit``, and ``reason``.
     """
 
     metrics: dict[str, Any]
