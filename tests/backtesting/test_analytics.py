@@ -116,6 +116,7 @@ def test_excursion_statistics_are_reported_in_money_and_resolution_counts():
     assert performance.excursions.post_exit_bars == 4
     assert performance.excursions.resolution.minute == 1
 
+
 def test_all_winners_have_null_profit_factor_and_loss_fields():
     trades = [_trade(100.0, _day(2), _day(5)), _trade(100.0, _day(6), _day(10)), _trade(100.0, _day(11), _day(20))]
     stats = _performance(trades).trades.all

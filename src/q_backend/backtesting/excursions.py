@@ -203,9 +203,7 @@ def measure_trades(
         trade.mae_points = max(0.0, -min_value)
         trade.mfe_time = candidates[max_i][1].to_pydatetime() if max_value > 0 else entry_time.to_pydatetime()
         trade.mae_time = candidates[min_i][1].to_pydatetime() if min_value < 0 else entry_time.to_pydatetime()
-        realised_money = (
-            (trade.exit_price - trade.entry_price) * direction * trade.quantity * trade.point_value
-        )
+        realised_money = (trade.exit_price - trade.entry_price) * direction * trade.quantity * trade.point_value
         mfe_money = trade.mfe_points * trade.quantity * trade.point_value
         trade.mfe_capture = realised_money / mfe_money if mfe_money else None
         trade.excursion_resolution = max(
