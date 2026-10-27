@@ -44,16 +44,16 @@ runs, it returns exactly today's values at least ten times faster.
 
 **Files:** `tests/backtesting/excursions_reference.py` (new), `tests/backtesting/test_excursions_parity.py` (new).
 
-- [ ] Copy the current `measure_trades`, `post_exit_from_stored` and their helpers verbatim into
+- [x] Copy the current `measure_trades`, `post_exit_from_stored` and their helpers verbatim into
   `excursions_reference.py`, with a docstring saying they are the Q-130 implementation kept as a test oracle.
-- [ ] Write a seeded generator of synthetic bars, deal sources (`tick`, `minute`, missing bars giving `candle`)
+- [x] Write a seeded generator of synthetic bars, deal sources (`tick`, `minute`, missing bars giving `candle`)
   and closed `Trade` objects. It must cover:
   - every fill kind;
   - same-bar and multi-bar trades;
   - repeated extreme prices;
   - exits near the end of the data;
   - day-trade close truncation.
-- [ ] Assert exact field-by-field equality between `q_backend.backtesting.excursions` and the oracle for at
+- [x] Assert exact field-by-field equality between `q_backend.backtesting.excursions` and the oracle for at
   least 500 trades and several `post_exit_bars` values. Run it against the unchanged module: it must pass
   before any change, then commit.
 
@@ -61,21 +61,21 @@ runs, it returns exactly today's values at least ten times faster.
 
 **Files:** `src/q_backend/backtesting/excursions.py`.
 
-- [ ] Cache each bar's deals as `(times_ns: int64, prices: float64, resolution)`. Normalize times with
+- [x] Cache each bar's deals as `(times_ns: int64, prices: float64, resolution)`. Normalize times with
   `pd.DatetimeIndex`: localize naive values to UTC, convert aware values to UTC, then take `.asi8`.
-- [ ] Rebuild the per-trade path from arrays in the current candidate order, apply the entry and exit masks,
+- [x] Rebuild the per-trade path from arrays in the current candidate order, apply the entry and exit masks,
   and take the extremes with `argmax`/`argmin`. Convert only the two chosen times back to `datetime`.
-- [ ] Compute `exit_bar_rest_high` and `exit_bar_rest_low` from the cached exit-bar arrays.
-- [ ] Rewrite `post_exit_from_stored` over `high`, `low`, `close` arrays and a precomputed bar time of day,
+- [x] Compute `exit_bar_rest_high` and `exit_bar_rest_low` from the cached exit-bar arrays.
+- [x] Rewrite `post_exit_from_stored` over `high`, `low`, `close` arrays and a precomputed bar time of day,
   with the close-time parse hoisted out of the loop.
-- [ ] Run the parity test, `tests/backtesting/test_excursions.py`, the API post-exit test and
+- [x] Run the parity test, `tests/backtesting/test_excursions.py`, the API post-exit test and
   `ruff`/`black`, then commit.
 
 ### 3. Research toggle and write-back
 
 **Files:** `src/q_backend/research/engine.py`, `tests/research/test_backtest_excursions_toggle.py` (new).
 
-- [ ] Write failing tests for spec acceptance items 1–3:
+- [x] Write failing tests for spec acceptance items 1–3:
   - with a call-counting deal source, `excursions=False` reads no deals and gives null excursion columns with
     their declared dtypes;
   - every other result is equal to the `excursions=True` run;
@@ -83,36 +83,36 @@ runs, it returns exactly today's values at least ten times faster.
   - `config["excursions"]` is recorded;
   - the published payload carries null trade excursions and `excursions: false`, checked through the
     `httpx.MockTransport` pattern of `tests/research/test_publishing.py`;
-  - that payload, imported through the harness of `tests/api/test_backtest_import.py`, reads back with zero
+  - that payload, imported through the harness of `tests/api/test_backtest_import.py::test_import_of_unmeasured_trades_reads_back_with_zero_excursion_counts`, reads back with zero
     measured trades in `performance.excursions`.
-- [ ] Add `excursions: bool = True` to `backtest()`, validate it beside `post_exit_bars`, record it in the
+- [x] Add `excursions: bool = True` to `backtest()`, validate it beside `post_exit_bars`, record it in the
   config, and skip the measurement block when it is `False`.
-- [ ] Replace the per-row `.loc` write-back with one assignment of the measured columns, mapped by `trade_id`.
-- [ ] Run the new tests, `tests/research/test_publishing.py`, `tests/api/test_backtest_import.py`,
+- [x] Replace the per-row `.loc` write-back with one assignment of the measured columns, mapped by `trade_id`.
+- [x] Run the new tests, `tests/research/test_publishing.py`, `tests/api/test_backtest_import.py::test_import_of_unmeasured_trades_reads_back_with_zero_excursion_counts`,
   `tests/research/test_stop_target_backtest.py`, `tests/api/test_tick_backtest_api.py`,
   `tests/api/test_local_candle_backtest.py`, `tests/api/test_backtest_performance.py` and `ruff`/`black`, then
   commit.
 
 ### 4. Timing check
 
-- [ ] Time `measure_trades` plus the research write-back on a synthetic workload of the profiled size (about 1,750
+- [x] Time `measure_trades` plus the research write-back on a synthetic workload of the profiled size (about 1,750
   trades of one or two bars, about 5,000 deals per partial bar), using the oracle for "before" and the new code
   for "after". Use a throwaway script outside the repository, and do not commit it.
-- [ ] Confirm the speed-up is at least ten times, and record both times for the board message.
+- [x] Confirm the speed-up is at least ten times, and record both times for the board message.
 
 ### 5. Documentation
 
 **Files:** `docs/research/user_guide/backtesting.rst`, `docs/research-library.md`, the `backtest()` docstring.
 
-- [ ] Document `excursions=False`:
+- [x] Document `excursions=False`:
   - what it skips;
   - that the excursion columns are null;
   - that it is useful for parameter searches that do not read them.
-- [ ] Add the `excursions` and `post_exit_bars` rows to the `docs/research-library.md` parameter table.
-- [ ] Commit.
+- [x] Add the `excursions` and `post_exit_bars` rows to the `docs/research-library.md` parameter table.
+- [x] Commit.
 
 ## Verification
 
-- `uv run pytest tests/backtesting/test_excursions.py tests/backtesting/test_excursions_parity.py tests/research/test_backtest_excursions_toggle.py tests/research/test_publishing.py tests/api/test_backtest_import.py tests/research/test_stop_target_backtest.py tests/api/test_backtest_post_exit.py tests/api/test_tick_backtest_api.py tests/api/test_local_candle_backtest.py tests/api/test_backtest_performance.py`
+- `uv run pytest tests/backtesting/test_excursions.py tests/backtesting/test_excursions_parity.py tests/research/test_backtest_excursions_toggle.py tests/research/test_publishing.py tests/api/test_backtest_import.py::test_import_of_unmeasured_trades_reads_back_with_zero_excursion_counts tests/research/test_stop_target_backtest.py tests/api/test_backtest_post_exit.py tests/api/test_tick_backtest_api.py tests/api/test_local_candle_backtest.py tests/api/test_backtest_performance.py`
 - `uv run ruff check` and `uv run black --check` on the changed files.
 - The before and after timings from step 4, reported in the board message.

@@ -193,3 +193,13 @@ be changed from 1 to 500 with ``post_exit_bars``:
 Published results can recalculate the post-exit window from their stored
 market-data artifact without rerunning the strategy. The Research results
 view exposes the same control and updates the post-exit figures and CSV export.
+
+Excursion measurement runs by default. Set ``excursions=False`` for parameter
+searches that do not use these values; this skips the measurement pass and leaves
+all excursion columns null. The setting is recorded in a published run's config.
+
+.. code-block:: python
+
+   result = backtest(
+       bars, strategy=strategy, symbol="WDO$N", excursions=False,
+   )

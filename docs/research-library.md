@@ -736,6 +736,8 @@ print(result.equity)
 | `day_trade_start_time` | `str` | `"09:00"` | Earliest entry time (`HH:MM`). |
 | `day_trade_end_time` | `str` | `"16:00"` | Latest new entry time (`HH:MM`). |
 | `day_trade_close_time` | `str` | `"17:00"` | Mandatory session close time (`HH:MM`). |
+| `post_exit_bars` | `int` | `10` | Bars after exit included in post-exit MFE, MAE, and return measurements (1–500). |
+| `excursions` | `bool` | `True` | Measure trade excursions. Set `False` to skip measurement for parameter searches that do not use excursion fields; those columns remain null. |
 | `force_close_at_end` | `bool` | `False` | Whether to force-close any open position at the final bar of the dataset. |
 | `ticks` | `TickStore` | `None` | Store that confirms protective orders and priced closes inside their candles. Its symbol must equal `symbol`. Required for those orders; see [Priced closes and exits without phase](#priced-closes-and-exits-without-phase). |
 | `workers` | `int \| "auto"` | `1` | Processes that run the sessions of a day-trade backtest. `1` runs in-process. `"auto"` uses every CPU available to the process, limited to one worker per GiB of free memory. Runs that are not day-trade are sequential. Results do not depend on the value; see [Performance and progress](#performance-and-progress). |
