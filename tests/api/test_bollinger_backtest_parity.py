@@ -75,9 +75,25 @@ def test_bollinger_backtest_replays_optimization_exits(direction, explicit_entri
         assert expected[0]["exit_time"] == datetime(2024, 1, 2, 8).isoformat()
         assert expected[0]["pnl"] == 232.5
         assert expected[0]["exit_reason"] == "SIGNAL"
+    ignored_keys = (
+        "id",
+        "order_id",
+        "mfe_points",
+        "mae_points",
+        "mfe_time",
+        "mae_time",
+        "mfe_capture",
+        "post_exit_mfe_points",
+        "post_exit_mae_points",
+        "post_exit_return_points",
+        "post_exit_bars_observed",
+        "exit_bar_rest_high",
+        "exit_bar_rest_low",
+        "excursion_resolution",
+    )
     for trade in expected + result["trades"]:
-        trade.pop("id")
-        trade.pop("order_id")
+        for key in ignored_keys:
+            trade.pop(key, None)
     assert result["trades"] == expected
     assert result["metrics"] == {key: optimized.metrics[key] for key in result["metrics"]}
     assert market_data["buy_signal" if direction == 1 else "sell_signal"].sum() == 2

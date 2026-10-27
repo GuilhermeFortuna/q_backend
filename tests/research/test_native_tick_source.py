@@ -25,10 +25,22 @@ def test_candle_prices_come_from_the_native_source_not_the_store(root, monkeypat
     store = _write_session(root, FLAT_0 + [("10:10:00", 100.0), ("10:11:00", 96.0), ("10:12:00", 94.0)])
     frame = _m10_frame(store)
 
-    def python_price_read(self, start, end):
-        raise AssertionError("TickStore.trade_prices must not be called during a backtest")
+    from q_backend.research import engine as research_engine
 
-    monkeypatch.setattr(TickStore, "trade_prices", python_price_read)
+    original_execute = research_engine._execute_backtest
+    original_prices = TickStore.trade_prices
+
+    def guarded_execute(*args, **kwargs):
+        def python_price_read(self, start, end):
+            raise AssertionError("TickStore.trade_prices must not be called during simulation")
+
+        monkeypatch.setattr(TickStore, "trade_prices", python_price_read)
+        try:
+            return original_execute(*args, **kwargs)
+        finally:
+            monkeypatch.setattr(TickStore, "trade_prices", original_prices)
+
+    monkeypatch.setattr(research_engine, "_execute_backtest", guarded_execute)
     result = _run(frame, {0: TradeOrder.buy(stop_loss=95.0, take_profit=110.0)}, store)
 
     assert result.trades["exit_price"].tolist() == [94.0]
