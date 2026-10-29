@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from typing import ClassVar
 
 import pandas as pd
 
@@ -29,7 +30,14 @@ class ResearchStrategy(ABC):
     ``compute_indicators`` and both decision hooks can declare a ``ticks`` parameter to read
     the backtest's tick data through :class:`~q_backend.research.TickData`.
     All hook calculations must remain strictly causal: no looking ahead into future bars.
+
+    A strategy that decides on a finer timeframe than its signals sets ``decision_timeframe`` to the
+    timeframe of the frame it runs on, for example ``"M1"``, and reads coarser bars with
+    :func:`~q_backend.research.closed_bars`. Stack runs and deployments refuse a frame of any other
+    timeframe.
     """
+
+    decision_timeframe: ClassVar[str | None] = None
 
     def chart_indicators(self) -> Sequence[ChartIndicator]:
         """
