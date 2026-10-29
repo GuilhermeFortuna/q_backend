@@ -100,13 +100,21 @@ def build_bundle(root: Path, strategy_id: str) -> StrategyBundle:
     for helper in _helper_paths(root):
         sources[helper.relative_to(root).as_posix()] = helper
 
-    files = tuple(BundleFile(path=relative, content=_read(sources[relative])) for relative in sorted(sources))
+    return bundle_from_files(
+        strategy_id,
+        (BundleFile(path=relative, content=_read(sources[relative])) for relative in sources),
+    )
+
+
+def bundle_from_files(strategy_id: str, files: Iterable[BundleFile]) -> StrategyBundle:
+    """A bundle over ``files``, sorted by path, with its hash computed from their paths and contents."""
+    ordered = tuple(sorted(files, key=lambda file: file.path))
     digest = sha256()
-    for file in files:
+    for file in ordered:
         encoded = file.content.encode("utf-8")
         digest.update(f"{file.path}\0{len(encoded)}\0".encode("utf-8"))
         digest.update(encoded)
-    return StrategyBundle(strategy_id=strategy_id, bundle_hash=digest.hexdigest(), files=files)
+    return StrategyBundle(strategy_id=strategy_id, bundle_hash=digest.hexdigest(), files=ordered)
 
 
 def materialize(bundle: StrategyBundle, bundle_root: Path) -> Path:
