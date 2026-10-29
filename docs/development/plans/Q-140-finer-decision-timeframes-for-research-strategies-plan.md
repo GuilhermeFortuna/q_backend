@@ -46,9 +46,9 @@ execution.
 
 ### 4. Guide
 
-**Files:** `docs/research/user_guide/live_placeable_orders.rst` (or a new page linked from it).
+**Files:** `docs/research/user_guide/decision_timeframes.rst`, linked from the user guide index.
 
-- [ ] Document `closed_bars`, `decision_timeframe`, and an example "exit on a one-minute close back inside the
+- [x] Document `closed_bars`, `decision_timeframe`, and an example "exit on a one-minute close back inside the
   range". Commit.
 
 ## Verification
