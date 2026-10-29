@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     execution_default_point_value: float = 0.2
     execution_benchmark_p95_budget_ms: float = 500.0
     execution_initial_window_bars: int = 260
+    execution_research_warmup_bars: int = 2000
     execution_live_capability_locked: bool = True
     # Forced by the dev execution systemd units; prevents live adapter routing.
     execution_paper_only: bool = False
