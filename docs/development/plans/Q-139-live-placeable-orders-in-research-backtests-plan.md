@@ -50,7 +50,7 @@ classification, plus `tests/research/test_oco_orders.py`, `test_timed_orders.py`
 (new), `tests/research/test_priced_deprecation.py` (new).
 
 - [ ] Write fixture strategy pairs for each migration-table row, and test acceptance 2 with `compare_results`.
-- [ ] Add the deprecation warning (acceptance 4). Commit. (The strategy-file marker moved to Q-144.)
+- [ ] Add the deprecation warning (acceptance 4). Commit. (The strategy-file marker is out of scope.)
 
 ### 5. Guide
 

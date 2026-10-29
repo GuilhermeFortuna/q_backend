@@ -6,8 +6,8 @@
 **Implementation plan:** [Plan](../plans/Q-139-live-placeable-orders-in-research-backtests-plan.md)
 
 **Amended 2026-10-29** after the first `BracketMomentumStrategy` comparison: three known differences added,
-label-only differences counted as matched, the strategy-file marker moved to Q-144, and the data source
-recorded in each comparison.
+label-only differences counted as matched, the strategy-file marker dropped, and the data source recorded in
+each comparison.
 
 ## Purpose
 
@@ -52,8 +52,7 @@ removed.
 
 - Every `price=` entry or close, and every priced order list, still backtests exactly as today. On the first such
   order of a run, it emits `PricedOrderDeprecationWarning`, naming the hook and pointing to the migration guide.
-- A strategy *file* that places one is refused at deployment, as Q-136 already does. Marking such files
-  "not deployable" in the stack's strategy list is Q-144.
+- A strategy *file* that places one is refused at deployment, as Q-136 already does.
 
 ### Comparison tool
 
@@ -90,8 +89,8 @@ removed.
     `STOP_LOSS`. Fills, times and PnL are identical, so `compare_results` reports a label difference only.
   - **Protective levels from a gap fill.** A legacy bracket entry that fills at the open beyond its level
     (`max(open, level)`) computes its stop and target from that fill price. A resting entry carries levels
-    fixed before the candle, measured from the entry level. On gap bars the exit prices differ. Q-143 adds
-    levels measured from the fill.
+    fixed before the candle, measured from the entry level. On gap bars the exit prices differ. This is a
+    permanent difference: the port measures its levels from the entry level.
   - **Re-entry after an intrabar exit.** On a bar where a trade stops out or hits its target, a legacy hook
     sees no position and prices a new entry on that bar. The replacement places its resting entry or OCO group
     at the previous close even while a position is open; the kernel fills it only from trades at or after the
@@ -138,7 +137,8 @@ Any unexplained difference is a defect in this task or in Q-138.
 - Removing `price=` (Q-141).
 - Decision timeframes (Q-140).
 - Live submission of the new orders (Q-137).
-- The "not deployable" marker in the strategy-file listing (Q-144).
-- Protective levels measured from the fill (Q-142, Q-143).
+- A "not deployable" marker in the strategy-file listing. Q-141 removes priced orders, Q-136 already greys out
+  undeployable runs in `q_terminal`, and the deprecation warning flags priced orders at backtest time.
+- Protective levels measured from the fill.
 - A library call that cancels a working timed exit without replacing it.
 - Committing the author's strategies or their ports anywhere.
