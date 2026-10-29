@@ -28,16 +28,16 @@ on M5 inside the run's day-trade session, and only market orders are deployable.
 
 **Files:** `schema/api/openapi.yaml`, `schema/api/examples/`, `COMPAT.md`, generated outputs.
 
-- [ ] Add `order_kinds` to the backtest run detail, the `strategy_version` source kind and its provenance
+- [x] Add `order_kinds` to the backtest run detail, the `strategy_version` source kind and its provenance
   (version id, bundle hash) to deployment summary and detail, and the day-trade session to deployment detail.
-- [ ] Regenerate, run `make check`, and commit.
+- [x] Regenerate, run `make check`, and commit.
 
 ### 2. Bundles side by side (`q_backend`)
 
 **Files:** `research/strategy_files.py`, `tests/research/test_strategy_files.py`.
 
-- [ ] Write a failing test for acceptance 1.
-- [ ] Import each bundle as `q_strategies_<hash12>`. Drop the eviction of other bundles, but keep the lock
+- [x] Write a failing test for acceptance 1.
+- [x] Import each bundle as `q_strategies_<hash12>`. Drop the eviction of other bundles, but keep the lock
   around `sys.path` edits. Keep `load_strategy()` behaviour. Run the Q-134 tests. Commit.
 
 ### 3. Order kinds (`q_backend`)
@@ -45,8 +45,8 @@ on M5 inside the run's day-trade session, and only market orders are deployable.
 **Files:** `research/adapter.py`, `research/results.py`, `research/strategy_file_runs.py`,
 `api/backtest_jobs.py`, `backtesting/run_service.py`, `tests/research/test_order_kinds.py` (new).
 
-- [ ] Write failing tests for acceptance 2.
-- [ ] Classify every order the adapter receives and expose the set on the result. Store it in
+- [x] Write failing tests for acceptance 2.
+- [x] Classify every order the adapter receives and expose the set on the result. Store it in
   `result_summary.order_kinds`, and add `tick_hooks` from the version's file info. Expose it in run detail.
   Commit.
 
@@ -56,14 +56,14 @@ on M5 inside the run's day-trade session, and only market orders are deployable.
 `execution/recovery.py`, `execution/warmup.py`, `execution/parity.py`, `storage/settings.py`,
 `tests/execution/test_research_evaluator.py` (new), `tests/execution/test_research_parity.py` (new).
 
-- [ ] Write failing tests for acceptance 4–6.
-- [ ] Implement the evaluator with `StrategyEvaluator`'s contract, building the strategy from the frozen
+- [x] Write failing tests for acceptance 4–6.
+- [x] Implement the evaluator with `StrategyEvaluator`'s contract, building the strategy from the frozen
   version (`bundle_of`, `load_bundle`, `coerce_params`). Map orders to decision actions. Pause with a risk event
   on a non-deployable kind or a raising hook.
-- [ ] Add the day-trade session rules, including the flatten at start or resume.
-- [ ] Choose the evaluator in the worker and recovery by source kind. Add `Q_EXECUTION_RESEARCH_WARMUP_BARS` and
+- [x] Add the day-trade session rules, including the flatten at start or resume.
+- [x] Choose the evaluator in the worker and recovery by source kind. Add `Q_EXECUTION_RESEARCH_WARMUP_BARS` and
   `warmup_bars`.
-- [ ] Add a research reference to `execution/parity.py` and the parity test. Run `tests/execution/`. Commit.
+- [x] Add a research reference to `execution/parity.py` and the parity test. Run `tests/execution/`. Commit.
 
 ### 5. Deployment creation (`q_backend`)
 
@@ -71,11 +71,11 @@ on M5 inside the run's day-trade session, and only market orders are deployable.
 `api/schemas/execution.py`, `storage/db/execution_models.py` with an Alembic revision if a column is needed,
 `tests/api/` execution tests.
 
-- [ ] Vendor the contract and run `make contracts-check`.
-- [ ] Write failing tests for acceptance 3 and 7.
-- [ ] Extend the saved-run path for strategy-file runs. Validate order kinds, the timeframe and day trading,
+- [x] Vendor the contract and run `make contracts-check`.
+- [x] Write failing tests for acceptance 3 and 7.
+- [x] Extend the saved-run path for strategy-file runs. Validate order kinds, the timeframe and day trading,
   validate configuration patches against the version specs, and lower the timeframe floor to M5.
-- [ ] Run the new tests, `tests/execution/`, the execution API tests, and `ruff`/`black` on the changed files.
+- [x] Run the new tests, `tests/execution/`, the execution API tests, and `ruff`/`black` on the changed files.
   Commit.
 
 ### 6. Terminal (`q_terminal`)
@@ -85,18 +85,18 @@ on M5 inside the run's day-trade session, and only market orders are deployable.
 `qml/EditDeploymentDialog.qml`, `qml/DeploymentList.qml`, `qml/DeploymentDetail.qml`, tests under `tests/` and
 `qml/tests/`.
 
-- [ ] Vendor the contract and run `make contracts-check`.
-- [ ] Write failing tests for acceptance 8.
-- [ ] List strategy-file runs with their kinds and session. Render `bool` and `time` fields. Select MT5 from
+- [x] Vendor the contract and run `make contracts-check`.
+- [x] Write failing tests for acceptance 8.
+- [x] List strategy-file runs with their kinds and session. Render `bool` and `time` fields. Select MT5 from
   `mt5_orders`, and show the badge and version in the list and detail. Use design tokens only; `make check`
   runs the token gate.
-- [ ] Run `env -u WAYLAND_DISPLAY -u DISPLAY make check`. Commit.
+- [x] Run `env -u WAYLAND_DISPLAY -u DISPLAY make check`. Commit.
 
 ### 7. Documentation (`q_backend`)
 
 **Files:** `docs/research/user_guide/strategy_files.rst`, `docs/operations/mt5-demo-trading.md`.
 
-- [ ] Document deployable order kinds, `warmup_bars`, and the day-trade session rule, including choosing a close
+- [x] Document deployable order kinds, `warmup_bars`, and the day-trade session rule, including choosing a close
   time inside trading hours. Commit.
 
 ## Verification

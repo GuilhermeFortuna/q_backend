@@ -45,6 +45,7 @@ from q_backend.storage.db.execution_repositories import (
     list_orders_for_deployment,
     record_risk_event,
     sum_realized_pnl_since,
+    transition_deployment_lifecycle,
     transition_execution_order,
     update_deployment_last_bar_close,
     update_execution_decision_outcome,
@@ -204,6 +205,40 @@ class ExecutionService:
             paper_cost_config=deployment.paper_cost_config,
             producer=worker_id,
         )
+
+        if eval_result.pause_requested:
+            record_risk_event(
+                session,
+                deployment_id=deployment.id,
+                rejection_code=eval_result.risk_rejection_code or "evaluator_risk",
+                message=eval_result.risk_rejection_message or "Evaluator requested pause",
+                decision_id=decision.id,
+                context={"timing": eval_result.timing.model_dump()},
+                producer=worker_id,
+            )
+            update_execution_decision_outcome(
+                session,
+                decision.id,
+                outcome=DecisionOutcome.RISK_REJECTED,
+                context={
+                    "rejection": {
+                        "code": eval_result.risk_rejection_code,
+                        "message": eval_result.risk_rejection_message,
+                    }
+                },
+                producer=worker_id,
+            )
+            transition_deployment_lifecycle(session, deployment.id, DeploymentLifecycle.PAUSED)
+            update_deployment_last_bar_close(session, deployment.id, eval_result.bar_close_time, producer=worker_id)
+            self._commit(session)
+            timing = timing.model_copy(update={"total_ms": _elapsed_ms(started)})
+            return BarProcessResult(
+                deployment_id=deployment.id,
+                bar_close_time=eval_result.bar_close_time,
+                decision_id=decision.id,
+                outcome=DecisionOutcome.RISK_REJECTED,
+                timing=timing,
+            )
 
         if eval_result.signal_action == SignalAction.HOLD and not flatten:
             update_deployment_last_bar_close(session, deployment.id, eval_result.bar_close_time, producer=worker_id)

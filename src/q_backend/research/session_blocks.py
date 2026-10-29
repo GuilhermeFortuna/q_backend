@@ -87,6 +87,7 @@ def run_session_blocks(
     context.set_forkserver_preload([__name__, strategy_module])
     last = len(blocks) - 1
     runs: list[ChunkRun | None] = [None] * len(blocks)
+    all_order_kinds: set[str] = set()
     finished = 0
     try:
         with ProcessPoolExecutor(
@@ -104,7 +105,8 @@ def run_session_blocks(
                 result = future.result()
                 if isinstance(result, _IntrabarFailure):
                     raise result.exception()
-                runs[position] = result
+                runs[position], kinds = result
+                all_order_kinds.update(kinds)
                 start, stop = blocks[position]
                 finished += stop - start
                 on_block_done(finished, prepared.index[stop - 1])
@@ -114,6 +116,8 @@ def run_session_blocks(
             "the strategy must be importable from a module (or a script guarded by "
             '`if __name__ == "__main__":`). Pass workers=1 to run in-process.'
         ) from exc
+    if hasattr(engine.strategy, "order_kinds"):
+        engine.strategy.order_kinds.update(all_order_kinds)
     return merge_chunk_runs([run for run in runs if run is not None], [start for start, _ in blocks])
 
 
@@ -122,13 +126,15 @@ def _start_worker(payload: bytes) -> None:
     _worker_state = pickle.loads(payload)
 
 
-def _run_block(start: int, stop: int, force_close_at_end: bool) -> ChunkRun | _IntrabarFailure:
+def _run_block(start: int, stop: int, force_close_at_end: bool) -> tuple[ChunkRun, set[str]] | _IntrabarFailure:
     if _worker_state is None:
         raise RuntimeError("Session worker was not initialised")
     engine, prepared = _worker_state
     block = prepared.iloc[start:stop]
     block.attrs = prepared.attrs
     try:
-        return engine.run_prepared_block(block, force_close_at_end=force_close_at_end)
+        run = engine.run_prepared_block(block, force_close_at_end=force_close_at_end)
+        kinds = set(getattr(engine.strategy, "order_kinds", set()))
+        return run, kinds
     except kernel.IntrabarDataError as exc:
         return _IntrabarFailure(start + exc.bar, exc.reason, exc.session, exc.observed, exc.expected)

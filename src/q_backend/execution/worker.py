@@ -459,6 +459,11 @@ class ExecutionWorker:
                     point_value=float(self._cost_config(deployment).point_value),
                     initial_capital=initial_capital,
                 )
+                if runtime.needs_session_flatten:
+                    self.service.flatten_deployment(session, deployment=deployment, reason="day_trade_flatten")
+                    self._sync_open_trade(
+                        session, runtime, point_value=float(self._cost_config(deployment).point_value)
+                    )
                 self._runtimes[deployment.id] = runtime
                 self._lease_tokens[deployment.id] = token
             else:
@@ -474,7 +479,7 @@ class ExecutionWorker:
                     token = self._lease_tokens[deployment.id]
                     account = get_paper_account(session, deployment.paper_account_id)
                     initial_capital = float(account.initial_balance) if account is not None else 100_000.0
-                    self._runtimes[deployment.id] = self.recovery.build_runtime(
+                    runtime = self.recovery.build_runtime(
                         session,
                         deployment,
                         worker_id=self.settings.execution_worker_id,
@@ -482,6 +487,12 @@ class ExecutionWorker:
                         point_value=float(self._cost_config(deployment).point_value),
                         initial_capital=initial_capital,
                     )
+                    if runtime.needs_session_flatten:
+                        self.service.flatten_deployment(session, deployment=deployment, reason="day_trade_flatten")
+                        self._sync_open_trade(
+                            session, runtime, point_value=float(self._cost_config(deployment).point_value)
+                        )
+                    self._runtimes[deployment.id] = runtime
 
         for deployment_id in list(self._runtimes):
             if deployment_id not in active_ids:

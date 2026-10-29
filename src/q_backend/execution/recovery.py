@@ -18,6 +18,7 @@ from q_backend.execution.bar_coordinator import (
 from q_backend.execution.brokers.base import QuoteSource
 from q_backend.execution.domain import DeploymentLifecycle, StrategyIdentity
 from q_backend.execution.evaluator import StrategyEvaluator
+from q_backend.execution.research_evaluator import ResearchEvaluator
 from q_backend.execution.ledger import ExecutionLedger
 from q_backend.backtesting.models import Trade
 from q_backend.execution.position_adapter import execution_position_to_trade
@@ -43,10 +44,11 @@ class RecoveryResult:
 class DeploymentRuntime:
     deployment: ExecutionDeployment
     identity: StrategyIdentity
-    evaluator: StrategyEvaluator
+    evaluator: StrategyEvaluator | ResearchEvaluator
     lease_token: str
     config_revision: int = 1
     activation_cutoff_at: Optional[datetime] = None
+    needs_session_flatten: bool = False
 
 
 def open_trade_for_deployment(
@@ -167,14 +169,36 @@ class ExecutionRecovery:
         # first activation) never treats bars closed before "now" as tradable —
         # only genuinely new bars closing after activation produce a decision.
         watermark = _effective_watermark(deployment)
-        evaluator = StrategyEvaluator(
-            deployment_id=str(deployment.id),
-            identity=identity,
-            initial_capital=initial_capital,
-            point_value=point_value,
-            open_trade=trade,
-            last_evaluated_close=watermark,
-        )
+        needs_session_flatten = False
+        if deployment.source_kind == "strategy_version":
+            evaluator: StrategyEvaluator | ResearchEvaluator = ResearchEvaluator(
+                deployment_id=str(deployment.id),
+                identity=identity,
+                initial_capital=initial_capital,
+                point_value=point_value,
+                open_trade=trade,
+                last_evaluated_close=watermark,
+            )
+            if deployment.compiled_config.get("day_trade", True) and trade is not None:
+                import datetime as dt
+                from q_backend.market_data.timezone import BRASILIA_TZ
+
+                trade_entry = pd.Timestamp(trade.entry_time).tz_convert(BRASILIA_TZ)
+                close_t = dt.time.fromisoformat(str(deployment.compiled_config.get("day_trade_close_time", "17:00")))
+                now_local = pd.Timestamp(datetime.now(timezone.utc)).tz_convert(BRASILIA_TZ)
+                if now_local.date() > trade_entry.date() or (
+                    now_local.date() == trade_entry.date() and now_local.time() >= close_t
+                ):
+                    needs_session_flatten = True
+        else:
+            evaluator = StrategyEvaluator(
+                deployment_id=str(deployment.id),
+                identity=identity,
+                initial_capital=initial_capital,
+                point_value=point_value,
+                open_trade=trade,
+                last_evaluated_close=watermark,
+            )
         consumer = DeploymentBarConsumer(
             str(deployment.id),
             deployment.symbol,
@@ -200,4 +224,5 @@ class ExecutionRecovery:
             lease_token=lease_token,
             config_revision=deployment.config_revision,
             activation_cutoff_at=deployment.activation_cutoff_at,
+            needs_session_flatten=needs_session_flatten,
         )

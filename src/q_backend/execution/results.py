@@ -43,6 +43,9 @@ class ForwardDecisionResult(BaseModel):
     timing: EvaluationPhaseTiming
     replay: bool = False
     skipped_duplicate: bool = False
+    pause_requested: bool = False
+    risk_rejection_code: Optional[str] = None
+    risk_rejection_message: Optional[str] = None
 
     @property
     def emits_decision(self) -> bool:

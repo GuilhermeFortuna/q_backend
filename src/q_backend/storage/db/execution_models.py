@@ -84,6 +84,15 @@ class ExecutionDeployment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     activation_cutoff_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     source_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="builtin", server_default="builtin")
     source_strategy_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    strategy_version_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey(
+            "research_strategy_versions.id",
+            ondelete="SET NULL",
+            name="fk_execution_deployments_strategy_version_id",
+        ),
+        nullable=True,
+    )
+    strategy_bundle_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
     paper_account: Mapped["PaperAccount"] = relationship(back_populates="deployments")
@@ -124,6 +133,7 @@ class ExecutionDeployment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_execution_deployments_paper_account", "paper_account_id"),
         Index("ix_execution_deployments_lifecycle", "lifecycle"),
         Index("ix_execution_deployments_symbol_tf", "symbol", "timeframe"),
+        Index("ix_execution_deployments_strategy_version_id", "strategy_version_id"),
     )
 
 
@@ -148,6 +158,15 @@ class ExecutionDeploymentRevision(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     paper_cost_config: Mapped[dict[str, Any]] = mapped_column(PortableJSON, nullable=False, default=dict)
     source_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="builtin")
     source_strategy_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    strategy_version_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey(
+            "research_strategy_versions.id",
+            ondelete="SET NULL",
+            name="fk_execution_deployment_revisions_strategy_version_id",
+        ),
+        nullable=True,
+    )
+    strategy_bundle_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     actor: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
 
     deployment: Mapped["ExecutionDeployment"] = relationship(back_populates="revisions")
@@ -159,6 +178,7 @@ class ExecutionDeploymentRevision(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             name="uq_execution_deployment_revisions_deployment_revision",
         ),
         Index("ix_execution_deployment_revisions_deployment", "deployment_id"),
+        Index("ix_execution_deployment_revisions_strategy_version_id", "strategy_version_id"),
     )
 
 

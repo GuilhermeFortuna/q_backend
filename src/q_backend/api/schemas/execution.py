@@ -9,6 +9,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, model_validator
 
+from q_backend.api.schemas.backtest import DayTradeSession
+
 DecimalStr = Annotated[
     Decimal,
     PlainSerializer(lambda value: format(value, "f"), return_type=str),
@@ -132,6 +134,8 @@ class DeploymentSummaryResponse(BaseModel):
     config_revision: int
     source_kind: str
     source_strategy_name: Optional[str] = None
+    strategy_version_id: Optional[UUID] = None
+    strategy_bundle_hash: Optional[str] = None
     symbol: str
     timeframe: str
     live_activation_enabled: bool
@@ -150,6 +154,7 @@ class DeploymentDetailResponse(DeploymentSummaryResponse):
     sizing_config: dict[str, Any]
     risk_config: dict[str, Any]
     paper_cost_config: dict[str, Any]
+    day_trade_session: Optional[DayTradeSession] = None
     open_position: Optional["PositionResponse"] = None
     worker_lease: Optional["WorkerLeaseResponse"] = None
     latest_decision: Optional["DecisionResponse"] = None

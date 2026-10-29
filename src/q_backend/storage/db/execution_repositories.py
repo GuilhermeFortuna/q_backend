@@ -131,6 +131,8 @@ def create_execution_deployment(
     live_activation_enabled: bool = False,
     source_kind: str = "explicit",
     source_strategy_name: Optional[str] = None,
+    strategy_version_id: Optional[uuid.UUID] = None,
+    strategy_bundle_hash: Optional[str] = None,
     paper_cost_config: Optional[dict[str, Any]] = None,
     producer: str = "api",
 ) -> ExecutionDeployment:
@@ -153,6 +155,8 @@ def create_execution_deployment(
         paper_cost_config=cost_config,
         source_kind=source_kind,
         source_strategy_name=source_strategy_name,
+        strategy_version_id=strategy_version_id,
+        strategy_bundle_hash=strategy_bundle_hash,
     )
     session.add(deployment)
     session.flush()
@@ -171,6 +175,8 @@ def create_execution_deployment(
             paper_cost_config=cost_config,
             source_kind=source_kind,
             source_strategy_name=source_strategy_name,
+            strategy_version_id=strategy_version_id,
+            strategy_bundle_hash=strategy_bundle_hash,
             actor=None,
         )
     )
@@ -245,6 +251,8 @@ def apply_deployment_configuration_edit(
             paper_cost_config=paper_cost_config,
             source_kind=source_kind,
             source_strategy_name=source_strategy_name,
+            strategy_version_id=deployment.strategy_version_id,
+            strategy_bundle_hash=deployment.strategy_bundle_hash,
             actor=actor,
         )
     )

@@ -69,6 +69,7 @@ from q_backend.execution.domain import (
     FillRecord,
     IllegalLifecycleTransition,
     LedgerEntryType,
+    StrategyIdentity,
 )
 from q_backend.execution.edge_client import EdgeClient
 from q_backend.execution.ledger import ExecutionLedger
@@ -78,10 +79,14 @@ from q_backend.execution.reconciliation import (
 )
 from q_backend.execution.validation import (
     ExecutionValidationError,
+    compute_config_hash,
     identity_from_saved_backtest,
     resolve_catalog_configuration,
+    resolve_saved_backtest,
     validate_broker_mode,
+    validate_paper_cost_config,
     validate_risk_config,
+    validate_sizing_config,
     validate_strategy_identity,
 )
 from q_backend.storage.db.execution_models import (
@@ -137,7 +142,8 @@ def _as_utc(value: datetime) -> datetime:
 
 
 def _http_from_validation(exc: ExecutionValidationError) -> HTTPException:
-    return HTTPException(status_code=400, detail=str(exc))
+    status_code = getattr(exc, "status_code", 400)
+    return HTTPException(status_code=status_code, detail=str(exc))
 
 
 def _http_from_db(exc: SQLAlchemyError) -> HTTPException:
@@ -242,16 +248,22 @@ def create_deployment(
         )
         source_kind = "explicit"
         source_strategy_name: Optional[str] = None
+        strategy_version_id: Optional[uuid.UUID] = None
+        strategy_bundle_hash: Optional[str] = None
         paper_cost_config: dict[str, Any] = {}
         if body.source_backtest_run_id is not None:
-            identity = identity_from_saved_backtest(
+            resolved = resolve_saved_backtest(
                 session,
                 source_backtest_run_id=body.source_backtest_run_id,
                 risk_config=body.identity.risk_config if body.identity else None,
                 sizing_config=body.identity.sizing_config if body.identity else None,
                 market_data_service=market_data_service,
             )
-            source_kind = "saved_backtest"
+            identity = resolved.identity
+            source_kind = resolved.source_kind
+            source_strategy_name = resolved.source_strategy_name
+            strategy_version_id = resolved.strategy_version_id
+            strategy_bundle_hash = resolved.strategy_bundle_hash
         elif body.catalog is not None:
             resolved = resolve_catalog_configuration(
                 strategy_name=body.catalog.strategy_name,
@@ -292,6 +304,8 @@ def create_deployment(
             live_activation_enabled=body.live_activation_enabled,
             source_kind=source_kind,
             source_strategy_name=source_strategy_name,
+            strategy_version_id=strategy_version_id,
+            strategy_bundle_hash=strategy_bundle_hash,
             paper_cost_config=paper_cost_config,
         )
         session.flush()
@@ -336,12 +350,19 @@ def get_deployment_detail(session: Session, deployment_id: uuid.UUID) -> Deploym
     position = get_open_net_position(session, deployment_id)
     latest = get_latest_decision(session, deployment_id)
     summary = _deployment_summary(deployment)
+    day_trade_session = None
+    cfg = deployment.compiled_config or {}
+    if cfg.get("day_trade"):
+        from q_backend.backtesting.run_service import day_trade_session_from_config
+
+        day_trade_session = day_trade_session_from_config(cfg)
     return DeploymentDetailResponse(
         **summary.model_dump(),
         compiled_config=deployment.compiled_config,
         sizing_config=deployment.sizing_config,
         risk_config=deployment.risk_config,
         paper_cost_config=deployment.paper_cost_config,
+        day_trade_session=day_trade_session,
         open_position=PositionResponse.model_validate(position) if position is not None else None,
         worker_lease=_lease_response(lease, now=now) if lease is not None else None,
         latest_decision=_decision_response(latest) if latest is not None else None,
@@ -442,31 +463,79 @@ def patch_deployment_configuration(
     if deployment is None:
         raise HTTPException(status_code=404, detail="deployment not found")
     catalog_name = deployment.source_strategy_name or deployment.strategy_name
-    if deployment.source_kind not in {"builtin", "custom"}:
+    if deployment.source_kind not in {"builtin", "custom", "strategy_version"}:
         raise HTTPException(
             status_code=400,
-            detail="configuration edits require a catalog-created deployment",
+            detail="configuration edits require a catalog-created or strategy-version deployment",
         )
     try:
-        resolved = resolve_catalog_configuration(
-            strategy_name=catalog_name,
-            strategy_params=body.strategy_params,
-            exit_params=body.exit_params,
-            symbol=deployment.symbol,
-            timeframe=deployment.timeframe,
-            sizing_config=body.sizing_config,
-            risk_config=body.risk_config,
-            paper_cost_config=body.paper_cost_config.model_dump(),
-            market_data_service=market_data_service,
-        )
+        if deployment.source_kind == "strategy_version":
+            from q_backend.research.params import (
+                ParamError,
+                coerce_params,
+                declared_from_wire,
+            )
+            from q_backend.storage.db.models import ResearchStrategyVersion
+
+            if deployment.strategy_version_id is None:
+                raise HTTPException(status_code=400, detail="deployment missing strategy_version_id")
+            version = session.get(ResearchStrategyVersion, deployment.strategy_version_id)
+            if version is None:
+                raise HTTPException(status_code=404, detail="strategy version not found")
+
+            declared = tuple(declared_from_wire(spec) for spec in version.param_specs)
+            try:
+                coerced_params = coerce_params(declared, body.strategy_params or {})
+            except (ParamError, ValueError) as exc:
+                raise ExecutionValidationError(f"invalid strategy_params: {exc}", status_code=422) from exc
+
+            sizing = validate_sizing_config(body.sizing_config)
+            risk = validate_risk_config(body.risk_config)
+            cost = validate_paper_cost_config(body.paper_cost_config.model_dump())
+
+            compiled_config = dict(deployment.compiled_config or {})
+            compiled_config["strategy_params"] = coerced_params
+            if body.exit_params is not None:
+                compiled_config["exit_params"] = body.exit_params
+            config_hash = compute_config_hash(compiled_config)
+
+            identity = StrategyIdentity(
+                strategy_name=deployment.strategy_name,
+                strategy_version=deployment.strategy_version,
+                compiled_config=compiled_config,
+                config_hash=config_hash,
+                symbol=deployment.symbol,
+                timeframe=deployment.timeframe,
+                sizing_config=sizing,
+                risk_config=risk,
+            )
+            source_kind = deployment.source_kind
+            source_strategy_name = deployment.source_strategy_name
+            paper_cost_config = cost
+        else:
+            resolved = resolve_catalog_configuration(
+                strategy_name=catalog_name,
+                strategy_params=body.strategy_params,
+                exit_params=body.exit_params,
+                symbol=deployment.symbol,
+                timeframe=deployment.timeframe,
+                sizing_config=body.sizing_config,
+                risk_config=body.risk_config,
+                paper_cost_config=body.paper_cost_config.model_dump(),
+                market_data_service=market_data_service,
+            )
+            identity = resolved.identity
+            source_kind = resolved.source_kind
+            source_strategy_name = resolved.source_strategy_name
+            paper_cost_config = resolved.paper_cost_config
         deployment = apply_deployment_configuration_edit(
             session,
             deployment_id,
             expected_revision=body.expected_revision,
-            identity=resolved.identity,
-            source_kind=resolved.source_kind,
-            source_strategy_name=resolved.source_strategy_name,
-            paper_cost_config=resolved.paper_cost_config,
+            identity=identity,
+            source_kind=source_kind,
+            source_strategy_name=source_strategy_name,
+            paper_cost_config=paper_cost_config,
             actor=body.actor,
         )
         record_audit_event(

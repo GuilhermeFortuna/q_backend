@@ -328,6 +328,13 @@ class BacktestImportResponse(BaseModel):
     run_id: str
 
 
+class DayTradeSession(BaseModel):
+    start_time: str
+    end_time: str
+    close_time: str
+    day_trade: bool
+
+
 class BacktestRunListItem(BaseModel):
     run_id: str
     symbol: str
@@ -340,6 +347,8 @@ class BacktestRunListItem(BaseModel):
     summary: Optional[Dict[str, Any]] = None
     strategy_version_id: Optional[str] = None
     strategy_bundle_hash: Optional[str] = None
+    order_kinds: Optional[List[str]] = None
+    day_trade_session: Optional[DayTradeSession] = None
 
 
 class BacktestRunListResponse(BaseModel):
@@ -375,6 +384,8 @@ class BacktestRunDetailResponse(BaseModel):
     ml_filter: Optional[MLFilterReference] = Field(default=None, exclude_if=lambda value: value is None)
     strategy_version_id: Optional[str] = None
     strategy_bundle_hash: Optional[str] = None
+    order_kinds: Optional[List[str]] = None
+    day_trade_session: Optional[DayTradeSession] = None
 
 
 class BacktestRunPatchRequest(BaseModel):

@@ -70,6 +70,23 @@ def compute_window_bound_bars(compiled_config: dict[str, Any]) -> int:
     as walk-forward warm-up), plus explicit exit indicator periods such as
     ``atr_period`` and ``donchian_exit_period``.
     """
+    if compiled_config.get("source_kind") == "strategy_version" or "strategy_version_id" in compiled_config:
+        from datetime import timedelta
+        import math
+        from q_backend.market_data.exogenous_context import bar_duration
+        from q_backend.storage.settings import get_settings
+
+        timeframe = compiled_config.get("timeframe", "M5")
+        try:
+            dur = bar_duration(timeframe)
+            session_bars = max(int(math.ceil(timedelta(hours=9) / dur)), 1)
+        except ValueError:
+            session_bars = 108
+
+        base_warmup = get_settings().execution_research_warmup_bars
+        declared = int(compiled_config.get("warmup_bars") or 0)
+        return max(base_warmup, declared) + session_bars
+
     flat = _flatten_compiled_params(compiled_config)
     lookbacks = _numeric_lookbacks_from_mapping(flat)
 

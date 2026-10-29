@@ -51,6 +51,33 @@ def _level(value: float) -> float | None:
     return None if np.isnan(value) else float(value)
 
 
+def classify_order(order: TradeOrder) -> set[str]:
+    """Classify a TradeOrder into one or more order kinds."""
+    kinds: set[str] = set()
+    if order.action in ("buy", "sell"):
+        if order.kind == "market":
+            if order.price is None:
+                kinds.add("market_entry")
+            else:
+                kinds.add("priced_entry")
+        elif order.kind == "stop":
+            kinds.add("resting_stop")
+        elif order.kind == "limit":
+            kinds.add("resting_limit")
+        if order.stop_loss is not None or order.take_profit is not None:
+            kinds.add("protective_levels")
+    elif order.action == "close":
+        if order.price is None:
+            kinds.add("market_close")
+        else:
+            kinds.add("priced_close")
+    elif order.action == "amend":
+        kinds.add("amend")
+    elif order.action == "cancel":
+        kinds.add("cancel")
+    return kinds
+
+
 class _RuntimeHooks:
     """Per-chunk decisions for the candle kernel's runtime callbacks.
 
@@ -223,6 +250,7 @@ class ResearchStrategyAdapter(TradingStrategy):
         self._chart_indicators: tuple[ChartIndicator, ...] = ()
         self._tick_source = tick_source
         self.progress = progress if progress is not None else BacktestProgress()
+        self.order_kinds: set[str] = set()
         self._hook_calls = {
             name: detect_hook_call(research_strategy, name) for name in ("exit_strategy", "entry_strategy")
         }
@@ -244,7 +272,12 @@ class ResearchStrategyAdapter(TradingStrategy):
         """Session worker processes get a silent progress reporter; the parent's may drive a terminal."""
         state = self.__dict__.copy()
         state["progress"] = BacktestProgress()
+        state["order_kinds"] = set(self.order_kinds)
         return state
+
+    def _record_orders(self, orders: tuple[TradeOrder, ...] | list[TradeOrder]) -> None:
+        for order in orders:
+            self.order_kinds.update(classify_order(order))
 
     def compute_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
         """Call compute_indicators once on an owned copy and compile prefix decisions."""
@@ -375,7 +408,9 @@ class ResearchStrategyAdapter(TradingStrategy):
         *,
         ticks: TickData | None = None,
     ) -> tuple[TradeOrder, ...]:
-        return invoke_hook(self.research_strategy, self._hook_calls[name], name, prefix, positions, ticks=ticks)
+        orders = invoke_hook(self.research_strategy, self._hook_calls[name], name, prefix, positions, ticks=ticks)
+        self._record_orders(orders)
+        return orders
 
     def _ticks_for(
         self,
