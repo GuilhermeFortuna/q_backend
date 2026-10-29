@@ -6,6 +6,8 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
+
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -185,8 +187,13 @@ def test_systemd_analyze_verify(tmp_path: Path):
     if not shutil.which("systemd-analyze"):
         pytest.skip("systemd-analyze not installed")
 
-    # Render with the actual repo directory so executables exist in .venv/bin/
-    rendered = _render_templates(str(REPO_ROOT), tmp_path)
+    # Render against a backend dir whose .venv is the interpreter running the tests, so
+    # ExecStart binaries exist regardless of where the venv lives (CI uses <repo>/.venv,
+    # local runs use UV_PROJECT_ENVIRONMENT on the build disk).
+    backend_dir = tmp_path / "backend"
+    backend_dir.mkdir()
+    (backend_dir / ".venv").symlink_to(sys.prefix)
+    rendered = _render_templates(str(backend_dir), tmp_path)
     target_file = REPO_ROOT / "deploy/systemd/user/q-backend.target"
     shutil.copy(target_file, tmp_path / "q-backend.target")
 
