@@ -826,11 +826,13 @@ but cannot submit in the current environment.
 | Global enable | `Q_LIVE_EXECUTION_ENABLED` | `false` |
 | Account allowlist | `Q_LIVE_EXECUTION_ACCOUNT_ALLOWLIST` | empty |
 | Deployment flag | `live_activation_enabled` on deployment row | `false` |
-| Controlled-account validation | `Q_LIVE_EXECUTION_VALIDATED` | `false` |
-| Dry run (blocks `order_send` even when gates pass) | `Q_LIVE_EXECUTION_DRY_RUN` | `true` |
+| Controlled-account validation (not needed when the account reports the `demo` trade mode) | `Q_LIVE_EXECUTION_VALIDATED` | `false` |
 
-API/UI capability remains **`live_locked`** until a separate controlled-account validation record
-exists (`Q_LIVE_EXECUTION_VALIDATED=true` plus allowlisted account).
+A `real` or `contest` account keeps the API/UI capability at **`live_locked`** until a separate
+controlled-account validation record exists (`Q_LIVE_EXECUTION_VALIDATED=true` plus allowlisted
+account). A `demo` account needs only the allowlist. Demo trading is set up in
+[`docs/operations/mt5-demo-trading.md`](docs/operations/mt5-demo-trading.md), and
+`GET /api/v1/execution/health` reports the result in `mt5_orders`.
 
 **Retcode mapping (summary):**
 
@@ -856,7 +858,6 @@ Run contract tests: `uv run pytest tests/execution/test_metatrader_broker.py`
 - [ ] Manual micro-order round trip on controlled account
 - [ ] Reconciliation verified against terminal deal history
 - [ ] Set `Q_LIVE_EXECUTION_VALIDATED=true` only after sign-off
-- [ ] Set `Q_LIVE_EXECUTION_DRY_RUN=false` only on the execution worker host
 
 ---
 
