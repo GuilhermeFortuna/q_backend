@@ -330,3 +330,87 @@ def test_bars_without_sessions_suggests_sync(tmp_path) -> None:
     with pytest.raises(NoMarketDataError, match="q-sync-ticks") as exc:
         store.bars("M10", start="2026-10-05")
     assert "sync=True" in str(exc.value)
+
+
+@patch("q_backend.research.tick_store._exchange_now", return_value=_frozen_now())
+@patch("q_backend.research.tick_store.RemoteMt5Client")
+@patch("q_backend.research.tick_store.resolve_gateway_url", return_value="http://gw.test")
+@patch("q_backend.research.tick_store.resolve_gateway_token", return_value=None)
+def test_overwrite_replaces_stored_sessions_and_drops_derived_caches(
+    _token: object,
+    _url: object,
+    client_cls: MagicMock,
+    _now: object,
+    tmp_path,
+) -> None:
+    mon = date(2026, 10, 5)
+    tue = date(2026, 10, 6)
+    store = TickStore("WDO$N", root=tmp_path)
+    for day in (mon, tue):
+        _write_day_atomic(store._day_path(day), _columnar_for_day(day, [(0, 1.0, 32)]))
+    store.bars("M1", start="2026-10-05", end="2026-10-06")  # populates the M1 cache for both days
+    assert store._m1_cache_path(mon).is_file()
+    store._trade_prices_cache_day = mon
+    store._trade_prices_cache = (np.zeros(1, dtype=np.int64), np.ones(1))
+
+    gateway = ScriptedGateway({mon: [3], tue: [2]})
+    client_cls.return_value.is_supported.return_value = True
+    client_cls.return_value.get_tick_page.side_effect = gateway.get_tick_page
+
+    report = store.sync(start="2026-10-05", end="2026-10-06", overwrite=True)
+
+    assert report.already_present == []
+    assert report.stored == [mon, tue]
+    assert pq.read_table(store._day_path(mon))["last"].to_pylist() == [100.0, 101.0, 102.0]
+    assert pq.read_table(store._day_path(tue))["last"].to_pylist() == [100.0, 101.0]
+    assert not store._m1_cache_path(mon).exists()
+    assert not store._m1_cache_path(tue).exists()
+    assert store._trade_prices_cache is None
+
+
+@patch("q_backend.research.tick_store._exchange_now", return_value=_frozen_now())
+@patch("q_backend.research.tick_store.RemoteMt5Client")
+@patch("q_backend.research.tick_store.resolve_gateway_url", return_value="http://gw.test")
+@patch("q_backend.research.tick_store.resolve_gateway_token", return_value=None)
+def test_overwrite_removes_a_stored_session_the_source_reports_empty(
+    _token: object,
+    _url: object,
+    client_cls: MagicMock,
+    _now: object,
+    tmp_path,
+) -> None:
+    mon = date(2026, 10, 5)
+    store = TickStore("WDO$N", root=tmp_path)
+    _write_day_atomic(store._day_path(mon), _columnar_for_day(mon, [(0, 1.0, 32)]))
+
+    gateway = ScriptedGateway({mon: [0]})
+    client_cls.return_value.is_supported.return_value = True
+    client_cls.return_value.get_tick_page.side_effect = gateway.get_tick_page
+
+    report = store.sync(start="2026-10-05", end="2026-10-05", overwrite=True)
+
+    assert report.empty == [mon]
+    assert not store.has_session(mon)
+
+
+@patch("q_backend.research.tick_store._exchange_now", return_value=_frozen_now())
+@patch("q_backend.research.tick_store.RemoteMt5Client")
+@patch("q_backend.research.tick_store.resolve_gateway_url", return_value="http://gw.test")
+def test_overwrite_failure_keeps_the_stored_session(
+    _url: object,
+    client_cls: MagicMock,
+    _now: object,
+    tmp_path,
+) -> None:
+    mon = date(2026, 10, 5)
+    store = TickStore("WDO$N", root=tmp_path)
+    _write_day_atomic(store._day_path(mon), _columnar_for_day(mon, [(0, 1.0, 32)]))
+
+    gateway = ScriptedGateway({mon: [ConnectionError("down")]})
+    client_cls.return_value.is_supported.return_value = True
+    client_cls.return_value.get_tick_page.side_effect = gateway.get_tick_page
+
+    report = store.sync(start="2026-10-05", end="2026-10-05", overwrite=True)
+
+    assert report.failed == [mon]
+    assert pq.read_table(store._day_path(mon))["last"].to_pylist() == [1.0]

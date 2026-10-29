@@ -18,7 +18,9 @@ def test_main_syncs_the_requested_range_and_prints_the_report(tmp_path, capsys) 
         )
 
     assert code == 0
-    sync_mock.assert_called_once_with(start="2026-10-05", end="2026-10-06", gateway_url=None, gateway_token=None)
+    sync_mock.assert_called_once_with(
+        start="2026-10-05", end="2026-10-06", gateway_url=None, gateway_token=None, overwrite=False
+    )
     output = capsys.readouterr().out
     assert "stored: 2026-10-05" in output
     assert "No sessions stored yet for this symbol." in output
@@ -33,3 +35,10 @@ def test_failed_sync_returns_nonzero_and_prints_reason(capsys):
         code = q_sync_ticks.main(["--symbol", "WIN$", "--start", "2026-10-05"])
     assert code == 1
     assert "broker disconnected" in capsys.readouterr().out
+
+
+def test_overwrite_flag_is_forwarded_to_sync() -> None:
+    report = TickSyncReport(stored=[], already_present=[], empty=[], unsettled=[], failed=[])
+    with patch.object(TickStore, "sync", return_value=report) as sync_mock:
+        q_sync_ticks.main(["--symbol", "WDO$N", "--start", "2026-10-05", "--overwrite"])
+    assert sync_mock.call_args.kwargs["overwrite"] is True

@@ -19,6 +19,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--gateway-url", default=None, help="Override Q_MT5_GATEWAY_URL")
     parser.add_argument("--gateway-token", default=None, help="Override Q_MT5_GATEWAY_TOKEN")
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Re-download days already on disk, replacing them (e.g. after switching data sources)",
+    )
     return parser
 
 
@@ -31,6 +36,7 @@ def main(argv: list[str] | None = None) -> int:
         end=args.end,
         gateway_url=args.gateway_url,
         gateway_token=args.gateway_token,
+        overwrite=args.overwrite,
     )
     print(report)
     return 0

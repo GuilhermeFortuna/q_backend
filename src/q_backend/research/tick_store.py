@@ -323,6 +323,13 @@ class TickStore:
     def _m1_cache_path(self, day: date) -> Path:
         return self._symbol_dir() / "bars_M1" / f"{day.isoformat()}.parquet"
 
+    def _drop_day_caches(self, day: date) -> None:
+        """Forget derived data for one session after its ticks changed on disk."""
+        self._m1_cache_path(day).unlink(missing_ok=True)
+        if self._trade_prices_cache_day == day:
+            self._trade_prices_cache_day = None
+            self._trade_prices_cache = None
+
     def has_session(self, day: date) -> bool:
         """Whether ticks for one exchange calendar day are on disk."""
         return self._day_path(day).is_file()
@@ -360,13 +367,15 @@ class TickStore:
         gateway_url: str | None = None,
         gateway_token: str | None = None,
         progress: bool | None = None,
+        overwrite: bool = False,
     ) -> TickSyncReport:
         """
-        Synchronize tick data for missing weekday sessions from MetaTrader 5.
+        Synchronize tick data for weekday sessions from MetaTrader 5.
 
-        Streams bounded forward tick pages once, overlapping downloads and daily
-        Parquet writes. Commits a day only after a successful scan passes its end.
-        Never syncs the current active session.
+        By default only weekdays missing from disk are downloaded. Streams bounded
+        forward tick pages once, overlapping downloads and daily Parquet writes.
+        Commits a day only after a successful scan passes its end. Never syncs the
+        current active session.
 
         Parameters
         ----------
@@ -381,6 +390,11 @@ class TickStore:
         progress : bool, optional
             Show per-day sync progress with elapsed time and estimated remaining
             time on stderr. Defaults to showing it on a terminal.
+        overwrite : bool, default False
+            Re-download every weekday in range, replacing stored sessions. Use it to
+            re-import ticks after switching data sources. A session the gateway
+            reports as empty is removed rather than kept, so the store never mixes
+            sources. Days in a failed interval keep their stored data.
 
         Returns
         -------
@@ -399,7 +413,7 @@ class TickStore:
         intervals: list[list[date]] = []
         run: list[date] = []
         for day in days:
-            if self.has_session(day):
+            if not overwrite and self.has_session(day):
                 report.already_present.append(day)
                 if run:
                     intervals.append(run)
@@ -425,6 +439,9 @@ class TickStore:
 
             def completed(day: date, rows: int) -> None:
                 nonlocal done
+                if not rows and overwrite:
+                    self._day_path(day).unlink(missing_ok=True)
+                self._drop_day_caches(day)
                 (report.stored if rows else report.empty).append(day)
                 done += 1
                 reporter.advance(done, day, f"stored {rows:,} ticks" if rows else "empty")
@@ -764,6 +781,7 @@ def sync_ticks(
     root: str | Path | None = None,
     gateway_url: str | None = None,
     gateway_token: str | None = None,
+    overwrite: bool = False,
 ) -> TickSyncReport:
     """
     Fetch missing weekday sessions for an instrument into the research tick store.
@@ -784,6 +802,8 @@ def sync_ticks(
         Override for ``Q_MT5_GATEWAY_URL``.
     gateway_token : str, optional
         Override for ``Q_MT5_GATEWAY_TOKEN``.
+    overwrite : bool, default False
+        Re-download sessions that are already stored. See :meth:`TickStore.sync`.
 
     Returns
     -------
@@ -795,4 +815,5 @@ def sync_ticks(
         end=end,
         gateway_url=gateway_url,
         gateway_token=gateway_token,
+        overwrite=overwrite,
     )

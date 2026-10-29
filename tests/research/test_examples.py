@@ -84,7 +84,15 @@ def test_sync_ticks_example_forwards_sync_arguments(tmp_path: Path) -> None:
             end="2026-10-06",
             gateway_url="http://gw.test",
             gateway_token="tok",
+            overwrite=False,
         )
+
+
+def test_sync_ticks_example_forwards_overwrite(tmp_path: Path) -> None:
+    with patch("examples.research.sync_ticks.TickStore") as store_cls:
+        store_cls.return_value.sync.return_value = "stored: 2026-10-05"
+        assert sync_main(["--symbol", "WDO$N", "--start", "2026-10-05", "--overwrite"]) == 0
+        assert store_cls.return_value.sync.call_args.kwargs["overwrite"] is True
 
 
 def test_sync_ticks_parser_defaults() -> None:

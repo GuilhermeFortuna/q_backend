@@ -15,7 +15,8 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Download tick sessions from the MT5 gateway into the research tick store. "
             "Requires Q_MT5_GATEWAY_URL (and token if configured). "
-            "Skips days already on disk; never stores the current exchange session."
+            "Skips days already on disk unless --overwrite is given; "
+            "never stores the current exchange session."
         ),
     )
     parser.add_argument("--symbol", required=True, help="Symbol to sync, e.g. WDO$N")
@@ -29,6 +30,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--gateway-url", default=None, help="Override Q_MT5_GATEWAY_URL")
     parser.add_argument("--gateway-token", default=None, help="Override Q_MT5_GATEWAY_TOKEN")
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Re-download days already on disk, replacing them (e.g. after switching data sources)",
+    )
     return parser
 
 
@@ -40,6 +46,7 @@ def main(argv: list[str] | None = None) -> int:
         end=args.end,
         gateway_url=args.gateway_url,
         gateway_token=args.gateway_token,
+        overwrite=args.overwrite,
     )
     print(report)
     sessions = store.sessions()
