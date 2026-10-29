@@ -50,8 +50,7 @@ classification, plus `tests/research/test_oco_orders.py`, `test_timed_orders.py`
 (new), `tests/research/test_priced_deprecation.py` (new).
 
 - [ ] Write fixture strategy pairs for each migration-table row, and test acceptance 2 with `compare_results`.
-- [ ] Add the deprecation warning (acceptance 4), and the "not deployable" marker in the strategy-file listing.
-  Commit.
+- [ ] Add the deprecation warning (acceptance 4). Commit. (The strategy-file marker moved to Q-144.)
 
 ### 5. Guide
 
@@ -65,6 +64,20 @@ classification, plus `tests/research/test_oco_orders.py`, `test_timed_orders.py`
 - [ ] In the scratch directory, port the three strategies with the guide only, run each port on the baseline
   setup, and compare. Attribute every difference to a known one; an unexplained difference blocks the task.
   Record the reports for the board message.
+
+### 7. Amendment of 2026-10-29
+
+**Files:** `research/compare.py`, `tests/research/test_compare_results.py`,
+`tests/research/test_live_placeable_equivalence.py`, `docs/research/user_guide/live_placeable_orders.rst`.
+
+- [ ] `compare_results`: count a pair that differs only in its reasons as matched and list it as a label
+  difference. Extend the acceptance 6 tests. Commit.
+- [ ] Add fixture pairs for the three new known differences (stop exit reason, protective levels from a gap
+  fill, re-entry after an intrabar exit) and document them in the guide with examples, together with the
+  timed-exit replacement rule. Commit.
+- [ ] Re-port `BracketMomentumStrategy` keeping its OCO group working while a position is open, and port
+  `RSIStrategy` and `AlphaExperimentStrategy`. Run all three over their full `main()` ranges and record the
+  data source and range of each.
 
 ## Verification
 
