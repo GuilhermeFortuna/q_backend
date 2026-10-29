@@ -396,7 +396,7 @@ def test_overwrite_removes_a_stored_session_the_source_reports_empty(
 @patch("q_backend.research.tick_store._exchange_now", return_value=_frozen_now())
 @patch("q_backend.research.tick_store.RemoteMt5Client")
 @patch("q_backend.research.tick_store.resolve_gateway_url", return_value="http://gw.test")
-def test_overwrite_failure_keeps_the_stored_session(
+def test_overwrite_failure_removes_the_old_session(
     _url: object,
     client_cls: MagicMock,
     _now: object,
@@ -405,6 +405,8 @@ def test_overwrite_failure_keeps_the_stored_session(
     mon = date(2026, 10, 5)
     store = TickStore("WDO$N", root=tmp_path)
     _write_day_atomic(store._day_path(mon), _columnar_for_day(mon, [(0, 1.0, 32)]))
+    store._m1_cache_path(mon).parent.mkdir(parents=True, exist_ok=True)
+    store._m1_cache_path(mon).write_bytes(b"stale")
 
     gateway = ScriptedGateway({mon: [ConnectionError("down")]})
     client_cls.return_value.is_supported.return_value = True
@@ -413,4 +415,5 @@ def test_overwrite_failure_keeps_the_stored_session(
     report = store.sync(start="2026-10-05", end="2026-10-05", overwrite=True)
 
     assert report.failed == [mon]
-    assert pq.read_table(store._day_path(mon))["last"].to_pylist() == [1.0]
+    assert not store.has_session(mon)
+    assert not store._m1_cache_path(mon).exists()

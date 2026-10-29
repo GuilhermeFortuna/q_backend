@@ -45,7 +45,8 @@ When syncing sessions with :func:`~q_backend.research.sync_ticks` or
 Sync skips sessions already on disk and never stores the current exchange day.
 Pass ``overwrite=True`` (or ``q-sync-ticks --overwrite``) to re-download stored
 sessions, for example after switching data sources. Replaced sessions drop their
-cached M1 bars; a session the source reports as empty is removed.
+cached M1 bars. A session that is not stored again, because the source reports it
+empty or the download fails, is removed, so sources are never mixed.
 ``unsettled`` remains a compatibility field and is always empty. ``first_msc``,
 ``last_msc`` and ``ticks_received`` describe received data, including unfinished
 days; they are not a global broker-retention guarantee. Empty native responses

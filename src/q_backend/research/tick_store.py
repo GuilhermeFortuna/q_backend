@@ -330,6 +330,11 @@ class TickStore:
             self._trade_prices_cache_day = None
             self._trade_prices_cache = None
 
+    def _discard_session(self, day: date) -> None:
+        """Remove one session's stored ticks and derived data."""
+        self._day_path(day).unlink(missing_ok=True)
+        self._drop_day_caches(day)
+
     def has_session(self, day: date) -> bool:
         """Whether ticks for one exchange calendar day are on disk."""
         return self._day_path(day).is_file()
@@ -392,9 +397,9 @@ class TickStore:
             time on stderr. Defaults to showing it on a terminal.
         overwrite : bool, default False
             Re-download every weekday in range, replacing stored sessions. Use it to
-            re-import ticks after switching data sources. A session the gateway
-            reports as empty is removed rather than kept, so the store never mixes
-            sources. Days in a failed interval keep their stored data.
+            re-import ticks after switching data sources. Any session that is not
+            stored again (reported empty, or failed) is removed rather than kept, so
+            the store never mixes sources.
 
         Returns
         -------
@@ -440,8 +445,9 @@ class TickStore:
             def completed(day: date, rows: int) -> None:
                 nonlocal done
                 if not rows and overwrite:
-                    self._day_path(day).unlink(missing_ok=True)
-                self._drop_day_caches(day)
+                    self._discard_session(day)
+                else:
+                    self._drop_day_caches(day)
                 (report.stored if rows else report.empty).append(day)
                 done += 1
                 reporter.advance(done, day, f"stored {rows:,} ticks" if rows else "empty")
@@ -462,11 +468,17 @@ class TickStore:
                     if remaining:
                         raise ConnectionError("Tick stream ended before the requested interval was scanned.")
                 except TickPagingUnsupportedError:
+                    if overwrite:
+                        for day in interval:
+                            if day not in report.stored and day not in report.empty:
+                                self._discard_session(day)
                     raise
                 except Exception as exc:  # noqa: BLE001 - preserve completed days and continue independent intervals
                     for day in interval:
                         if day in report.stored or day in report.empty:
                             continue
+                        if overwrite:
+                            self._discard_session(day)
                         report.failed.append(day)
                         report.errors[day] = str(exc)
                         done += 1

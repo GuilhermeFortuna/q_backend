@@ -201,3 +201,24 @@ def test_writer_failure_waits_for_outstanding_fetch_before_next_interval(tmp_pat
     assert not runner.is_alive()
     assert results[0].failed == [MON, WED]
     assert not list(tmp_path.rglob("*.tmp"))
+
+
+def test_overwrite_keeps_days_stored_before_a_failure_and_drops_the_rest(tmp_path):
+    store = TickStore("WIN$", root=tmp_path)
+    for day in (MON, TUE):
+        _write_day_atomic(store._day_path(day), _columnar_for_day(day, [(0, 1.0, 32)]))
+    # The first page completes Monday's session; the stream then fails before Tuesday's end.
+    first = page([(MON, [(0, 100, 32)])], int(_columnar_for_day(TUE, [(0, 100, 32)])["time_msc"][0]))
+    report = sync(store, Pages([first, ConnectionError("broker disconnected")]), overwrite=True)
+    assert report.stored == [MON]
+    assert report.failed == [TUE, WED]
+    assert pq.read_table(store._day_path(MON))["last"].to_pylist() == [100]
+    assert not store.has_session(TUE)
+
+
+def test_overwrite_removes_stored_days_when_paging_is_unsupported(tmp_path):
+    store = TickStore("WIN$", root=tmp_path)
+    _write_day_atomic(store._day_path(MON), _columnar_for_day(MON, [(0, 1.0, 32)]))
+    with pytest.raises(TickPagingUnsupportedError):
+        sync(store, Pages([TickPagingUnsupportedError("restart gateway")]), overwrite=True)
+    assert not store.has_session(MON)
