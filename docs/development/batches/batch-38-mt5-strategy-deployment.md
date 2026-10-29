@@ -1,6 +1,6 @@
 # Batch 38 — Research strategies on MT5
 
-**Status:** written task specs and plans await human review. The [Q project board](https://github.com/users/GuilhermeFortuna/projects/2) is the status of record.
+**Status:** issues published on 2026-10-29; written task specs and plans await human review. The [Q project board](https://github.com/users/GuilhermeFortuna/projects/2) is the status of record.
 **Owner:** q_backend. Tasks also change q_contracts and q_terminal.
 
 ## Outcome
@@ -27,9 +27,9 @@ Each was read from the code on 2026-10-29.
 
 | Task | Repositories | Depends on | Specification | Implementation plan |
 | --- | --- | --- | --- | --- |
-| Q-135 — MT5 demo-account gate | q_backend, q_contracts | none | [Spec](../specs/Q-135-mt5-demo-account-gate-spec.md) | [Plan](../plans/Q-135-mt5-demo-account-gate-plan.md) |
-| Q-136 — Deploy research strategy versions | q_backend, q_contracts, q_terminal | Q-135 | [Spec](../specs/Q-136-deploy-research-strategy-versions-spec.md) | [Plan](../plans/Q-136-deploy-research-strategy-versions-plan.md) |
-| Q-137 — Stop, limit and protective orders on MT5 | q_backend, q_contracts | Q-136 | [Spec](../specs/Q-137-stop-limit-and-protective-orders-on-mt5-spec.md) | [Plan](../plans/Q-137-stop-limit-and-protective-orders-on-mt5-plan.md) |
+| [Q-135](https://github.com/GuilhermeFortuna/q_backend/issues/59) — MT5 demo-account gate | q_backend, q_contracts | none | [Spec](../specs/Q-135-mt5-demo-account-gate-spec.md) | [Plan](../plans/Q-135-mt5-demo-account-gate-plan.md) |
+| [Q-136](https://github.com/GuilhermeFortuna/q_backend/issues/60) — Deploy research strategy versions | q_backend, q_contracts, q_terminal | Q-135 | [Spec](../specs/Q-136-deploy-research-strategy-versions-spec.md) | [Plan](../plans/Q-136-deploy-research-strategy-versions-plan.md) |
+| [Q-137](https://github.com/GuilhermeFortuna/q_backend/issues/61) — Stop, limit and protective orders on MT5 | q_backend, q_contracts | Q-136 | [Spec](../specs/Q-137-stop-limit-and-protective-orders-on-mt5-spec.md) | [Plan](../plans/Q-137-stop-limit-and-protective-orders-on-mt5-plan.md) |
 
 Implement them in order. Q-135 and Q-137 both change the execution-edge contract and `gateway/mt5_execution_edge.py`.
 Q-136 and Q-137 both change the forward evaluator and the deployment validation.
