@@ -11,25 +11,20 @@ import pandas as pd
 
 from q_backend.research.results import BacktestResult
 
-# Compared in this order; a difference reports the first field that differs.
-COMPARED_FIELDS = (
-    "side",
-    "entry_time",
-    "entry_price",
-    "exit_time",
-    "exit_price",
-    "quantity",
-    "entry_reason",
-    "exit_reason",
-    "pnl",
-)
+# Compared in this order; a differing pair reports the first of these fields that differs.
+VALUE_FIELDS = ("side", "entry_time", "entry_price", "exit_time", "exit_price", "quantity", "pnl")
+# Reasons are labels: a pair that differs only in them is matched and listed as a label difference.
+LABEL_FIELDS = ("entry_reason", "exit_reason")
 _NUMERIC_FIELDS = frozenset({"entry_price", "exit_price", "quantity", "pnl"})
-_TRADE_FIELDS = ("entry_time", "side", "entry_price", "exit_time", "exit_price", "quantity", "pnl")
 
 
 @dataclass(frozen=True)
 class TradeDifference:
-    """Two trades that open at the same time but differ; ``field`` is the first field that differs."""
+    """Two trades that open at the same time but differ; ``field`` is the first field that differs.
+
+    For a value difference the field is one of ``VALUE_FIELDS``; for a label difference, one of
+    ``LABEL_FIELDS``.
+    """
 
     field: str
     left: Mapping[str, Any]
@@ -57,12 +52,15 @@ class ResultSummary:
 class ComparisonReport:
     """The trade-by-trade comparison of two backtests (left against right).
 
-    ``identical`` is true only when every trade matches: no differing pair and no trade present in
-    one result alone.
+    ``matched`` counts the pairs that agree on every value field, including those that differ only
+    in a label; ``labels`` lists those label-only pairs. ``identical`` is true only when every trade
+    matches on its values: no differing pair and no trade present in one result alone. Labels do
+    not affect it.
     """
 
     matched: int
     differing: tuple[TradeDifference, ...]
+    labels: tuple[TradeDifference, ...]
     left_only: tuple[Mapping[str, Any], ...]
     right_only: tuple[Mapping[str, Any], ...]
     left: ResultSummary
@@ -75,6 +73,7 @@ class ComparisonReport:
     def __str__(self) -> str:
         lines = [
             f"matched {self.matched}, differing {len(self.differing)}, "
+            f"label only {len(self.labels)}, "
             f"left only {len(self.left_only)}, right only {len(self.right_only)}",
             f"total PnL: {_fmt(self.left.total_pnl)} | {_fmt(self.right.total_pnl)}",
             f"profit factor: {_fmt(self.left.profit_factor)} | {_fmt(self.right.profit_factor)}",
@@ -83,6 +82,10 @@ class ComparisonReport:
         for diff in self.differing:
             lines.append(
                 f"differs at {_stamp(diff.left)} on {diff.field}: {diff.left_value!r} (left) != {diff.right_value!r} (right)"
+            )
+        for diff in self.labels:
+            lines.append(
+                f"label differs at {_stamp(diff.left)} on {diff.field}: {diff.left_value!r} (left) != {diff.right_value!r} (right)"
             )
         for trade in self.left_only:
             lines.append(f"left only: {_stamp(trade)} {trade.get('side')} @ {trade.get('entry_price')}")
@@ -95,9 +98,10 @@ def compare_results(a: BacktestResult, b: BacktestResult, *, tolerance: float = 
     """Compare two backtests trade by trade.
 
     Trades are paired by entry time: within one entry time the n-th trade of ``a`` pairs with the
-    n-th of ``b``. A pair differs when any of entry and exit time, price, side, quantity, reasons or
-    PnL differ; prices, quantity and PnL may differ by up to ``tolerance``. Trades that open at a
-    time the other result does not have are reported as one-sided.
+    n-th of ``b``. A pair differs when any of entry and exit time, price, side, quantity or PnL
+    differ; prices, quantity and PnL may differ by up to ``tolerance``. A pair that agrees on those
+    but differs in its entry or exit reason is matched and listed in ``labels``. Trades that open
+    at a time the other result does not have are reported as one-sided.
 
     Parameters
     ----------
@@ -124,6 +128,7 @@ def compare_results(a: BacktestResult, b: BacktestResult, *, tolerance: float = 
     used: set[int] = set()
     matched = 0
     differing: list[TradeDifference] = []
+    labels: list[TradeDifference] = []
     left_only: list[Mapping[str, Any]] = []
     for row in left_rows:
         candidates = right_by_time.get(row["entry_time"])
@@ -132,15 +137,20 @@ def compare_results(a: BacktestResult, b: BacktestResult, *, tolerance: float = 
             continue
         index = candidates.pop(0)
         used.add(index)
-        field = _first_difference(row, right_rows[index], tolerance)
-        if field is None:
-            matched += 1
-        else:
-            differing.append(TradeDifference(field=field, left=row, right=right_rows[index]))
+        other = right_rows[index]
+        field = _first_difference(row, other, VALUE_FIELDS, tolerance)
+        if field is not None:
+            differing.append(TradeDifference(field=field, left=row, right=other))
+            continue
+        matched += 1
+        label = _first_difference(row, other, LABEL_FIELDS, tolerance)
+        if label is not None:
+            labels.append(TradeDifference(field=label, left=row, right=other))
     right_only = [row for index, row in enumerate(right_rows) if index not in used]
     return ComparisonReport(
         matched=matched,
         differing=tuple(differing),
+        labels=tuple(labels),
         left_only=tuple(left_only),
         right_only=tuple(right_only),
         left=_summary(a),
@@ -155,7 +165,7 @@ def _rows(result: BacktestResult) -> list[dict[str, Any]]:
     ordered = trades.sort_values(["entry_time", "side", "entry_price"], kind="stable")
     rows = []
     for record in ordered.to_dict(orient="records"):
-        row = {name: _clean(record.get(name)) for name in _TRADE_FIELDS + ("entry_reason", "exit_reason")}
+        row = {name: _clean(record.get(name)) for name in VALUE_FIELDS + LABEL_FIELDS}
         rows.append(row)
     return rows
 
@@ -170,8 +180,10 @@ def _clean(value: Any) -> Any:
     return value
 
 
-def _first_difference(left: Mapping[str, Any], right: Mapping[str, Any], tolerance: float) -> str | None:
-    for field in COMPARED_FIELDS:
+def _first_difference(
+    left: Mapping[str, Any], right: Mapping[str, Any], fields: tuple[str, ...], tolerance: float
+) -> str | None:
+    for field in fields:
         a_value, b_value = left.get(field), right.get(field)
         if a_value is None or b_value is None:
             if a_value is not b_value:

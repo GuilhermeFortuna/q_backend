@@ -69,11 +69,35 @@ def test_the_first_field_in_comparison_order_is_the_one_reported():
     assert diff.field == "side"
 
 
-def test_reasons_are_compared():
+def test_a_pair_differing_only_in_reasons_is_matched_and_listed_as_a_label_difference():
     a = _result(_trade(0, exit_reason="stop"))
     b = _result(_trade(0, exit_reason="Hold time"))
-    [diff] = compare_results(a, b).differing
-    assert diff.field == "exit_reason"
+    report = compare_results(a, b)
+    assert report.identical
+    assert report.matched == 1
+    assert report.differing == ()
+    [label] = report.labels
+    assert label.field == "exit_reason"
+    assert (label.left_value, label.right_value) == ("stop", "Hold time")
+
+
+def test_an_entry_reason_difference_is_a_label_difference_too():
+    a = _result(_trade(0, entry_reason="long breakout"))
+    b = _result(_trade(0, entry_reason="breakout"))
+    report = compare_results(a, b)
+    assert report.identical
+    [label] = report.labels
+    assert label.field == "entry_reason"
+
+
+def test_a_value_difference_hides_no_label_difference_it_reports_only_the_value():
+    a = _result(_trade(0, exit_price=103.0, exit_reason="stop"))
+    b = _result(_trade(0, exit_price=104.0, exit_reason="target"))
+    report = compare_results(a, b)
+    assert not report.identical
+    assert report.matched == 0
+    assert [diff.field for diff in report.differing] == ["exit_price"]
+    assert report.labels == ()
 
 
 def test_trades_present_in_only_one_result_are_one_sided():
@@ -97,9 +121,9 @@ def test_tolerance_accepts_small_numeric_differences_only():
 
 
 def test_tolerance_does_not_relax_text_or_time_fields():
-    a = _result(_trade(0, exit_reason="stop"))
-    b = _result(_trade(0, exit_reason="target"))
-    assert compare_results(a, b, tolerance=1e9).differing[0].field == "exit_reason"
+    a = _result(_trade(0, side="long"))
+    b = _result(_trade(0, side="short"))
+    assert compare_results(a, b, tolerance=1e9).differing[0].field == "side"
 
 
 def test_two_trades_opening_at_one_time_pair_in_order():
@@ -118,9 +142,17 @@ def test_report_reads_as_a_summary():
     a = _result(_trade(0, exit_price=103.0), total_pnl=3.0)
     b = _result(_trade(0, exit_price=104.0), total_pnl=4.0)
     text = str(compare_results(a, b))
-    assert "matched 0, differing 1" in text
+    assert "matched 0, differing 1, label only 0" in text
     assert "differs at" in text and "exit_price" in text
     assert "total PnL: 3.00 | 4.00" in text
+
+
+def test_report_lists_label_differences_separately():
+    a = _result(_trade(0, exit_reason="stop"))
+    b = _result(_trade(0, exit_reason="target"))
+    text = str(compare_results(a, b))
+    assert "matched 1, differing 0, label only 1" in text
+    assert "label differs at" in text and "exit_reason" in text
 
 
 def test_only_backtest_results_are_compared():

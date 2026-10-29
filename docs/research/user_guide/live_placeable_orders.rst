@@ -103,8 +103,8 @@ in the run's ``config``.
 Known differences
 -----------------
 
-Two patterns are not identical when ported this way. ``compare_results`` reports
-them as documented.
+Some ported patterns are not identical to their legacy form. ``compare_results`` reports
+each difference as documented.
 
 **Strictly beyond.** A legacy hook that enters only when the high is strictly above
 the previous high never enters on an exact touch. Its port, a stop at the previous
@@ -117,10 +117,30 @@ level the ticks reach first. A port keeps one stop-loss level, so it may exit at
 different price, or not at all. ``compare_results`` reports the differing pair, with
 the first field that differs.
 
+**Protective levels from a gap fill.** The bracket hook prices an entry at
+``max(open, level)`` for a long, and at ``min(open, level)`` for a short, so a bar that
+opens beyond its level fills at the open. It then computes the stop and target from
+that price: a long bought at 107 for a level of 105 with a stop 10 points away gets a
+stop at 97. The resting stop of the replacement keeps its levels, measured from the
+level: 95. Both fill at 107, but a tick at 96 stops out only the legacy form, so the
+exit prices differ on gap bars. This difference is permanent: the replacement measures
+its levels from the entry level.
+
+**Re-entry after an intrabar exit.** On a bar where a trade stops out or hits its
+target, the legacy hook sees no position and prices a new entry on that bar. The
+replacement places its resting entry, or its OCO group, at the previous close even
+while a position is open, and the kernel fills it only from trades at or after the
+exit. The fills then differ. A legacy priced entry fills at the first trade at or
+beyond its price after the exit, which for a bracket is ``max(open, level)``. A
+resting stop fills at the first trade at or beyond its level, at that trade's price.
+A re-entry priced at 107 by the hook and a stop at 105 can therefore fill at 108 and
+at 106.
+
 **Exit label of a stop-out.** When a protective stop closes the trade, the engine
 labels the exit ``STOP_LOSS``. A priced close carries the reason it was given (or
-``SIGNAL``). The fills, times and PnL of the stop row are identical; only the exit
-label differs.
+``SIGNAL``). The fills, times and PnL of the stop row are identical, so
+``compare_results`` lists it as a label difference, which does not make the runs
+differ.
 
 Comparing runs
 --------------
@@ -137,9 +157,11 @@ Run the original and the port on the same bars and ticks, then compare them:
 
 ``compare_results`` pairs trades by entry time. For a pair, it reports the first of
 these fields that differs: side, entry time, entry price, exit time, exit price,
-quantity, entry reason, exit reason and PnL. Prices, quantity and PnL can differ by
-up to ``tolerance`` (``compare_results(a, b, tolerance=0.01)``). ``report.identical``
-is true only when every trade matches and no trade is one-sided.
+quantity and PnL. Prices, quantity and PnL can differ by up to ``tolerance``
+(``compare_results(a, b, tolerance=0.01)``). A pair that differs only in its entry or
+exit reason is matched, and listed in ``report.labels``. ``report.identical`` is true
+only when every trade matches on its values and no trade is one-sided; a label
+difference does not affect it.
 
 Deployment
 ----------

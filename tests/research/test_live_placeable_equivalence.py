@@ -103,9 +103,11 @@ def test_priced_stop_close_at_a_fixed_level_equals_a_stop_amended_at_the_entry_b
     with pytest.warns(PricedOrderDeprecationWarning):
         old, new = _run_both(tmp_path, rows, legacy, port)
     # Fills, times and PnL match. The label does not: the engine names a protective stop-out
-    # STOP_LOSS, whereas a priced close carries the reason it was given. Open decision, see the board message.
+    # STOP_LOSS, whereas a priced close carries the reason it was given. A label-only difference.
     report = compare_results(old, new)
-    assert [difference.field for difference in report.differing] == ["exit_reason"]
+    assert report.identical, str(report)
+    assert report.differing == ()
+    assert [label.field for label in report.labels] == ["exit_reason"]
     assert old.trades.iloc[0]["exit_price"] == new.trades.iloc[0]["exit_price"] == 95.0
     assert old.trades.iloc[0]["exit_tick_time"] == new.trades.iloc[0]["exit_tick_time"]
 
@@ -155,6 +157,72 @@ def test_a_strictly_beyond_condition_enters_on_an_exact_touch_once_it_is_a_stop(
     [touch] = report.right_only
     assert touch["entry_price"] == 101.0
     assert touch["entry_time"] == pd.Timestamp("2026-10-05 10:10", tz="America/Sao_Paulo")
+
+
+def test_a_bracket_entry_filled_at_the_open_measures_its_stop_from_the_fill(tmp_path):
+    # Known difference: the bracket hook prices an entry the bar opened beyond at the open, max(open, level),
+    # and computes its stop and target from that price. The resting stop keeps its level's stop: 107 - 10 = 97
+    # against 105 - 10 = 95. The fill is the same; a tick at 96 stops out only the legacy form.
+    rows = [
+        ("10:00:00", 100.0),
+        ("10:10:00", 107.0),
+        ("10:12:00", 108.0),
+        ("10:20:00", 104.0),
+        ("10:21:00", 96.0),
+        ("10:22:00", 94.0),
+        ("10:24:00", 100.0),
+        ("10:40:00", 100.0),
+    ]
+    legacy = Legacy(
+        entries={1: TradeOrder.buy(price=107.0, stop_loss=97.0, take_profit=117.0, reason="Bracket buy stop")},
+        exits={4: TradeOrder.close(reason="x")},
+    )
+    port = Legacy(
+        entries={
+            0: TradeOrder.buy_stop(105.0, stop_loss=95.0, take_profit=115.0, expire_bars=1, reason="Bracket buy stop")
+        },
+        exits={4: TradeOrder.close(reason="x")},
+    )
+    with pytest.warns(PricedOrderDeprecationWarning):
+        old, new = _run_both(tmp_path, rows, legacy, port)
+    report = compare_results(old, new)
+    assert report.matched == 0
+    assert [difference.field for difference in report.differing] == ["exit_price"]
+    assert old.trades.iloc[0]["entry_price"] == new.trades.iloc[0]["entry_price"] == 107.0
+    assert old.trades.iloc[0]["exit_price"] == 96.0
+    assert new.trades.iloc[0]["exit_price"] == 94.0
+
+
+def test_a_re_entry_on_an_intrabar_exit_bar_fills_at_the_hook_price_not_the_level(tmp_path):
+    # Known difference: the hook sees no position on the bar its stop-out happened, and prices a new entry at
+    # max(open, level) = 107. The resting stop, placed at the previous close while the position was open, fills
+    # at the first trade at or beyond its level 105 (106), and the legacy form at the first trade beyond 107 (108).
+    rows = [
+        ("10:00:00", 108.0),
+        ("10:10:00", 108.0),
+        ("10:20:00", 107.0),
+        ("10:22:00", 104.0),
+        ("10:24:00", 106.0),
+        ("10:26:00", 108.0),
+        ("10:40:00", 108.0),
+    ]
+    first = TradeOrder.buy(stop_loss=104.0, take_profit=120.0, reason="first")
+    legacy = Legacy(
+        entries={0: first, 2: TradeOrder.buy(price=107.0, reason="again")},
+        exits={4: TradeOrder.close(reason="x")},
+    )
+    port = Legacy(
+        entries={0: first, 1: TradeOrder.buy_stop(105.0, expire_bars=1, reason="again")},
+        exits={4: TradeOrder.close(reason="x")},
+    )
+    with pytest.warns(PricedOrderDeprecationWarning):
+        old, new = _run_both(tmp_path, rows, legacy, port)
+    report = compare_results(old, new)
+    assert report.matched == 1
+    [difference] = report.differing
+    assert difference.field == "entry_price"
+    assert (difference.left_value, difference.right_value) == (108.0, 106.0)
+    assert difference.left["entry_reason"] == "again"
 
 
 def test_several_priced_stops_exit_at_the_level_reached_first_while_one_stop_may_differ(tmp_path):
