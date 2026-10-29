@@ -18,7 +18,7 @@ from q_backend.market_data.exogenous_context import _TF_MINUTES
 from q_backend.storage.db.repositories import get_backtest_run
 
 _SUPPORTED_TIMEFRAMES = frozenset(_TF_MINUTES)
-_MIN_TIMEFRAME_MINUTES = 15
+_MIN_TIMEFRAME_MINUTES = 5
 _MAX_DAILY_LOSS = Decimal("10000000")
 _MAX_NOTIONAL = Decimal("1000000000")
 _PAPER_COST_FIELDS = ("point_value", "slippage_points", "cost_per_contract", "cost_bps")
@@ -26,6 +26,10 @@ _PAPER_COST_FIELDS = ("point_value", "slippage_points", "cost_per_contract", "co
 
 class ExecutionValidationError(ValueError):
     """Raised when deployment or account input fails API validation."""
+
+    def __init__(self, message: str, *, status_code: int = 400) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def compute_config_hash(compiled_config: dict[str, Any]) -> str:
@@ -50,7 +54,9 @@ def validate_timeframe(timeframe: str) -> str:
     if key not in _SUPPORTED_TIMEFRAMES:
         raise ExecutionValidationError(f"unsupported timeframe '{timeframe}'")
     if _TF_MINUTES[key] < _MIN_TIMEFRAME_MINUTES:
-        raise ExecutionValidationError(f"timeframe '{timeframe}' is below the M15 minimum for forward execution")
+        raise ExecutionValidationError(
+            f"timeframe '{timeframe}' is below the M5 minimum (M5, M10, M15, ...) for forward execution"
+        )
     return key
 
 
@@ -201,7 +207,18 @@ def validate_strategy_identity(
     )
 
 
-def identity_from_saved_backtest(
+@dataclass(frozen=True)
+class ResolvedSavedBacktest:
+    """Server-validated saved backtest ready to persist as identity + provenance."""
+
+    identity: StrategyIdentity
+    source_kind: str
+    source_strategy_name: Optional[str]
+    strategy_version_id: Optional[uuid.UUID] = None
+    strategy_bundle_hash: Optional[str] = None
+
+
+def resolve_saved_backtest(
     session: Session,
     *,
     source_backtest_run_id: uuid.UUID,
@@ -210,7 +227,7 @@ def identity_from_saved_backtest(
     sizing_config: Optional[dict[str, Any]] = None,
     risk_config: Optional[dict[str, Any]] = None,
     market_data_service: Optional[Any] = None,
-) -> StrategyIdentity:
+) -> ResolvedSavedBacktest:
     run = get_backtest_run(session, source_backtest_run_id)
     if run is None:
         raise ExecutionValidationError("source_backtest_run_id not found")
@@ -219,6 +236,90 @@ def identity_from_saved_backtest(
     config = dict(run.config or {})
     if config.get("engine") == "tick":
         raise ExecutionValidationError("tick backtests cannot be deployed to forward execution")
+
+    default_sizing = sizing_config or {"type": "fixed_quantity", "quantity": 1.0}
+
+    if run.strategy_version_id is not None:
+        from q_backend.execution.strategy_build import build_research_strategy_from_compiled
+        from q_backend.storage.db.models import ResearchStrategyVersion
+
+        summary = dict(run.result_summary or {})
+        order_kinds = summary.get("order_kinds")
+        if order_kinds is None:
+            raise ExecutionValidationError(
+                "run has no order_kinds; re-run the backtest first",
+                status_code=422,
+            )
+        non_deployable = set(order_kinds) - {"market_entry", "market_close"}
+        if non_deployable:
+            raise ExecutionValidationError(
+                f"strategy uses non-deployable order kinds: {sorted(non_deployable)}; only market orders are deployable",
+                status_code=422,
+            )
+        if not config.get("day_trade"):
+            raise ExecutionValidationError(
+                "only day-trading runs can be deployed to forward execution",
+                status_code=422,
+            )
+
+        tf_raw = timeframe or str(config.get("timeframe") or "")
+        key = tf_raw.upper()
+        if not key or key not in _SUPPORTED_TIMEFRAMES or _TF_MINUTES[key] < _MIN_TIMEFRAME_MINUTES:
+            raise ExecutionValidationError(
+                f"timeframe '{tf_raw}' is below the M5 minimum for forward execution",
+                status_code=422,
+            )
+        normalized_tf = key
+
+        version = session.get(ResearchStrategyVersion, run.strategy_version_id)
+        if version is None:
+            raise ExecutionValidationError("strategy version not found", status_code=422)
+
+        run_symbol = symbol or str(config.get("symbol") or "")
+        validate_symbol_known(run_symbol, market_data_service)
+
+        compiled_config = {
+            "strategy_version_id": str(version.id),
+            "strategy_bundle_hash": version.bundle_hash,
+            "strategy": version.strategy_id,
+            "strategy_params": dict(config.get("strategy_params") or {}),
+            "symbol": run_symbol,
+            "timeframe": normalized_tf,
+            "day_trade": True,
+            "day_trade_start_time": str(config.get("day_trade_start_time", "09:00")),
+            "day_trade_end_time": str(config.get("day_trade_end_time", "16:00")),
+            "day_trade_close_time": str(config.get("day_trade_close_time", "17:00")),
+        }
+        if config.get("exit_params") is not None:
+            compiled_config["exit_params"] = config.get("exit_params")
+
+        try:
+            build_research_strategy_from_compiled(compiled_config, session=session)
+        except Exception as exc:  # noqa: BLE001
+            raise ExecutionValidationError(
+                f"compiled_config is not worker-buildable: {exc}",
+                status_code=422,
+            ) from exc
+
+        config_hash = compute_config_hash(compiled_config)
+        identity = StrategyIdentity(
+            strategy_name=version.strategy_id,
+            strategy_version=1,
+            compiled_config=compiled_config,
+            config_hash=config_hash,
+            symbol=run_symbol,
+            timeframe=normalized_tf,
+            sizing_config=validate_sizing_config(default_sizing),
+            risk_config=validate_risk_config(risk_config),
+        )
+        return ResolvedSavedBacktest(
+            identity=identity,
+            source_kind="strategy_version",
+            source_strategy_name=version.strategy_id,
+            strategy_version_id=version.id,
+            strategy_bundle_hash=version.bundle_hash,
+        )
+
     strategy_name = str(config.get("strategy") or "")
     compiled_config = {
         "strategy": strategy_name,
@@ -233,8 +334,7 @@ def identity_from_saved_backtest(
     if config.get("exit_params") is not None:
         compiled_config["exit_params"] = config.get("exit_params")
     config_hash = compute_config_hash(compiled_config)
-    default_sizing = sizing_config or {"type": "fixed_quantity", "quantity": 1.0}
-    return validate_strategy_identity(
+    identity = validate_strategy_identity(
         strategy_name=strategy_name,
         strategy_version=1,
         compiled_config=compiled_config,
@@ -245,6 +345,35 @@ def identity_from_saved_backtest(
         risk_config=risk_config,
         market_data_service=market_data_service,
     )
+    return ResolvedSavedBacktest(
+        identity=identity,
+        source_kind="saved_backtest",
+        source_strategy_name=None,
+        strategy_version_id=None,
+        strategy_bundle_hash=None,
+    )
+
+
+def identity_from_saved_backtest(
+    session: Session,
+    *,
+    source_backtest_run_id: uuid.UUID,
+    symbol: Optional[str] = None,
+    timeframe: Optional[str] = None,
+    sizing_config: Optional[dict[str, Any]] = None,
+    risk_config: Optional[dict[str, Any]] = None,
+    market_data_service: Optional[Any] = None,
+) -> StrategyIdentity:
+    resolved = resolve_saved_backtest(
+        session,
+        source_backtest_run_id=source_backtest_run_id,
+        symbol=symbol,
+        timeframe=timeframe,
+        sizing_config=sizing_config,
+        risk_config=risk_config,
+        market_data_service=market_data_service,
+    )
+    return resolved.identity
 
 
 @dataclass(frozen=True)
