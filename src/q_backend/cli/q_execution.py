@@ -23,7 +23,7 @@ from q_backend.execution.brokers.paper import PaperBroker
 from q_backend.execution.brokers.routing import BrokerRouter
 from q_backend.execution.commands import get_deployment_or_raise
 from q_backend.execution.domain import DecisionOutcome
-from q_backend.execution.edge_client import EdgeClient, EdgeTimeouts
+from q_backend.execution.edge_client import EdgeClient
 from q_backend.execution.ledger import ExecutionLedger
 from q_backend.execution.quote_source import EdgeQuoteSource
 from q_backend.execution.recovery import ExecutionRecovery
@@ -104,17 +104,6 @@ def _paper_cost_config(settings: Settings) -> PaperCostConfig:
     )
 
 
-def _edge_client(settings: Settings) -> EdgeClient:
-    return EdgeClient(
-        settings.mt5_edge_url,
-        timeouts=EdgeTimeouts(
-            connect_s=settings.mt5_edge_connect_timeout_s,
-            read_s=settings.mt5_edge_read_timeout_s,
-            submit_read_s=settings.mt5_edge_submit_timeout_s,
-        ),
-    )
-
-
 def _live_gates(settings: Settings) -> LiveExecutionGates:
     return LiveExecutionGates.from_settings(
         enabled=settings.live_execution_enabled,
@@ -132,7 +121,7 @@ def _build_components(
 ) -> _ExecutionComponents:
     settings = settings or get_settings()
     clock = _LiveClock()
-    edge_client = _edge_client(settings)
+    edge_client = EdgeClient.from_settings(settings)
     quote_source = EdgeQuoteSource(client=edge_client, clock=clock.now)
     paper_broker = PaperBroker(quote_source=quote_source, clock=clock)
     live_broker = EdgeBroker(

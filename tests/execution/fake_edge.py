@@ -31,6 +31,7 @@ class FakeEdgeState:
             "balance": 100000.0,
             "equity": 100000.0,
             "margin_free": 100000.0,
+            "trade_mode": "real",
         }
     )
     quotes: dict[str, dict[str, Any]] = field(default_factory=dict)
