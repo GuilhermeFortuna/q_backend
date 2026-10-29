@@ -412,6 +412,18 @@ class EdgeStatusResponse(BaseModel):
     checked_at: Optional[datetime] = None
 
 
+class Mt5OrdersAccountResponse(BaseModel):
+    login: int
+    server: str
+    trade_mode: Optional[Literal["demo", "contest", "real"]]
+
+
+class Mt5OrdersStatusResponse(BaseModel):
+    capability: Literal["available", "validation_required", "locked"]
+    reason: Optional[str]
+    account: Optional[Mt5OrdersAccountResponse]
+
+
 class ExecutionHealthResponse(BaseModel):
     api_status: Literal["ok", "degraded", "unavailable"]
     worker_status: Literal["healthy", "stale", "offline"]
@@ -421,6 +433,7 @@ class ExecutionHealthResponse(BaseModel):
     market_data_status: Literal["online", "offline", "stale"]
     kill_switch_enabled: bool
     live_capability_locked: bool
+    mt5_orders: Mt5OrdersStatusResponse
     unknown_order_count: int
     deployments: list[DeploymentHealthResponse]
     checked_at: datetime
