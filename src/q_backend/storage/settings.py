@@ -90,6 +90,11 @@ class Settings(BaseSettings):
     research_study_max_values: int = 2_000_000
     research_study_max_timestamps: int = 2_000_000
     market_volume_profile_max_rows: int = 200_000
+    # Directory of ResearchStrategy files the Research stack lists and runs. It sits outside
+    # every Q repository: strategies are the author's private work. Materialized bundles of
+    # validated and frozen strategy files live under ``strategy_bundle_root``.
+    strategy_dir: str = "~/q-strategies"
+    strategy_bundle_root: str = "data/strategy_bundles"
 
 
 @lru_cache

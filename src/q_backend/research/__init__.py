@@ -36,6 +36,7 @@ __all__ = (
     "BoolParam",
     "ChoiceParam",
     "TimeParam",
+    "load_strategy",
 )
 
 if TYPE_CHECKING:
@@ -56,6 +57,7 @@ if TYPE_CHECKING:
     from q_backend.research.results import BacktestResult
     from q_backend.research.strategy import ResearchStrategy
     from q_backend.research.params import BoolParam, ChoiceParam, FloatParam, IntParam, TimeParam
+    from q_backend.research.strategy_files import load_strategy
 
 
 def __getattr__(name: str):
@@ -167,4 +169,8 @@ def __getattr__(name: str):
         from q_backend.research import params
 
         return getattr(params, name)
+    if name == "load_strategy":
+        from q_backend.research.strategy_files import load_strategy
+
+        return load_strategy
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
