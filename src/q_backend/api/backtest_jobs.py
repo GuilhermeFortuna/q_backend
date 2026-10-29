@@ -628,7 +628,11 @@ def _run_strategy_version(
     )
     checkpoint()
     reporter.phase("saving", "Saving results")
-    summary = {**outcome.request.result.metrics, "ticks_used": outcome.ticks_used}
+    summary = {
+        **outcome.request.result.metrics,
+        "ticks_used": outcome.ticks_used,
+        "order_kinds": outcome.order_kinds,
+    }
     with session_scope() as session:
         run = session.get(BacktestRun, uuid.UUID(run_id))
         if run is not None and run.status == RunStatus.CANCELLED.value:

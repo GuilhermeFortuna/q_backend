@@ -9,7 +9,7 @@ and a script run of the same class, bars and parameters produce the same trades 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -30,7 +30,7 @@ from q_backend.research.frame import (
 )
 from q_backend.research.params import coerce_params, declared_from_wire
 from q_backend.research.publishing import build_import_request
-from q_backend.research.strategy_files import StrategyBundle, load_bundle
+from q_backend.research.strategy_files import StrategyBundle, load_bundle, validate_bundle
 from q_backend.research.tick_store import TickStore
 
 PhaseReporter = Callable[[str, str], None]
@@ -51,6 +51,7 @@ class StrategyRunResult:
 
     request: BacktestImportRequest
     ticks_used: bool
+    order_kinds: list[str] = field(default_factory=list)
 
 
 def run_strategy(
@@ -117,7 +118,15 @@ def run_strategy(
     )
     checkpoint()
     request = build_import_request(result, name=frozen.strategy_id, timeframe=timeframe)
-    return StrategyRunResult(request=request, ticks_used=store is not None)
+    order_kinds = set(result.order_kinds)
+    info = validate_bundle(frozen.bundle, bundle_root)
+    if info.uses_tick_hooks:
+        order_kinds.add("tick_hooks")
+    return StrategyRunResult(
+        request=request,
+        ticks_used=store is not None,
+        order_kinds=sorted(order_kinds),
+    )
 
 
 def _bars_frame(

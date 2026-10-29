@@ -180,6 +180,7 @@ def test_a_strategy_file_run_matches_a_direct_backtest_and_records_its_version(r
     assert row.config["strategy_version_id"] == str(row.strategy_version_id)
     assert row.config["strategy_params"] == {"length": 5, "use_filter": False, "entry_after": "09:00"}
     assert row.result_summary["ticks_used"] is False
+    assert row.result_summary["order_kinds"] == ["market_close", "market_entry"]
 
     from q_backend.research.strategy_files import load_strategy
 
@@ -189,7 +190,9 @@ def test_a_strategy_file_run_matches_a_direct_backtest_and_records_its_version(r
         length=5,
     )
     assert direct.metrics["total_trades"] > 0
-    assert _clean({k: v for k, v in row.result_summary.items() if k != "ticks_used"}) == _clean(direct.metrics)
+    assert _clean({k: v for k, v in row.result_summary.items() if k not in ("ticks_used", "order_kinds")}) == _clean(
+        direct.metrics
+    )
 
 
 def test_a_second_backtest_of_an_unchanged_file_reuses_its_version(run_jobs_sync, strategy_env):

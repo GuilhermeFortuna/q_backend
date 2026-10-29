@@ -96,6 +96,7 @@ class BacktestResult:
     _closed_trades: tuple[Trade, ...] = ()
     _strategy: Any = None
     rejected_entries: pd.DataFrame = field(default_factory=lambda: empty_rejected_frame())
+    order_kinds: frozenset[str] = frozenset()
 
     def publish(
         self,

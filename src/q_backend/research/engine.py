@@ -464,6 +464,7 @@ def backtest(
             _closed_trades=tuple(registry.get_closed_trades()),
             _strategy=strategy,
             rejected_entries=empty_rejected_frame(),
+            order_kinds=frozenset(getattr(trading_strategy, "order_kinds", set())),
         )
 
     try:
@@ -674,4 +675,5 @@ def _execute_backtest(
         _closed_trades=tuple(registry.get_closed_trades()),
         _strategy=strategy,
         rejected_entries=rejected_entries_frame(run, augmented_data.index),
+        order_kinds=frozenset(getattr(trading_strategy, "order_kinds", set())),
     )

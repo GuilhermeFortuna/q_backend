@@ -17,6 +17,7 @@ from q_backend.api.schemas.backtest import (
     BacktestRunDetailResponse,
     BacktestRunListItem,
     BacktestRunPatchRequest,
+    DayTradeSession,
     PostExitAnalysis,
     PostExitSideStats,
     PostExitTradeAnalysis,
@@ -63,10 +64,24 @@ def backtest_run_fields(config: Dict[str, Any]) -> tuple[str, str, str]:
     )
 
 
+def day_trade_session_from_config(config: Dict[str, Any]) -> DayTradeSession | None:
+    if "day_trade" not in config:
+        return None
+    return DayTradeSession(
+        start_time=str(config.get("day_trade_start_time", "09:00")),
+        end_time=str(config.get("day_trade_end_time", "16:00")),
+        close_time=str(config.get("day_trade_close_time", "17:00")),
+        day_trade=bool(config.get("day_trade", False)),
+    )
+
+
 def backtest_run_list_item(run: BacktestRun, version: Optional[tuple[str, str]] = None) -> BacktestRunListItem:
     """A history row. ``version`` is the run's (strategy id, bundle hash) when it ran a strategy file."""
-    symbol, strategy, timeframe = backtest_run_fields(run.config or {})
+    config = run.config or {}
+    symbol, strategy, timeframe = backtest_run_fields(config)
     version_strategy, bundle_hash = version if version is not None else (None, None)
+    order_kinds = (run.result_summary or {}).get("order_kinds")
+    day_trade_session = day_trade_session_from_config(config)
     return BacktestRunListItem(
         run_id=str(run.id),
         symbol=symbol,
@@ -79,6 +94,8 @@ def backtest_run_list_item(run: BacktestRun, version: Optional[tuple[str, str]] 
         summary=run.result_summary,
         strategy_version_id=str(run.strategy_version_id) if run.strategy_version_id else None,
         strategy_bundle_hash=bundle_hash,
+        order_kinds=order_kinds,
+        day_trade_session=day_trade_session,
     )
 
 
@@ -106,6 +123,8 @@ def backtest_run_detail(
         stored = session.get(ResearchStrategyVersion, run.strategy_version_id)
         version = (stored.strategy_id, stored.bundle_hash) if stored is not None else None
     version_strategy, bundle_hash = version if version is not None else (None, None)
+    order_kinds = (run.result_summary or {}).get("order_kinds")
+    day_trade_session = day_trade_session_from_config(config)
     return BacktestRunDetailResponse(
         run_id=str(run.id),
         symbol=symbol,
@@ -124,6 +143,8 @@ def backtest_run_detail(
         ml_filter=_ml_filter_reference(config, session),
         strategy_version_id=str(run.strategy_version_id) if run.strategy_version_id else None,
         strategy_bundle_hash=bundle_hash,
+        order_kinds=order_kinds,
+        day_trade_session=day_trade_session,
     )
 
 
