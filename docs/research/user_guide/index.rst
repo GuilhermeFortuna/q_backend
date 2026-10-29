@@ -13,5 +13,6 @@ The User guide covers the architecture, statistical methods, and mechanics of Q 
    strategy
    strategy_files
    execution
+   live_placeable_orders
    backtesting
    publishing
