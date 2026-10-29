@@ -2,7 +2,7 @@
 
 > **For implementation agents:** Read the linked specification and the instructions of each repository you
 > change. Launch only through `./work start Q-137 --agent <agent> --worktree` after written-plan approval and
-> after Q-136 is Done.
+> after Q-136 and Q-139 are Done.
 
 **Goal:** Protective levels, amendments, resting stop and limit entries and cancellations reach MT5 through the
 execution edge. Their fills are tracked, and they join the deployable set.
@@ -66,11 +66,12 @@ position fields), `COMPAT.md`, generated outputs.
 `tests/execution/test_research_parity.py`.
 
 - [ ] Write failing tests for acceptance 3–8.
-- [ ] Map research orders as the spec's table states, and widen the deployable set.
+- [ ] Map research orders as the spec's table states, including OCO sibling removal and the double-fill guard,
+  timed exits and worker-managed trailing and breakeven stops. Widen the deployable set.
 - [ ] Reconcile before each decision, and poll between bars with `Q_EXECUTION_ORDER_POLL_INTERVAL_S`.
 - [ ] Remove working orders on pause, stop, kill switch, flatten and the day-trade close.
 - [ ] Recover working orders and levels at start.
-- [ ] Extend the parity test with ticks. Run `tests/execution/` and `tests/gateway/test_mt5_execution_edge.py`,
+- [ ] Extend the parity test with ticks, covering every case in the spec. Run `tests/execution/` and `tests/gateway/test_mt5_execution_edge.py`,
   then `ruff`/`black` on the changed files. Commit.
 
 ### 5. Documentation (`q_backend`)
