@@ -79,6 +79,32 @@ def test_account_connected_validates(edge, fake_mt5):
     _validate(json.loads(body), "execution/account-response.schema.json")
 
 
+@pytest.mark.parametrize(
+    "raw_trade_mode,expected",
+    [(0, "demo"), (1, "contest"), (2, "real"), (7, "real")],
+)
+def test_account_maps_trade_mode(edge, fake_mt5, raw_trade_mode, expected):
+    fake_mt5._state["account"] = fake_mt5._state["account"]._replace(trade_mode=raw_trade_mode)
+    with running_edge_server(edge) as base:
+        status, _headers, body = http_get(base, "/v1/account", headers=SCHEMA_MAJOR_HEADER)
+    assert status == 200
+    payload = json.loads(body)
+    _validate(payload, "execution/account-response.schema.json")
+    assert payload["trade_mode"] == expected
+
+
+def test_account_without_trade_mode_reports_real(edge, fake_mt5):
+    account = fake_mt5._state["account"]._asdict()
+    del account["trade_mode"]
+    fake_mt5._state["account"] = account
+    with running_edge_server(edge) as base:
+        status, _headers, body = http_get(base, "/v1/account", headers=SCHEMA_MAJOR_HEADER)
+    assert status == 200
+    payload = json.loads(body)
+    _validate(payload, "execution/account-response.schema.json")
+    assert payload["trade_mode"] == "real"
+
+
 def test_account_disconnected_returns_mt5_unavailable(edge, fake_mt5):
     fake_mt5._state["init_ok"] = False
     with running_edge_server(edge) as base:
