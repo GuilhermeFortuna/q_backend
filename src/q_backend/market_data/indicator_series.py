@@ -158,6 +158,8 @@ def build_indicator_series(
             raise HTTPException(status_code=422, detail=f"Indicator '{req.id}': {exc}") from exc
         validated.append((entry, params))
 
+    if not market_service.is_market_timeframe(timeframe):
+        raise HTTPException(status_code=422, detail=f"Unsupported timeframe '{timeframe}'.")
     timeframe = market_service.normalize_market_timeframe(timeframe)
     try:
         bar_duration(timeframe)

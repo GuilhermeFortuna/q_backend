@@ -294,29 +294,36 @@ def symbol_info_to_instrument_response(symbol: str, info: Dict[str, Any]) -> dic
     }
 
 
+_MARKET_TIMEFRAME_CODES: dict[str, str] = {
+    "1M": "M1",
+    "M1": "M1",
+    "5M": "M5",
+    "M5": "M5",
+    "10M": "M10",
+    "M10": "M10",
+    "15M": "M15",
+    "M15": "M15",
+    "30M": "M30",
+    "M30": "M30",
+    "1H": "H1",
+    "H1": "H1",
+    "2H": "H2",
+    "H2": "H2",
+    "4H": "H4",
+    "H4": "H4",
+    "1D": "D1",
+    "D1": "D1",
+}
+
+
+def is_market_timeframe(timeframe: str) -> bool:
+    """Return True when ``timeframe`` is a label that maps to a known MT5 code."""
+    return timeframe.upper() in _MARKET_TIMEFRAME_CODES
+
+
 def normalize_market_timeframe(timeframe: str) -> str:
-    """Map UI-style timeframe labels to MT5 codes."""
-    mapping = {
-        "1M": "M1",
-        "M1": "M1",
-        "5M": "M5",
-        "M5": "M5",
-        "10M": "M10",
-        "M10": "M10",
-        "15M": "M15",
-        "M15": "M15",
-        "30M": "M30",
-        "M30": "M30",
-        "1H": "H1",
-        "H1": "H1",
-        "2H": "H2",
-        "H2": "H2",
-        "4H": "H4",
-        "H4": "H4",
-        "1D": "D1",
-        "D1": "D1",
-    }
-    return mapping.get(timeframe.upper(), "D1")
+    """Map UI-style timeframe labels to MT5 codes; unknown labels fall back to D1."""
+    return _MARKET_TIMEFRAME_CODES.get(timeframe.upper(), "D1")
 
 
 def fetch_ohlcv_rows(

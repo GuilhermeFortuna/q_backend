@@ -206,7 +206,7 @@ def test_invalid_requests_return_422_naming_the_parameter(client, bars, indicato
 
 
 def test_unsupported_timeframe_returns_422(client, bars):
-    response = _post(client, bars, [{"id": "sma", "parameters": {}}], timeframe="M30")
+    response = _post(client, bars, [{"id": "sma", "parameters": {}}], timeframe="M7")
     assert response.status_code == 422, response.text
 
 
