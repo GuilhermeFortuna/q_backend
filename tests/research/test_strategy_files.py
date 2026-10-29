@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 from pathlib import Path
+import sys
 
 import pytest
 
@@ -14,6 +15,7 @@ from q_backend.research.strategy_files import (
     list_strategy_files,
     load_bundle,
     materialize,
+    package_name,
     strategy_ids,
 )
 
@@ -236,11 +238,12 @@ def test_listing_validates_again_after_a_helper_changes(strategy_root: Path, bun
 def test_load_strategy_returns_the_class_with_its_helper_import_resolved(
     strategy_root: Path, bundle_root: Path
 ) -> None:
+    bundle = build_bundle(strategy_root, "late_session_trend")
     cls = load_strategy("late_session_trend", root=strategy_root, bundle_root=bundle_root)
 
     assert issubclass(cls, ResearchStrategy)
     assert cls.__name__ == "LateSessionTrendStrategy"
-    assert cls.__module__ == "q_strategies.late_session_trend"
+    assert cls.__module__ == f"{package_name(bundle.bundle_hash)}.late_session_trend"
     assert cls(ma_period=3).round_up(12.0) == 15.0
 
 
@@ -265,5 +268,26 @@ def test_materialize_writes_the_bundle_under_its_hash(strategy_root: Path, bundl
     import_root = materialize(bundle, bundle_root)
 
     assert import_root == bundle_root / bundle.bundle_hash
-    assert (import_root / "q_strategies" / "late_session_trend.py").read_text(encoding="utf-8") == LATE_SESSION
-    assert (import_root / "q_strategies" / "_lib" / "ticks.py").read_text(encoding="utf-8") == LIB_TICKS
+    pkg = package_name(bundle.bundle_hash)
+    assert (import_root / pkg / "late_session_trend.py").read_text(encoding="utf-8") == LATE_SESSION
+    assert (import_root / pkg / "_lib" / "ticks.py").read_text(encoding="utf-8") == LIB_TICKS
+
+
+def test_two_different_bundles_load_side_by_side_in_one_process(strategy_root: Path, bundle_root: Path) -> None:
+    bundle_a = build_bundle(strategy_root, "late_session_trend")
+    first_cls = load_bundle(bundle_a, bundle_root)
+
+    _write(strategy_root, "_lib/ticks.py", LIB_TICKS.replace("-(-price // tick) * tick", "price"))
+    bundle_b = build_bundle(strategy_root, "late_session_trend")
+    second_cls = load_bundle(bundle_b, bundle_root)
+
+    assert first_cls is not second_cls
+    assert bundle_a.bundle_hash != bundle_b.bundle_hash
+
+    pkg_a = f"q_strategies_{bundle_a.bundle_hash[:12]}"
+    pkg_b = f"q_strategies_{bundle_b.bundle_hash[:12]}"
+    assert f"{pkg_a}.late_session_trend" in sys.modules
+    assert f"{pkg_b}.late_session_trend" in sys.modules
+
+    assert first_cls(ma_period=3).round_up(12.0) == 15.0
+    assert second_cls(ma_period=3).round_up(12.0) == 12.0

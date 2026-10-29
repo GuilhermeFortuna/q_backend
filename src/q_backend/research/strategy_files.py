@@ -36,8 +36,13 @@ DEFAULT_TIMEOUT_S = 10.0
 _HOOKS = ("compute_indicators", "entry_strategy", "exit_strategy")
 _IGNORED_DIRS = frozenset({"__pycache__"})
 _STAGING_PREFIX = ".staging-"
-# Importing a bundle evicts the previous one from sys.modules, so imports in one process are serialized.
+# Bundles import under per-hash package names, and imports in one process serialize sys.path edits.
 _import_lock = threading.Lock()
+
+
+def package_name(bundle_hash: str) -> str:
+    """The unique package name under which the bundle is materialized and imported."""
+    return f"q_strategies_{bundle_hash[:12]}"
 
 
 class StrategyFileError(ValueError):
@@ -123,29 +128,36 @@ def bundle_from_files(strategy_id: str, files: Iterable[BundleFile]) -> Strategy
 
 
 def materialize(bundle: StrategyBundle, bundle_root: Path) -> Path:
-    """Write the bundle to ``<bundle_root>/<hash>/q_strategies/`` and return ``<bundle_root>/<hash>``.
+    """Write the bundle to ``<bundle_root>/<hash>/q_strategies_<hash12>/`` and return ``<bundle_root>/<hash>``.
 
     The directory is content-addressed: a hash that already exists is reused. Files are staged in a
     sibling directory and renamed into place, so a concurrent reader never sees a partial bundle.
     """
     final = bundle_root / bundle.bundle_hash
-    if (final / PACKAGE).is_dir():
+    pkg_name = package_name(bundle.bundle_hash)
+    if (final / pkg_name).is_dir():
         return final
 
     bundle_root.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=f"{_STAGING_PREFIX}{bundle.bundle_hash[:12]}-", dir=bundle_root))
     try:
-        package = staging / PACKAGE
+        package = staging / pkg_name
         for file in bundle.files:
             target = package / file.path
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(file.content, encoding="utf-8")
         if not (package / "__init__.py").exists():
             (package / "__init__.py").write_text("", encoding="utf-8")
-        os.rename(staging, final)
+        if final.is_dir():
+            dest = final / pkg_name
+            if not dest.is_dir():
+                os.rename(package, dest)
+            shutil.rmtree(staging, ignore_errors=True)
+        else:
+            os.rename(staging, final)
     except OSError:
         shutil.rmtree(staging, ignore_errors=True)
-        if not (final / PACKAGE).is_dir():
+        if not (final / pkg_name).is_dir():
             raise
     return final
 
@@ -153,11 +165,11 @@ def materialize(bundle: StrategyBundle, bundle_root: Path) -> Path:
 def load_bundle(bundle: StrategyBundle, bundle_root: Path) -> type[ResearchStrategy]:
     """Import the bundle and return its one ResearchStrategy class.
 
-    Any earlier ``q_strategies`` modules are evicted first, so two bundles never mix in one process.
+    Bundles import under per-hash package names, so several versions coexist in one process.
     """
     import_root = materialize(bundle, bundle_root)
     try:
-        module = _import_module(import_root, bundle.strategy_id)
+        module = _import_module(import_root, bundle.strategy_id, bundle.bundle_hash)
     except Exception as exc:
         raise StrategyFileError(f"'{bundle.strategy_id}' failed to import: {_describe(exc)}") from exc
     return _strategy_class(module)
@@ -192,7 +204,7 @@ def validate_bundle(
     if not bundle.strategy_id.isidentifier():
         return _invalid(bundle, "file name must be a Python identifier")
     import_root = materialize(bundle, bundle_root)
-    outcome = _run_check(import_root, bundle.strategy_id, timeout_s)
+    outcome = _run_check(import_root, bundle.strategy_id, bundle.bundle_hash, timeout_s)
     if not outcome["ok"]:
         return _invalid(bundle, outcome["error"])
     return StrategyFileInfo(
@@ -261,10 +273,12 @@ def _invalid(bundle: StrategyBundle, error: str) -> StrategyFileInfo:
     )
 
 
-def _run_check(import_root: Path, strategy_id: str, timeout_s: float) -> dict[str, Any]:
+def _run_check(import_root: Path, strategy_id: str, bundle_hash: str, timeout_s: float) -> dict[str, Any]:
     context = multiprocessing.get_context("spawn")
     receiver, sender = context.Pipe(duplex=False)
-    process = context.Process(target=_check_in_child, args=(str(import_root), strategy_id, sender), daemon=True)
+    process = context.Process(
+        target=_check_in_child, args=(str(import_root), strategy_id, bundle_hash, sender), daemon=True
+    )
     process.start()
     sender.close()
     try:
@@ -281,17 +295,17 @@ def _run_check(import_root: Path, strategy_id: str, timeout_s: float) -> dict[st
         receiver.close()
 
 
-def _check_in_child(import_root: str, strategy_id: str, sender: Any) -> None:
+def _check_in_child(import_root: str, strategy_id: str, bundle_hash: str, sender: Any) -> None:
     try:
-        outcome = {"ok": True, **_check(Path(import_root), strategy_id)}
+        outcome = {"ok": True, **_check(Path(import_root), strategy_id, bundle_hash)}
     except BaseException as exc:  # noqa: BLE001 - every failure, including sys.exit, is reported to the parent
         outcome = {"ok": False, "error": _describe(exc)}
     sender.send(outcome)
     sender.close()
 
 
-def _check(import_root: Path, strategy_id: str) -> dict[str, Any]:
-    module = _import_module(import_root, strategy_id)
+def _check(import_root: Path, strategy_id: str, bundle_hash: str) -> dict[str, Any]:
+    module = _import_module(import_root, strategy_id, bundle_hash)
     cls = _strategy_class(module)
     if inspect.isabstract(cls):
         raise StrategyFileError(f"{cls.__name__} is abstract; it must implement entry_strategy")
@@ -320,16 +334,17 @@ def _check(import_root: Path, strategy_id: str) -> dict[str, Any]:
     }
 
 
-def _import_module(import_root: Path, strategy_id: str) -> ModuleType:
-    """Import ``q_strategies.<strategy_id>`` from one bundle root, with earlier bundles evicted."""
+def _import_module(import_root: Path, strategy_id: str, bundle_hash: str) -> ModuleType:
+    """Import ``<package_name>.<strategy_id>`` from one bundle root.
+
+    Bundles load side by side under per-hash package names, without evicting other bundles.
+    """
+    pkg_name = package_name(bundle_hash)
     with _import_lock:
-        for name in list(sys.modules):
-            if name == PACKAGE or name.startswith(f"{PACKAGE}."):
-                del sys.modules[name]
         importlib.invalidate_caches()
         sys.path.insert(0, str(import_root))
         try:
-            return importlib.import_module(f"{PACKAGE}.{strategy_id}")
+            return importlib.import_module(f"{pkg_name}.{strategy_id}")
         finally:
             sys.path.remove(str(import_root))
 
