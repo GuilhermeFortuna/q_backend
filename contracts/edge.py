@@ -20,6 +20,7 @@ class AccountResponse:
     server: str
     terminal_trade_allowed: bool
     trade_allowed: bool
+    trade_mode: Literal["demo", "contest", "real"]
 
 
 @dataclass(frozen=True)

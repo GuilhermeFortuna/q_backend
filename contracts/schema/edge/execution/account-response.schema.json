@@ -36,6 +36,11 @@
     "margin_free": {
       "type": "number",
       "description": "Free margin available for trading."
+    },
+    "trade_mode": {
+      "type": "string",
+      "enum": ["demo", "contest", "real"],
+      "description": "Account trade mode as reported by the terminal. Any unknown terminal value is reported as real."
     }
   },
   "required": [
@@ -46,7 +51,8 @@
     "terminal_trade_allowed",
     "balance",
     "equity",
-    "margin_free"
+    "margin_free",
+    "trade_mode"
   ],
   "additionalProperties": false
 }

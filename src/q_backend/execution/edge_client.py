@@ -12,9 +12,12 @@ import httpx
 
 from q_contracts.edge import AccountResponse, EdgeHealthResponse, ExecutionOrder, QuoteResponse
 
+from q_backend.storage.settings import Settings
+
 logger = logging.getLogger(__name__)
 
 SUPPORTED_SCHEMA_MAJOR = 1
+_TRADE_MODES = frozenset({"demo", "contest", "real"})
 
 
 class EdgeUnavailable(Exception):
@@ -30,6 +33,11 @@ class EdgeTimeouts:
 
 def _schema_major(schema_version: str) -> int:
     return int(str(schema_version).split(".", 1)[0])
+
+
+def _trade_mode(value: Any) -> str | None:
+    # Older edges omit trade_mode. The gate treats a missing mode as unvalidated.
+    return value if isinstance(value, str) and value in _TRADE_MODES else None
 
 
 def _iso_timestamp(value: datetime) -> str:
@@ -50,6 +58,17 @@ class EdgeClient:
         self._base_url = base_url.rstrip("/")
         self._timeouts = timeouts
         self._transport = transport
+
+    @classmethod
+    def from_settings(cls, settings: Settings) -> EdgeClient:
+        return cls(
+            settings.mt5_edge_url,
+            timeouts=EdgeTimeouts(
+                connect_s=settings.mt5_edge_connect_timeout_s,
+                read_s=settings.mt5_edge_read_timeout_s,
+                submit_read_s=settings.mt5_edge_submit_timeout_s,
+            ),
+        )
 
     def _client(self, *, read_timeout: float) -> httpx.Client:
         timeout = httpx.Timeout(read_timeout, connect=self._timeouts.connect_s)
@@ -118,6 +137,7 @@ class EdgeClient:
             server=str(payload["server"]),
             terminal_trade_allowed=bool(payload["terminal_trade_allowed"]),
             trade_allowed=bool(payload["trade_allowed"]),
+            trade_mode=_trade_mode(payload.get("trade_mode")),
         )
 
     def quote(self, symbol: str) -> QuoteResponse:

@@ -27,7 +27,7 @@ from uuid import UUID
 
 import MetaTrader5 as mt5
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 SCHEMA_MAJOR = 1
 _SCHEMA_HEADER = "X-Schema-Major"
 _DEFAULT_DEVIATION = 20
@@ -157,6 +157,15 @@ def _terminal_build() -> int | None:
         return None
     build = getattr(info, "build", None)
     return int(build) if build is not None else None
+
+
+_TRADE_MODES = {0: "demo", 1: "contest", 2: "real"}
+
+
+def _trade_mode(value: Any) -> str:
+    # MetaTrader's ACCOUNT_TRADE_MODE_*. Unknown or missing values count as real,
+    # so an account the edge cannot classify still needs controlled validation.
+    return _TRADE_MODES.get(value, "real")
 
 
 def _parse_window(value: str | int, name: str) -> datetime:
@@ -304,6 +313,7 @@ class EdgeApp:
                 "balance": float(plain["balance"]),
                 "equity": float(plain["equity"]),
                 "margin_free": float(plain["margin_free"]),
+                "trade_mode": _trade_mode(plain.get("trade_mode")),
             }
 
     def quote(self, symbol: str) -> dict[str, Any]:

@@ -59,6 +59,7 @@ _AccountInfo = namedtuple(
         "balance",
         "equity",
         "margin_free",
+        "trade_mode",
     ],
 )
 _TickInfo = namedtuple("TickInfo", ["bid", "ask", "last", "time", "time_msc"])
@@ -195,6 +196,7 @@ def make_fake_mt5() -> types.ModuleType:
             balance=100000.0,
             equity=100000.0,
             margin_free=100000.0,
+            trade_mode=0,
         ),
         "ticks": {
             "WIN$": _TickInfo(

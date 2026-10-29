@@ -25,17 +25,17 @@
 **Files:** `schema/edge/execution/account-response.schema.json`, `schema/edge/execution.yaml`,
 `schema/edge/examples/`, `schema/api/openapi.yaml`, `COMPAT.md`, generated outputs.
 
-- [ ] Add the required `trade_mode` enum to the account response, and bump the execution-edge minor version.
-- [ ] Add `mt5_orders` (capability, reason, account) to `ExecutionHealthResponse`, with examples.
-- [ ] Record both in `COMPAT.md`. Regenerate, run `make check`, and commit.
+- [x] Add the required `trade_mode` enum to the account response, and bump the execution-edge minor version.
+- [x] Add `mt5_orders` (capability, reason, account) to `ExecutionHealthResponse`, with examples.
+- [x] Record both in `COMPAT.md`. Regenerate, run `make check`, and commit.
 
 ### 2. Edge (`q_backend`)
 
 **Files:** `gateway/mt5_execution_edge.py`, `tests/gateway/fake_metatrader5.py`,
 `tests/gateway/test_mt5_execution_edge.py`.
 
-- [ ] Write failing tests for acceptance 1.
-- [ ] Map `trade_mode` in `EdgeApp.account` and advertise the new schema version. Run the gateway tests. Commit.
+- [x] Write failing tests for acceptance 1.
+- [x] Map `trade_mode` in `EdgeApp.account` and advertise the new schema version. Run the gateway tests. Commit.
 
 ### 3. Gate and health (`q_backend`)
 
@@ -43,21 +43,21 @@
 `execution/edge_client.py`, `storage/settings.py`, `api/services/execution.py`, `api/schemas/execution.py`,
 `tests/execution/test_edge_broker.py`, `tests/execution/fake_edge.py`, `tests/api/` health tests.
 
-- [ ] Vendor the contract and run `make contracts-check`.
-- [ ] Write failing tests for acceptance 2–5.
-- [ ] Parse `trade_mode` in the edge client's account model; a missing value is `None`.
-- [ ] Pass the trade mode to `evaluate_live_gates` and implement the fifth gate as the spec states.
-- [ ] Add a gate evaluation that is independent of any deployment for the health endpoint, and build
+- [x] Vendor the contract and run `make contracts-check`.
+- [x] Write failing tests for acceptance 2–5.
+- [x] Parse `trade_mode` in the edge client's account model; a missing value is `None`.
+- [x] Pass the trade mode to `evaluate_live_gates` and implement the fifth gate as the spec states.
+- [x] Add a gate evaluation that is independent of any deployment for the health endpoint, and build
   `mt5_orders` from it. Use the edge read timeout.
-- [ ] Remove `live_execution_dry_run` and any reference in env examples.
-- [ ] Run the new tests, `tests/execution/`, `tests/gateway/test_mt5_execution_edge.py`, and `ruff`/`black` on
+- [x] Remove `live_execution_dry_run` and any reference in env examples.
+- [x] Run the new tests, `tests/execution/`, `tests/gateway/test_mt5_execution_edge.py`, and `ruff`/`black` on
   the changed files. Commit.
 
 ### 4. Documentation (`q_backend`)
 
 **Files:** `docs/operations/mt5-demo-trading.md` (new), `README.md` (link).
 
-- [ ] Write the page the spec lists. Commit.
+- [x] Write the page the spec lists. Commit.
 
 ## Verification
 

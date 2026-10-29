@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from uuid import UUID
 
 from q_contracts.edge import ExecutionOrder
@@ -21,12 +22,52 @@ from q_backend.execution.brokers.base import (
     MarketOrderRequest,
     PaperCostConfig,
 )
-from q_backend.execution.brokers.live_gates import LiveExecutionGates, evaluate_live_gates
+from q_backend.execution.brokers.live_gates import (
+    LiveExecutionGates,
+    evaluate_account_gates,
+    evaluate_controlled_account_gate,
+    evaluate_live_gates,
+)
 from q_backend.execution.brokers.mt5_constants import retcode_label
 from q_backend.execution.domain import BrokerMode, ExecutionSide, FillRecord
 from q_backend.execution.edge_client import EdgeClient, EdgeUnavailable
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class MT5OrdersAccount:
+    login: int
+    server: str
+    trade_mode: Optional[str]
+
+
+@dataclass(frozen=True)
+class MT5OrdersStatus:
+    """Whether MT5 orders are possible on the connected account, for health reporting."""
+
+    capability: Literal["available", "validation_required", "locked"]
+    reason: Optional[str]
+    account: Optional[MT5OrdersAccount]
+
+
+def mt5_order_status(client: EdgeClient, gates: LiveExecutionGates) -> MT5OrdersStatus:
+    """Answer whether an MT5 deployment could trade on the connected account.
+
+    The deployment flag belongs to each deployment, so it is not evaluated here.
+    """
+    try:
+        account = client.account()
+    except EdgeUnavailable as exc:
+        return MT5OrdersStatus(capability="locked", reason=str(exc), account=None)
+    reported = MT5OrdersAccount(login=account.login, server=account.server, trade_mode=account.trade_mode)
+    rejection = evaluate_account_gates(gates, account_login=account.login)
+    if rejection is not None:
+        return MT5OrdersStatus(capability="locked", reason=rejection.message, account=reported)
+    rejection = evaluate_controlled_account_gate(gates, trade_mode=account.trade_mode)
+    if rejection is not None:
+        return MT5OrdersStatus(capability="validation_required", reason=rejection.message, account=reported)
+    return MT5OrdersStatus(capability="available", reason=None, account=reported)
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -223,7 +264,11 @@ class EdgeBroker:
                 cost_config=cost_config,
             )
 
-        gate_rejection = evaluate_live_gates(gates, account_login=account.login)
+        gate_rejection = evaluate_live_gates(
+            gates,
+            account_login=account.login,
+            trade_mode=account.trade_mode,
+        )
         if gate_rejection is not None:
             return BrokerSubmissionResult(
                 outcome=BrokerSubmissionOutcome.REJECTED,

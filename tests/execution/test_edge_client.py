@@ -77,3 +77,21 @@ def test_submit_duplicate_intent_returns_indeterminate():
         outcome = client.submit(intent_id, order)
         assert outcome["outcome"] == "indeterminate"
         assert "already submitted" in outcome["reason"].lower()
+
+
+@pytest.mark.parametrize(
+    "account_fields,expected",
+    [
+        ({"trade_mode": "demo"}, "demo"),
+        ({"trade_mode": "contest"}, "contest"),
+        ({"trade_mode": "real"}, "real"),
+        ({"trade_mode": "bogus"}, None),
+        ({}, None),
+    ],
+)
+def test_account_parses_trade_mode(account_fields, expected):
+    with fake_edge_server() as (base_url, state):
+        state.account = {key: value for key, value in state.account.items() if key != "trade_mode"}
+        state.account.update(account_fields)
+        account = _client(base_url).account()
+        assert account.trade_mode == expected

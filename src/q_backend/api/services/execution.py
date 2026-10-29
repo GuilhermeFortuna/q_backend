@@ -35,6 +35,8 @@ from q_backend.api.schemas.execution import (
     KillSwitchUpdateResponse,
     LedgerEntryListResponse,
     LedgerEntryResponse,
+    Mt5OrdersAccountResponse,
+    Mt5OrdersStatusResponse,
     OrderListResponse,
     OrderResolutionRequest,
     OrderResolutionResponse,
@@ -51,6 +53,8 @@ from q_backend.api.schemas.execution import (
     RiskEventResponse,
     WorkerLeaseResponse,
 )
+from q_backend.execution.brokers.edge import MT5OrdersStatus, mt5_order_status
+from q_backend.execution.brokers.live_gates import LiveExecutionGates
 from q_backend.execution.commands import (
     disable_kill_switch,
     enable_kill_switch,
@@ -66,6 +70,7 @@ from q_backend.execution.domain import (
     IllegalLifecycleTransition,
     LedgerEntryType,
 )
+from q_backend.execution.edge_client import EdgeClient
 from q_backend.execution.ledger import ExecutionLedger
 from q_backend.execution.reconciliation import (
     OrderNotPendingError,
@@ -117,7 +122,7 @@ from q_backend.storage.db.execution_repositories import (
     record_audit_event,
     set_pending_deployment_action,
 )
-from q_backend.storage.settings import get_settings
+from q_backend.storage.settings import Settings, get_settings
 from q_backend.streaming import execution_events
 
 
@@ -971,6 +976,7 @@ def get_execution_health(
                 checked_at=_as_utc(heartbeat.edge_checked_at),
             )
         market_data_status = "online" if mt5_connected else "offline"
+        mt5_orders = _mt5_orders_response(_mt5_orders_status(settings))
         api_status = "ok"
         if unknown_total > 0 or control.kill_switch_enabled:
             api_status = "degraded"
@@ -983,9 +989,31 @@ def get_execution_health(
             market_data_status=market_data_status,
             kill_switch_enabled=control.kill_switch_enabled,
             live_capability_locked=settings.execution_live_capability_locked,
+            mt5_orders=mt5_orders,
             unknown_order_count=unknown_total,
             deployments=deployment_health,
             checked_at=now,
         )
     except SQLAlchemyError as exc:
         raise _http_from_db(exc) from exc
+
+
+def _mt5_orders_status(settings: Settings) -> MT5OrdersStatus:
+    gates = LiveExecutionGates.from_settings(
+        enabled=settings.live_execution_enabled,
+        account_allowlist=settings.live_execution_account_allowlist,
+        deployment_live_activation_enabled=False,
+        controlled_account_validated=settings.live_execution_validated,
+    )
+    return mt5_order_status(EdgeClient.from_settings(settings), gates)
+
+
+def _mt5_orders_response(status: MT5OrdersStatus) -> Mt5OrdersStatusResponse:
+    account = None
+    if status.account is not None:
+        account = Mt5OrdersAccountResponse(
+            login=status.account.login,
+            server=status.account.server,
+            trade_mode=status.account.trade_mode,
+        )
+    return Mt5OrdersStatusResponse(capability=status.capability, reason=status.reason, account=account)

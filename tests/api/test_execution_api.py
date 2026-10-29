@@ -24,6 +24,8 @@ from q_backend.api.schemas.execution import (
 )
 from q_backend.api.services import execution as execution_service
 from q_backend.execution.domain import DeploymentLifecycle, StrategyIdentity
+from q_backend.storage.settings import Settings
+from tests.execution.fake_edge import fake_edge_server
 from q_backend.execution.validation import compute_config_hash
 from q_backend.storage.db.base import Base
 from q_backend.storage.db import models  # noqa: F401
@@ -423,6 +425,46 @@ def test_health_with_running_deployment_and_lease(api_db_session: Session):
     health = execution_service.get_execution_health(api_db_session, mt5_connected=True)
     assert health.worker_status == "offline"  # a lease alone is not a heartbeat
     assert len(health.deployments) == 1
+
+
+def _health_settings(monkeypatch, **overrides) -> None:
+    settings = Settings(
+        live_execution_enabled=True,
+        live_execution_account_allowlist="12345678",
+        live_execution_validated=False,
+        **overrides,
+    )
+    monkeypatch.setattr(execution_service, "get_settings", lambda: settings)
+
+
+def test_health_reports_mt5_orders_available_for_demo_account(api_db_session: Session, monkeypatch):
+    with fake_edge_server() as (base_url, state):
+        state.account["trade_mode"] = "demo"
+        _health_settings(monkeypatch, mt5_edge_url=base_url)
+        health = execution_service.get_execution_health(api_db_session, mt5_connected=True)
+    assert health.mt5_orders.capability == "available"
+    assert health.mt5_orders.reason is None
+    assert health.mt5_orders.account.login == 12345678
+    assert health.mt5_orders.account.server == "Broker-Demo"
+    assert health.mt5_orders.account.trade_mode == "demo"
+
+
+def test_health_reports_mt5_orders_validation_required_for_real_account(api_db_session: Session, monkeypatch):
+    with fake_edge_server() as (base_url, state):
+        state.account["trade_mode"] = "real"
+        _health_settings(monkeypatch, mt5_edge_url=base_url)
+        health = execution_service.get_execution_health(api_db_session, mt5_connected=True)
+    assert health.mt5_orders.capability == "validation_required"
+    assert "Q_LIVE_EXECUTION_VALIDATED" in health.mt5_orders.reason
+    assert health.mt5_orders.account.trade_mode == "real"
+
+
+def test_health_reports_mt5_orders_locked_when_edge_unreachable(api_db_session: Session, monkeypatch):
+    _health_settings(monkeypatch, mt5_edge_url="http://127.0.0.1:9", mt5_edge_connect_timeout_s=0.5)
+    health = execution_service.get_execution_health(api_db_session, mt5_connected=False)
+    assert health.mt5_orders.capability == "locked"
+    assert health.mt5_orders.reason
+    assert health.mt5_orders.account is None
 
 
 def _beat(session, *, age_s: float, reachable=True, build=4500, stopped=False):
