@@ -1,6 +1,6 @@
 # Batch 39 — Live-placeable research orders
 
-**Status:** written task specs and plans await human review. The [Q project board](https://github.com/users/GuilhermeFortuna/projects/2) is the status of record.
+**Status:** issues published on 2026-10-29; written task specs and plans await human review. The [Q project board](https://github.com/users/GuilhermeFortuna/projects/2) is the status of record.
 **Owner:** q_backend, with a kernel task in q_core.
 
 ## Outcome
@@ -32,11 +32,11 @@ Each was read from the code on 2026-10-29.
 
 | Task | Repository | Depends on | Specification | Implementation plan |
 | --- | --- | --- | --- | --- |
-| Q-138 — Live-placeable orders in the candle kernel | q_core | none | `q_core/docs/development/specs/Q-138-live-placeable-orders-in-the-candle-kernel-spec.md` | `q_core/docs/development/plans/Q-138-live-placeable-orders-in-the-candle-kernel-plan.md` |
-| Q-139 — Live-placeable orders in research backtests | q_backend | Q-138, Q-136 | [Spec](../specs/Q-139-live-placeable-orders-in-research-backtests-spec.md) | [Plan](../plans/Q-139-live-placeable-orders-in-research-backtests-plan.md) |
-| Q-140 — Finer decision timeframes for research strategies | q_backend | Q-136 | [Spec](../specs/Q-140-finer-decision-timeframes-for-research-strategies-spec.md) | [Plan](../plans/Q-140-finer-decision-timeframes-for-research-strategies-plan.md) |
-| Q-141 — Remove same-candle priced orders | q_backend | Q-139, author confirmation | [Spec](../specs/Q-141-remove-same-candle-priced-orders-spec.md) | [Plan](../plans/Q-141-remove-same-candle-priced-orders-plan.md) |
-| Q-137 — Stop, limit and protective orders on MT5 (Batch 38, revised) | q_backend | Q-136, Q-139 | [Spec](../specs/Q-137-stop-limit-and-protective-orders-on-mt5-spec.md) | [Plan](../plans/Q-137-stop-limit-and-protective-orders-on-mt5-plan.md) |
+| [Q-138](https://github.com/GuilhermeFortuna/q_core/issues/22) — Live-placeable orders in the candle kernel | q_core | none | `q_core/docs/development/specs/Q-138-live-placeable-orders-in-the-candle-kernel-spec.md` | `q_core/docs/development/plans/Q-138-live-placeable-orders-in-the-candle-kernel-plan.md` |
+| [Q-139](https://github.com/GuilhermeFortuna/q_backend/issues/62) — Live-placeable orders in research backtests | q_backend | Q-138, Q-136 | [Spec](../specs/Q-139-live-placeable-orders-in-research-backtests-spec.md) | [Plan](../plans/Q-139-live-placeable-orders-in-research-backtests-plan.md) |
+| [Q-140](https://github.com/GuilhermeFortuna/q_backend/issues/63) — Finer decision timeframes for research strategies | q_backend | Q-136 | [Spec](../specs/Q-140-finer-decision-timeframes-for-research-strategies-spec.md) | [Plan](../plans/Q-140-finer-decision-timeframes-for-research-strategies-plan.md) |
+| [Q-141](https://github.com/GuilhermeFortuna/q_backend/issues/64) — Remove same-candle priced orders | q_backend | Q-139, author confirmation | [Spec](../specs/Q-141-remove-same-candle-priced-orders-spec.md) | [Plan](../plans/Q-141-remove-same-candle-priced-orders-plan.md) |
+| [Q-137](https://github.com/GuilhermeFortuna/q_backend/issues/61) — Stop, limit and protective orders on MT5 (Batch 38, revised) | q_backend | Q-136, Q-139 | [Spec](../specs/Q-137-stop-limit-and-protective-orders-on-mt5-spec.md) | [Plan](../plans/Q-137-stop-limit-and-protective-orders-on-mt5-plan.md) |
 
 Suggested order: Q-135 and Q-136 (Batch 38), then Q-138, Q-139, Q-137 and Q-140, then Q-141 once the author has
 ported their strategies. Q-138 is released as a `q_core` tag before Q-139 pins it. Q-139 and Q-137 both
