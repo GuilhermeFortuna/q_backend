@@ -23,8 +23,12 @@ x-backend-runtime: &backend-runtime
     Q_TICK_CACHE_DIR: /data/tick_cache
     Q_RUNTIME_CONFIG_PATH: /data/runtime_config.json
     Q_WORKER_PROCESSES: ${Q_WORKER_PROCESSES:-14}
+    # Strategy files are the author's private work: mounted read-only, never baked into the image.
+    Q_STRATEGY_DIR: /strategies
+    Q_STRATEGY_BUNDLE_ROOT: /data/strategy_bundles
   volumes:
     - ${Q_COMPOSE_DATA_DIR:-./data}:/data
+    - ${Q_STRATEGY_DIR:-${HOME}/q-strategies}:/strategies:ro
     - ./src:/app/src:ro
     - ./contracts:/app/contracts:ro
     - ./alembic:/app/alembic:ro

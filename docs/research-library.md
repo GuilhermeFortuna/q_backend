@@ -775,6 +775,19 @@ The progress bar shows bars decided out of the total, the current bar, the open 
 - **`indicators: tuple[ChartIndicator, ...]`**: Chart series in declaration order, with their kind and styling. For a custom strategy, the columns from `chart_indicators()`; for a registered strategy run by name, its own chart indicators; empty when none are declared.
 - **`config: Mapping`**: Read-only mapping recording the run arguments (`symbol`, `strategy`, `strategy_params`, `quantity`, `point_value`, `initial_capital`, `costs`, `exit_params`, `day_trade`, session times, `force_close_at_end`, and `timeframe`).
 
+### Strategy files (`load_strategy`)
+
+A `ResearchStrategy` kept as a file in `Q_STRATEGY_DIR` (default `~/q-strategies`) is listed, validated and backtested by the Research stack, and each run freezes the file's exact code into an immutable strategy version. Declare parameters with `IntParam`, `FloatParam`, `BoolParam`, `ChoiceParam` and `TimeParam` in a class attribute `parameters`, one entry per `__init__` argument. Scripts and Optuna drivers load the same code with `load_strategy()`:
+
+```python
+from q_backend.research import backtest, load_strategy
+
+SessionBreakout = load_strategy("session_breakout")
+result = backtest(bars, strategy=SessionBreakout(range_bars=6), symbol="WIN$N", day_trade=True)
+```
+
+The directory rules, parameter declarations, validation, versions and the Backtests workflow are in [`docs/research/user_guide/strategy_files.rst`](research/user_guide/strategy_files.rst). The example is in `examples/research/strategy_files/`.
+
 ### Publish a backtest to the Research stack
 
 A research script can record its finished backtest in the Research stack for visual review:

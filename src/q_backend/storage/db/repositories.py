@@ -392,6 +392,7 @@ def create_backtest_run(
     started_at: Optional[datetime] = None,
     origin: str = BacktestOrigin.STACK.value,
     provenance: Optional[dict[str, Any]] = None,
+    strategy_version_id: Optional[uuid.UUID] = None,
 ) -> BacktestRun:
     backtest_run = BacktestRun(
         backtest_config_id=backtest_config_id,
@@ -400,6 +401,7 @@ def create_backtest_run(
         started_at=started_at,
         origin=origin,
         provenance=provenance,
+        strategy_version_id=strategy_version_id,
     )
     session.add(backtest_run)
     session.flush()

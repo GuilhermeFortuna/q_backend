@@ -36,10 +36,20 @@ from q_backend.backtesting.tick.chart_data import serialize_tick_backtest_data
 from q_backend.backtesting.tick.engine import TickBacktestEngine
 from q_backend.backtesting.tick.factory import build_tick_strategy
 from q_backend.backtesting.tick.strategy import TickArrays
+from q_backend.backtesting.run_import import complete_stack_run
 from q_backend.market_data.clients.metatrader import _to_naive_local
 from q_backend.optimization.metrics import build_equity_curve
+from q_backend.research.strategy_file_runs import FrozenStrategy, run_strategy
+from q_backend.research.strategy_files import default_bundle_root, strategy_dir
+from q_backend.research.strategy_versions import (
+    ResolvedStrategyRun,
+    StrategyVersionNotFound,
+    bundle_of,
+    check_strategy_run_request,
+)
+from q_backend.research.strategy_versions import resolve_strategy_run as resolve_version_run
 from q_backend.storage.db.engine import session_scope
-from q_backend.storage.db.models import BacktestRun, RunStatus
+from q_backend.storage.db.models import BacktestRun, ResearchStrategyVersion, RunStatus
 from q_backend.storage.db.repositories import (
     create_backtest_config,
     create_backtest_run,
@@ -89,7 +99,9 @@ def _cancel_checkpoint(run_id: str) -> Checkpoint:
     return checkpoint
 
 
-def _strategy_persist_name(request: BacktestJobRequest) -> str:
+def _strategy_persist_name(request: BacktestJobRequest, strategy_name: Optional[str] = None) -> str:
+    if strategy_name is not None:
+        return strategy_name
     entries, manager, _exit_params = normalize_entries(request)
     if request.entries is not None:
         return format_entry_strategy_label(entries, manager)
@@ -100,8 +112,14 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _request_config(request: BacktestJobRequest) -> Dict[str, Any]:
+def _request_config(request: BacktestJobRequest, strategy_name: Optional[str] = None) -> Dict[str, Any]:
     config = request.model_dump(mode="json")
+    if strategy_name is not None:
+        # A strategy-file run is keyed by its frozen version, so an edited file never reuses an old run.
+        # Its config names the version, not the strategy: re-running it posts this config back unchanged,
+        # and a request may name a strategy version or a strategy, not both.
+        config.pop("strategy", None)
+        return config
     if request.engine == "tick":
         config["timeframe"] = "TICK"
     else:
@@ -145,13 +163,13 @@ def _stored_started_at(run_id: str) -> Optional[datetime]:
     return datetime.fromisoformat(raw) if raw else None
 
 
-def _persist_run_start(request: BacktestJobRequest) -> str:
+def _persist_run_start(request: BacktestJobRequest, strategy_name: Optional[str] = None) -> str:
     """Create (or reuse) the backtest run row and return its id."""
-    config = _request_config(request)
+    config = _request_config(request, strategy_name)
     persisted_timeframe = config.get("timeframe", request.timeframe)
     now = _now()
     with session_scope() as session:
-        get_or_create_strategy(session, name=_strategy_persist_name(request))
+        get_or_create_strategy(session, name=_strategy_persist_name(request, strategy_name))
         existing = find_backtest_run_by_config(session, config)
         if existing is not None:
             update_backtest_run(
@@ -173,6 +191,7 @@ def _persist_run_start(request: BacktestJobRequest) -> str:
             config=config,
             status=RunStatus.RUNNING.value,
             started_at=now,
+            strategy_version_id=uuid.UUID(config["strategy_version_id"]) if strategy_name is not None else None,
         )
         return str(run.id)
 
@@ -194,17 +213,53 @@ def validate_ml_filter_request(request: BacktestJobRequest) -> None:
     ml_filter_service.validate_filter_compatibility(config, manifest)
 
 
+def resolve_strategy_run(request: BacktestJobRequest) -> ResolvedStrategyRun:
+    """Freeze or load the strategy version a request names, and coerce its parameters.
+
+    Raises ``StrategyFileError`` or ``ParamError`` (422), ``StrategyFileRequestError`` (422) and
+    ``StrategyVersionNotFound`` (404). The stack does not run ``entries`` or ``strategy`` with a version.
+    """
+    check_strategy_run_request(
+        engine=request.engine,
+        ml_filter=request.ml_filter,
+        position_sizing=request.position_sizing,
+    )
+    with session_scope() as session:
+        return resolve_version_run(
+            session,
+            strategy_file=request.strategy_file,
+            strategy_version_id=request.strategy_version_id,
+            strategy_params=request.strategy_params,
+            root=strategy_dir(),
+            bundle_root=default_bundle_root(),
+        )
+
+
 def start_job(request: BacktestJobRequest) -> str:
     """Persist the run and dispatch it to the worker pool. Returns the run id."""
     validate_ml_filter_request(request)
-    run_id = _persist_run_start(request)
+    strategy: Optional[ResolvedStrategyRun] = None
+    if request.strategy_file is not None or request.strategy_version_id is not None:
+        strategy = resolve_strategy_run(request)
+        request = request.model_copy(
+            update={
+                "strategy_file": None,
+                "strategy_version_id": strategy.version_id,
+                "strategy_params": strategy.strategy_params,
+            }
+        )
+    run_id = _persist_run_start(request, strategy.strategy_id if strategy is not None else None)
     # A reused run row may carry the flag of an earlier cancellation.
     clear_job_keys(run_id)
     _job_reporter(run_id, started_at=_now()).phase("queued", "Waiting for a worker")
 
     from q_backend.tasks import actors
 
-    actors.run_backtest.send(run_id, request.model_dump_json())
+    # The worker takes the strategy from the version, so the dispatched request omits ``strategy``.
+    actors.run_backtest.send(
+        run_id,
+        request.model_dump_json(exclude={"strategy"} if strategy is not None else None),
+    )
     return run_id
 
 
@@ -482,6 +537,9 @@ def run_backtest_job(run_id: str, request_json: str) -> None:
     try:
         checkpoint()
         start, end = _resolve_range(request)
+        if request.strategy_version_id is not None:
+            _run_strategy_version(run_id, request, start, end, market_data_service, reporter, checkpoint)
+            return
         if request.engine == "tick":
             payload, trades_objects, equity_df, market_data = _execute_tick(
                 request, start, end, market_data_service, reporter, checkpoint
@@ -519,6 +577,65 @@ def run_backtest_job(run_id: str, request_json: str) -> None:
         logger.exception("Backtest job %s failed", run_id)
         _finish_run(run_id, status=RunStatus.FAILED.value, error_message=str(exc))
         _persist_progress(run_id, "failed", error=str(exc))
+
+
+def _run_strategy_version(
+    run_id: str,
+    request: BacktestJobRequest,
+    start: datetime,
+    end: datetime,
+    market_data_service,
+    reporter: BacktestProgressReporter,
+    checkpoint: Checkpoint,
+) -> None:
+    """Run a frozen strategy version and store its result on the job's run row."""
+    assert request.strategy_version_id is not None
+    with session_scope() as session:
+        version = session.get(ResearchStrategyVersion, uuid.UUID(request.strategy_version_id))
+        if version is None:
+            raise StrategyVersionNotFound(f"Strategy version '{request.strategy_version_id}' not found.")
+        frozen = FrozenStrategy(
+            strategy_id=version.strategy_id,
+            bundle=bundle_of(version),
+            param_specs=list(version.param_specs),
+        )
+    quantity = check_strategy_run_request(
+        engine=request.engine,
+        ml_filter=request.ml_filter,
+        position_sizing=request.position_sizing,
+    )
+    outcome = run_strategy(
+        frozen,
+        bundle_root=default_bundle_root(),
+        symbol=request.symbol,
+        timeframe=request.timeframe,
+        start=start,
+        end=end,
+        strategy_params=request.strategy_params,
+        quantity=quantity,
+        point_value=request.point_value,
+        initial_capital=request.initial_capital,
+        costs=request.costs,
+        exit_params=request.exit_params,
+        day_trade=request.day_trade,
+        day_trade_start_time=request.day_trade_start_time,
+        day_trade_end_time=request.day_trade_end_time,
+        day_trade_close_time=request.day_trade_close_time,
+        post_exit_bars=request.post_exit_bars,
+        market_data_service=market_data_service,
+        checkpoint=checkpoint,
+        on_phase=lambda phase, message: reporter.phase(phase, message),
+    )
+    checkpoint()
+    reporter.phase("saving", "Saving results")
+    summary = {**outcome.request.result.metrics, "ticks_used": outcome.ticks_used}
+    with session_scope() as session:
+        run = session.get(BacktestRun, uuid.UUID(run_id))
+        if run is not None and run.status == RunStatus.CANCELLED.value:
+            # Cancelled while the worker was finishing: the cancellation stands.
+            return
+        complete_stack_run(session, uuid.UUID(run_id), outcome.request, result_summary=summary)
+    _persist_progress(run_id, "completed")
 
 
 def _finish_run(

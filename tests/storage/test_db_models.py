@@ -47,6 +47,7 @@ EXPECTED_TABLES = {
     "ml_filter_evaluations",
     "research_figures",
     "research_studies",
+    "research_strategy_versions",
 }
 
 FORBIDDEN_TABLE_NAMES = {"ohlcv", "ticks", "bars", "features", "tick", "candles"}

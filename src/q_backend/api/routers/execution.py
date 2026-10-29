@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from q_backend.api.strategy_file_guard import reject_strategy_file_fields
 from q_backend.api.deps import get_session
 from q_backend.api.dependencies import get_market_data_service
 from q_backend.api.idempotency import IdempotentCommand, IdempotentRoute
@@ -114,7 +115,11 @@ def get_execution_strategy_catalog():
     return execution_service.get_strategy_catalog()
 
 
-@router.post("/api/v1/execution/deployments", response_model=DeploymentDetailResponse)
+@router.post(
+    "/api/v1/execution/deployments",
+    response_model=DeploymentDetailResponse,
+    dependencies=[Depends(reject_strategy_file_fields)],
+)
 def create_execution_deployment(
     body: DeploymentCreateRequest,
     session: Session = Depends(_session_or_503),

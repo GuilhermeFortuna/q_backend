@@ -120,15 +120,18 @@ def _collect_provenance(strategy: Any) -> BacktestProvenance:
     )
 
 
-def publish_backtest_result(
+def build_import_request(
     result: BacktestResult,
     *,
     name: str | None = None,
     timeframe: str | None = None,
-    api_url: str | None = None,
-    client: httpx.Client | None = None,
-) -> str:
-    """Build and send a backtest import request to the Research stack API."""
+    provenance: BacktestProvenance | None = None,
+) -> BacktestImportRequest:
+    """The import request that records ``result`` as a completed run.
+
+    Shared by script publishing and the stack's strategy-file runs, so both store the same bars,
+    indicators, closed trades, metrics and configuration.
+    """
     if result.data.empty:
         raise ValueError("Cannot publish backtest result with no bars.")
 
@@ -139,9 +142,6 @@ def publish_backtest_result(
     effective_name = name or result.config.get("strategy")
     if not effective_name:
         effective_name = "CustomStrategy"
-
-    base_url = api_url or os.getenv("Q_API_URL") or Q_API_URL
-    target_url = f"{base_url.rstrip('/')}/api/v1/backtests/import"
 
     # 1. Chart series & bars via serialize_chart_data
     adapter = _IndicatorAdapter(result.indicators)
@@ -218,12 +218,30 @@ def publish_backtest_result(
         indicators=clean_indicators,
     )
 
-    provenance = _collect_provenance(getattr(result, "_strategy", None))
-
-    req_model = BacktestImportRequest(
+    return BacktestImportRequest(
         config=config_payload,
         result=import_result,
-        provenance=provenance,
+        provenance=provenance if provenance is not None else BacktestProvenance(),
+    )
+
+
+def publish_backtest_result(
+    result: BacktestResult,
+    *,
+    name: str | None = None,
+    timeframe: str | None = None,
+    api_url: str | None = None,
+    client: httpx.Client | None = None,
+) -> str:
+    """Build and send a backtest import request to the Research stack API."""
+    base_url = api_url or os.getenv("Q_API_URL") or Q_API_URL
+    target_url = f"{base_url.rstrip('/')}/api/v1/backtests/import"
+
+    req_model = build_import_request(
+        result,
+        name=name,
+        timeframe=timeframe,
+        provenance=_collect_provenance(getattr(result, "_strategy", None)),
     )
 
     payload = _clean_for_json(req_model.model_dump(mode="json"))

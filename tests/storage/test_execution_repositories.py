@@ -364,6 +364,7 @@ def test_execution_migration_revision_chain() -> None:
         "20261010_0028",
         "20261012_0029",
         "20261014_0030",
+        "20261029_0031",
     ]
 
     assert script.get_current_head() == expected_chain[-1]

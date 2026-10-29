@@ -5,6 +5,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from q_backend.api.strategy_file_guard import reject_strategy_file_fields
 from q_backend.api import strategy_search_jobs
 from q_backend.api.deps import get_session
 from q_backend.api.dependencies import get_market_data_service
@@ -35,7 +36,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["strategy-search"])
 
 
-@router.post("/api/v1/strategy-search", response_model=StrategySearchStartResponse)
+@router.post(
+    "/api/v1/strategy-search",
+    response_model=StrategySearchStartResponse,
+    dependencies=[Depends(reject_strategy_file_fields)],
+)
 def start_strategy_search(
     body: StrategySearchConfig,
     mds: MarketDataService = Depends(get_market_data_service),

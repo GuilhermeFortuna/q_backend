@@ -141,6 +141,10 @@ class BacktestRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         server_default=BacktestOrigin.STACK.value,
     )
     provenance: Mapped[Optional[dict[str, Any]]] = mapped_column(PortableJSON, nullable=True)
+    strategy_version_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("research_strategy_versions.id", ondelete="SET NULL", name="fk_backtest_runs_strategy_version_id"),
+        nullable=True,
+    )
 
     backtest_config: Mapped["BacktestConfig"] = relationship(back_populates="runs")
 
@@ -149,6 +153,29 @@ class BacktestRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_backtest_runs_config_created", "backtest_config_id", "created_at"),
         Index("ix_backtest_runs_is_saved", "is_saved"),
         Index("ix_backtest_runs_origin", "origin"),
+        Index("ix_backtest_runs_strategy_version_id", "strategy_version_id"),
+    )
+
+
+class ResearchStrategyVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """An immutable, content-addressed copy of a strategy file's bundle, frozen by a backtest.
+
+    Named apart from ``strategy_versions``, which belongs to the Strategy Builder. Rows are never
+    updated: the same bundle hash always resolves to the same row, and a run references the row
+    it executed, so editing or deleting the file never changes a version or a past run.
+    """
+
+    __tablename__ = "research_strategy_versions"
+
+    strategy_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    class_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    bundle_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_files: Mapped[list[dict[str, str]]] = mapped_column(PortableJSON, nullable=False)
+    param_specs: Mapped[list[dict[str, Any]]] = mapped_column(PortableJSON, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("bundle_hash", name="uq_research_strategy_versions_bundle_hash"),
+        Index("ix_research_strategy_versions_strategy_id", "strategy_id"),
     )
 
 

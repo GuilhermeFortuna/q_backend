@@ -11,6 +11,7 @@ The User guide covers the architecture, statistical methods, and mechanics of Q 
    tick_store
    indicators
    strategy
+   strategy_files
    execution
    backtesting
    publishing
