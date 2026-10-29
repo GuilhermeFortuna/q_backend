@@ -71,7 +71,7 @@ def detect_hook_call(strategy: ResearchStrategy, name: str) -> HookCall:
 def _permitted_actions(name: str) -> tuple[str, ...]:
     """Actions a hook may return."""
     if name == "entry_strategy":
-        return ("buy", "sell", "cancel")
+        return ("buy", "sell", "cancel", "oco")
     return ("close", "amend")
 
 
@@ -126,12 +126,13 @@ def _check_order_list(label: str, name: str, orders: tuple[TradeOrder, ...]) -> 
     if len(orders) <= 1:
         return
     if name == "exit_strategy":
-        plain = sum(order.action == "close" and order.price is None for order in orders)
+        plain = sum(order.action == "close" and order.price is None and order.at is None for order in orders)
+        timed = sum(order.action == "close" and order.at is not None for order in orders)
         amends = sum(order.action == "amend" for order in orders)
-        if plain > 1 or amends > 1:
+        if plain > 1 or timed > 1 or amends > 1:
             raise ValueError(
                 f"{label} returned {orders!r}; an exit list holds any number of priced closes, "
-                "at most one close without a price and at most one amend"
+                "at most one close without a price, at most one timed close and at most one amend"
             )
         return
     priced = [

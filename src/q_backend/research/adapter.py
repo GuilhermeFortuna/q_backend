@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, time
 from typing import Any, Mapping
 
 import numpy as np
@@ -51,9 +52,27 @@ def _level(value: float) -> float | None:
     return None if np.isnan(value) else float(value)
 
 
+_DAY_US = 86_400_000_000
+
+
+def _wall_clock_us(stamp: pd.Timestamp | datetime, frame_tz: Any) -> int:
+    """A timestamp on the frame's wall clock, in microseconds, as the candle kernel reads its bar times."""
+    moment = pd.Timestamp(stamp)
+    if moment.tzinfo is not None:
+        if frame_tz is not None:
+            moment = moment.tz_convert(frame_tz)
+        moment = moment.tz_localize(None)
+    return int(moment.as_unit("ns").value // 1_000)
+
+
 def classify_order(order: TradeOrder) -> set[str]:
     """Classify a TradeOrder into one or more order kinds."""
     kinds: set[str] = set()
+    if order.action == "oco":
+        kinds.add("oco")
+        for leg in order.legs:
+            kinds |= classify_order(leg)
+        return kinds
     if order.action in ("buy", "sell"):
         if order.kind == "market":
             if order.price is None:
@@ -64,10 +83,14 @@ def classify_order(order: TradeOrder) -> set[str]:
             kinds.add("resting_stop")
         elif order.kind == "limit":
             kinds.add("resting_limit")
+        if order.expire_at is not None:
+            kinds.add("expiring_entry")
         if order.stop_loss is not None or order.take_profit is not None:
             kinds.add("protective_levels")
     elif order.action == "close":
-        if order.price is None:
+        if order.at is not None:
+            kinds.add("timed_exit")
+        elif order.price is None:
             kinds.add("market_close")
         else:
             kinds.add("priced_close")
@@ -105,6 +128,24 @@ class _RuntimeHooks:
         # A close requested right after a same-bar priced entry filled, for the next bar's open.
         self.fill_close_requested = np.zeros(len(chunk), dtype=bool)
         self.fill_close_reason = np.full(len(chunk), None, dtype=object)
+        # Per bar: whether an OCO group was placed there. The kernel reports no entry for it.
+        self.oco_placed = np.zeros(len(chunk), dtype=bool)
+        # Timed-exit decisions in order, as (bar, target_us, reason).
+        self.timed_exits: list[tuple[int, int, str | None]] = []
+
+    def timed_exit_reason(self, exit_bar: int, exit_time_us: int) -> tuple[bool, str | None]:
+        """Whether a timed exit closed a trade at ``exit_time_us``, and its reason.
+
+        The working timed exit is the latest one decided before the exit bar. One whose instant is
+        still ahead of the exit closed nothing.
+        """
+        for decided_bar, target, reason in reversed(self.timed_exits):
+            if decided_bar >= exit_bar:
+                continue
+            if target > exit_time_us:
+                return False, None
+            return True, reason
+        return False, None
 
     def _hook(self, name: str, bar: int, positions: tuple[ResearchPosition, ...]) -> tuple[TradeOrder, ...]:
         adapter = self._adapter
@@ -124,9 +165,15 @@ class _RuntimeHooks:
         orders = self._hook("exit_strategy", bar, positions)
         decision: dict[str, Any] = {}
         priced = [order for order in orders if order.action == "close" and order.price is not None]
-        plain = [order for order in orders if order.action == "close" and order.price is None]
+        plain = [order for order in orders if order.action == "close" and order.price is None and order.at is None]
+        timed = [order for order in orders if order.action == "close" and order.at is not None]
         if priced or plain:
             decision.update(exit_long=True, exit_short=True)
+        # A timed exit with no position open does nothing, so it is not placed.
+        if timed and positions:
+            target = adapter._instant_us(timed[0].at, timestamp)
+            decision["timed_exit"] = target
+            self.timed_exits.append((bar, target, timed[0].reason))
         if priced:
             adapter._require_hook_ticks(
                 "exit_strategy", timestamp, "returned a priced close, which is confirmed from ticks"
@@ -158,6 +205,8 @@ class _RuntimeHooks:
             return {}
         if orders[0].action == "cancel":
             return {"cancel_entry": True}
+        if orders[0].action == "oco":
+            return self._oco_decision(bar, orders[0], timestamp)
         records = []
         for order in orders:
             stop, target, price = adapter._levels_of(order, timestamp)
@@ -174,6 +223,8 @@ class _RuntimeHooks:
                 entry_kind=first.kind,
                 expire_bars=first.expire_bars,
             )
+            if first.expire_at is not None:
+                decision["expire_time_us"] = adapter._instant_us(first.expire_at, timestamp)
         elif first.price is None:
             decision.update(stop_price=stop, target_price=target)
         else:
@@ -182,6 +233,29 @@ class _RuntimeHooks:
                 for order, (stop, target, price, _reason) in zip(orders, records, strict=True)
             ]
         return decision
+
+    def _oco_decision(self, bar: int, group: TradeOrder, timestamp: pd.Timestamp) -> dict[str, Any]:
+        """The kernel's OCO group: one resting leg per member, in the order the hook listed them."""
+        adapter = self._adapter
+        records = []
+        legs = []
+        for leg in group.legs:
+            stop, target, _price = adapter._levels_of(leg, timestamp)
+            records.append((stop, target, np.nan, leg.reason))
+            legs.append(
+                {
+                    "side": 1 if leg.action == "buy" else -1,
+                    "kind": leg.kind,
+                    "price": float(leg.price),
+                    "stop_price": _level(stop),
+                    "target_price": _level(target),
+                    "expire_bars": leg.expire_bars,
+                    "expire_time_us": None if leg.expire_at is None else adapter._instant_us(leg.expire_at, timestamp),
+                }
+            )
+        self.entry_orders[bar] = tuple(records)
+        self.oco_placed[bar] = True
+        return {"oco_group": legs}
 
     def entry_filled(self, bar: int, raw_positions: tuple) -> bool:
         """Ask ``exit_strategy`` again once a same-bar priced entry has filled.
@@ -376,6 +450,20 @@ class ResearchStrategyAdapter(TradingStrategy):
         if decision.kind != "market":
             self._require_ticks("entry", timestamp, f"rests a {decision.kind} order, which fills from ticks")
         return stop, target, price
+
+    def _instant_us(self, value: time | datetime, stamp: pd.Timestamp) -> int:
+        """An expiry or timed exit instant on the frame's wall clock, in microseconds.
+
+        A time of day means its next occurrence after the deciding bar ``stamp``; a timestamp
+        is read in the frame's timezone.
+        """
+        frame_tz = None if self._decision_frame is None else self._decision_frame.index.tz
+        now = _wall_clock_us(stamp, frame_tz)
+        if isinstance(value, time):
+            offset = ((value.hour * 60 + value.minute) * 60 + value.second) * 1_000_000 + value.microsecond
+            instant = now - now % _DAY_US + offset
+            return instant if instant > now else instant + _DAY_US
+        return _wall_clock_us(value, frame_tz)
 
     def _require_ticks(self, action: str, timestamp: pd.Timestamp, reason: str) -> None:
         if self._tick_source is None:

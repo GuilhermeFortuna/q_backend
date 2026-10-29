@@ -309,11 +309,14 @@ def run_chunk(
     trade_start: datetime.datetime | None,
     intrabar: Callable[[int], tuple[np.ndarray, np.ndarray]] | None = None,
     tick_size: float | None = None,
+    latency_us: int = 0,
 ) -> ChunkRun:
     """Run one already-augmented candle chunk through q_core without row objects.
 
     ``intrabar`` supplies a candle's trade prices when the kernel must confirm a stop, target
     or custom exit inside it. Runtime decisions come from ``strategy.runtime_callback``.
+    ``latency_us`` is the placement latency: an order decided at a bar's close fills only from
+    trades at or after the close plus this latency.
     """
     source_params = getattr(getattr(strategy, "exit_strategy", None), "params", strategy.parameters)
     exit_params = _exit_params(source_params)
@@ -376,6 +379,7 @@ def run_chunk(
             exit_params=exit_params,
             day_trade_us=day_trade_us,
             force_close_at_end=force_close_at_end,
+            latency_us=latency_us,
             **level_args,
         )
     except ValueError as exc:
@@ -410,8 +414,13 @@ def run_chunk(
     entry_bar = np.asarray(result["entry_bar"], dtype=np.int64)
     entry_kind = np.asarray(result["entry_kind"], dtype=np.int64)
     exit_bar = np.asarray(result["exit_bar"], dtype=np.int64)
-    # Only accepted decisions replace a working order; hook requests may be gated out.
-    placed_bars = np.flatnonzero(result["entry"]) if runtime is not None else np.empty(0, dtype=np.int64)
+    # Only accepted decisions replace a working order; hook requests may be gated out. An OCO group
+    # is not reported as an entry, so its placements are added from the runtime's record.
+    placed_bars = (
+        np.flatnonzero((np.asarray(result["entry"]) != 0) | runtime.oco_placed)
+        if runtime is not None
+        else np.empty(0, dtype=np.int64)
+    )
 
     entry_candidate = np.asarray(result["entry_candidate"], dtype=np.int64)
     exit_candidate = np.asarray(result["exit_candidate"], dtype=np.int64)
@@ -443,19 +452,23 @@ def run_chunk(
                 out[i] = decided[bar]
         return out
 
-    def close_reason_at(fill_bar: int, candidate: int) -> str | None:
+    def close_reason_at(fill_bar: int, candidate: int, exit_time_us: int) -> str | None:
         # A close requested after a same-bar priced entry filled, or a close without a price decided
         # on the bar before the fill, exits at the fill bar's open. A priced close fills on its own
-        # bar under the reason of the price that won.
+        # bar under the reason of the price that won. A timed exit closes at its instant under its own reason.
         if fill_bar >= 1 and runtime.fill_close_requested[fill_bar - 1]:
             return runtime.fill_close_reason[fill_bar - 1]
         if candidate >= 0 and runtime.exit_reasons[fill_bar] is not None:
             return runtime.exit_reasons[fill_bar][candidate]
+        timed, timed_reason = runtime.timed_exit_reason(fill_bar, exit_time_us)
+        if timed:
+            return timed_reason
         if fill_bar >= 1 and runtime.close_requested[fill_bar - 1]:
             return runtime.close_reason[fill_bar - 1]
         return None
 
     exit_reason_text = list(result["exit_reason_text"])
+    exit_time_us_of = np.asarray(result["exit_time_us"], dtype=np.int64)
     entry_reason: list[str | None] = [None] * len(entry_bar)
     if runtime is not None:
         for i in range(len(entry_bar)):
@@ -465,7 +478,7 @@ def run_chunk(
         # Only a SIGNAL exit takes the close reason; stop, target and other engine exits keep their label.
         for i, text in enumerate(exit_reason_text):
             if text == "SIGNAL" and exit_bar[i] >= 0:
-                reason = close_reason_at(int(exit_bar[i]), int(exit_candidate[i]))
+                reason = close_reason_at(int(exit_bar[i]), int(exit_candidate[i]), int(exit_time_us_of[i]))
                 if reason is not None:
                     exit_reason_text[i] = reason
 
