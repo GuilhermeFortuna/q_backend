@@ -25,6 +25,7 @@ from q_backend.research.frame import (
     attach_metadata,
     drop_forming_bar,
     filter_index_range,
+    normalize_timeframe,
     ohlcv_models_to_frame,
     validate_bars_frame,
 )
@@ -93,6 +94,7 @@ def run_strategy(
     strategy_class = load_bundle(frozen.bundle, bundle_root)
     declared = tuple(declared_from_wire(spec) for spec in frozen.param_specs)
     instance = strategy_class(**coerce_params(declared, strategy_params))
+    _require_decision_timeframe(strategy_class, timeframe)
     tick_store = TickStore(symbol)
     store = tick_store if tick_store.sessions() else None
     checkpoint()
@@ -127,6 +129,16 @@ def run_strategy(
         ticks_used=store is not None,
         order_kinds=sorted(order_kinds),
     )
+
+
+def _require_decision_timeframe(strategy_class: type, timeframe: str) -> None:
+    """A strategy that declares a decision timeframe runs only on frames of that timeframe."""
+    declared = getattr(strategy_class, "decision_timeframe", None)
+    if declared is not None and normalize_timeframe(str(declared)) != normalize_timeframe(timeframe):
+        raise ValueError(
+            f"{strategy_class.__name__} decides on {declared} bars and cannot run on {timeframe} bars; "
+            f"run it on {declared}"
+        )
 
 
 def _bars_frame(

@@ -112,7 +112,8 @@ Keep indicator calculations causal
 Although ``compute_indicators`` receives the full dataset, each row's indicator
 must use only that row and earlier rows. Avoid negative shifts, centered rolling
 windows, or fitting a model to the entire test period. Do not change the index
-or existing market-data columns.
+or existing market-data columns. A strategy that decides on a finer timeframe reads
+coarser bars with :func:`~q_backend.research.closed_bars`; see :doc:`decision_timeframes`.
 
 Show indicators on the chart
 ----------------------------

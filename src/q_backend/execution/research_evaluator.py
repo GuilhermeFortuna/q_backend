@@ -20,6 +20,7 @@ from q_backend.execution.strategy_build import build_research_strategy_from_comp
 from q_backend.execution.warmup import compute_window_bound_bars
 from q_backend.market_data.timezone import BRASILIA_TZ
 from q_backend.research.adapter import ResearchStrategyAdapter, classify_order
+from q_backend.research.frame import normalize_timeframe
 from q_backend.research.positions import ResearchPosition
 from q_backend.research.strategy import ResearchStrategy
 
@@ -63,6 +64,12 @@ class ResearchEvaluator:
             self.strategy = strategy_instance
         else:
             self.strategy = build_research_strategy_from_compiled(identity.compiled_config)
+        declared = getattr(self.strategy, "decision_timeframe", None)
+        if declared is not None and normalize_timeframe(str(declared)) != self.timeframe:
+            raise ValueError(
+                f"{type(self.strategy).__name__} decides on {declared} bars; "
+                f"this deployment runs on {self.timeframe}"
+            )
 
         self.exit_params = dict(identity.compiled_config.get("exit_params", {}))
         self._adapter = ResearchStrategyAdapter(self.strategy, symbol=self.symbol, exit_params=self.exit_params)

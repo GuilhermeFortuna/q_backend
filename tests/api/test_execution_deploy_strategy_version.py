@@ -34,6 +34,7 @@ from q_backend.execution.ledger import ExecutionLedger
 from q_backend.execution.quote_source import EdgeQuoteSource
 from q_backend.execution.research_evaluator import ResearchEvaluator
 from q_backend.execution.service import ExecutionService
+from q_backend.execution.validation import ExecutionValidationError, resolve_saved_backtest
 from q_backend.execution.strategy_build import build_research_strategy_from_compiled
 from q_backend.research.strategy_versions import freeze_strategy_file
 from q_backend.storage.db.base import Base
@@ -192,6 +193,69 @@ def test_create_deployment_from_market_only_strategy_run_succeeds(
     assert detail.day_trade_session.day_trade is True
     assert detail.day_trade_session.start_time == "09:00"
     assert detail.day_trade_session.close_time == "17:00"
+
+
+M1_DECISION_STRATEGY = MARKET_ONLY_STRATEGY.replace(
+    "class MarketTrend(ResearchStrategy):\n",
+    'class MarketTrend(ResearchStrategy):\n    decision_timeframe = "M1"\n\n',
+)
+
+
+@pytest.fixture
+def frozen_m1_version(api_db_session: Session, tmp_path: Path) -> ResearchStrategyVersion:
+    strat_dir = tmp_path / "strategies"
+    strat_dir.mkdir(parents=True, exist_ok=True)
+    (strat_dir / "market_trend.py").write_text(M1_DECISION_STRATEGY, encoding="utf-8")
+    bundle_dir = tmp_path / "bundles"
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+    version = freeze_strategy_file(api_db_session, strat_dir, "market_trend", bundle_root=bundle_dir)
+    api_db_session.flush()
+    return version
+
+
+def test_a_version_declaring_m1_deploys_at_m1(
+    api_db_session: Session,
+    frozen_m1_version: ResearchStrategyVersion,
+):
+    account = execution_service.create_account(
+        api_db_session,
+        PaperAccountCreateRequest(name="desk-m1", initial_balance=Decimal("100000")),
+    )
+    run = _create_saved_run(
+        api_db_session,
+        frozen_m1_version,
+        order_kinds=["market_entry", "market_close"],
+        timeframe="M1",
+        day_trade=True,
+    )
+
+    detail = execution_service.create_deployment(
+        api_db_session,
+        DeploymentCreateRequest(
+            paper_account_id=account.id,
+            name="live-m1-trend",
+            source_backtest_run_id=run.id,
+        ),
+    )
+
+    assert detail.timeframe == "M1"
+    assert detail.source_kind == "strategy_version"
+
+
+def test_a_version_declaring_m1_is_refused_at_any_other_timeframe(
+    api_db_session: Session,
+    frozen_m1_version: ResearchStrategyVersion,
+):
+    run = _create_saved_run(
+        api_db_session,
+        frozen_m1_version,
+        order_kinds=["market_entry", "market_close"],
+        timeframe="M1",
+        day_trade=True,
+    )
+
+    with pytest.raises(ExecutionValidationError, match="can only be deployed at M1"):
+        resolve_saved_backtest(api_db_session, source_backtest_run_id=run.id, timeframe="M5")
 
 
 def test_create_deployment_refuses_run_without_order_kinds(

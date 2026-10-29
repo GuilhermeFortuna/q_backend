@@ -22,29 +22,33 @@ execution.
 
 **Files:** `research/context.py` (new), `research/__init__.py`, `tests/research/test_closed_bars.py` (new).
 
-- [ ] Write failing tests for acceptance 1 and 3, implement `closed_bars`, and commit.
+- [x] Write failing tests for acceptance 1 and 3, implement `closed_bars`, and commit.
+  The causality check cuts prefixes at any bar for strategies that declare `decision_timeframe`;
+  other strategies keep the session-end cuts, which the existing causality test pins.
 
 ### 2. Before/after match
 
 **Files:** `tests/research/test_decision_timeframe_equivalence.py` (new).
 
-- [ ] Write the M5 and M1 fixture strategies of acceptance 2, and require `compare_results(...).identical`.
-  Commit.
+- [x] Write the M5 and M1 fixture strategies of acceptance 2, and require identical trades.
+  Until `compare_results` (Q-139) is on `development`, the test compares the trade fields directly.
 
 ### 3. Decision timeframe in the stack and execution
 
 **Files:** `research/strategy_files.py` (record `decision_timeframe`), `research/strategy_file_runs.py`,
 `execution/validation.py`, `execution/research_evaluator.py`, `tests/execution/test_research_evaluator.py`.
 
-- [ ] Write failing tests for acceptance 4.
-- [ ] Record the attribute on the version, check the run and deployment timeframe, and allow M1 for declaring
+- [x] Write failing tests for acceptance 4.
+- [x] Record the attribute on the version, check the run and deployment timeframe, and allow M1 for declaring
   versions only. Run `tests/execution/`. Commit.
+  The attribute is read from the version's frozen source at deploy time, so no column or migration is added;
+  run parameters exclude it.
 
 ### 4. Guide
 
-**Files:** `docs/research/user_guide/live_placeable_orders.rst` (or a new page linked from it).
+**Files:** `docs/research/user_guide/decision_timeframes.rst`, linked from the user guide index.
 
-- [ ] Document `closed_bars`, `decision_timeframe`, and an example "exit on a one-minute close back inside the
+- [x] Document `closed_bars`, `decision_timeframe`, and an example "exit on a one-minute close back inside the
   range". Commit.
 
 ## Verification

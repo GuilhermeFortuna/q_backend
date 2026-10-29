@@ -60,6 +60,36 @@ def validate_timeframe(timeframe: str) -> str:
     return key
 
 
+def _version_decision_timeframe(version: Any) -> Optional[str]:
+    """The decision timeframe the version's frozen source declares, read without a database column."""
+    from q_backend.research.strategy_files import decision_timeframe_of, default_bundle_root, load_bundle
+    from q_backend.research.strategy_versions import bundle_of
+
+    return decision_timeframe_of(load_bundle(bundle_of(version), default_bundle_root()))
+
+
+def _version_forward_timeframe(tf_raw: str, declared: Optional[str]) -> str:
+    """The timeframe a strategy version deploys at.
+
+    A version that declares a decision timeframe deploys at exactly that timeframe, which may be
+    below M5. Any other version keeps the M5 minimum for forward execution.
+    """
+    key = tf_raw.upper()
+    if declared is not None:
+        if key != declared:
+            raise ExecutionValidationError(
+                f"strategy decides on {declared} bars and can only be deployed at {declared}, not '{tf_raw}'",
+                status_code=422,
+            )
+        return key
+    if not key or key not in _SUPPORTED_TIMEFRAMES or _TF_MINUTES[key] < _MIN_TIMEFRAME_MINUTES:
+        raise ExecutionValidationError(
+            f"timeframe '{tf_raw}' is below the M5 minimum for forward execution",
+            status_code=422,
+        )
+    return key
+
+
 def validate_symbol_known(symbol: str, market_data_service: Optional[Any]) -> str:
     if not symbol:
         raise ExecutionValidationError("symbol is required")
@@ -262,18 +292,12 @@ def resolve_saved_backtest(
                 status_code=422,
             )
 
-        tf_raw = timeframe or str(config.get("timeframe") or "")
-        key = tf_raw.upper()
-        if not key or key not in _SUPPORTED_TIMEFRAMES or _TF_MINUTES[key] < _MIN_TIMEFRAME_MINUTES:
-            raise ExecutionValidationError(
-                f"timeframe '{tf_raw}' is below the M5 minimum for forward execution",
-                status_code=422,
-            )
-        normalized_tf = key
-
         version = session.get(ResearchStrategyVersion, run.strategy_version_id)
         if version is None:
             raise ExecutionValidationError("strategy version not found", status_code=422)
+
+        tf_raw = timeframe or str(config.get("timeframe") or "")
+        normalized_tf = _version_forward_timeframe(tf_raw, _version_decision_timeframe(version))
 
         run_symbol = symbol or str(config.get("symbol") or "")
         validate_symbol_known(run_symbol, market_data_service)

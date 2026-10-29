@@ -72,6 +72,10 @@ def _normalize_scalar(val: Any) -> Any:
     return val
 
 
+# Class declarations that describe a strategy rather than tune it, so they never become run parameters.
+_NON_PARAMETER_ATTRIBUTES = frozenset({"decision_timeframe"})
+
+
 def _extract_strategy_params(strategy: Any) -> dict[str, Any]:
     params: dict[str, Any] = {}
     attr_names: list[str] = list(vars(strategy).keys()) if hasattr(strategy, "__dict__") else []
@@ -80,7 +84,7 @@ def _extract_strategy_params(strategy: Any) -> dict[str, Any]:
             attr_names.append(name)
 
     for name in attr_names:
-        if name.startswith("_"):
+        if name.startswith("_") or name in _NON_PARAMETER_ATTRIBUTES:
             continue
         try:
             val = getattr(strategy, name)
@@ -572,11 +576,17 @@ def _check_causality(
 
     An indicator that reads a later bar takes a different value on a prefix that lacks that bar,
     so the first difference names the column and the bar. A history of one session has no earlier
-    session end to check.
+    session end to check. A strategy that declares ``decision_timeframe`` has its prefixes cut at any
+    bar, so a coarse bar that completes inside a session is checked too.
     """
     name = type(strategy).__name__
-    days = np.asarray(frame.index.tz_convert(BRASILIA_TZ).date)
-    ends = np.flatnonzero(days[1:] != days[:-1])  # the last bar of each session but the final one
+    if getattr(strategy, "decision_timeframe", None) is None:
+        days = np.asarray(frame.index.tz_convert(BRASILIA_TZ).date)
+        ends = np.flatnonzero(days[1:] != days[:-1])  # the last bar of each session but the final one
+    else:
+        # A decision-timeframe strategy reads coarse bars that complete inside a session, which a
+        # cut at a session end never splits, so every bar but the final one is a candidate cut.
+        ends = np.arange(len(frame) - 1)
     if len(ends) == 0:
         return
     picks = np.unique(np.linspace(0, len(ends) - 1, min(_CAUSALITY_PREFIXES, len(ends))).round().astype(int))
