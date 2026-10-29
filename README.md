@@ -556,6 +556,8 @@ Q_DATA_LAKE_ROOT=data/lake
 Q_MARKET_DATA_ROOT=data/market
 Q_TICK_CACHE_DIR=data/tick_cache
 Q_RESEARCH_TICK_STORE=data/tick_store
+Q_STRATEGY_DIR=~/q-strategies
+Q_STRATEGY_BUNDLE_ROOT=data/strategy_bundles
 Q_RUNTIME_CONFIG_PATH=data/runtime_config.json
 Q_MT5_GATEWAY_URL=http://127.0.0.1:18812
 Q_MT5_GATEWAY_TOKEN=
@@ -563,6 +565,8 @@ Q_WORKER_PROCESSES=14
 ```
 
 `Q_MT5_GATEWAY_URL` / `Q_MT5_GATEWAY_TOKEN` (WO184) point the `remote` data source at an MT5 gateway (WO183); both override the `remote_gateway_url` / `remote_gateway_token` runtime-config keys and are unset by default. To stand up that gateway under Wine on Linux (setup script + systemd user units + manual E2E checklist), see [`docs/mt5-wine-gateway.md`](docs/mt5-wine-gateway.md).
+
+`Q_STRATEGY_DIR` (default `~/q-strategies`) is the directory of `ResearchStrategy` files that the Research stack lists and backtests. It sits outside the repositories because strategies are private work; a missing directory is an empty catalog. `Q_STRATEGY_BUNDLE_ROOT` (default `data/strategy_bundles`) holds the frozen copies of the strategy versions that runs execute. The user guide is [`docs/research/user_guide/strategy_files.rst`](docs/research/user_guide/strategy_files.rst).
 
 Optional paths above default under `data/` when unset. `Q_WORKER_PROCESSES` defaults to **28** in code (`Settings.worker_processes`); the example value `14` suits a 16-core machine.
 
