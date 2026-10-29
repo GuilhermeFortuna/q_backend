@@ -362,8 +362,13 @@ class RemoteMt5Client:
 
     # -- trades ---------------------------------------------------------------
 
-    def get_tick_page(self, symbol: str, start_msc: int, end_msc: int, *, limit: int = 250_000) -> TickPage:
-        """Read a bounded, lossless cursor page without the whole-range disk cache."""
+    def get_tick_page(self, symbol: str, start_msc: int, end_msc: int, *, limit: int = 1_000_000) -> TickPage:
+        """Read a bounded, lossless cursor page without the whole-range disk cache.
+
+        Default to the gateway's maximum batch to amortize native-call and HTTP
+        overhead during bulk sync. The gateway withholds a saturated batch's final
+        timestamp group so duplicates remain lossless across cursor boundaries.
+        """
         try:
             content = self._get_npz(
                 "/v1/ticks/page",

@@ -417,3 +417,38 @@ def test_overwrite_failure_removes_the_old_session(
     assert report.failed == [mon]
     assert not store.has_session(mon)
     assert not store._m1_cache_path(mon).exists()
+
+
+@pytest.mark.parametrize("day", [date(2026, 3, 6), date(2019, 1, 15)])
+def test_m1_columnar_vectorized_timestamp_parity(day):
+    """Bulk conversion preserves broker wall time, stable ties and trade volume."""
+    from q_backend.market_data.clients.shared import _time_msc_to_naive_local
+    from q_backend.research.tick_store import _m1_from_columnar, _resample_ticks_with_real_volume
+
+    arrays = _columnar_for_day(day, [(1, 103.0, 32), (0, 100.0, 0), (1, 102.0, 64), (2, 0.0, 32)])
+    arrays["time_msc"] += np.array([123, 999, 123, 0])
+    index = pd.DatetimeIndex([_time_msc_to_naive_local(int(t)) for t in arrays["time_msc"]], name="time").tz_localize(
+        BRASILIA_TZ
+    )
+    reference = _resample_ticks_with_real_volume(
+        pd.DataFrame({k: arrays[k] for k in ("last", "volume", "flags")}, index=index).sort_index(kind="stable")
+    )
+    with patch(
+        "q_backend.market_data.clients.shared._time_msc_to_naive_local",
+        side_effect=AssertionError("bar aggregation must not convert ticks individually"),
+    ):
+        actual = _m1_from_columnar(arrays)
+    pd.testing.assert_frame_equal(actual, reference)
+
+
+@pytest.mark.parametrize("moment", ["2018-11-04T00:30:00.123", "2019-02-16T23:30:00.123"])
+def test_m1_columnar_rejects_invalid_dst_wall_times(moment):
+    from q_backend.research.tick_store import _m1_from_columnar
+
+    stamp = pd.Timestamp(moment)
+    arrays = _columnar_for_day(stamp.date(), [(0, 100.0, 32)])
+    arrays["time_msc"] = np.array([stamp.as_unit("ms").value], dtype=np.int64)
+    with pytest.raises(Exception) as original:
+        pd.DatetimeIndex([stamp]).tz_localize(BRASILIA_TZ)
+    with pytest.raises(type(original.value)):
+        _m1_from_columnar(arrays)

@@ -146,14 +146,20 @@ def _read_day_columnar(path: Path) -> dict[str, np.ndarray]:
 
 
 def _m1_from_columnar(arrays: dict[str, np.ndarray]) -> pd.DataFrame:
-    from q_backend.market_data.clients.shared import _time_msc_to_naive_local
-
     if arrays["time_msc"].size == 0:
         return pd.DataFrame(columns=list(FRAME_COLUMNS), index=pd.DatetimeIndex([], tz=BRASILIA_TZ, name="time"))
-    times = pd.DatetimeIndex(
-        [_time_msc_to_naive_local(int(value)) for value in arrays["time_msc"]],
-        name="time",
-    ).tz_localize(BRASILIA_TZ)
+    # MT5 epochs encode broker wall time, rather than UTC instants. Decode
+    # milliseconds in bulk before localizing (a UTC conversion would shift bars).
+    # Localizing ZoneInfo timestamps also has per-element overhead in pandas.
+    # Localize each distinct minute once, then restore each tick's millisecond
+    # offset. São Paulo's DST transitions occur on minute boundaries; localizing
+    # the minutes retains the same ambiguous/nonexistent-time errors.
+    time_msc = np.asarray(arrays["time_msc"], dtype=np.int64)
+    minutes, inverse = np.unique(time_msc // 60_000, return_inverse=True)
+    localized = pd.DatetimeIndex(pd.to_datetime(minutes * 60_000, unit="ms")).tz_localize(BRASILIA_TZ)
+    utc_msc = localized.as_unit("ms").asi8[inverse] + time_msc % 60_000
+    times = pd.DatetimeIndex(pd.to_datetime(utc_msc, unit="ms", utc=True), name="time")
+    times = times.tz_convert(BRASILIA_TZ).as_unit(pd.DatetimeIndex([_EPOCH]).unit)
     flags = np.asarray(arrays["flags"], dtype=np.int64)
     last = np.asarray(arrays["last"], dtype=np.float64)
     volume = np.asarray(arrays["volume"], dtype=np.float64)

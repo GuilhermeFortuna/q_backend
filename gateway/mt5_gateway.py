@@ -122,6 +122,7 @@ import socket
 import threading
 import time
 import uuid
+import zipfile
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -561,9 +562,16 @@ def _ohlcv_to_npz_bytes(rates: np.ndarray, meta: dict | None = None) -> bytes:
     return _savez_bytes(arrays)
 
 
-def _savez_bytes(arrays: dict[str, np.ndarray]) -> bytes:
+def _savez_bytes(arrays: dict[str, np.ndarray], *, compression_level: int | None = None) -> bytes:
+    """Standard NPZ payload, optionally trading compression ratio for throughput."""
     buf = io.BytesIO()
-    np.savez_compressed(buf, **arrays)
+    if compression_level is None:
+        np.savez_compressed(buf, **arrays)
+    else:
+        with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=compression_level) as archive:
+            for key, values in arrays.items():
+                with archive.open(f"{key}.npy", "w", force_zip64=True) as member:
+                    np.lib.format.write_array(member, np.asanyarray(values), allow_pickle=False)
     return buf.getvalue()
 
 
@@ -651,7 +659,9 @@ def _fetch_tick_page(symbol: str, start_msc: int, end_msc: int, limit: int) -> b
         "row_count": len(selected),
     }
     started = time.monotonic()
-    content = _savez_bytes({**columns, "metadata": np.array(json.dumps(metadata))})
+    # Tick sync streams many pages. Fast DEFLATE avoids spending most of each
+    # request compressing data while retaining the standard compressed NPZ wire format.
+    content = _savez_bytes({**columns, "metadata": np.array(json.dumps(metadata))}, compression_level=1)
     logger.info(
         "Encoded tick page %s rows=%s bytes=%s encode=%.3fs",
         symbol,

@@ -33,6 +33,38 @@ A client that closes its connection mid-request (for example Ctrl+C in a script)
 the call: the gateway stops that lane's worker within a fraction of a second and the
 next request starts a new one, so an abandoned call never holds a lane until its limit.
 
+### Tick synchronization throughput
+
+`TickStore.sync()` prefetches bounded cursor pages on a background thread while
+the caller writes daily Parquet files. This overlap also applies to
+`overwrite=True`; replacing a source still invalidates its derived bar caches.
+Parallel tick downloads share the same serialized `ticks` lane and can receive
+`ticks_busy`, so adding download workers does not add MT5 capacity.
+
+The remote tick-page client requests up to 1,000,000 rows per batch by default,
+the gateway's existing maximum, instead of 250,000. This amortizes native-call
+and request overhead without adding concurrent MT5 calls. Prefetch remains
+bounded to two queued pages, one producer page and one consumer page: the six
+tick columns occupy approximately 176 MB at that bound, plus temporary buffers
+and Parquet encoding memory. Explicit smaller `limit` values remain supported.
+Two end-to-end sync comparisons for the same 2,656,479-tick WIN$N session took
+4.48–4.70 seconds with 250,000-row requests and 2.34–2.44 seconds with
+1,000,000-row requests (11 versus 3 requests), with identical stored tick tables.
+Restart the research script to pick up this client-side default; no gateway
+restart is needed for the page-size change.
+
+Tick pages use standard compressed NPZ with DEFLATE level 1 to reduce encoding
+time. Other bulk endpoints retain their existing compression. Across three
+250,000-row samples from a stored WIN$N session, median page encoding fell from
+143–150 ms to 23–24 ms, with payloads about 23–24% larger and identical decoded
+arrays. These are encoding measurements, not end-to-end sync timings: broker
+history retrieval and network bandwidth can dominate the total.
+
+After updating the gateway code, restart it between sync runs with
+`./dev restart gateway` from the workspace root. Restarting interrupts requests
+in flight. Gateway logs distinguish native retrieval (`native=...`) from page
+encoding (`encode=...`); use those timings when diagnosing a slow import.
+
 `ohlcv` and `available_range` first ask MT5 for a single bar at or before the range end. When there is none,
 `last_error()` decides the answer before any range walk starts: "no history" returns
 `404 range_unavailable`; any other failure returns `503 history_unavailable`.

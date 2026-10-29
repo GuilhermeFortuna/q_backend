@@ -72,3 +72,17 @@ def test_old_gateway_requires_update_instead_of_empty_result(monkeypatch):
     client = client_for(monkeypatch, httpx.Response(404, json={"code": "not_found"}))
     with pytest.raises(RuntimeError, match="restart"):
         client.get_tick_page("WIN$", 1000, 2000)
+
+
+def test_default_tick_page_requests_gateway_maximum_batch(monkeypatch):
+    requests = []
+    original = httpx.Client
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, content=payload([1500]))
+
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: original(**kwargs, transport=httpx.MockTransport(respond)))
+    page = RemoteMt5Client(base_url="http://gateway.test").get_tick_page("WIN$", 1000, 2000)
+    assert page.columns["time_msc"].tolist() == [1500]
+    assert requests[0].url.params["limit"] == "1000000"

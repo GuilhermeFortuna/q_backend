@@ -147,3 +147,24 @@ def test_blocked_tick_page_does_not_block_health_chart_or_trade_lanes(gateway, f
         finally:
             release.set()
             request.join(5)
+
+
+def test_fast_tick_archive_roundtrips_without_pickle(gateway):
+    import zipfile
+
+    arrays = {
+        "time_msc": np.array([1001, 1001, 2000], dtype=np.int64),
+        "last": np.array([10.0, np.nan, 12.0]),
+        "flags": np.array([32, 64, 0], dtype=np.int32),
+        "metadata": np.array(json.dumps({"exhausted": True})),
+        "empty": np.array([], dtype=np.float64),
+        "strided": np.arange(12)[::2],
+    }
+    content = gateway._savez_bytes(arrays, compression_level=1)
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+        assert all(item.compress_type == zipfile.ZIP_DEFLATED for item in archive.infolist())
+    with np.load(io.BytesIO(content), allow_pickle=False) as archive:
+        assert set(archive.files) == set(arrays)
+        for key, expected in arrays.items():
+            np.testing.assert_array_equal(archive[key], expected)
+            assert archive[key].dtype == expected.dtype
