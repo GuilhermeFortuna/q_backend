@@ -22,14 +22,16 @@ execution.
 
 **Files:** `research/context.py` (new), `research/__init__.py`, `tests/research/test_closed_bars.py` (new).
 
-- [ ] Write failing tests for acceptance 1 and 3, implement `closed_bars`, and commit.
+- [x] Write failing tests for acceptance 1 and 3, implement `closed_bars`, and commit.
+  The causality check cuts prefixes at any bar for strategies that declare `decision_timeframe`;
+  other strategies keep the session-end cuts, which the existing causality test pins.
 
 ### 2. Before/after match
 
 **Files:** `tests/research/test_decision_timeframe_equivalence.py` (new).
 
-- [ ] Write the M5 and M1 fixture strategies of acceptance 2, and require `compare_results(...).identical`.
-  Commit.
+- [x] Write the M5 and M1 fixture strategies of acceptance 2, and require identical trades.
+  Until `compare_results` (Q-139) is on `development`, the test compares the trade fields directly.
 
 ### 3. Decision timeframe in the stack and execution
 
