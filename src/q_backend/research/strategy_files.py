@@ -26,6 +26,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+from q_backend.market_data.exogenous_context import bar_duration
+from q_backend.research.frame import normalize_timeframe
 from q_backend.research.hooks import detect_hook_call, ticks_mode
 from q_backend.research.params import DeclaredParam, ParamError, declared_params
 from q_backend.research.strategy import ResearchStrategy
@@ -79,6 +81,7 @@ class StrategyFileInfo:
     error: str | None
     parameters: tuple[DeclaredParam, ...]
     uses_tick_hooks: bool
+    decision_timeframe: str | None = None
 
 
 def strategy_dir() -> Path:
@@ -217,6 +220,7 @@ def validate_bundle(
         error=None,
         parameters=outcome["parameters"],
         uses_tick_hooks=outcome["uses_tick_hooks"],
+        decision_timeframe=outcome["decision_timeframe"],
     )
 
 
@@ -331,7 +335,21 @@ def _check(import_root: Path, strategy_id: str, bundle_hash: str) -> dict[str, A
         "class_name": cls.__name__,
         "parameters": parameters,
         "uses_tick_hooks": uses_tick_hooks,
+        "decision_timeframe": decision_timeframe_of(cls),
     }
+
+
+def decision_timeframe_of(cls: type) -> str | None:
+    """The timeframe the class declares it decides on, normalized, or None when it declares none."""
+    declared = getattr(cls, "decision_timeframe", None)
+    if declared is None:
+        return None
+    try:
+        name = normalize_timeframe(str(declared))
+        bar_duration(name)
+    except ValueError as exc:
+        raise StrategyFileError(f"{cls.__name__}.decision_timeframe {declared!r} is not a supported timeframe") from exc
+    return name
 
 
 def _import_module(import_root: Path, strategy_id: str, bundle_hash: str) -> ModuleType:

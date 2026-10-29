@@ -38,9 +38,11 @@ execution.
 **Files:** `research/strategy_files.py` (record `decision_timeframe`), `research/strategy_file_runs.py`,
 `execution/validation.py`, `execution/research_evaluator.py`, `tests/execution/test_research_evaluator.py`.
 
-- [ ] Write failing tests for acceptance 4.
-- [ ] Record the attribute on the version, check the run and deployment timeframe, and allow M1 for declaring
+- [x] Write failing tests for acceptance 4.
+- [x] Record the attribute on the version, check the run and deployment timeframe, and allow M1 for declaring
   versions only. Run `tests/execution/`. Commit.
+  The attribute is read from the version's frozen source at deploy time, so no column or migration is added;
+  run parameters exclude it.
 
 ### 4. Guide
 

@@ -72,6 +72,10 @@ def _normalize_scalar(val: Any) -> Any:
     return val
 
 
+# Class declarations that describe a strategy rather than tune it, so they never become run parameters.
+_NON_PARAMETER_ATTRIBUTES = frozenset({"decision_timeframe"})
+
+
 def _extract_strategy_params(strategy: Any) -> dict[str, Any]:
     params: dict[str, Any] = {}
     attr_names: list[str] = list(vars(strategy).keys()) if hasattr(strategy, "__dict__") else []
@@ -80,7 +84,7 @@ def _extract_strategy_params(strategy: Any) -> dict[str, Any]:
             attr_names.append(name)
 
     for name in attr_names:
-        if name.startswith("_"):
+        if name.startswith("_") or name in _NON_PARAMETER_ATTRIBUTES:
             continue
         try:
             val = getattr(strategy, name)
