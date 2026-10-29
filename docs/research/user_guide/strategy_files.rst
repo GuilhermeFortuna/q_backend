@@ -117,6 +117,28 @@ strategy-file run.
 With ``./dev research --container`` the strategy directory is mounted read-only into the API and worker
 containers.
 
+Deploying to execution
+----------------------
+
+A saved backtest run of a strategy file can be deployed to the execution engine (either in paper mode
+or to an MT5 demo account):
+
+* **Deployable order kinds**: The deployment evaluator supports **market orders only** (``market_entry``
+  and ``market_close``). Backtest runs that emit resting orders, priced closes, or protective levels
+  cannot be deployed (refused with HTTP 422). If an order of a non-deployable kind or an exception is
+  raised at runtime, the deployment pauses fail-closed with a risk event.
+* **Timeframe**: Forward timeframes must be at least **M5** (e.g. M5, M10, M15, H1). M1 runs are
+  refused.
+* **Day-trading session**: Deployments require day trading (``day_trade=True``). Entries are accepted
+  only within the session window (``start_time`` to ``end_time``). At or after ``close_time``, any open
+  position is flattened with a market close. Always choose a close time inside active exchange trading
+  hours (for example 17:00 or 18:15) so the closing market order is executed before market close.
+* **Warmup bars**: The evaluator loads historical bars before the first decision so rolling indicators
+  (moving averages, ATR, etc.) are warm. The strategy class may declare ``warmup_bars = N`` (defaulting
+  to ``Q_EXECUTION_RESEARCH_WARMUP_BARS``, standard 100).
+* **Parity**: Forward decisions bar-by-bar match backtest decisions exactly on identical bars,
+  including session entry gates and day-trade exit.
+
 Example
 -------
 

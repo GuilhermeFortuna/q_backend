@@ -78,3 +78,18 @@ allowlist to the validated login only.
 
 To stop all submissions at once, set `Q_LIVE_EXECUTION_ENABLED=false`. Every account then reports
 `locked`.
+
+## Deploying research strategy versions
+
+In `q_terminal`, the deploy dialog lists saved strategy-file runs from the research stack:
+
+1. **Selection & Badging**: When `mt5_orders.capability` is `available`, the dialog offers `MT5 LIVE`
+   and preselects it by default, displaying the demo account login and a `DEMO` badge.
+2. **Eligibility Requirements**: The saved run must record only deployable order kinds (`market_entry`,
+   `market_close`), use a timeframe of M5 or higher, and have a day-trading session configured.
+   Ineligible runs are greyed out with an explanation.
+3. **Session Timing**: Ensure the backtest run's day-trade `close_time` is set inside active broker
+   trading hours (for instance 18:15 for `IND$N` or 17:00 for `WIN$N`), ensuring day-trade close
+   market orders are filled before trading closes.
+4. **Parameter Edits**: The deploy and edit dialogs support editing typed `bool` (checkboxes) and
+   `time` (`HH:MM`) strategy parameters within their declared bounds.
