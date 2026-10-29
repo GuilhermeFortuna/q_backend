@@ -193,36 +193,40 @@ def test_a_bracket_entry_filled_at_the_open_measures_its_stop_from_the_fill(tmp_
     assert new.trades.iloc[0]["exit_price"] == 94.0
 
 
-def test_a_re_entry_on_an_intrabar_exit_bar_fills_at_the_hook_price_not_the_level(tmp_path):
-    # Known difference: the hook sees no position on the bar its stop-out happened, and prices a new entry at
-    # max(open, level) = 107. The resting stop, placed at the previous close while the position was open, fills
-    # at the first trade at or beyond its level 105 (106), and the legacy form at the first trade beyond 107 (108).
+def test_a_re_entry_touched_only_before_an_intrabar_exit_is_rejected_while_the_resting_stop_fills_after_it(tmp_path):
+    # Known difference: the hook sees no position on the bar its stop-out happens, and prices a new bracket entry
+    # at max(open, level) = 103. The only trade at 103 is the bar's open, before the stop-out at 97, so the legacy
+    # entry is rejected (touch_before_exit). The replacement rests at the previous close at level 101 while the
+    # position is open, and fills at the first trade at or beyond 101 after the exit (102).
     rows = [
         ("10:00:00", 108.0),
         ("10:10:00", 108.0),
-        ("10:20:00", 107.0),
-        ("10:22:00", 104.0),
-        ("10:24:00", 106.0),
-        ("10:26:00", 108.0),
-        ("10:40:00", 108.0),
+        ("10:20:00", 103.0),
+        ("10:22:00", 97.0),
+        ("10:24:00", 102.0),
+        ("10:40:00", 102.0),
     ]
-    first = TradeOrder.buy(stop_loss=104.0, take_profit=120.0, reason="first")
+    first = TradeOrder.buy(stop_loss=98.0, take_profit=120.0, reason="first")
     legacy = Legacy(
-        entries={0: first, 2: TradeOrder.buy(price=107.0, reason="again")},
+        entries={0: first, 2: TradeOrder.buy(price=103.0, stop_loss=93.0, take_profit=113.0, reason="again")},
         exits={4: TradeOrder.close(reason="x")},
     )
     port = Legacy(
-        entries={0: first, 1: TradeOrder.buy_stop(105.0, expire_bars=1, reason="again")},
+        entries={
+            0: first,
+            1: TradeOrder.buy_stop(101.0, stop_loss=91.0, take_profit=111.0, expire_bars=1, reason="again"),
+        },
         exits={4: TradeOrder.close(reason="x")},
     )
     with pytest.warns(PricedOrderDeprecationWarning):
         old, new = _run_both(tmp_path, rows, legacy, port)
+    assert old.rejected_entries["reason"].tolist() == ["touch_before_exit"]
     report = compare_results(old, new)
     assert report.matched == 1
-    [difference] = report.differing
-    assert difference.field == "entry_price"
-    assert (difference.left_value, difference.right_value) == (108.0, 106.0)
-    assert difference.left["entry_reason"] == "again"
+    assert report.differing == () and report.left_only == ()
+    [touch] = report.right_only
+    assert touch["entry_price"] == 102.0
+    assert touch["entry_time"] == pd.Timestamp("2026-10-05 10:20", tz="America/Sao_Paulo")
 
 
 def test_several_priced_stops_exit_at_the_level_reached_first_while_one_stop_may_differ(tmp_path):

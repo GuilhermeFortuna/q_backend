@@ -127,14 +127,14 @@ exit prices differ on gap bars. This difference is permanent: the replacement me
 its levels from the entry level.
 
 **Re-entry after an intrabar exit.** On a bar where a trade stops out or hits its
-target, the legacy hook sees no position and prices a new entry on that bar. The
-replacement places its resting entry, or its OCO group, at the previous close even
-while a position is open, and the kernel fills it only from trades at or after the
-exit. The fills then differ. A legacy priced entry fills at the first trade at or
-beyond its price after the exit, which for a bracket is ``max(open, level)``. A
-resting stop fills at the first trade at or beyond its level, at that trade's price.
-A re-entry priced at 107 by the hook and a stop at 105 can therefore fill at 108 and
-at 106.
+target, the legacy hook sees no position and prices a new entry on that bar. A priced
+entry fills only from trades at or after the exit. If no trade after the exit reaches
+its price, the entry is rejected with reason ``touch_before_exit``. The replacement
+rests at the previous close while the position is open, and fills at the first trade
+at or beyond its level after the exit, at that trade's price. A bracket re-entry on a
+bar that opened beyond its level therefore fills in the replacement and is rejected
+in the legacy form. The two forms agree when the bar opened inside the level, so the
+legacy price is the level, and a trade after the exit reaches it.
 
 **Exit label of a stop-out.** When a protective stop closes the trade, the engine
 labels the exit ``STOP_LOSS``. A priced close carries the reason it was given (or
