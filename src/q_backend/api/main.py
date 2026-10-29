@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from q_backend.api.lifespan import lifespan
 from q_backend.api.routers import backtest as backtest_router
+from q_backend.api.routers import strategy_files as strategy_files_router
 from q_backend.api.routers import catalog as catalog_router
 from q_backend.api.routers import execution as execution_router
 from q_backend.api.routers import experiments as experiments_router
@@ -67,6 +68,7 @@ app.include_router(system_router.router)
 app.include_router(stream_replay_router.router)
 app.include_router(stream_router.router)
 app.include_router(strategies_router.router)
+app.include_router(strategy_files_router.router)
 app.include_router(strategy_builder_router.router)
 app.include_router(market_router.router)
 app.include_router(ml_filters_router.router)

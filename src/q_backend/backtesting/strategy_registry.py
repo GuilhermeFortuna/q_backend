@@ -21,8 +21,9 @@ ExitGroup = Literal["stop_loss", "trailing", "target", "time", "general"]
 class StrategyParamSpec(BaseModel):
     name: str
     label: str
-    type: Literal["int", "float", "categorical"]
-    default: int | float | str
+    # bool and time are declared by strategy files only; registry strategies use the first three.
+    type: Literal["int", "float", "categorical", "bool", "time"]
+    default: int | float | str | bool
     min: float | None = None
     max: float | None = None
     step: float | None = None

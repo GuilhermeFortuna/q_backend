@@ -8,15 +8,23 @@ stay the same when the file is edited or deleted.
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Mapping
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from q_backend.research.params import to_wire_spec
+from q_backend.research.params import (
+    coerce_params,
+    declared_from_wire,
+    to_wire_spec,
+    wire_value,
+)
 from q_backend.research.strategy_files import (
+    DEFAULT_TIMEOUT_S,
     BundleFile,
     StrategyBundle,
     StrategyFileError,
@@ -24,9 +32,26 @@ from q_backend.research.strategy_files import (
     build_bundle,
     bundle_from_files,
     validate_bundle,
-    DEFAULT_TIMEOUT_S,
 )
 from q_backend.storage.db.models import ResearchStrategyVersion
+
+
+class StrategyFileRequestError(ValueError):
+    """A strategy-file backtest request asks for something the stack does not run for strategy files."""
+
+
+class StrategyVersionNotFound(LookupError):
+    """No strategy version has the requested id."""
+
+
+@dataclass(frozen=True)
+class ResolvedStrategyRun:
+    """A strategy-file run with its version frozen and its parameters coerced to their wire values."""
+
+    strategy_id: str
+    version_id: str
+    bundle_hash: str
+    strategy_params: dict[str, Any]
 
 
 def version_by_hash(session: Session, bundle_hash: str) -> ResearchStrategyVersion | None:
@@ -92,3 +117,76 @@ def bundle_of(version: ResearchStrategyVersion) -> StrategyBundle:
     if bundle.bundle_hash != version.bundle_hash:
         raise StrategyFileError(f"stored source of version {version.id} does not match its bundle hash")
     return bundle
+
+
+def strategy_version_summaries(session: Session, version_ids: set[uuid.UUID]) -> dict[uuid.UUID, tuple[str, str]]:
+    """(strategy id, bundle hash) of the given versions, read in one query for history listings."""
+    if not version_ids:
+        return {}
+    rows = session.execute(
+        select(
+            ResearchStrategyVersion.id, ResearchStrategyVersion.strategy_id, ResearchStrategyVersion.bundle_hash
+        ).where(ResearchStrategyVersion.id.in_(version_ids))
+    )
+    return {row.id: (row.strategy_id, row.bundle_hash) for row in rows}
+
+
+def check_strategy_run_request(
+    *,
+    engine: str,
+    ml_filter: object | None,
+    position_sizing: Any | None,
+) -> int:
+    """Refuse what a strategy-file run does not support; return the fixed order quantity."""
+    if engine != "candle":
+        raise StrategyFileRequestError("Strategy files run on the candle engine only.")
+    if ml_filter is not None:
+        raise StrategyFileRequestError("ML filters do not apply to strategy files.")
+    if position_sizing is None:
+        return 1
+    if getattr(position_sizing, "type", None) != "fixed_quantity":
+        raise StrategyFileRequestError("Strategy files support fixed-quantity position sizing only.")
+    quantity = float(position_sizing.quantity)
+    if not quantity.is_integer() or quantity < 1:
+        raise StrategyFileRequestError("Strategy file quantity must be a positive whole number.")
+    return int(quantity)
+
+
+def resolve_strategy_run(
+    session: Session,
+    *,
+    strategy_file: str | None,
+    strategy_version_id: str | None,
+    strategy_params: Mapping[str, Any],
+    root: Path,
+    bundle_root: Path,
+    timeout_s: float = DEFAULT_TIMEOUT_S,
+) -> ResolvedStrategyRun:
+    """Freeze the file's current version, or load the requested one, and coerce the run's parameters.
+
+    Raises :class:`StrategyFileError` for a file that cannot run, :class:`ParamError` for parameters
+    that do not match the version's declaration, and :class:`StrategyVersionNotFound` for an unknown id.
+    """
+    if strategy_version_id is not None:
+        version = _version_by_id(session, strategy_version_id)
+        if version is None:
+            raise StrategyVersionNotFound(f"Strategy version '{strategy_version_id}' not found.")
+    else:
+        version = freeze_strategy_file(session, root, strategy_file or "", bundle_root=bundle_root, timeout_s=timeout_s)
+
+    declared = tuple(declared_from_wire(spec) for spec in version.param_specs)
+    values = coerce_params(declared, strategy_params)
+    return ResolvedStrategyRun(
+        strategy_id=version.strategy_id,
+        version_id=str(version.id),
+        bundle_hash=version.bundle_hash,
+        strategy_params={param.name: wire_value(param.kind, values[param.name]) for param in declared},
+    )
+
+
+def _version_by_id(session: Session, version_id: str) -> ResearchStrategyVersion | None:
+    try:
+        parsed = uuid.UUID(version_id)
+    except ValueError:
+        return None
+    return session.get(ResearchStrategyVersion, parsed)

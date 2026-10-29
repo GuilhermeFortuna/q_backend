@@ -18,6 +18,7 @@ import re
 import shutil
 import sys
 import tempfile
+import threading
 from collections.abc import Iterable, MutableMapping
 from dataclasses import dataclass
 from hashlib import sha256
@@ -35,6 +36,8 @@ DEFAULT_TIMEOUT_S = 10.0
 _HOOKS = ("compute_indicators", "entry_strategy", "exit_strategy")
 _IGNORED_DIRS = frozenset({"__pycache__"})
 _STAGING_PREFIX = ".staging-"
+# Importing a bundle evicts the previous one from sys.modules, so imports in one process are serialized.
+_import_lock = threading.Lock()
 
 
 class StrategyFileError(ValueError):
@@ -92,6 +95,8 @@ def strategy_ids(root: Path) -> list[str]:
 
 def build_bundle(root: Path, strategy_id: str) -> StrategyBundle:
     """Read the strategy file and every helper module under ``root`` and hash them."""
+    if not strategy_id.isidentifier():
+        raise StrategyFileError(f"'{strategy_id}' is not a strategy id; use the file name without .py")
     strategy_path = root / f"{strategy_id}.py"
     if not strategy_path.is_file():
         raise StrategyFileError(f"no strategy file '{strategy_id}.py' in {root}")
@@ -317,15 +322,16 @@ def _check(import_root: Path, strategy_id: str) -> dict[str, Any]:
 
 def _import_module(import_root: Path, strategy_id: str) -> ModuleType:
     """Import ``q_strategies.<strategy_id>`` from one bundle root, with earlier bundles evicted."""
-    for name in list(sys.modules):
-        if name == PACKAGE or name.startswith(f"{PACKAGE}."):
-            del sys.modules[name]
-    importlib.invalidate_caches()
-    sys.path.insert(0, str(import_root))
-    try:
-        return importlib.import_module(f"{PACKAGE}.{strategy_id}")
-    finally:
-        sys.path.remove(str(import_root))
+    with _import_lock:
+        for name in list(sys.modules):
+            if name == PACKAGE or name.startswith(f"{PACKAGE}."):
+                del sys.modules[name]
+        importlib.invalidate_caches()
+        sys.path.insert(0, str(import_root))
+        try:
+            return importlib.import_module(f"{PACKAGE}.{strategy_id}")
+        finally:
+            sys.path.remove(str(import_root))
 
 
 def _strategy_class(module: ModuleType) -> type[ResearchStrategy]:

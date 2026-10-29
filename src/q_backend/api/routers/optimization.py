@@ -4,6 +4,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from q_backend.api.strategy_file_guard import reject_strategy_file_fields
 from q_backend.api import optimization_jobs
 from q_backend.api.deps import get_session
 from q_backend.api.dependencies import get_market_data_service
@@ -30,7 +31,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["optimization"])
 
 
-@router.post("/api/v1/optimize", response_model=OptimizationStartResponse)
+@router.post(
+    "/api/v1/optimize", response_model=OptimizationStartResponse, dependencies=[Depends(reject_strategy_file_fields)]
+)
 def start_optimization(
     config: OptimizationConfig,
     mds: MarketDataService = Depends(get_market_data_service),

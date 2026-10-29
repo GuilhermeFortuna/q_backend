@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from q_backend.api.strategy_file_guard import reject_strategy_file_fields
 from q_backend.api import ml_filter_jobs
 from q_backend.api.deps import get_session
 from q_backend.api.schemas.ml_filters import (
@@ -48,7 +49,12 @@ def get_ml_filter_source(run_id: str, session: Session = Depends(get_session)):
     return item
 
 
-@router.post("/api/v1/ml-filters/training", response_model=JobStartResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/api/v1/ml-filters/training",
+    response_model=JobStartResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(reject_strategy_file_fields)],
+)
 def start_ml_filter_training(body: TrainingRequest):
     source = ml_filter_jobs.get_source_summary_by_id(body.source_run_id)
     if source is None:
@@ -153,7 +159,12 @@ def get_ml_filter_model(model_version_id: str, session: Session = Depends(get_se
     }
 
 
-@router.post("/api/v1/ml-filters/comparisons", response_model=JobStartResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/api/v1/ml-filters/comparisons",
+    response_model=JobStartResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(reject_strategy_file_fields)],
+)
 def start_ml_filter_comparison(body: ComparisonRequest):
     try:
         ml_filter_jobs.ensure_dataset_available(body.dataset_id)
@@ -172,7 +183,12 @@ def get_ml_filter_comparison(job_id: str):
     return payload
 
 
-@router.post("/api/v1/ml-filters/evaluations", response_model=JobStartResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/api/v1/ml-filters/evaluations",
+    response_model=JobStartResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(reject_strategy_file_fields)],
+)
 def start_ml_filter_evaluation(body: EvaluationRequest):
     try:
         ml_filter_jobs.ensure_dataset_available(body.dataset_id)

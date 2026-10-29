@@ -29,6 +29,9 @@ from q_backend.ml_filters.compatibility import (
     MLFilterRequestError,
 )
 from q_backend.observability.sentry import trading_context
+from q_backend.research.params import ParamError
+from q_backend.research.strategy_files import StrategyFileError
+from q_backend.research.strategy_versions import StrategyFileRequestError, StrategyVersionNotFound
 from q_backend.storage.lake import read_backtest_result
 
 router = APIRouter(tags=["backtest"])
@@ -45,9 +48,14 @@ def start_backtest(request: BacktestJobRequest):
             status_code=400,
             detail="Multi-entry backtests are only supported for the candle engine.",
         )
+    strategy_label = request.strategy_file or (request.strategy if request.strategy_version_id is None else "version")
     try:
-        with trading_context(symbol=request.symbol, strategy=request.strategy):
+        with trading_context(symbol=request.symbol, strategy=strategy_label):
             run_id = backtest_jobs.start_job(request)
+    except (StrategyFileError, StrategyFileRequestError, ParamError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except StrategyVersionNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except MLFilterRequestError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except MLFilterCompatibilityError as exc:

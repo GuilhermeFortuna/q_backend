@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 
+from q_backend.api.strategy_file_guard import reject_strategy_file_fields
 from q_backend.api import discovery_ab_jobs
 from q_backend.api import encoder_ablation_jobs
 from q_backend.api import alpha_research_jobs
@@ -21,6 +22,7 @@ router = APIRouter(tags=["experiments"])
 @router.post(
     "/api/v1/experiments/discovery-ab",
     response_model=DiscoveryAbStartResponse,
+    dependencies=[Depends(reject_strategy_file_fields)],
 )
 def start_discovery_ab(body: DiscoveryAbRequest):
     """Enqueue a Discovery A/B harness job (latents OFF vs ON per seed)."""
@@ -48,6 +50,7 @@ def get_discovery_ab_status(job_id: str):
 @router.post(
     "/api/v1/experiments/encoder-ablation",
     response_model=EncoderAblationStartResponse,
+    dependencies=[Depends(reject_strategy_file_fields)],
 )
 def start_encoder_ablation(body: EncoderAblationRequest):
     """Enqueue a head-to-head encoder ablation on the latent IC gate."""
@@ -75,6 +78,7 @@ def get_encoder_ablation_status(job_id: str):
 @router.post(
     "/api/v1/experiments/alpha-research",
     response_model=AlphaResearchStartResponse,
+    dependencies=[Depends(reject_strategy_file_fields)],
 )
 def start_alpha_research(body: AlphaResearchRequest):
     """Enqueue an instrument alpha-research experiment for one approved profile."""

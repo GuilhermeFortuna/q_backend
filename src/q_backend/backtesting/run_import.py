@@ -177,6 +177,46 @@ def _validate(request: BacktestImportRequest) -> _ImportedResult:
     )
 
 
+def _write_lake(run_id: str, imported: _ImportedResult, request: BacktestImportRequest) -> dict[str, str]:
+    """Write one run's trades, equity, market data and result payload to the lake."""
+    lake_paths = write_backtest_artifacts(run_id, imported.trades_frame, imported.equity_frame, imported.market_frame)
+    lake_paths["result"] = write_backtest_result(
+        run_id,
+        {
+            "metrics": request.result.metrics,
+            "trades": request.result.trades,
+            "bars": imported.bars_payload,
+            "indicators": [series.model_dump(mode="json") for series in request.result.indicators],
+            "run_id": run_id,
+        },
+    )
+    return lake_paths
+
+
+def complete_stack_run(
+    session: Session,
+    run_id: uuid.UUID,
+    request: BacktestImportRequest,
+    *,
+    result_summary: dict[str, Any],
+) -> None:
+    """Store a finished stack run's result on its existing row, through the writer script imports use.
+
+    Raises on invalid results and lake failures; the caller records the run as failed.
+    """
+    imported = _validate(request)
+    lake_paths = _write_lake(str(run_id), imported, request)
+    update_backtest_run(
+        session,
+        run_id,
+        status=RunStatus.COMPLETED.value,
+        result_summary=result_summary,
+        lake_paths=lake_paths,
+        finished_at=datetime.now(timezone.utc),
+        clear_error_message=True,
+    )
+
+
 def import_backtest_run(session: Session, request: BacktestImportRequest) -> str:
     """Persist a validated import as a completed script run and return its run id."""
     imported = _validate(request)
@@ -201,19 +241,7 @@ def import_backtest_run(session: Session, request: BacktestImportRequest) -> str
     run_id = str(run.id)
 
     try:
-        lake_paths = write_backtest_artifacts(
-            run_id, imported.trades_frame, imported.equity_frame, imported.market_frame
-        )
-        lake_paths["result"] = write_backtest_result(
-            run_id,
-            {
-                "metrics": request.result.metrics,
-                "trades": request.result.trades,
-                "bars": imported.bars_payload,
-                "indicators": [series.model_dump(mode="json") for series in request.result.indicators],
-                "run_id": run_id,
-            },
-        )
+        lake_paths = _write_lake(run_id, imported, request)
     except Exception as exc:  # noqa: BLE001 - any lake failure must leave neither a row nor files
         logger.exception("Failed to write lake files for imported backtest %s", run_id)
         delete_backtest_run(session, run.id)

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import NonNegativeInt, BaseModel, Field
+from pydantic import NonNegativeInt, BaseModel, Field, model_validator
 
 from q_backend.api.schemas.market import OhlcvBarResponse
 from q_backend.backtesting.costs import TransactionCostConfig
@@ -40,6 +40,10 @@ class BacktestRequest(BaseModel):
     strategy: str = "MACrossover"
     strategy_params: Dict[str, Any] = {}
     entries: Optional[List[EntryInstance]] = None
+    # A ResearchStrategy file in Q_STRATEGY_DIR, by id, or a frozen version to re-run. Both are
+    # omitted from dumped/persisted configs when unset so existing request shapes are unchanged.
+    strategy_file: Optional[str] = Field(default=None, exclude_if=lambda value: value is None)
+    strategy_version_id: Optional[str] = Field(default=None, exclude_if=lambda value: value is None)
     # Omitted from dumped/persisted configs when unset so existing request shapes are unchanged.
     ml_filter: Optional[MLFilterConfig] = Field(default=None, exclude_if=lambda value: value is None)
     entry_manager: EntryManagerConfig = Field(default_factory=EntryManagerConfig)
@@ -54,6 +58,18 @@ class BacktestRequest(BaseModel):
     day_trade_end_time: str = "16:00"
     day_trade_close_time: str = "17:00"
     post_exit_bars: int = Field(default=10, ge=1, le=500)
+
+    @model_validator(mode="after")
+    def _strategy_source_is_exclusive(self) -> "BacktestRequest":
+        sources = [name for name in ("strategy_file", "strategy_version_id") if getattr(self, name) is not None]
+        if len(sources) > 1:
+            raise ValueError("strategy_file and strategy_version_id are mutually exclusive")
+        if sources:
+            if "strategy" in self.model_fields_set:
+                raise ValueError(f"{sources[0]} is mutually exclusive with strategy")
+            if self.entries is not None:
+                raise ValueError(f"{sources[0]} is mutually exclusive with entries")
+        return self
 
 
 class ChartIndicatorSeries(BaseModel):
@@ -322,6 +338,8 @@ class BacktestRunListItem(BaseModel):
     is_saved: bool = False
     origin: BacktestOrigin = "stack"
     summary: Optional[Dict[str, Any]] = None
+    strategy_version_id: Optional[str] = None
+    strategy_bundle_hash: Optional[str] = None
 
 
 class BacktestRunListResponse(BaseModel):
@@ -355,6 +373,8 @@ class BacktestRunDetailResponse(BaseModel):
     origin: BacktestOrigin = "stack"
     provenance: Optional[BacktestProvenance] = None
     ml_filter: Optional[MLFilterReference] = Field(default=None, exclude_if=lambda value: value is None)
+    strategy_version_id: Optional[str] = None
+    strategy_bundle_hash: Optional[str] = None
 
 
 class BacktestRunPatchRequest(BaseModel):

@@ -168,6 +168,13 @@ def test_strategy_ids_are_top_level_modules_not_starting_with_underscore(strateg
     ]
 
 
+def test_strategy_id_cannot_leave_the_directory(strategy_root: Path, tmp_path: Path) -> None:
+    _write(tmp_path, "outside.py", LATE_SESSION)
+
+    with pytest.raises(StrategyFileError, match="not a strategy id"):
+        build_bundle(strategy_root, "../outside")
+
+
 def test_missing_directory_is_an_empty_catalog(tmp_path: Path, bundle_root: Path) -> None:
     assert strategy_ids(tmp_path / "absent") == []
     assert list_strategy_files(tmp_path / "absent", bundle_root=bundle_root) == []

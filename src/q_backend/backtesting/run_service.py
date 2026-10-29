@@ -28,7 +28,8 @@ from q_backend.backtesting.excursions import post_exit_from_stored
 from q_backend.backtesting.models import OrderAction, Trade
 from q_backend.market_data.timezone import mt5_datetime_to_utc_iso
 from q_backend.storage.db.engine import session_scope
-from q_backend.storage.db.models import BacktestRun
+from q_backend.research.strategy_versions import strategy_version_summaries
+from q_backend.storage.db.models import BacktestRun, ResearchStrategyVersion
 from q_backend.storage.db.repositories import (
     delete_backtest_run,
     delete_backtest_runs,
@@ -62,18 +63,22 @@ def backtest_run_fields(config: Dict[str, Any]) -> tuple[str, str, str]:
     )
 
 
-def backtest_run_list_item(run: BacktestRun) -> BacktestRunListItem:
+def backtest_run_list_item(run: BacktestRun, version: Optional[tuple[str, str]] = None) -> BacktestRunListItem:
+    """A history row. ``version`` is the run's (strategy id, bundle hash) when it ran a strategy file."""
     symbol, strategy, timeframe = backtest_run_fields(run.config or {})
+    version_strategy, bundle_hash = version if version is not None else (None, None)
     return BacktestRunListItem(
         run_id=str(run.id),
         symbol=symbol,
-        strategy=strategy,
+        strategy=strategy or version_strategy or "",
         timeframe=timeframe,
         status=run.status,
         created_at=run.created_at,
         is_saved=run.is_saved,
         origin=run.origin,
         summary=run.result_summary,
+        strategy_version_id=str(run.strategy_version_id) if run.strategy_version_id else None,
+        strategy_bundle_hash=bundle_hash,
     )
 
 
@@ -90,13 +95,21 @@ def _ml_filter_reference(config: Dict[str, Any], session: Session | None) -> MLF
     )
 
 
-def backtest_run_detail(run: BacktestRun, session: Session | None = None) -> BacktestRunDetailResponse:
+def backtest_run_detail(
+    run: BacktestRun,
+    session: Session | None = None,
+    version: Optional[tuple[str, str]] = None,
+) -> BacktestRunDetailResponse:
     config = run.config or {}
     symbol, strategy, timeframe = backtest_run_fields(config)
+    if version is None and session is not None and run.strategy_version_id is not None:
+        stored = session.get(ResearchStrategyVersion, run.strategy_version_id)
+        version = (stored.strategy_id, stored.bundle_hash) if stored is not None else None
+    version_strategy, bundle_hash = version if version is not None else (None, None)
     return BacktestRunDetailResponse(
         run_id=str(run.id),
         symbol=symbol,
-        strategy=strategy,
+        strategy=strategy or version_strategy or "",
         timeframe=timeframe,
         status=run.status,
         config=config,
@@ -109,6 +122,8 @@ def backtest_run_detail(run: BacktestRun, session: Session | None = None) -> Bac
         origin=run.origin,
         provenance=BacktestProvenance.model_validate(run.provenance) if run.provenance else None,
         ml_filter=_ml_filter_reference(config, session),
+        strategy_version_id=str(run.strategy_version_id) if run.strategy_version_id else None,
+        strategy_bundle_hash=bundle_hash,
     )
 
 
@@ -177,8 +192,12 @@ def list_runs(
         origin=origin,
         sort=sort,
     )
+    versions = strategy_version_summaries(session, {run.strategy_version_id for run in runs if run.strategy_version_id})
     return {
-        "items": [backtest_run_list_item(run) for run in runs],
+        "items": [
+            backtest_run_list_item(run, versions.get(run.strategy_version_id) if run.strategy_version_id else None)
+            for run in runs
+        ],
         "total": total,
         "limit": limit,
         "offset": offset,

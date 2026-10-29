@@ -132,6 +132,36 @@ def to_wire_spec(param: DeclaredParam) -> dict[str, Any]:
     }
 
 
+def declared_from_wire(spec: Mapping[str, Any]) -> DeclaredParam:
+    """Rebuild a parameter from its stored wire spec, without importing the strategy.
+
+    The API uses this to coerce a run's parameters against a frozen version's specs.
+    """
+    kind = spec["type"]
+    default = spec["default"]
+    if kind == "time":
+        default = _parse_time(default)
+    choices = spec.get("choices")
+    return DeclaredParam(
+        name=spec["name"],
+        kind=kind,
+        default=default,
+        label=spec["label"],
+        hint=spec.get("hint"),
+        min=spec.get("min"),
+        max=spec.get("max"),
+        step=spec.get("step"),
+        choices=tuple(choices) if choices is not None else None,
+    )
+
+
+def wire_value(kind: str, value: Any) -> Any:
+    """A value as it travels on the wire: ``time`` values as ``HH:MM``, everything else unchanged."""
+    if kind == "time":
+        return value.strftime("%H:%M")
+    return value
+
+
 def coerce_params(params: Sequence[DeclaredParam], submitted: Mapping[str, Any]) -> dict[str, Any]:
     """Validate submitted values and return every constructor argument, defaults filled in.
 
@@ -254,9 +284,13 @@ def _coerce_value(param: DeclaredParam, value: Any) -> Any:
     if isinstance(value, dt.time) and value.tzinfo is None and not (value.second or value.microsecond):
         return value.replace(second=0, microsecond=0)
     if isinstance(value, str) and _TIME_PATTERN.match(value):
-        hours, minutes = value.split(":")
-        return dt.time(int(hours), int(minutes))
+        return _parse_time(value)
     raise ParamError(f"{label} must be a time in HH:MM form")
+
+
+def _parse_time(value: str) -> dt.time:
+    hours, minutes = value.split(":")
+    return dt.time(int(hours), int(minutes))
 
 
 def _check_submitted_bounds(label: str, value: float, param: DeclaredParam) -> None:
@@ -265,9 +299,7 @@ def _check_submitted_bounds(label: str, value: float, param: DeclaredParam) -> N
 
 
 def _to_wire_value(param: DeclaredParam) -> Any:
-    if param.kind == "time":
-        return param.default.strftime("%H:%M")
-    return param.default
+    return wire_value(param.kind, param.default)
 
 
 def _is_int(value: Any) -> bool:
