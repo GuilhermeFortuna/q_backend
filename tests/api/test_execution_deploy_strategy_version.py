@@ -616,12 +616,25 @@ def test_acceptance_7_deployment_submits_entry_and_day_trade_close_against_fake_
         assert len(submits) == 2  # Both entry and day-trade close were submitted!
 
 
-@pytest.mark.parametrize("order_kind", ["oco", "timed_exit", "expiring_entry"])
-def test_create_deployment_refuses_live_placeable_order_kinds_until_q137(
+@pytest.mark.parametrize(
+    "order_kind",
+    [
+        "protective_levels",
+        "amend",
+        "cancel",
+        "resting_stop",
+        "resting_limit",
+        "oco",
+        "timed_exit",
+        "expiring_entry",
+    ],
+)
+def test_create_deployment_admits_the_q137_order_kinds_and_paper_refuses_them(
     api_db_session: Session,
     frozen_version: ResearchStrategyVersion,
     order_kind: str,
 ):
+    """The deployable-set gate admits the kind; the paper broker then refuses it at creation."""
     account = execution_service.create_account(
         api_db_session,
         PaperAccountCreateRequest(name=f"desk-{order_kind}", initial_balance=Decimal("100000")),
@@ -644,4 +657,64 @@ def test_create_deployment_refuses_live_placeable_order_kinds_until_q137(
             ),
         )
     assert exc.value.status_code == 422
+    assert "paper deployments cannot place" in str(exc.value.detail)
+
+
+@pytest.mark.parametrize("order_kind", ["priced_entry", "priced_close", "tick_hooks"])
+def test_create_deployment_refuses_priced_orders_and_tick_hooks(
+    api_db_session: Session,
+    frozen_version: ResearchStrategyVersion,
+    order_kind: str,
+):
+    account = execution_service.create_account(
+        api_db_session,
+        PaperAccountCreateRequest(name=f"desk-{order_kind}", initial_balance=Decimal("100000")),
+    )
+    run = _create_saved_run(
+        api_db_session,
+        frozen_version,
+        order_kinds=["market_entry", order_kind],
+        timeframe="M5",
+        day_trade=True,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        execution_service.create_deployment(
+            api_db_session,
+            DeploymentCreateRequest(
+                paper_account_id=account.id,
+                name=f"not-deployable-{order_kind}",
+                source_backtest_run_id=run.id,
+            ),
+        )
+    assert exc.value.status_code == 422
     assert order_kind in str(exc.value.detail)
+
+
+def test_paper_deployment_refuses_resting_and_protective_orders(
+    api_db_session: Session,
+    frozen_version: ResearchStrategyVersion,
+):
+    account = execution_service.create_account(
+        api_db_session,
+        PaperAccountCreateRequest(name="desk-paper-resting", initial_balance=Decimal("100000")),
+    )
+    run = _create_saved_run(
+        api_db_session,
+        frozen_version,
+        order_kinds=["market_entry", "resting_stop"],
+        timeframe="M5",
+        day_trade=True,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        execution_service.create_deployment(
+            api_db_session,
+            DeploymentCreateRequest(
+                paper_account_id=account.id,
+                name="paper-resting",
+                source_backtest_run_id=run.id,
+            ),
+        )
+    assert exc.value.status_code == 422
+    assert "MT5 demo" in str(exc.value.detail)

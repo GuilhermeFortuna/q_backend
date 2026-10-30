@@ -48,15 +48,32 @@ class ExecutionSide(str, Enum):
 
 class ExecutionOrderType(str, Enum):
     MARKET = "market"
+    STOP = "stop"
+    LIMIT = "limit"
 
 
 class ExecutionOrderStatus(str, Enum):
     INTENT = "intent"
     SUBMITTED = "submitted"
+    WORKING = "working"
     FILLED = "filled"
     REJECTED = "rejected"
     UNKNOWN = "unknown"
     CANCELLED = "cancelled"
+    EXPIRED = "expired"
+
+
+class ExecutionIntentKind(str, Enum):
+    """What an order intent does to the broker.
+
+    ``protect`` sets the levels of an open position and ``cancel`` removes a working
+    pending order; both reach ``filled`` (applied) or ``rejected``.
+    """
+
+    ENTRY = "entry"
+    CLOSE = "close"
+    PROTECT = "protect"
+    CANCEL = "cancel"
 
 
 class PositionSide(str, Enum):
@@ -87,6 +104,8 @@ class RiskRejectionCode(str, Enum):
     DATABASE_UNAVAILABLE = "database_unavailable"
     BROKER_UNAVAILABLE = "broker_unavailable"
     UNKNOWN_PRIOR_ORDER = "unknown_prior_order"
+    PROTECTIVE_LEVEL_REJECTED = "protective_level_rejected"
+    OCO_DOUBLE_FILL = "oco_double_fill"
 
 
 class LedgerEntryType(str, Enum):
@@ -133,6 +152,17 @@ _ORDER_TRANSITIONS: dict[ExecutionOrderStatus, frozenset[ExecutionOrderStatus]] 
     ExecutionOrderStatus.SUBMITTED: frozenset(
         {
             ExecutionOrderStatus.FILLED,
+            ExecutionOrderStatus.WORKING,
+            ExecutionOrderStatus.REJECTED,
+            ExecutionOrderStatus.UNKNOWN,
+            ExecutionOrderStatus.CANCELLED,
+        }
+    ),
+    ExecutionOrderStatus.WORKING: frozenset(
+        {
+            ExecutionOrderStatus.FILLED,
+            ExecutionOrderStatus.CANCELLED,
+            ExecutionOrderStatus.EXPIRED,
             ExecutionOrderStatus.REJECTED,
             ExecutionOrderStatus.UNKNOWN,
         }
@@ -141,11 +171,15 @@ _ORDER_TRANSITIONS: dict[ExecutionOrderStatus, frozenset[ExecutionOrderStatus]] 
         {
             ExecutionOrderStatus.FILLED,
             ExecutionOrderStatus.REJECTED,
+            ExecutionOrderStatus.WORKING,
+            ExecutionOrderStatus.CANCELLED,
+            ExecutionOrderStatus.EXPIRED,
         }
     ),
     ExecutionOrderStatus.FILLED: frozenset(),
     ExecutionOrderStatus.REJECTED: frozenset(),
     ExecutionOrderStatus.CANCELLED: frozenset(),
+    ExecutionOrderStatus.EXPIRED: frozenset(),
 }
 
 

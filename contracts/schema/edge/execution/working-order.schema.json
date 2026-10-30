@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "edge/execution/working-order",
+  "title": "WorkingOrder",
+  "description": "Pending order resting at the broker and not yet filled, cancelled or expired.",
+  "type": "object",
+  "properties": {
+    "ticket": {
+      "type": "integer",
+      "description": "Pending order ticket identifier."
+    },
+    "symbol": {
+      "type": "string",
+      "description": "Financial instrument ticker symbol."
+    },
+    "type": {
+      "type": "integer",
+      "description": "Raw MT5 pending order type: 2=buy limit, 3=sell limit, 4=buy stop, 5=sell stop."
+    },
+    "volume": {
+      "type": "number",
+      "description": "Remaining volume of the pending order in lots."
+    },
+    "price": {
+      "type": "number",
+      "description": "Trigger price of the pending order."
+    },
+    "sl": {
+      "type": "number",
+      "description": "Stop loss level to attach when the order fills. Zero means none."
+    },
+    "tp": {
+      "type": "number",
+      "description": "Take profit level to attach when the order fills. Zero means none."
+    },
+    "expiration": {
+      "type": ["integer", "null"],
+      "description": "Expiration instant in epoch seconds UTC, or null for good-till-cancelled."
+    },
+    "magic": {
+      "type": "integer",
+      "description": "Magic number assigned when placed."
+    },
+    "comment": {
+      "type": "string",
+      "description": "Order comment assigned when placed."
+    },
+    "time_setup": {
+      "type": "integer",
+      "description": "Placement instant in epoch seconds."
+    }
+  },
+  "required": [
+    "ticket",
+    "symbol",
+    "type",
+    "volume",
+    "price"
+  ],
+  "additionalProperties": false
+}

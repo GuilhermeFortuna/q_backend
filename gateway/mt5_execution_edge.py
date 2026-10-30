@@ -2,8 +2,12 @@
 
 Stdlib-only HTTP server beside the MT5 terminal under Wine. Implements the
 execution-edge wire contract: quote, check, submit, lookup, positions, deals,
-and account. At most one ``order_send`` per ``intent_id`` per process lifetime;
-no retries and no inline recovery on ambiguous sends.
+and account. Submit carries four actions: ``deal`` (market order, optionally with
+protective levels), ``pending`` (stop or limit order resting at the broker),
+``sltp`` (new levels for an open position) and ``remove`` (cancel a working pending
+order); ``orders`` lists working pending orders. At most one ``order_send`` per
+``intent_id`` per process lifetime; no retries and no inline recovery on ambiguous
+sends.
 
 Dependencies: stdlib + ``MetaTrader5`` + ``numpy`` only. Never imports
 ``q_backend``.
@@ -27,11 +31,13 @@ from uuid import UUID
 
 import MetaTrader5 as mt5
 
-SCHEMA_VERSION = "1.1"
+SCHEMA_VERSION = "1.2"
 SCHEMA_MAJOR = 1
 _SCHEMA_HEADER = "X-Schema-Major"
 _DEFAULT_DEVIATION = 20
 _MAGIC_BASE = 0
+_SUBMIT_ACTIONS = ("deal", "pending", "sltp", "remove")
+_PENDING_ORDER_TYPES = (2, 3, 4, 5)
 
 logger = logging.getLogger("mt5_execution_edge")
 
@@ -195,6 +201,19 @@ def _deal_matches_intent(deal: Any, *, magic: int, comment: str) -> bool:
     return deal_magic == magic and deal_comment.startswith(comment)
 
 
+def _deal_reason(value: int) -> str:
+    reasons = {
+        int(mt5.DEAL_REASON_CLIENT): "client",
+        int(mt5.DEAL_REASON_MOBILE): "client",
+        int(mt5.DEAL_REASON_WEB): "client",
+        int(mt5.DEAL_REASON_EXPERT): "expert",
+        int(mt5.DEAL_REASON_SL): "sl",
+        int(mt5.DEAL_REASON_TP): "tp",
+        int(mt5.DEAL_REASON_SO): "so",
+    }
+    return reasons.get(int(value), "other")
+
+
 def _serialize_deal(deal: Any) -> dict[str, Any]:
     plain = _to_plain_dict(deal)
     payload: dict[str, Any] = {
@@ -205,6 +224,28 @@ def _serialize_deal(deal: Any) -> dict[str, Any]:
         "price": float(plain["price"]),
     }
     for key in ("type", "entry", "commission", "swap", "profit", "fee", "magic", "comment", "time_msc"):
+        if key in plain and plain[key] is not None:
+            payload[key] = plain[key]
+    if plain.get("position_id") is not None:
+        payload["position_id"] = int(plain["position_id"])
+    if plain.get("reason") is not None:
+        payload["reason"] = _deal_reason(plain["reason"])
+    return payload
+
+
+def _serialize_working_order(order: Any) -> dict[str, Any]:
+    plain = _to_plain_dict(order)
+    volume = plain.get("volume_current", plain.get("volume_initial"))
+    expiration = int(plain.get("time_expiration") or 0)
+    payload: dict[str, Any] = {
+        "ticket": int(plain["ticket"]),
+        "symbol": str(plain["symbol"]),
+        "type": int(plain["type"]),
+        "volume": float(volume),
+        "price": float(plain["price_open"]),
+        "expiration": expiration or None,
+    }
+    for key in ("sl", "tp", "magic", "comment", "time_setup"):
         if key in plain and plain[key] is not None:
             payload[key] = plain[key]
     return payload
@@ -225,9 +266,50 @@ def _serialize_position(position: Any) -> dict[str, Any]:
     return payload
 
 
-def _validate_order_fields(order: dict[str, Any]) -> None:
-    if order.get("sl") is not None or order.get("tp") is not None:
-        raise EdgeError(400, "invalid_request", "stop-loss and take-profit are not supported on submit")
+def _reference_ticket(payload: dict[str, Any]) -> int:
+    """Ticket an sltp or remove submission acts on; zero for the other actions."""
+    action = payload.get("action")
+    if action == "sltp":
+        return int(payload.get("position") or 0)
+    if action == "remove":
+        return int(payload.get("order_ticket") or 0)
+    return 0
+
+
+def _submit_action(payload: dict[str, Any]) -> str | None:
+    """Return the submit action, or None for the 1.1 market shape without an action."""
+    action = payload.get("action")
+    if action is None:
+        return None
+    if action not in _SUBMIT_ACTIONS:
+        raise EdgeError(400, "invalid_request", f"Unsupported submit action '{action}'.")
+    return str(action)
+
+
+def _require_field(payload: dict[str, Any], name: str) -> Any:
+    if payload.get(name) is None:
+        raise EdgeError(400, "invalid_request", f"Field '{name}' is required for this action.")
+    return payload[name]
+
+
+def _validate_order_fields(order: dict[str, Any], *, action: str | None) -> None:
+    # Protective levels need an explicit deal or pending action; the 1.1 market
+    # shape without an action keeps refusing them.
+    if action not in ("deal", "pending") and (order.get("sl") is not None or order.get("tp") is not None):
+        raise EdgeError(
+            400,
+            "invalid_request",
+            "stop-loss and take-profit require an explicit deal or pending action",
+        )
+    if action == "pending":
+        order_type = order.get("type")
+        if order_type is None or int(order_type) not in _PENDING_ORDER_TYPES:
+            raise EdgeError(400, "invalid_request", "pending orders must be buy or sell limit or stop")
+        if order.get("type_time") is not None:
+            raise EdgeError(400, "invalid_request", "type_time is derived from expiration for pending orders")
+        return
+    if order.get("expiration") is not None:
+        raise EdgeError(400, "invalid_request", "expiration requires a pending action")
     order_type = order.get("type")
     if order_type is not None and int(order_type) not in {int(mt5.ORDER_TYPE_BUY), int(mt5.ORDER_TYPE_SELL)}:
         raise EdgeError(400, "invalid_request", "only market buy/sell orders are supported")
@@ -398,7 +480,7 @@ class EdgeApp:
                 }
             return {
                 "outcome": "accepted",
-                "order_ticket": int(plain.get("order", 0)),
+                "order_ticket": _reference_ticket(payload) or int(plain.get("order", 0)),
                 "retcode": retcode,
             }
 
@@ -408,6 +490,8 @@ class EdgeApp:
         comment = intent_comment(intent_id)
         window_start = _parse_window(payload["window_start"], "window_start")
         window_end = _parse_window(payload["window_end"], "window_end")
+        if payload.get("kind", "deal") == "pending":
+            return self._lookup_pending(magic=magic, comment=comment, window_start=window_start, window_end=window_end)
 
         with self._lock:
             if not self._ensure_initialized():
@@ -451,6 +535,77 @@ class EdgeApp:
 
         return {"outcome": "not_found", "closes_intent": True}
 
+    def _lookup_pending(
+        self,
+        *,
+        magic: int,
+        comment: str,
+        window_start: datetime,
+        window_end: datetime,
+    ) -> dict[str, Any]:
+        with self._lock:
+            if not self._ensure_initialized():
+                return {
+                    "outcome": "unavailable",
+                    "reason": "MetaTrader 5 terminal is not initialized.",
+                    "closes_intent": False,
+                }
+            working = mt5.orders_get()
+            if working is None:
+                return {
+                    "outcome": "unavailable",
+                    "reason": "Terminal working orders are unavailable.",
+                    "closes_intent": False,
+                }
+            for order in working:
+                plain = _to_plain_dict(order)
+                if int(plain.get("magic", 0)) == magic and str(plain.get("comment", "")).startswith(comment):
+                    # A partly filled order still rests; its deals are read from /v1/deals.
+                    return {
+                        "outcome": "placed",
+                        "order_ticket": int(plain["ticket"]),
+                        "closes_intent": False,
+                    }
+
+            deals = mt5.history_deals_get(window_start, window_end)
+            if deals is None:
+                return {
+                    "outcome": "unavailable",
+                    "reason": "Terminal deal history is unavailable.",
+                    "closes_intent": False,
+                }
+            matched_deals = [deal for deal in deals if _deal_matches_intent(deal, magic=magic, comment=comment)]
+            if matched_deals:
+                return {
+                    "outcome": "filled",
+                    "deals": [_serialize_deal(deal) for deal in matched_deals],
+                    "closes_intent": True,
+                }
+
+            history_orders = mt5.history_orders_get(window_start, window_end) or []
+            for order in history_orders:
+                plain = _to_plain_dict(order)
+                if int(plain.get("magic", 0)) != magic or not str(plain.get("comment", "")).startswith(comment):
+                    continue
+                state = int(plain.get("state", 0))
+                if state == int(mt5.ORDER_STATE_CANCELED):
+                    return {
+                        "outcome": "cancelled",
+                        "reason": "pending order cancelled in terminal history",
+                        "closes_intent": True,
+                    }
+                if state == int(mt5.ORDER_STATE_EXPIRED):
+                    return {"outcome": "expired", "closes_intent": True}
+                if state == int(mt5.ORDER_STATE_REJECTED):
+                    return {
+                        "outcome": "rejected",
+                        "retcode": int(mt5.TRADE_RETCODE_REJECT),
+                        "reason": "pending order rejected in terminal history",
+                        "closes_intent": True,
+                    }
+
+        return {"outcome": "not_found", "closes_intent": True}
+
     def positions(self, symbol: str | None) -> list[dict[str, Any]]:
         with self._lock:
             self._require_ready()
@@ -458,6 +613,14 @@ class EdgeApp:
             if rows is None:
                 return []
             return [_serialize_position(row) for row in rows]
+
+    def orders(self, symbol: str | None) -> list[dict[str, Any]]:
+        with self._lock:
+            self._require_ready()
+            rows = mt5.orders_get(symbol=symbol) if symbol else mt5.orders_get()
+            if rows is None:
+                return []
+            return [_serialize_working_order(row) for row in rows]
 
     def deals(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         window_start = _parse_window(payload["window_start"], "window_start")
@@ -480,6 +643,14 @@ class EdgeApp:
             return filtered
 
     def _build_mt5_request(self, payload: dict[str, Any], *, claim_intent: bool) -> dict[str, Any]:
+        action = _submit_action(payload)
+        if action == "sltp":
+            return self._build_sltp_request(payload)
+        if action == "remove":
+            return self._build_remove_request(payload)
+        return self._build_order_request(payload, action=action)
+
+    def _build_order_request(self, payload: dict[str, Any], *, action: str | None) -> dict[str, Any]:
         intent_id = str(payload["intent_id"])
         order = dict(payload["order"])
         expected_magic = intent_magic(intent_id)
@@ -488,34 +659,48 @@ class EdgeApp:
             raise EdgeError(400, "intent_field_mismatch", "Supplied magic does not match intent derivation.")
         if "comment" in order and str(order["comment"]) != expected_comment:
             raise EdgeError(400, "intent_field_mismatch", "Supplied comment does not match intent derivation.")
-        _validate_order_fields(order)
+        _validate_order_fields(order, action=action)
 
         symbol = str(order["symbol"])
         side_type = _resolve_order_type(order)
+        levels: dict[str, float] = {}
         with self._lock:
             self._require_ready()
-            if not mt5.symbol_select(symbol, True):
-                raise EdgeError(404, "symbol_not_found", f"Symbol '{symbol}' is not selectable.")
-            info = mt5.symbol_info(symbol)
-            if info is None:
-                raise EdgeError(404, "symbol_not_found", f"No symbol_info for '{symbol}'.")
-            tick = mt5.symbol_info_tick(symbol)
-            if tick is None:
-                raise EdgeError(503, "mt5_unavailable", f"Quote for '{symbol}' is unavailable.")
-            info_plain = _to_plain_dict(info)
-            tick_plain = _to_plain_dict(tick)
+            info_plain = self._symbol_info_plain(symbol)
             volume = _normalize_volume(
                 float(order["volume"]),
                 step=float(info_plain["volume_step"]),
                 vmin=float(info_plain["volume_min"]),
                 vmax=float(info_plain["volume_max"]),
             )
+            digits = int(info_plain["digits"])
+            for key in ("sl", "tp"):
+                if order.get(key) is not None:
+                    levels[key] = _normalize_price(float(order[key]), digits)
+
+            if action == "pending":
+                return self._pending_request(
+                    order,
+                    symbol=symbol,
+                    side_type=side_type,
+                    volume=volume,
+                    filling_mode=int(info_plain["filling_mode"]),
+                    digits=digits,
+                    levels=levels,
+                    magic=expected_magic,
+                    comment=expected_comment,
+                )
+
             filling = _select_filling_mode(int(info_plain["filling_mode"]))
             if order.get("price") is not None:
-                price = _normalize_price(float(order["price"]), int(info_plain["digits"]))
+                price = _normalize_price(float(order["price"]), digits)
             else:
+                tick = mt5.symbol_info_tick(symbol)
+                if tick is None:
+                    raise EdgeError(503, "mt5_unavailable", f"Quote for '{symbol}' is unavailable.")
+                tick_plain = _to_plain_dict(tick)
                 side_price = float(tick_plain["ask"] if side_type == int(mt5.ORDER_TYPE_BUY) else tick_plain["bid"])
-                price = _normalize_price(side_price, int(info_plain["digits"]))
+                price = _normalize_price(side_price, digits)
 
         return {
             "action": int(mt5.TRADE_ACTION_DEAL),
@@ -528,7 +713,79 @@ class EdgeApp:
             "comment": expected_comment,
             "type_time": int(mt5.ORDER_TIME_GTC),
             "type_filling": filling,
+            **levels,
         }
+
+    def _pending_request(
+        self,
+        order: dict[str, Any],
+        *,
+        symbol: str,
+        side_type: int,
+        volume: float,
+        filling_mode: int,
+        digits: int,
+        levels: dict[str, float],
+        magic: int,
+        comment: str,
+    ) -> dict[str, Any]:
+        if order.get("price") is None:
+            raise EdgeError(400, "invalid_request", "pending orders require a price")
+        request: dict[str, Any] = {
+            "action": int(mt5.TRADE_ACTION_PENDING),
+            "symbol": symbol,
+            "volume": volume,
+            "type": side_type,
+            "price": _normalize_price(float(order["price"]), digits),
+            "deviation": int(order.get("deviation", _DEFAULT_DEVIATION)),
+            "magic": magic,
+            "comment": comment,
+            "type_filling": _select_filling_mode(filling_mode),
+            **levels,
+        }
+        expiration = order.get("expiration")
+        if expiration is None:
+            request["type_time"] = int(mt5.ORDER_TIME_GTC)
+        else:
+            expires_at = int(expiration)
+            if expires_at <= int(time.time()):
+                raise EdgeError(400, "invalid_request", "pending order expiration must be in the future")
+            request["type_time"] = int(mt5.ORDER_TIME_SPECIFIED)
+            request["expiration"] = expires_at
+        return request
+
+    def _build_sltp_request(self, payload: dict[str, Any]) -> dict[str, Any]:
+        symbol = str(_require_field(payload, "symbol"))
+        position = int(_require_field(payload, "position"))
+        with self._lock:
+            self._require_ready()
+            digits = int(self._symbol_info_plain(symbol)["digits"])
+            sl = _normalize_price(float(_require_field(payload, "sl")), digits)
+            tp = _normalize_price(float(_require_field(payload, "tp")), digits)
+        return {
+            "action": int(mt5.TRADE_ACTION_SLTP),
+            "symbol": symbol,
+            "position": position,
+            "sl": sl,
+            "tp": tp,
+        }
+
+    def _build_remove_request(self, payload: dict[str, Any]) -> dict[str, Any]:
+        symbol = str(_require_field(payload, "symbol"))
+        ticket = int(_require_field(payload, "order_ticket"))
+        with self._lock:
+            self._require_ready()
+            self._symbol_info_plain(symbol)
+        return {"action": int(mt5.TRADE_ACTION_REMOVE), "order": ticket}
+
+    def _symbol_info_plain(self, symbol: str) -> dict[str, Any]:
+        """Symbol metadata for a selectable symbol. Callers hold the edge lock."""
+        if not mt5.symbol_select(symbol, True):
+            raise EdgeError(404, "symbol_not_found", f"Symbol '{symbol}' is not selectable.")
+        info = mt5.symbol_info(symbol)
+        if info is None:
+            raise EdgeError(404, "symbol_not_found", f"No symbol_info for '{symbol}'.")
+        return _to_plain_dict(info)
 
 
 class _EdgeHandler(BaseHTTPRequestHandler):
@@ -616,6 +873,10 @@ class _EdgeHandler(BaseHTTPRequestHandler):
         symbol = _optional_param(params, "symbol")
         self._send_json(200, self.app.positions(symbol))
 
+    def _route_orders(self, params, _body) -> None:
+        symbol = _optional_param(params, "symbol")
+        self._send_json(200, self.app.orders(symbol))
+
     def _route_check(self, _params, body) -> None:
         self._send_json(200, self.app.check(body))
 
@@ -633,6 +894,7 @@ class _EdgeHandler(BaseHTTPRequestHandler):
         ("GET", "/v1/quote"): _route_quote,
         ("GET", "/v1/account"): _route_account,
         ("GET", "/v1/positions"): _route_positions,
+        ("GET", "/v1/orders"): _route_orders,
         ("POST", "/v1/check"): _route_check,
         ("POST", "/v1/submit"): _route_submit,
         ("POST", "/v1/lookup"): _route_lookup,

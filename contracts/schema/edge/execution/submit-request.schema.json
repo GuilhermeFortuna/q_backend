@@ -2,21 +2,110 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "edge/execution/submit-request",
   "title": "SubmitRequest",
-  "description": "Order submission request to the execution edge carrying caller-minted intent identifier.",
+  "description": "Request to the execution edge carrying a caller-minted intent identifier. The action selects one of four operations, each under the same at-most-once intent rules: deal (market order, optionally with protective levels), pending (buy or sell stop or limit order resting at the broker), sltp (new protective levels for an open position) and remove (cancel a working pending order). When action is omitted the request is a plain market order without protective levels, as in edge 1.1; sl and tp are then refused, so protective levels always name an explicit deal or pending action.",
   "type": "object",
   "properties": {
     "intent_id": {
       "type": "string",
       "description": "Caller-minted UUID identifying this submission intent for at-most-once semantics."
     },
+    "action": {
+      "type": "string",
+      "enum": ["deal", "pending", "sltp", "remove"],
+      "description": "Operation requested. deal and pending carry an order; sltp carries symbol, position, sl and tp; remove carries symbol and order_ticket."
+    },
     "order": {
       "$ref": "order.schema.json",
-      "description": "Order parameters to be submitted to the broker terminal."
+      "description": "Order parameters for deal and pending actions. For pending, type is one of 2 (buy limit), 3 (sell limit), 4 (buy stop) or 5 (sell stop) and price is required."
+    },
+    "symbol": {
+      "type": "string",
+      "description": "Financial instrument ticker symbol for sltp and remove."
+    },
+    "position": {
+      "type": "integer",
+      "description": "Position ticket whose protective levels are replaced by sltp."
+    },
+    "sl": {
+      "type": "number",
+      "description": "Stop loss level for sltp. Zero removes the stop loss."
+    },
+    "tp": {
+      "type": "number",
+      "description": "Take profit level for sltp. Zero removes the take profit."
+    },
+    "order_ticket": {
+      "type": "integer",
+      "description": "Ticket of the working pending order removed by the remove action."
     }
   },
   "required": [
-    "intent_id",
-    "order"
+    "intent_id"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "enum": ["sltp"]
+          }
+        },
+        "required": ["action"]
+      },
+      "then": {
+        "required": ["symbol", "position", "sl", "tp"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "remove"
+          }
+        },
+        "required": ["action"]
+      },
+      "then": {
+        "required": ["symbol", "order_ticket"]
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "properties": {
+            "action": {
+              "enum": ["sltp", "remove"]
+            }
+          },
+          "required": ["action"]
+        }
+      },
+      "then": {
+        "required": ["order"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "pending"
+          }
+        },
+        "required": ["action"]
+      },
+      "then": {
+        "properties": {
+          "order": {
+            "required": ["price", "type"],
+            "properties": {
+              "type": {
+                "enum": [2, 3, 4, 5]
+              }
+            }
+          }
+        }
+      }
+    }
   ],
   "additionalProperties": false
 }

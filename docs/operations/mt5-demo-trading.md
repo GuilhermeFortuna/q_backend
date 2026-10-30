@@ -93,3 +93,24 @@ In `q_terminal`, the deploy dialog lists saved strategy-file runs from the resea
    market orders are filled before trading closes.
 4. **Parameter Edits**: The deploy and edit dialogs support editing typed `bool` (checkboxes) and
    `time` (`HH:MM`) strategy parameters within their declared bounds.
+
+## Resting and protective orders
+
+A demo deployment can hold stop and limit entries, protective levels and OCO groups at
+the broker. What to look for in the MT5 terminal:
+
+- A resting entry appears as a pending order with its expiration (good-till-cancelled when
+  the strategy gave none). It disappears when it fills, expires or is removed by Q.
+- A stop or target set on a market entry appears as the position's stop-loss and
+  take-profit. An `amend` moves them; the change is recorded in the ledger.
+- A broker-side stop or target exit appears in `q_terminal` with its reason (`stop_loss`
+  or `take_profit`). Q records it as the close of the position.
+
+Timing: working orders are reconciled every `Q_EXECUTION_ORDER_POLL_INTERVAL_S` seconds
+(default 2). Timed exits and their closes act at that poll granularity, not on every tick.
+This is the one known timing difference between a live demo run and its backtest.
+
+Limits in this release: runs with exit rules from `exit_params` (trailing, breakeven, fixed
+or ATR stops, targets, time exits) are refused at deployment, and a partly filled resting
+order is recorded only once the terminal reports it filled.
+

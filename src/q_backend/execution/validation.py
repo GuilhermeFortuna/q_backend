@@ -18,6 +18,22 @@ from q_backend.market_data.exogenous_context import _TF_MINUTES
 from q_backend.storage.db.repositories import get_backtest_run
 
 _SUPPORTED_TIMEFRAMES = frozenset(_TF_MINUTES)
+# Order kinds a forward deployment runs (see research_evaluator). Priced entries and closes
+# and tick hooks stay out until they can be placed as live orders.
+DEPLOYABLE_ORDER_KINDS = frozenset(
+    {
+        "market_entry",
+        "market_close",
+        "protective_levels",
+        "amend",
+        "cancel",
+        "resting_stop",
+        "resting_limit",
+        "oco",
+        "timed_exit",
+        "expiring_entry",
+    }
+)
 _MIN_TIMEFRAME_MINUTES = 5
 _MAX_DAILY_LOSS = Decimal("10000000")
 _MAX_NOTIONAL = Decimal("1000000000")
@@ -246,6 +262,23 @@ class ResolvedSavedBacktest:
     source_strategy_name: Optional[str]
     strategy_version_id: Optional[uuid.UUID] = None
     strategy_bundle_hash: Optional[str] = None
+    order_kinds: frozenset[str] = frozenset()
+
+
+MARKET_ORDER_KINDS = frozenset({"market_entry", "market_close"})
+
+
+def _refuse_exit_rules(exit_params: Any) -> None:
+    """Exit rules are applied inside each bar in backtests; the forward path does not apply them yet."""
+    from q_backend.backtesting.exit_rules.registry import enabled_rules
+
+    rules = enabled_rules(dict(exit_params or {}))
+    if rules:
+        raise ExecutionValidationError(
+            f"exit rules {sorted(rule.id for rule in rules)} are not deployable yet; "
+            "the forward path does not apply them",
+            status_code=422,
+        )
 
 
 def resolve_saved_backtest(
@@ -280,10 +313,11 @@ def resolve_saved_backtest(
                 "run has no order_kinds; re-run the backtest first",
                 status_code=422,
             )
-        non_deployable = set(order_kinds) - {"market_entry", "market_close"}
+        non_deployable = set(order_kinds) - DEPLOYABLE_ORDER_KINDS
         if non_deployable:
             raise ExecutionValidationError(
-                f"strategy uses non-deployable order kinds: {sorted(non_deployable)}; only market orders are deployable",
+                f"strategy uses non-deployable order kinds: {sorted(non_deployable)}; "
+                "priced entries and closes and tick hooks are not deployable",
                 status_code=422,
             )
         if not config.get("day_trade"):
@@ -316,6 +350,7 @@ def resolve_saved_backtest(
         }
         if config.get("exit_params") is not None:
             compiled_config["exit_params"] = config.get("exit_params")
+            _refuse_exit_rules(config.get("exit_params"))
 
         try:
             build_research_strategy_from_compiled(compiled_config, session=session)
@@ -342,6 +377,7 @@ def resolve_saved_backtest(
             source_strategy_name=version.strategy_id,
             strategy_version_id=version.id,
             strategy_bundle_hash=version.bundle_hash,
+            order_kinds=frozenset(order_kinds),
         )
 
     strategy_name = str(config.get("strategy") or "")
@@ -357,6 +393,7 @@ def resolve_saved_backtest(
         compiled_config["entry_manager"] = config.get("entry_manager")
     if config.get("exit_params") is not None:
         compiled_config["exit_params"] = config.get("exit_params")
+        _refuse_exit_rules(config.get("exit_params"))
     config_hash = compute_config_hash(compiled_config)
     identity = validate_strategy_identity(
         strategy_name=strategy_name,
@@ -375,6 +412,7 @@ def resolve_saved_backtest(
         source_strategy_name=None,
         strategy_version_id=None,
         strategy_bundle_hash=None,
+        order_kinds=frozenset((run.result_summary or {}).get("order_kinds") or ()),
     )
 
 

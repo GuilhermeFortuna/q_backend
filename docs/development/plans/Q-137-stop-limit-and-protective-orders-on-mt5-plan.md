@@ -67,7 +67,7 @@ position fields), `COMPAT.md`, generated outputs.
 
 - [ ] Write failing tests for acceptance 3–8.
 - [ ] Map research orders as the spec's table states, including OCO sibling removal and the double-fill guard,
-  timed exits and worker-managed trailing and breakeven stops. Widen the deployable set.
+  timed exits. Widen the deployable set. Trailing and breakeven exit rules stay out of scope.
 - [ ] Reconcile before each decision, and poll between bars with `Q_EXECUTION_ORDER_POLL_INTERVAL_S`.
 - [ ] Remove working orders on pause, stop, kill switch, flatten and the day-trade close.
 - [ ] Recover working orders and levels at start.

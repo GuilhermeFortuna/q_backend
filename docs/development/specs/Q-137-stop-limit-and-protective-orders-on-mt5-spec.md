@@ -12,8 +12,8 @@ Q-136 deploys strategy versions that use market orders only. Most research strat
 and targets, move them with `amend`, or enter with resting stop and limit orders. Live, these orders must rest at
 the broker, which fills them against real ticks as the backtest's tick replay does. This task sends those orders
 to MT5 through the execution edge, records their fills, and adds them to the deployable set. Batch 39 adds the
-live-placeable orders that replace same-candle priced orders: OCO groups, timed exits and expiry. Exit-rule
-stops (trailing and breakeven) are carried live as well.
+live-placeable orders that replace same-candle priced orders: OCO groups, timed exits and expiry. Trailing and
+breakeven exit rules are out of scope: a strategy that trails uses `amend`.
 
 ## Current system
 
@@ -37,7 +37,7 @@ stops (trailing and breakeven) are carried live as well.
   - `expire_at=` on resting entries.
 
   Their kinds are `oco`, `timed_exit` and `expiring_entry`. Trailing and breakeven stops come from `exit_params`
-  and are updated on every tick in backtests.
+  and are updated on every tick in backtests; they are not carried live by this task.
 - Q-136's deployable set is `market_entry` and `market_close`. Any other kind pauses the deployment.
 
 ## Behaviour
@@ -90,7 +90,6 @@ stops (trailing and breakeven) are carried live as well.
 | `TradeOrder.oco(...)` | one `pending` per member; on the first fill, `remove` the others |
 | resting entry with `expire_at=` | `pending` with that expiration |
 | `close(at=...)` | a `deal` closing the position, sent by the worker at the first poll at or after the instant |
-| trailing or breakeven exit rule | `sltp` moves of the position's stop, computed by the worker from quotes at each poll |
 
 - A protective level the broker rejects (for example, too close to the market) records the rejection on the
   intent. An entry with rejected levels is not sent without them.
@@ -120,8 +119,9 @@ stops (trailing and breakeven) are carried live as well.
 ### Deployable set
 
 - `protective_levels`, `amend`, `resting_stop`, `resting_limit`, `cancel`, `oco`, `timed_exit` and
-  `expiring_entry` join the deployable set, as do the trailing and breakeven exit rules.
-  `priced_entry`, `priced_close` and `tick_hooks` stay outside it.
+  `expiring_entry` join the deployable set. `priced_entry`, `priced_close` and `tick_hooks` stay outside it.
+  A run that enables any exit rule in `exit_params` (trailing, breakeven, fixed or ATR stops, targets, time
+  exits) is refused at deploy, because the forward path does not apply those rules.
 
 ### Parity
 
@@ -135,11 +135,9 @@ stops (trailing and breakeven) are carried live as well.
   - a `cancel`;
   - an OCO bracket where the second member fills first;
   - a resting entry expiring by `expire_at`;
-  - a timed exit;
-  - a trailing stop.
+  - a timed exit.
 
-  The fake edge fills timed exits and moves trailing stops at the first fixture tick at or after each poll
-  instant. With the poll interval set to the fixture's tick spacing, the two runs produce the same trades.
+  The fake edge fills timed exits at the first fixture tick at or after each poll instant. With the poll interval set to the fixture's tick spacing, the two runs produce the same trades.
 
 ## Acceptance criteria
 
@@ -162,13 +160,15 @@ stops (trailing and breakeven) are carried live as well.
    `expiring_entry`. A run using `priced_close` is still refused.
 9. An OCO bracket removes its sibling on the first fill. A double fill is flattened to the intended position,
    records a risk event and pauses the deployment. A timed exit closes at the first poll after its instant. A
-   trailing stop's `sltp` moves follow the exit rule.
+   Trailing and breakeven exit rules are out of scope (see Out of scope).
 10. Existing edge, broker, worker, recovery and parity tests pass unchanged. `make check` passes in
    `q_contracts`, and `make contracts-check` passes in `q_backend`.
 
 ## Out of scope
 
 - Priced (`price=`) entries and closes, order lists of priced entries, and tick hooks.
+- Trailing and breakeven exit rules from `exit_params`, including worker-managed stop moves for them. Runs
+  that enable one are refused at deploy. A strategy that needs a trailing stop uses `amend`.
 - Broker-native trailing stops, and stop-limit orders.
 - `q_terminal` changes beyond what its tables already show for new types and statuses. If a table filters
   unknown values, the implementing agent records a follow-up instead of changing the terminal.

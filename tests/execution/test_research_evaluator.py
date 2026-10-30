@@ -69,6 +69,21 @@ class RestingOrderStrategy(ResearchStrategy):
         return None
 
 
+class PricedEntryStrategy(ResearchStrategy):
+    """A same-candle priced entry: not deployable, unlike resting stop and limit entries."""
+
+    parameters = {}
+
+    def compute_indicators(self, frame):
+        return frame
+
+    def entry_strategy(self, frame, positions=()):
+        return TradeOrder.buy(price=110.0)
+
+    def exit_strategy(self, frame, positions=()):
+        return None
+
+
 class RaisingHookStrategy(ResearchStrategy):
     parameters = {}
 
@@ -214,9 +229,9 @@ def test_research_evaluator_unsupported_order_pauses_deployment():
     bars = _sample_day_bars()
     identity = _make_identity()
     evaluator = ResearchEvaluator(
-        deployment_id="dep-resting",
+        deployment_id="dep-priced",
         identity=identity,
-        strategy_instance=RestingOrderStrategy(),
+        strategy_instance=PricedEntryStrategy(),
         window_bound=100,
     )
 
@@ -226,7 +241,7 @@ def test_research_evaluator_unsupported_order_pauses_deployment():
     assert res.signal_action == SignalAction.HOLD
     assert res.pause_requested is True
     assert res.risk_rejection_code == "unsupported_order_kind"
-    assert "resting_stop" in res.risk_rejection_message
+    assert "priced_entry" in res.risk_rejection_message
 
 
 def test_research_evaluator_raising_hook_pauses_deployment():

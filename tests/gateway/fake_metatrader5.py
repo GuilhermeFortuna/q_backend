@@ -100,11 +100,31 @@ _Deal = namedtuple(
         "comment",
         "time",
         "time_msc",
+        "position_id",
+        "reason",
     ],
+    defaults=(0, 0),
 )
 _HistoryOrder = namedtuple(
     "HistoryOrder",
     ["ticket", "magic", "comment", "state", "symbol", "volume_initial", "type", "time"],
+)
+# Mirrors MetaTrader5's TradeOrder fields for working (pending) orders.
+_TradeOrder = namedtuple(
+    "TradeOrder",
+    [
+        "ticket",
+        "symbol",
+        "type",
+        "volume_current",
+        "price_open",
+        "sl",
+        "tp",
+        "time_setup",
+        "time_expiration",
+        "magic",
+        "comment",
+    ],
 )
 
 
@@ -137,9 +157,24 @@ def make_fake_mt5() -> types.ModuleType:
     m.COPY_TICKS_TRADE = 2
 
     m.TRADE_ACTION_DEAL = 1
+    m.TRADE_ACTION_PENDING = 5
+    m.TRADE_ACTION_SLTP = 6
+    m.TRADE_ACTION_REMOVE = 8
     m.ORDER_TYPE_BUY = 0
     m.ORDER_TYPE_SELL = 1
+    m.ORDER_TYPE_BUY_LIMIT = 2
+    m.ORDER_TYPE_SELL_LIMIT = 3
+    m.ORDER_TYPE_BUY_STOP = 4
+    m.ORDER_TYPE_SELL_STOP = 5
     m.ORDER_TIME_GTC = 0
+    m.ORDER_TIME_SPECIFIED = 2
+    m.DEAL_REASON_CLIENT = 0
+    m.DEAL_REASON_MOBILE = 1
+    m.DEAL_REASON_WEB = 2
+    m.DEAL_REASON_EXPERT = 3
+    m.DEAL_REASON_SL = 4
+    m.DEAL_REASON_TP = 5
+    m.DEAL_REASON_SO = 6
     m.ORDER_FILLING_FOK = 0
     m.ORDER_FILLING_IOC = 1
     m.ORDER_FILLING_RETURN = 2
@@ -151,8 +186,9 @@ def make_fake_mt5() -> types.ModuleType:
     m.TRADE_RETCODE_TIMEOUT = 10012
     m.TRADE_RETCODE_NO_CONNECTION = 10031
     m.TRADE_RETCODE_REJECT = 10006
-    m.ORDER_STATE_CANCELED = 1
-    m.ORDER_STATE_REJECTED = 2
+    m.ORDER_STATE_CANCELED = 2
+    m.ORDER_STATE_REJECTED = 5
+    m.ORDER_STATE_EXPIRED = 6
 
     state: dict[str, Any] = {
         "init_ok": True,
@@ -216,6 +252,7 @@ def make_fake_mt5() -> types.ModuleType:
         "history_deals": [],
         "history_deals_returns_none": False,
         "active_orders": [],
+        "order_send_requests": [],
     }
     m._state = state
 
@@ -261,6 +298,7 @@ def make_fake_mt5() -> types.ModuleType:
 
     def order_send(request):
         state["order_send_calls"] += 1
+        state["order_send_requests"].append(dict(request))
         barrier: threading.Event | None = state["order_send_barrier"]
         if barrier is not None:
             barrier.wait(timeout=5)
@@ -280,10 +318,14 @@ def make_fake_mt5() -> types.ModuleType:
             comment=str(request.get("comment", "")),
         )
 
-    def orders_get(ticket=None):
-        if ticket is None:
-            return list(state["active_orders"])
-        return [o for o in state["active_orders"] if int(getattr(o, "ticket", 0)) == ticket]
+    def orders_get(symbol=None, group="", ticket=None):
+        del group
+        orders = state["active_orders"]
+        if symbol is not None:
+            orders = [o for o in orders if o.symbol == symbol]
+        if ticket is not None:
+            orders = [o for o in orders if int(getattr(o, "ticket", 0)) == ticket]
+        return list(orders)
 
     def positions_get(symbol=None):
         positions = state["positions"]
@@ -382,6 +424,8 @@ def make_deal(
     magic: int = 0,
     comment: str = "q:test",
     time_msc: int = 1_710_000_000_000,
+    position_id: int = 0,
+    reason: int = 0,
 ) -> Any:
     return _Deal(
         ticket=ticket,
@@ -399,6 +443,8 @@ def make_deal(
         comment=comment,
         time=time_msc // 1000,
         time_msc=time_msc,
+        position_id=position_id,
+        reason=reason,
     )
 
 
@@ -456,4 +502,32 @@ def make_history_order(
         volume_initial=volume,
         type=0,
         time=time,
+    )
+
+
+def make_working_order(
+    *,
+    ticket: int = 223344,
+    symbol: str = "WIN$",
+    order_type: int = 4,
+    volume: float = 1.0,
+    price: float = 130100.0,
+    sl: float = 0.0,
+    tp: float = 0.0,
+    time_expiration: int = 0,
+    magic: int = 0,
+    comment: str = "q:test",
+) -> Any:
+    return _TradeOrder(
+        ticket=ticket,
+        symbol=symbol,
+        type=order_type,
+        volume_current=volume,
+        price_open=price,
+        sl=sl,
+        tp=tp,
+        time_setup=1_710_000_000,
+        time_expiration=time_expiration,
+        magic=magic,
+        comment=comment,
     )

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "edge/execution/orders-request",
+  "title": "OrdersRequest",
+  "description": "Request working pending orders from the terminal, optionally filtered by symbol.",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Optional symbol to filter working orders."
+    }
+  },
+  "additionalProperties": false
+}

@@ -19,6 +19,7 @@ from q_backend.execution.domain import (
     BrokerMode,
     DecisionOutcome,
     DeploymentLifecycle,
+    ExecutionIntentKind,
     ExecutionOrderStatus,
     ExecutionOrderType,
     ExecutionSide,
@@ -386,6 +387,11 @@ def create_execution_order_intent(
     metadata: Optional[dict[str, Any]] = None,
     intent_committed_at: Optional[datetime] = None,
     producer: str = "api",
+    intent_kind: ExecutionIntentKind = ExecutionIntentKind.ENTRY,
+    price: Optional[Decimal] = None,
+    stop_loss: Optional[Decimal] = None,
+    take_profit: Optional[Decimal] = None,
+    expires_at: Optional[datetime] = None,
 ) -> ExecutionOrder:
     order = ExecutionOrder(
         deployment_id=deployment_id,
@@ -393,7 +399,12 @@ def create_execution_order_intent(
         broker_mode=broker_mode.value,
         side=side.value,
         order_type=order_type.value,
+        intent_kind=intent_kind.value,
         quantity=quantity,
+        price=price,
+        stop_loss=stop_loss,
+        take_profit=take_profit,
+        expires_at=expires_at,
         status=ExecutionOrderStatus.INTENT.value,
         reconciliation_state=ReconciliationState.NOT_APPLICABLE.value,
         intent_committed_at=intent_committed_at or _utcnow(),
@@ -532,6 +543,62 @@ def get_execution_fill_by_external_id(
 
 
 # --- Net positions ---
+
+
+def list_working_orders(session: Session, deployment_id: uuid.UUID) -> list[ExecutionOrder]:
+    """Resting stop and limit entries of a deployment that have not yet resolved."""
+    return list(
+        session.execute(
+            select(ExecutionOrder)
+            .where(
+                ExecutionOrder.deployment_id == deployment_id,
+                ExecutionOrder.intent_kind == ExecutionIntentKind.ENTRY.value,
+                ExecutionOrder.order_type.in_([ExecutionOrderType.STOP.value, ExecutionOrderType.LIMIT.value]),
+                ExecutionOrder.status.in_(
+                    [
+                        ExecutionOrderStatus.WORKING.value,
+                        ExecutionOrderStatus.UNKNOWN.value,
+                    ]
+                ),
+            )
+            .order_by(ExecutionOrder.created_at)
+        ).scalars()
+    )
+
+
+def set_open_position_timed_exit(
+    session: Session,
+    deployment_id: uuid.UUID,
+    *,
+    exit_at: Optional[datetime],
+) -> Optional[ExecutionNetPosition]:
+    """Record (or clear) the instant at which the open position must close."""
+    position = get_open_net_position(session, deployment_id)
+    if position is None:
+        return None
+    position.exit_at = exit_at
+    session.flush()
+    return position
+
+
+def set_open_position_protection(
+    session: Session,
+    deployment_id: uuid.UUID,
+    *,
+    stop_loss: Optional[Decimal],
+    take_profit: Optional[Decimal],
+    external_position_id: Optional[str] = None,
+) -> Optional[ExecutionNetPosition]:
+    """Record the levels (and broker ticket) of the open position, if there is one."""
+    position = get_open_net_position(session, deployment_id)
+    if position is None:
+        return None
+    position.stop_loss = stop_loss
+    position.take_profit = take_profit
+    if external_position_id is not None:
+        position.external_position_id = external_position_id
+    session.flush()
+    return position
 
 
 def get_open_net_position(session: Session, deployment_id: uuid.UUID) -> Optional[ExecutionNetPosition]:
@@ -968,10 +1035,16 @@ def list_pending_reconciliation_orders(
     *,
     deployment_id: Optional[uuid.UUID] = None,
 ) -> list[ExecutionOrder]:
-    """Orders still awaiting reconciliation (UNKNOWN + PENDING)."""
+    """Market orders still awaiting reconciliation (UNKNOWN + PENDING).
+
+    Stop and limit entries and protective or cancellation intents are resolved by the
+    protective-order reconciler, which asks the broker a different question.
+    """
     stmt = select(ExecutionOrder).where(
         ExecutionOrder.status == ExecutionOrderStatus.UNKNOWN.value,
         ExecutionOrder.reconciliation_state == ReconciliationState.PENDING.value,
+        ExecutionOrder.order_type == ExecutionOrderType.MARKET.value,
+        ExecutionOrder.intent_kind.in_([ExecutionIntentKind.ENTRY.value, ExecutionIntentKind.CLOSE.value]),
     )
     if deployment_id is not None:
         stmt = stmt.where(ExecutionOrder.deployment_id == deployment_id)

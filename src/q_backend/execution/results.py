@@ -46,6 +46,25 @@ class ForwardDecisionResult(BaseModel):
     pause_requested: bool = False
     risk_rejection_code: Optional[str] = None
     risk_rejection_message: Optional[str] = None
+    # Protective and resting-order management decided on this bar (see protective.py).
+    entry_stop_loss: Optional[float] = None
+    entry_take_profit: Optional[float] = None
+    pending_entry: Optional[dict[str, Any]] = None
+    pending_group: Optional[tuple[dict[str, Any], ...]] = None
+    protect_levels: Optional[dict[str, Optional[float]]] = None
+    cancel_pending: bool = False
+    timed_exit_at: Optional[datetime] = None
+
+    @property
+    def manages_orders(self) -> bool:
+        """True when the bar asks for working-order, protective-level or timed-exit changes."""
+        return (
+            self.pending_entry is not None
+            or self.pending_group is not None
+            or self.protect_levels is not None
+            or self.cancel_pending
+            or self.timed_exit_at is not None
+        )
 
     @property
     def emits_decision(self) -> bool:

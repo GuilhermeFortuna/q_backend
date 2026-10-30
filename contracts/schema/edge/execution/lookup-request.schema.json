@@ -20,6 +20,12 @@
     "magic": {
       "type": "integer",
       "description": "Optional derived magic number to accelerate terminal history filtering."
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["deal", "pending"],
+      "default": "deal",
+      "description": "deal answers with LookupOutcome for a market intent. pending answers with PendingLookupOutcome for a pending or protective intent, whose order may still be resting at the broker."
     }
   },
   "required": [

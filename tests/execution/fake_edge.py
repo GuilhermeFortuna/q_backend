@@ -45,6 +45,10 @@ class FakeEdgeState:
     health_status: int = 200
     unavailable: bool = False
     requests: list[tuple[str, str, dict[str, Any] | None]] = field(default_factory=list)
+    # Terminal state served by /v1/positions, /v1/orders and /v1/deals (edge 1.2 reads).
+    positions: list[dict[str, Any]] = field(default_factory=list)
+    working_orders: list[dict[str, Any]] = field(default_factory=list)
+    deals: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _default_quote(symbol: str) -> dict[str, Any]:
@@ -172,11 +176,21 @@ class _FakeEdgeHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/v1/positions" and method == "GET":
-            self._send_json(200, [])
+            symbol = parse_qs(parsed.query).get("symbol", [""])[0]
+            rows = [row for row in self.state.positions if not symbol or row.get("symbol") == symbol]
+            self._send_json(200, rows)
+            return
+
+        if path == "/v1/orders" and method == "GET":
+            symbol = parse_qs(parsed.query).get("symbol", [""])[0]
+            rows = [row for row in self.state.working_orders if not symbol or row.get("symbol") == symbol]
+            self._send_json(200, rows)
             return
 
         if path == "/v1/deals" and method == "POST":
-            self._send_json(200, [])
+            symbol = (body or {}).get("symbol")
+            rows = [row for row in self.state.deals if not symbol or row.get("symbol") == symbol]
+            self._send_json(200, rows)
             return
 
         self._send_json(404, {"error": "not found", "code": "not_found"})

@@ -1,4 +1,4 @@
-# GENERATED FILE - DO NOT EDIT. Source schemas: schema/edge/common/error.schema.json, schema/edge/common/health.schema.json, schema/edge/execution/account-request.schema.json, schema/edge/execution/account-response.schema.json, schema/edge/execution/check-request.schema.json, schema/edge/execution/check-response.schema.json, schema/edge/execution/deal.schema.json, schema/edge/execution/deals-request.schema.json, schema/edge/execution/deals-response.schema.json, schema/edge/execution/lookup-outcome.schema.json, schema/edge/execution/lookup-request.schema.json, schema/edge/execution/order.schema.json, schema/edge/execution/position.schema.json, schema/edge/execution/positions-request.schema.json, schema/edge/execution/positions-response.schema.json, schema/edge/execution/quote-request.schema.json, schema/edge/execution/quote-response.schema.json, schema/edge/execution/submit-outcome.schema.json, schema/edge/execution/submit-request.schema.json
+# GENERATED FILE - DO NOT EDIT. Source schemas: schema/edge/common/error.schema.json, schema/edge/common/health.schema.json, schema/edge/execution/account-request.schema.json, schema/edge/execution/account-response.schema.json, schema/edge/execution/check-request.schema.json, schema/edge/execution/check-response.schema.json, schema/edge/execution/deal.schema.json, schema/edge/execution/deals-request.schema.json, schema/edge/execution/deals-response.schema.json, schema/edge/execution/lookup-outcome.schema.json, schema/edge/execution/lookup-request.schema.json, schema/edge/execution/order.schema.json, schema/edge/execution/orders-request.schema.json, schema/edge/execution/orders-response.schema.json, schema/edge/execution/pending-lookup-outcome.schema.json, schema/edge/execution/position.schema.json, schema/edge/execution/positions-request.schema.json, schema/edge/execution/positions-response.schema.json, schema/edge/execution/quote-request.schema.json, schema/edge/execution/quote-response.schema.json, schema/edge/execution/submit-outcome.schema.json, schema/edge/execution/submit-request.schema.json, schema/edge/execution/working-order.schema.json
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -87,7 +87,9 @@ class ExecutionDeal:
     entry: int | None = None
     fee: float | None = None
     magic: int | None = None
+    position_id: int | None = None
     profit: float | None = None
+    reason: Literal["client", "expert", "sl", "tp", "so", "other"] | None = None
     swap: float | None = None
     time_msc: int | None = None
     type: int | None = None
@@ -99,6 +101,7 @@ class ExecutionOrder:
     volume: float
     comment: str | None = None
     deviation: int | None = None
+    expiration: int | None = None
     magic: int | None = None
     price: float | None = None
     side: Literal["buy", "sell"] | None = None
@@ -130,7 +133,16 @@ class LookupRequest:
     intent_id: str
     window_end: str | int
     window_start: str | int
+    kind: Literal["deal", "pending"] | None = "deal"
     magic: int | None = None
+
+
+@dataclass(frozen=True)
+class OrdersRequest:
+    symbol: str | None = None
+
+
+OrdersResponse = list["WorkingOrder"]
 
 
 @dataclass(frozen=True)
@@ -159,10 +171,42 @@ class QuoteResponse:
 @dataclass(frozen=True)
 class SubmitRequest:
     intent_id: str
-    order: ExecutionOrder
+    action: Literal["deal", "pending", "sltp", "remove"] | None = None
+    order: ExecutionOrder | None = None
+    order_ticket: int | None = None
+    position: int | None = None
+    sl: float | None = None
+    symbol: str | None = None
+    tp: float | None = None
+
+
+@dataclass(frozen=True)
+class WorkingOrder:
+    price: float
+    symbol: str
+    ticket: int
+    type: int
+    volume: float
+    comment: str | None = None
+    expiration: int | None = None
+    magic: int | None = None
+    sl: float | None = None
+    time_setup: int | None = None
+    tp: float | None = None
 
 
 LookupOutcome = dict[str, Any] | dict[str, Any] | dict[str, Any] | dict[str, Any]
+
+
+PendingLookupOutcome = (
+    dict[str, Any]
+    | dict[str, Any]
+    | dict[str, Any]
+    | dict[str, Any]
+    | dict[str, Any]
+    | dict[str, Any]
+    | dict[str, Any]
+)
 
 
 SubmitOutcome = dict[str, Any] | dict[str, Any] | dict[str, Any]

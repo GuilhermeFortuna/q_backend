@@ -28,6 +28,8 @@ def execution_position_to_trade(
     average_entry_price: Optional[Decimal],
     opened_at: Optional[datetime],
     point_value: float = 1.0,
+    stop_loss: Optional[Decimal] = None,
+    take_profit: Optional[Decimal] = None,
 ) -> Optional[Trade]:
     """Convert an open net position into the minimal ``Trade`` view strategies expect."""
     if side == PositionSide.FLAT or quantity <= 0:
@@ -36,6 +38,9 @@ def execution_position_to_trade(
     if average_entry_price is None or opened_at is None:
         raise ValueError("open execution position requires entry price and opened_at")
 
+    if opened_at.tzinfo is None:
+        # Some stores return naive timestamps (SQLite); the ledger writes UTC.
+        opened_at = opened_at.replace(tzinfo=timezone.utc)
     action = OrderAction.BUY if side == PositionSide.LONG else OrderAction.SELL
     trade_id = position_trade_id(deployment_id, opened_at)
     return Trade(
@@ -48,4 +53,6 @@ def execution_position_to_trade(
         entry_price=float(average_entry_price),
         status=TradeStatus.OPEN,
         point_value=point_value,
+        stop_loss=float(stop_loss) if stop_loss is not None else None,
+        take_profit=float(take_profit) if take_profit is not None else None,
     )

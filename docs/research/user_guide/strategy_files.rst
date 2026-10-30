@@ -123,11 +123,16 @@ Deploying to execution
 A saved backtest run of a strategy file can be deployed to the execution engine (either in paper mode
 or to an MT5 demo account):
 
-* **Deployable order kinds**: The deployment evaluator supports **market orders only** (``market_entry``
-  and ``market_close``). Backtest runs that emit resting orders, priced closes, protective levels,
-  OCO groups, timed exits or expiring entries cannot be deployed (refused with HTTP 422; see
-  :doc:`live_placeable_orders`). If an order of a non-deployable kind or an exception is
-  raised at runtime, the deployment pauses fail-closed with a risk event.
+* **Deployable order kinds**: A deployment runs market entries and closes, protective levels,
+  resting stop and limit entries, ``amend``, ``cancel``, OCO groups, timed exits and expiring entries.
+  Only an MT5 demo deployment can hold resting or protective orders: a paper deployment of a run that
+  uses them is refused with HTTP 422 at creation. Priced entries, priced closes and tick hooks are
+  refused with HTTP 422 (see :doc:`live_placeable_orders`). A run with any enabled exit rule in its
+  ``exit_params`` (for example ``trailing_stop_pct``, ``breakeven_trigger_pct``, a fixed or ATR stop,
+  a target or a time exit) is also refused with HTTP 422, because the forward path does not apply
+  those rules yet.
+  If an order of a non-deployable kind or an exception is raised at runtime, the deployment pauses
+  fail-closed with a risk event.
 * **Timeframe**: Forward timeframes must be at least **M5** (e.g. M5, M10, M15, H1). M1 runs are
   refused.
 * **Day-trading session**: Deployments require day trading (``day_trade=True``). Entries are accepted
