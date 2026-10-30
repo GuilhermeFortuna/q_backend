@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+from typing import Union
+
 from q_backend.execution.brokers.base import (
     BrokerHealth,
     BrokerOrderState,
     BrokerSubmissionResult,
+    CancelOrderRequest,
     ExecutionBroker,
     MarketOrderRequest,
     PaperCostConfig,
+    PendingOrderRequest,
+    ProtectionRequest,
 )
 from q_backend.execution.domain import BrokerMode
+
+BrokerRequest = Union[MarketOrderRequest, PendingOrderRequest, ProtectionRequest, CancelOrderRequest]
 
 
 class BrokerRouter:
@@ -20,7 +27,7 @@ class BrokerRouter:
         self._paper = paper
         self._live = mt5_live
 
-    def _broker_for(self, request: MarketOrderRequest) -> ExecutionBroker:
+    def _broker_for(self, request: BrokerRequest) -> ExecutionBroker:
         if request.broker_mode == BrokerMode.MT5_LIVE:
             return self._live
         return self._paper
@@ -45,3 +52,21 @@ class BrokerRouter:
 
     def lookup_order(self, request: MarketOrderRequest) -> BrokerOrderState:
         return self._broker_for(request).lookup_order(request)
+
+    def submit_pending_order(self, request: PendingOrderRequest) -> BrokerSubmissionResult:
+        return self._broker_for(request).submit_pending_order(request)
+
+    def lookup_pending_order(self, request: PendingOrderRequest) -> BrokerOrderState:
+        return self._broker_for(request).lookup_pending_order(request)
+
+    def set_protection(self, request: ProtectionRequest) -> BrokerSubmissionResult:
+        return self._broker_for(request).set_protection(request)
+
+    def cancel_order(self, request: CancelOrderRequest) -> BrokerSubmissionResult:
+        return self._broker_for(request).cancel_order(request)
+
+    def lookup_protection(self, request: ProtectionRequest) -> BrokerOrderState:
+        return self._broker_for(request).lookup_protection(request)
+
+    def lookup_cancellation(self, request: CancelOrderRequest) -> BrokerOrderState:
+        return self._broker_for(request).lookup_cancellation(request)

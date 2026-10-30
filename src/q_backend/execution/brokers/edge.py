@@ -18,9 +18,12 @@ from q_backend.execution.brokers.base import (
     BrokerRejectionCode,
     BrokerSubmissionOutcome,
     BrokerSubmissionResult,
+    CancelOrderRequest,
     Clock,
     MarketOrderRequest,
     PaperCostConfig,
+    PendingOrderRequest,
+    ProtectionRequest,
 )
 from q_backend.execution.brokers.live_gates import (
     LiveExecutionGates,
@@ -29,7 +32,7 @@ from q_backend.execution.brokers.live_gates import (
     evaluate_live_gates,
 )
 from q_backend.execution.brokers.mt5_constants import retcode_label
-from q_backend.execution.domain import BrokerMode, ExecutionSide, FillRecord
+from q_backend.execution.domain import BrokerMode, ExecutionOrderType, ExecutionSide, FillRecord
 from q_backend.execution.edge_client import EdgeClient, EdgeUnavailable
 
 logger = logging.getLogger(__name__)
@@ -82,6 +85,51 @@ def _execution_order(request: MarketOrderRequest, *, deviation: int) -> Executio
         volume=float(request.quantity),
         side="buy" if request.side == ExecutionSide.BUY else "sell",
         deviation=deviation,
+        sl=float(request.stop_loss) if request.stop_loss is not None else None,
+        tp=float(request.take_profit) if request.take_profit is not None else None,
+    )
+
+
+_PENDING_TYPES = {
+    (ExecutionSide.BUY, ExecutionOrderType.LIMIT): 2,
+    (ExecutionSide.SELL, ExecutionOrderType.LIMIT): 3,
+    (ExecutionSide.BUY, ExecutionOrderType.STOP): 4,
+    (ExecutionSide.SELL, ExecutionOrderType.STOP): 5,
+}
+
+
+def _pending_execution_order(request: PendingOrderRequest, *, deviation: int) -> ExecutionOrder:
+    expiration = None
+    if request.expires_at is not None:
+        expiration = int(_as_utc(request.expires_at).timestamp())
+    return ExecutionOrder(
+        symbol=request.symbol,
+        volume=float(request.quantity),
+        side="buy" if request.side == ExecutionSide.BUY else "sell",
+        type=_PENDING_TYPES[(request.side, request.order_type)],
+        price=float(request.price),
+        deviation=deviation,
+        sl=float(request.stop_loss) if request.stop_loss is not None else None,
+        tp=float(request.take_profit) if request.take_profit is not None else None,
+        expiration=expiration,
+    )
+
+
+def _edge_version(schema_version: str) -> tuple[int, int]:
+    major, _, minor = schema_version.partition(".")
+    try:
+        return int(major), int(minor or 0)
+    except ValueError:
+        return (0, 0)
+
+
+def _unsupported_edge(kind: str, schema_version: str) -> BrokerSubmissionResult:
+    return BrokerSubmissionResult(
+        outcome=BrokerSubmissionOutcome.REJECTED,
+        rejection=BrokerRejection(
+            code=BrokerRejectionCode.UNSUPPORTED_ORDER_KIND,
+            message=f"execution edge {schema_version} cannot place {kind}; 1.2 or later is required",
+        ),
     )
 
 
@@ -239,16 +287,17 @@ class EdgeBroker:
             message=str(outcome.get("reason", "edge lookup unavailable")),
         )
 
-    def submit_market_order(
+    def _precheck(
         self,
-        request: MarketOrderRequest,
         *,
+        live_activation_enabled: bool,
         cost_config: PaperCostConfig,
-    ) -> BrokerSubmissionResult:
+    ) -> Optional[BrokerSubmissionResult]:
+        """Gates and account checks shared by every edge action. None means it may proceed."""
         gates = LiveExecutionGates(
             enabled=self._gates.enabled,
             account_allowlist=self._gates.account_allowlist,
-            deployment_live_activation_enabled=request.live_activation_enabled,
+            deployment_live_activation_enabled=live_activation_enabled,
             controlled_account_validated=self._gates.controlled_account_validated,
         )
 
@@ -285,6 +334,20 @@ class EdgeBroker:
                 ),
                 cost_config=cost_config,
             )
+        return None
+
+    def submit_market_order(
+        self,
+        request: MarketOrderRequest,
+        *,
+        cost_config: PaperCostConfig,
+    ) -> BrokerSubmissionResult:
+        rejection = self._precheck(
+            live_activation_enabled=request.live_activation_enabled,
+            cost_config=cost_config,
+        )
+        if rejection is not None:
+            return rejection
 
         order = _execution_order(request, deviation=self._slippage_deviation)
         submit_outcome = self._client.submit(request.order_id, order)
@@ -335,3 +398,233 @@ class EdgeBroker:
 
     def lookup_order(self, request: MarketOrderRequest) -> BrokerOrderState:
         return self._lookup_state(request)
+
+    def _edge_gap(self) -> Optional[str]:
+        """Why this edge cannot place pending or protective orders, or None when it can."""
+        try:
+            health = self._client.health()
+        except EdgeUnavailable as exc:
+            return str(exc)
+        if _edge_version(health.schema_version) < _PENDING_MIN_EDGE:
+            return health.schema_version
+        return None
+
+    def submit_pending_order(self, request: PendingOrderRequest) -> BrokerSubmissionResult:
+        rejection = self._precheck(live_activation_enabled=request.live_activation_enabled, cost_config=_NO_COST)
+        if rejection is not None:
+            return rejection
+        gap = self._edge_gap()
+        if gap is not None:
+            return _unsupported_edge("stop or limit orders", gap)
+
+        order = _pending_execution_order(request, deviation=self._slippage_deviation)
+        outcome = self._client.submit_pending(request.order_id, order)
+        kind = str(outcome.get("outcome", ""))
+        if kind == "accepted":
+            ticket = str(outcome.get("order_ticket", "")) or None
+            return BrokerSubmissionResult(
+                outcome=BrokerSubmissionOutcome.WORKING,
+                external_order_id=ticket,
+                raw_response=outcome,
+            )
+        if kind == "rejected":
+            return BrokerSubmissionResult(
+                outcome=BrokerSubmissionOutcome.REJECTED,
+                rejection=BrokerRejection(
+                    code=BrokerRejectionCode.ORDER_SEND_FAILED,
+                    message=str(outcome.get("reason", "pending order rejected by edge")),
+                    context={"retcode": outcome.get("retcode")},
+                ),
+                raw_response=outcome,
+            )
+        return BrokerSubmissionResult(
+            outcome=BrokerSubmissionOutcome.UNKNOWN,
+            rejection=BrokerRejection(
+                code=BrokerRejectionCode.ORDER_SEND_FAILED,
+                message=str(outcome.get("reason", "indeterminate pending submit outcome")),
+            ),
+            raw_response=outcome,
+        )
+
+    def lookup_pending_order(self, request: PendingOrderRequest) -> BrokerOrderState:
+        window_start, window_end = self._lookup_window(request)
+        try:
+            outcome = self._client.lookup(request.order_id, window_start, window_end, kind="pending")
+        except EdgeUnavailable as exc:
+            return BrokerOrderState(status=BrokerOrderLookupStatus.UNAVAILABLE, message=str(exc))
+
+        result = str(outcome.get("outcome", ""))
+        if result == "placed":
+            ticket = str(outcome.get("order_ticket", "")) or None
+            return BrokerOrderState(
+                status=BrokerOrderLookupStatus.WORKING,
+                external_order_id=ticket,
+                message="pending order rests at the broker",
+            )
+        if result == "filled":
+            reconciled = _fill_from_deals(
+                request,
+                outcome.get("deals") or [],
+                external_order_id=None,
+                now=self._clock.now(),
+            )
+            if reconciled is None:
+                return BrokerOrderState(
+                    status=BrokerOrderLookupStatus.UNAVAILABLE,
+                    message="edge reported filled without usable deal details",
+                )
+            fill, deal_ids = reconciled
+            position_id = _position_id_from_deals(outcome.get("deals") or [])
+            return BrokerOrderState(
+                status=BrokerOrderLookupStatus.FILLED,
+                fill=fill,
+                external_position_id=position_id,
+                external_deal_ids=deal_ids,
+                message="reconciled from edge deal history",
+            )
+        if result == "cancelled":
+            return BrokerOrderState(status=BrokerOrderLookupStatus.CANCELLED, message=str(outcome.get("reason", "")))
+        if result == "expired":
+            return BrokerOrderState(status=BrokerOrderLookupStatus.EXPIRED, message="pending order expired")
+        if result == "rejected":
+            reason = outcome.get("reason") or retcode_label(int(outcome.get("retcode", 0)))
+            return BrokerOrderState(status=BrokerOrderLookupStatus.REJECTED, message=str(reason))
+        if result == "not_found":
+            return BrokerOrderState(
+                status=BrokerOrderLookupStatus.NOT_FOUND,
+                message="no edge order or deal matches the intent",
+            )
+        return BrokerOrderState(
+            status=BrokerOrderLookupStatus.UNAVAILABLE,
+            message=str(outcome.get("reason", "edge lookup unavailable")),
+        )
+
+    def set_protection(self, request: ProtectionRequest) -> BrokerSubmissionResult:
+        rejection = self._precheck(live_activation_enabled=request.live_activation_enabled, cost_config=_NO_COST)
+        if rejection is not None:
+            return rejection
+        gap = self._edge_gap()
+        if gap is not None:
+            return _unsupported_edge("protective levels", gap)
+
+        outcome = self._client.submit_protection(
+            request.order_id,
+            symbol=request.symbol,
+            position=int(request.position_ticket),
+            stop_loss=float(request.stop_loss) if request.stop_loss is not None else 0.0,
+            take_profit=float(request.take_profit) if request.take_profit is not None else 0.0,
+        )
+        return _applied_or_rejected(
+            outcome, BrokerSubmissionOutcome.APPLIED, external_position_id=request.position_ticket
+        )
+
+    def cancel_order(self, request: CancelOrderRequest) -> BrokerSubmissionResult:
+        rejection = self._precheck(live_activation_enabled=request.live_activation_enabled, cost_config=_NO_COST)
+        if rejection is not None:
+            return rejection
+        gap = self._edge_gap()
+        if gap is not None:
+            return _unsupported_edge("cancelled working orders", gap)
+
+        outcome = self._client.submit_remove(
+            request.order_id,
+            symbol=request.symbol,
+            order_ticket=int(request.external_order_id),
+        )
+        return _applied_or_rejected(
+            outcome, BrokerSubmissionOutcome.CANCELLED, external_order_id=request.external_order_id
+        )
+
+    def lookup_protection(self, request: ProtectionRequest) -> BrokerOrderState:
+        """Read-only check that a position already carries the requested levels."""
+        try:
+            positions = self._client.positions(request.symbol)
+        except EdgeUnavailable as exc:
+            return BrokerOrderState(status=BrokerOrderLookupStatus.UNAVAILABLE, message=str(exc))
+        row = next((p for p in positions if str(p.get("ticket")) == request.position_ticket), None)
+        if row is None:
+            return BrokerOrderState(
+                status=BrokerOrderLookupStatus.UNAVAILABLE,
+                message="position is no longer open; its levels cannot be verified",
+            )
+        if _same_level(row.get("sl"), request.stop_loss) and _same_level(row.get("tp"), request.take_profit):
+            return BrokerOrderState(
+                status=BrokerOrderLookupStatus.FILLED,
+                external_position_id=request.position_ticket,
+                message="position carries the requested levels",
+            )
+        return BrokerOrderState(
+            status=BrokerOrderLookupStatus.NOT_FOUND,
+            external_position_id=request.position_ticket,
+            message="position does not carry the requested levels",
+        )
+
+    def lookup_cancellation(self, request: CancelOrderRequest) -> BrokerOrderState:
+        """Read-only check that a working order has left the terminal's order list."""
+        try:
+            working = self._client.orders(request.symbol)
+        except EdgeUnavailable as exc:
+            return BrokerOrderState(status=BrokerOrderLookupStatus.UNAVAILABLE, message=str(exc))
+        if any(str(row.get("ticket")) == request.external_order_id for row in working):
+            return BrokerOrderState(
+                status=BrokerOrderLookupStatus.NOT_FOUND,
+                external_order_id=request.external_order_id,
+                message="pending order still rests at the broker",
+            )
+        return BrokerOrderState(
+            status=BrokerOrderLookupStatus.CANCELLED,
+            external_order_id=request.external_order_id,
+            message="pending order no longer rests at the broker",
+        )
+
+
+_PENDING_MIN_EDGE = (1, 2)
+_NO_COST = PaperCostConfig()
+
+
+def _same_level(value: Any, expected: Optional[Decimal]) -> bool:
+    if expected is None or float(expected) == 0.0:
+        return value in (None, 0, 0.0)
+    return value is not None and abs(float(value) - float(expected)) < 1e-9
+
+
+def _position_id_from_deals(deals: list[dict[str, Any]]) -> Optional[str]:
+    for deal in deals:
+        if deal.get("position_id") is not None:
+            return str(int(deal["position_id"]))
+    return None
+
+
+def _applied_or_rejected(
+    outcome: dict[str, Any],
+    accepted: BrokerSubmissionOutcome,
+    *,
+    external_order_id: Optional[str] = None,
+    external_position_id: Optional[str] = None,
+) -> BrokerSubmissionResult:
+    kind = str(outcome.get("outcome", ""))
+    if kind == "accepted":
+        return BrokerSubmissionResult(
+            outcome=accepted,
+            external_order_id=external_order_id,
+            external_position_id=external_position_id,
+            raw_response=outcome,
+        )
+    if kind == "rejected":
+        return BrokerSubmissionResult(
+            outcome=BrokerSubmissionOutcome.REJECTED,
+            rejection=BrokerRejection(
+                code=BrokerRejectionCode.PROTECTIVE_LEVEL_REJECTED,
+                message=str(outcome.get("reason", "edge rejected the request")),
+                context={"retcode": outcome.get("retcode")},
+            ),
+            raw_response=outcome,
+        )
+    return BrokerSubmissionResult(
+        outcome=BrokerSubmissionOutcome.UNKNOWN,
+        rejection=BrokerRejection(
+            code=BrokerRejectionCode.ORDER_SEND_FAILED,
+            message=str(outcome.get("reason", "indeterminate edge outcome")),
+        ),
+        raw_response=outcome,
+    )

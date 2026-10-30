@@ -165,8 +165,59 @@ class EdgeClient:
         )
 
     def submit(self, intent_id: UUID, order: ExecutionOrder) -> dict[str, Any]:
-        """Submit once; transport failures return indeterminate, never raise."""
-        body = {"intent_id": str(intent_id), "order": _order_payload(order)}
+        """Submit a market order once; transport failures return indeterminate, never raise.
+
+        A market order with protective levels names the deal action, because the edge
+        refuses levels on requests without an explicit action.
+        """
+        body: dict[str, Any] = {"intent_id": str(intent_id), "order": _order_payload(order)}
+        if order.sl is not None or order.tp is not None:
+            body["action"] = "deal"
+        return self._submit_body(intent_id, body)
+
+    def submit_pending(self, intent_id: UUID, order: ExecutionOrder) -> dict[str, Any]:
+        """Place a stop or limit order (edge action ``pending``) once."""
+        return self._submit_body(
+            intent_id,
+            {"intent_id": str(intent_id), "action": "pending", "order": _order_payload(order)},
+        )
+
+    def submit_protection(
+        self,
+        intent_id: UUID,
+        *,
+        symbol: str,
+        position: int,
+        stop_loss: float,
+        take_profit: float,
+    ) -> dict[str, Any]:
+        """Set the levels of an open position (edge action ``sltp``) once."""
+        return self._submit_body(
+            intent_id,
+            {
+                "intent_id": str(intent_id),
+                "action": "sltp",
+                "symbol": symbol,
+                "position": position,
+                "sl": stop_loss,
+                "tp": take_profit,
+            },
+        )
+
+    def submit_remove(self, intent_id: UUID, *, symbol: str, order_ticket: int) -> dict[str, Any]:
+        """Remove a working pending order (edge action ``remove``) once."""
+        return self._submit_body(
+            intent_id,
+            {
+                "intent_id": str(intent_id),
+                "action": "remove",
+                "symbol": symbol,
+                "order_ticket": order_ticket,
+            },
+        )
+
+    def _submit_body(self, intent_id: UUID, body: dict[str, Any]) -> dict[str, Any]:
+        """Send one submit body; transport failures return indeterminate, never raise."""
         try:
             with self._client(read_timeout=self._timeouts.submit_read_s) as client:
                 response = client.post("/v1/submit", json=body)
@@ -213,17 +264,42 @@ class EdgeClient:
         intent_id: UUID,
         window_start: datetime,
         window_end: datetime,
+        *,
+        kind: str | None = None,
     ) -> dict[str, Any]:
-        return self._request_json(
-            "POST",
-            "/v1/lookup",
-            read_timeout=self._timeouts.read_s,
-            json_body={
-                "intent_id": str(intent_id),
-                "window_start": _iso_timestamp(window_start),
-                "window_end": _iso_timestamp(window_end),
-            },
-        )
+        body: dict[str, Any] = {
+            "intent_id": str(intent_id),
+            "window_start": _iso_timestamp(window_start),
+            "window_end": _iso_timestamp(window_end),
+        }
+        if kind is not None:
+            body["kind"] = kind
+        return self._request_json("POST", "/v1/lookup", read_timeout=self._timeouts.read_s, json_body=body)
+
+    def positions(self, symbol: str | None = None) -> list[dict[str, Any]]:
+        """Open positions in the terminal (read-only)."""
+        return self._request_rows("/v1/positions", symbol)
+
+    def orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
+        """Working pending orders in the terminal (read-only)."""
+        return self._request_rows("/v1/orders", symbol)
+
+    def _request_rows(self, path: str, symbol: str | None) -> list[dict[str, Any]]:
+        params = {"symbol": symbol} if symbol else None
+        try:
+            with self._client(read_timeout=self._timeouts.read_s) as client:
+                response = client.get(path, params=params)
+        except httpx.HTTPError as exc:
+            raise EdgeUnavailable(str(exc)) from exc
+        if response.status_code >= 400:
+            raise EdgeUnavailable(f"HTTP {response.status_code} from {path}")
+        try:
+            rows = response.json()
+        except ValueError as exc:
+            raise EdgeUnavailable("edge returned non-JSON body") from exc
+        if not isinstance(rows, list):
+            raise EdgeUnavailable("edge returned unexpected JSON shape")
+        return [row for row in rows if isinstance(row, dict)]
 
 
 def _order_payload(order: ExecutionOrder) -> dict[str, Any]:
@@ -251,4 +327,6 @@ def _order_payload(order: ExecutionOrder) -> dict[str, Any]:
         payload["type_filling"] = order.type_filling
     if order.type_time is not None:
         payload["type_time"] = order.type_time
+    if order.expiration is not None:
+        payload["expiration"] = order.expiration
     return payload

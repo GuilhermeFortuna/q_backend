@@ -16,8 +16,11 @@ from q_backend.execution.brokers.base import (
     BrokerSubmissionResult,
     Clock,
     ExecutableQuote,
+    CancelOrderRequest,
     MarketOrderRequest,
     PaperCostConfig,
+    PendingOrderRequest,
+    ProtectionRequest,
     QuoteSource,
 )
 from q_backend.execution.domain import BrokerMode, ExecutionSide, FillRecord
@@ -115,6 +118,17 @@ def compute_commission(
     return per_contract + bps_part
 
 
+def _unsupported_on_paper(kind: str, order_id) -> BrokerSubmissionResult:
+    return BrokerSubmissionResult(
+        outcome=BrokerSubmissionOutcome.REJECTED,
+        rejection=BrokerRejection(
+            code=BrokerRejectionCode.UNSUPPORTED_ORDER_KIND,
+            message=f"the paper broker cannot place {kind}; use an MT5 demo deployment",
+            context={"order_id": str(order_id)},
+        ),
+    )
+
+
 class PaperBroker:
     """Deterministic internal market-order simulator backed by executable quotes."""
 
@@ -196,6 +210,33 @@ class PaperBroker:
             outcome=BrokerSubmissionOutcome.FILLED,
             fill=fill,
             cost_config=cost_config,
+        )
+
+    def submit_pending_order(self, request: PendingOrderRequest) -> BrokerSubmissionResult:
+        return _unsupported_on_paper("stop and limit orders", request.order_id)
+
+    def lookup_pending_order(self, request: PendingOrderRequest) -> BrokerOrderState:
+        return BrokerOrderState(
+            status=BrokerOrderLookupStatus.REJECTED,
+            message="paper broker never holds stop or limit orders",
+        )
+
+    def set_protection(self, request: ProtectionRequest) -> BrokerSubmissionResult:
+        return _unsupported_on_paper("protective levels", request.order_id)
+
+    def cancel_order(self, request: CancelOrderRequest) -> BrokerSubmissionResult:
+        return _unsupported_on_paper("cancelled working orders", request.order_id)
+
+    def lookup_protection(self, request: ProtectionRequest) -> BrokerOrderState:
+        return BrokerOrderState(
+            status=BrokerOrderLookupStatus.REJECTED,
+            message="paper broker never holds protective levels",
+        )
+
+    def lookup_cancellation(self, request: CancelOrderRequest) -> BrokerOrderState:
+        return BrokerOrderState(
+            status=BrokerOrderLookupStatus.REJECTED,
+            message="paper broker never holds working orders",
         )
 
     def lookup_order(self, request: MarketOrderRequest) -> BrokerOrderState:

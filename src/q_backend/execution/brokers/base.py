@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from q_backend.execution.domain import (
     BrokerMode,
+    ExecutionOrderType,
     ExecutionSide,
     FillRecord,
     PositionSide,
@@ -29,12 +30,17 @@ class BrokerRejectionCode(str, Enum):
     ACCOUNT_NOT_ALLOWLISTED = "account_not_allowlisted"
     TRADING_DISABLED = "trading_disabled"
     UNSUPPORTED_FILL_POLICY = "unsupported_fill_policy"
+    UNSUPPORTED_ORDER_KIND = "unsupported_order_kind"
     ORDER_CHECK_FAILED = "order_check_failed"
     ORDER_SEND_FAILED = "order_send_failed"
+    PROTECTIVE_LEVEL_REJECTED = "protective_level_rejected"
 
 
 class BrokerSubmissionOutcome(str, Enum):
     FILLED = "filled"
+    WORKING = "working"
+    APPLIED = "applied"
+    CANCELLED = "cancelled"
     REJECTED = "rejected"
     UNKNOWN = "unknown"
 
@@ -43,6 +49,9 @@ class BrokerOrderLookupStatus(str, Enum):
     """Result of asking a broker about the fate of a previously-intended order."""
 
     FILLED = "filled"
+    WORKING = "working"
+    CANCELLED = "cancelled"
+    EXPIRED = "expired"
     REJECTED = "rejected"
     NOT_FOUND = "not_found"
     UNAVAILABLE = "unavailable"
@@ -129,6 +138,58 @@ class MarketOrderRequest(BaseModel):
     broker_mode: BrokerMode = BrokerMode.PAPER
     intent_created_at: datetime
     live_activation_enabled: bool = False
+    stop_loss: Optional[Decimal] = None
+    take_profit: Optional[Decimal] = None
+
+
+class PendingOrderRequest(BaseModel):
+    """A stop or limit entry resting at the broker until it fills, expires or is removed."""
+
+    model_config = ConfigDict(frozen=True)
+
+    deployment_id: UUID
+    order_id: UUID
+    symbol: str
+    side: ExecutionSide
+    order_type: ExecutionOrderType
+    quantity: Decimal
+    price: Decimal
+    intent_created_at: datetime
+    broker_mode: BrokerMode = BrokerMode.PAPER
+    stop_loss: Optional[Decimal] = None
+    take_profit: Optional[Decimal] = None
+    expires_at: Optional[datetime] = None
+    live_activation_enabled: bool = False
+
+
+class ProtectionRequest(BaseModel):
+    """New stop-loss and take-profit levels for an open broker position."""
+
+    model_config = ConfigDict(frozen=True)
+
+    deployment_id: UUID
+    order_id: UUID
+    symbol: str
+    position_ticket: str
+    stop_loss: Optional[Decimal]
+    take_profit: Optional[Decimal]
+    intent_created_at: datetime
+    broker_mode: BrokerMode = BrokerMode.PAPER
+    live_activation_enabled: bool = False
+
+
+class CancelOrderRequest(BaseModel):
+    """Removal of a working pending order at the broker."""
+
+    model_config = ConfigDict(frozen=True)
+
+    deployment_id: UUID
+    order_id: UUID
+    symbol: str
+    external_order_id: str
+    intent_created_at: datetime
+    broker_mode: BrokerMode = BrokerMode.PAPER
+    live_activation_enabled: bool = False
 
 
 class BrokerRejection(BaseModel):
@@ -145,6 +206,7 @@ class BrokerSubmissionResult(BaseModel):
     rejection: Optional[BrokerRejection] = None
     cost_config: Optional[PaperCostConfig] = None
     external_order_id: Optional[str] = None
+    external_position_id: Optional[str] = None
     external_deal_ids: tuple[str, ...] = ()
     raw_request: dict[str, Any] = Field(default_factory=dict)
     raw_response: dict[str, Any] = Field(default_factory=dict)
@@ -163,8 +225,10 @@ class BrokerOrderState(BaseModel):
     status: BrokerOrderLookupStatus
     fill: Optional[FillRecord] = None
     external_order_id: Optional[str] = None
+    external_position_id: Optional[str] = None
     external_deal_ids: tuple[str, ...] = ()
     message: str = ""
+    fills: tuple[FillRecord, ...] = ()
 
 
 @runtime_checkable
@@ -180,4 +244,20 @@ class ExecutionBroker(Protocol):
 
     def lookup_order(self, request: MarketOrderRequest) -> BrokerOrderState:
         """Look up an order's outcome by its client order id (read-only)."""
+        ...
+
+    def submit_pending_order(self, request: PendingOrderRequest) -> BrokerSubmissionResult: ...
+
+    def lookup_pending_order(self, request: PendingOrderRequest) -> BrokerOrderState: ...
+
+    def set_protection(self, request: ProtectionRequest) -> BrokerSubmissionResult: ...
+
+    def cancel_order(self, request: CancelOrderRequest) -> BrokerSubmissionResult: ...
+
+    def lookup_protection(self, request: ProtectionRequest) -> BrokerOrderState:
+        """Read-only: does the position already carry the requested levels?"""
+        ...
+
+    def lookup_cancellation(self, request: CancelOrderRequest) -> BrokerOrderState:
+        """Read-only: has the working order left the broker's order list?"""
         ...
