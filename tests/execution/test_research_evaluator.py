@@ -225,7 +225,7 @@ def test_research_evaluator_day_trade_session_enforcement():
     assert res4.reason == "day_trade_close"
 
 
-def test_research_evaluator_unsupported_order_pauses_deployment():
+def test_research_evaluator_removed_priced_entry_pauses_deployment():
     bars = _sample_day_bars()
     identity = _make_identity()
     evaluator = ResearchEvaluator(
@@ -240,8 +240,8 @@ def test_research_evaluator_unsupported_order_pauses_deployment():
     res = results[0]
     assert res.signal_action == SignalAction.HOLD
     assert res.pause_requested is True
-    assert res.risk_rejection_code == "unsupported_order_kind"
-    assert "priced_entry" in res.risk_rejection_message
+    assert res.risk_rejection_code == "hook_error"
+    assert "priced entries are removed" in res.risk_rejection_message
 
 
 def test_research_evaluator_raising_hook_pauses_deployment():
