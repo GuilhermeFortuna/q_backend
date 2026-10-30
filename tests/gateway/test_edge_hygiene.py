@@ -16,6 +16,7 @@ CONTRACT_ENDPOINTS = {
     "/v1/submit",
     "/v1/lookup",
     "/v1/positions",
+    "/v1/orders",
     "/v1/deals",
     "/v1/account",
 }
@@ -103,6 +104,7 @@ def test_route_table_is_read_from_source_not_runtime_import():
         ("GET", "/v1/quote"),
         ("GET", "/v1/account"),
         ("GET", "/v1/positions"),
+        ("GET", "/v1/orders"),
         ("POST", "/v1/check"),
         ("POST", "/v1/submit"),
         ("POST", "/v1/lookup"),
