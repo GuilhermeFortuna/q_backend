@@ -291,3 +291,39 @@ def test_a_rebuilt_runtime_flattens_a_position_left_from_a_closed_session(db_eng
     assert recovery.now == NOW
     with factory() as session:
         assert get_open_net_position(session, deployment_id) is None
+
+
+def test_a_paused_deployment_still_records_a_broker_side_exit(db_engine):
+    _seed_account, deployment_id = _seed(db_engine, open_position=True)
+    factory = sessionmaker(bind=db_engine, expire_on_commit=False)
+    broker = ScriptedBroker()
+    broker.exit_state = BrokerOrderState(
+        status=BrokerOrderLookupStatus.FILLED,
+        fill=FillRecord(
+            broker_mode=BrokerMode.PAPER,
+            external_fill_id="exit-1",
+            side=ExecutionSide.SELL,
+            quantity=Decimal("1"),
+            price=Decimal("129900"),
+            filled_at=NOW,
+            metadata={"exit_reason": "stop_loss"},
+        ),
+        external_position_id="42",
+    )
+    worker = _worker(db_engine, broker=broker)
+    from q_backend.storage.db.execution_repositories import set_open_position_protection
+
+    with factory() as session:
+        set_open_position_protection(
+            session, deployment_id, stop_loss=Decimal("129900"), take_profit=None, external_position_id="42"
+        )
+        transition_deployment_lifecycle(session, deployment_id, DeploymentLifecycle.PAUSED)
+        session.commit()
+
+    with factory() as session:
+        worker._runtimes[deployment_id] = _runtime(session, deployment_id)
+        worker._reconcile_working_orders(session, now=NOW)
+        session.commit()
+
+    with factory() as session:
+        assert get_open_net_position(session, deployment_id) is None
