@@ -14,8 +14,9 @@ match their originals.
 
 - `q_backend` only. Pin the Q-138 release.
 - Do not edit expected values in existing tests. A changed existing result is a regression to report.
-- Never commit the author's strategies or their ports. Read them with
-  `git show research/experiments:experiments/strategies/<file>` into a scratch directory outside every repository.
+- Never commit the author's strategies or their ports to a public repository. Read them with
+  `git show research/experiments:experiments/strategies/<file>` into a scratch directory outside every repository,
+  and keep the finished ports in the private `q_strategies` repository.
 - Tests use hand-built bars and a `tmp_path` tick store. No MT5, worker, Docker, GPU or desktop.
 - Backend environment: `UV_PROJECT_ENVIRONMENT=/mnt/build/venvs/<name>`, also when committing.
 
@@ -79,6 +80,8 @@ classification, plus `tests/research/test_oco_orders.py`, `test_timed_orders.py`
   position closes at the next open. Port `AlphaExperimentStrategy`. `RSIStrategy` is dropped. Run both over
   their full `main()` ranges and record the data source and range of each. Attribute each diverging session to
   its first divergence.
+- [x] Add both ports to the private `q_strategies` repository as self-contained modules (`bracket_momentum.py`,
+  `alpha_experiment.py`), each reproducing its comparison port trade for trade.
 
 ## Verification
 

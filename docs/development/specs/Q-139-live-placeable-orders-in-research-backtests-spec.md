@@ -7,7 +7,7 @@
 
 **Amended 2026-10-29** after the first `BracketMomentumStrategy` comparison: three known differences added,
 label-only differences counted as matched, the strategy-file marker dropped, and the data source recorded in
-each comparison.
+each comparison. The finished ports are kept in the author's private `q_strategies` repository.
 
 ## Purpose
 
@@ -106,10 +106,12 @@ removed.
 
 ### Equivalence of the author's strategies
 
-The implementing agent proves the before/after match on real strategies without committing them, because they
-are private and the repositories are public. In a scratch directory outside every repository, it ports
-`BracketMomentumStrategy` (IND) and `AlphaExperimentStrategy` (WDO) from `experiments/strategies/` on the
-`research/experiments` branch. `RSIStrategy` is dropped from the comparisons: it reads the candle's high and low
+The author's strategies are private and the Q repositories are public, so neither the strategies nor their
+ports go into a public repository. The implementing agent proves the before/after match on real strategies: in
+a scratch directory outside every repository, it ports `BracketMomentumStrategy` (IND) and
+`AlphaExperimentStrategy` (WDO) from `experiments/strategies/` on the `research/experiments` branch. The
+finished ports are kept in the author's private `q_strategies` repository, one self-contained module per
+strategy. `RSIStrategy` is dropped from the comparisons: it reads the candle's high and low
 before pricing a fill, which the migration table already marks as having no replacement. It then runs each original and its port on the
 same bars and tick store with `compare_results`, over each strategy's full `main()` range. The board message
 reports, for each strategy:
@@ -148,4 +150,4 @@ Any unexplained difference is a defect in this task or in Q-138.
   undeployable runs in `q_terminal`, and the deprecation warning flags priced orders at backtest time.
 - Protective levels measured from the fill.
 - A library call that cancels a working timed exit without replacing it.
-- Committing the author's strategies or their ports anywhere.
+- Committing the author's strategies or their ports to a public repository.
