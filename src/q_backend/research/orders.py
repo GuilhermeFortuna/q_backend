@@ -68,16 +68,7 @@ class TradeOrder:
     take_profit : float, optional
         Take-profit exit level. On ``amend``, the new take-profit of every open position.
     price : float, optional
-        Entry order price, or the price of a close on the current bar. A priced entry or
-        close fills from the bar's ticks as a stop (at the first trade at or beyond the
-        price, at that trade's price) or a limit (at the price, once a trade goes beyond
-        it), by the side the price comes from. A market entry with a price fills on the
-        same bar; on a candle with an intrabar exit (stop, target,
-        breakeven or priced close), it fills only from a trade at or after that exit,
-        otherwise appearing in ``rejected_entries`` with reason ``touch_before_exit``.
-        A stop or limit entry rests and fills from ticks. A hook may return several priced
-        entries or closes in a list; the first the candle's ticks reach fills. Deprecated:
-        see :class:`PricedOrderDeprecationWarning`.
+        Price of a resting stop or limit entry. Market entries and closes cannot carry a price.
     kind : {'market', 'stop', 'limit'}, optional
         Entry order type. ``stop`` and ``limit`` orders require ``price``.
     expire_bars : int, optional
@@ -104,7 +95,7 @@ class TradeOrder:
     -----
     On a buy order, ``stop_loss`` must be strictly below ``price`` (or entry) and
     ``take_profit`` must be strictly above. On a sell order, the reverse applies.
-    Close orders may carry an explicit exit price. Amend and cancel orders carry no price.
+    Close, amend and cancel orders carry no price.
     """
 
     action: OrderActionLiteral
@@ -253,7 +244,7 @@ class TradeOrder:
         take_profit : float, optional
             Protective take-profit exit price level above entry.
         price : float, optional
-            Priced entry fill level for same-bar execution (deprecated).
+            Not supported; use a resting stop or limit entry.
         reason : str, optional
             Label recorded as the trade's ``entry_reason``.
 
@@ -283,7 +274,7 @@ class TradeOrder:
         take_profit : float, optional
             Protective take-profit exit price level below entry.
         price : float, optional
-            Priced entry fill level for same-bar execution (deprecated).
+            Not supported; use a resting stop or limit entry.
         reason : str, optional
             Label recorded as the trade's ``entry_reason``.
 
@@ -497,8 +488,7 @@ class TradeOrder:
         Parameters
         ----------
         price : float, optional
-            Explicit exit price (deprecated). The close fills at this price once a trade of the
-            current candle reaches it, from either side.
+            Not supported; use a timed exit or protective levels with amend.
         at : datetime.time or datetime, optional
             A timed exit: the position closes at the first trade at or after this instant. A time
             of day means its next occurrence after the deciding bar, in the frame's timezone. A

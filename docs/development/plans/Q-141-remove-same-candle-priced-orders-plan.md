@@ -40,7 +40,7 @@ order-kind classification.
 **Files:** `docs/research/user_guide/execution.rst`, `live_placeable_orders.rst`, `backtesting.rst`, and the
 `TradeOrder` docstrings.
 
-- [ ] Remove the priced-order documentation and the deprecation notes. Commit.
+- [x] Remove the priced-order documentation and the deprecation notes. Commit.
 
 ## Verification
 
