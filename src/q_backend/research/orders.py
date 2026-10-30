@@ -130,6 +130,10 @@ class TradeOrder:
             )
         if self.kind not in self._VALID_KINDS:
             raise ValueError(f"Invalid TradeOrder kind {self.kind!r}. Must be 'market', 'stop' or 'limit'.")
+        if self.price is not None and self.action in ("buy", "sell") and self.kind == "market":
+            raise ValueError("priced entries are removed; use resting stop or limit entries, or an OCO group")
+        if self.price is not None and self.action == "close":
+            raise ValueError("priced closes are removed; use a timed exit or protective levels with amend")
         _validate_level("stop_loss", self.stop_loss)
         _validate_level("take_profit", self.take_profit)
         _validate_level("price", self.price)

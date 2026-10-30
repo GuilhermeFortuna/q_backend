@@ -21,7 +21,7 @@ live-placeable.
 
 **Files:** `research/orders.py`, `research/adapter.py`, `tests/research/test_priced_orders_removed.py` (new).
 
-- [ ] Write failing tests for acceptance 2, implement the refusals with replacement-naming messages, and commit.
+- [x] Write failing tests for acceptance 2, implement the refusals with replacement-naming messages, and commit.
 
 ### 2. Tests and kinds
 
