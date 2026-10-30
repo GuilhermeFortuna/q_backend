@@ -114,6 +114,19 @@ high, fills on that touch, because a stop fills at the first trade at or beyond 
 level. The port has one extra trade, on the candle where the high first equals the
 previous high. ``compare_results`` reports it as a one-sided trade on the right.
 
+The same applies to exits. A legacy stop closes only when ``low < stop``, so a trade at
+exactly the stop does not close the position. A resting stop fills on that exact touch.
+The fill is at the stop price, and the legacy form exits later, on its own condition.
+``compare_results`` reports the differing pair, with ``exit_time`` as the first field
+that differs.
+
+**Entry-bar take-profit.** A legacy form can close on its entry bar at a target measured
+from the fill price, here the entry price plus 3. The replacement can set a target only
+once the fill is known, at the close of the entry bar, so the target first applies on
+the next bar. A trade that reaches the target on its entry bar is closed by the legacy
+form and held by the replacement. Protective levels measured from the fill are not a
+feature of the replacement; this difference documents their effect.
+
 **Several stops.** A hook that returns several priced stop closes exits at whichever
 level the ticks reach first. A port keeps one stop-loss level, so it may exit at a
 different price, or not at all. ``compare_results`` reports the differing pair, with

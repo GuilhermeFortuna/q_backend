@@ -229,6 +229,73 @@ def test_a_re_entry_touched_only_before_an_intrabar_exit_is_rejected_while_the_r
     assert touch["entry_time"] == pd.Timestamp("2026-10-05 10:20", tz="America/Sao_Paulo")
 
 
+def test_a_stop_exit_on_an_exact_touch_fills_where_the_legacy_stop_needs_a_strict_breach(tmp_path):
+    # Known difference, an extension of the strictly-beyond one to exits: the legacy stop closes only when
+    # low < stop, so a trade at exactly 95 does not stop the long. A resting stop at 95, amended at the previous
+    # close, fills on that exact touch at 95. The legacy form exits at its time close at 99.
+    rows = [
+        ("10:00:00", 100.0),
+        ("10:10:00", 100.0),
+        ("10:20:00", 100.0),
+        ("10:22:00", 95.0),
+        ("10:24:00", 99.0),
+        ("10:30:00", 99.0),
+        ("10:40:00", 99.0),
+    ]
+
+    def legacy_exit(frame: pd.DataFrame, positions: tuple):
+        if positions and frame.iloc[-1]["low"] < 95.0:
+            return TradeOrder.close(price=95.0, reason="stop")
+        if positions and len(frame) == 4:
+            return TradeOrder.close(reason="time")
+        return None
+
+    legacy = Legacy(entries={0: TradeOrder.buy()}, exit_fn=legacy_exit)
+    port = Legacy(
+        entries={0: TradeOrder.buy()},
+        exits={1: TradeOrder.amend(stop_loss=95.0), 3: TradeOrder.close(reason="time")},
+    )
+    old, new = _run_both(tmp_path, rows, legacy, port)
+    report = compare_results(old, new)
+    assert [difference.field for difference in report.differing] == ["exit_time"]
+    assert new.trades.iloc[0]["exit_price"] == 95.0
+    assert old.trades.iloc[0]["exit_price"] == 99.0
+
+
+def test_an_entry_bar_take_profit_on_the_fill_price_is_not_set_until_the_next_bar(tmp_path):
+    # Known difference: the legacy form checks a target measured from the fill price on the entry bar itself
+    # (entry 100 + 3 = 103), and the 10:12 trade reaches it. The replacement can set that target only once the
+    # fill is known, at the close of the entry bar, so it first applies on the next bar and holds the trade.
+    rows = [
+        ("10:00:00", 100.0),
+        ("10:10:00", 100.0),
+        ("10:12:00", 104.0),
+        ("10:20:00", 101.0),
+        ("10:22:00", 101.0),
+        ("10:30:00", 101.0),
+        ("10:40:00", 101.0),
+    ]
+
+    def legacy_exit(frame: pd.DataFrame, positions: tuple):
+        if positions and frame.iloc[-1]["high"] > positions[0].entry_price + 3.0:
+            return TradeOrder.close(price=positions[0].entry_price + 3.0, reason="target")
+        if positions and len(frame) == 4:
+            return TradeOrder.close(reason="time")
+        return None
+
+    legacy = Legacy(entries={0: TradeOrder.buy()}, exit_fn=legacy_exit)
+    port = Legacy(
+        entries={0: TradeOrder.buy()},
+        exits={1: TradeOrder.amend(take_profit=103.0), 3: TradeOrder.close(reason="time")},
+    )
+    with pytest.warns(PricedOrderDeprecationWarning):
+        old, new = _run_both(tmp_path, rows, legacy, port)
+    report = compare_results(old, new)
+    assert [difference.field for difference in report.differing] == ["exit_time"]
+    assert old.trades.iloc[0]["exit_price"] == 103.0
+    assert new.trades.iloc[0]["exit_price"] == 101.0
+
+
 def test_several_priced_stops_exit_at_the_level_reached_first_while_one_stop_may_differ(tmp_path):
     # The legacy hook returns two stop closes; the ticks reach 97 first and the trade exits there.
     # A port with a single stop at 95 does not exit at 97, so the trade's exit differs.

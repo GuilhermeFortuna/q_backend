@@ -82,7 +82,10 @@ removed.
 
 - Known differences that the guide explains with examples:
   - **Strictly beyond.** A condition such as `high > prev_high` (strictly beyond) gating a stop at `prev_high`
-    enters on exact touches once it is a stop order.
+    enters on exact touches once it is a stop order. The same holds for exits: the legacy stop closes only when
+    `low < stop`, and a resting stop fills on an exact touch.
+  - **Entry-bar take-profit.** A legacy form may close on its entry bar at a target measured from the fill price.
+    The replacement sets a target only once the fill is known, so it first applies on the next bar.
   - **Several stops.** Several priced stop closes, resolved by the hook's own precedence, become one stop at
     the level reached first.
   - **Stop exit reason.** A priced stop close keeps the reason the hook gave it. A protective stop exits as
@@ -126,7 +129,8 @@ Any unexplained difference is a defect in this task or in Q-138.
 2. Fixture strategies written for the tests reproduce the identical rows of the migration table through
    `backtest()`: legacy form and port give `compare_results(...).identical`. The known differences, including
    the three added after the first comparison (stop exit reason, protective levels from a gap fill, re-entry
-   after an intrabar exit), each have a fixture pair that produces exactly the documented difference.
+   after an intrabar exit) and the two added after the Alpha comparison (exact-touch stop exits, entry-bar
+   take-profit), each have a fixture pair that produces exactly the documented difference.
 3. OCO, timed exit, `expire_at` and `latency_ms` behave as Q-138 defines, through the library.
 4. The deprecation warning appears once per run with priced orders, and never otherwise.
 5. `order_kinds` records the new kinds, and Q-136's deployment check refuses them until Q-137.
