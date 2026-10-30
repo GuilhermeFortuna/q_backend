@@ -124,12 +124,40 @@ class ProtectiveOrders:
                 decision_id=decision_id,
                 worker_id=worker_id,
             )
+        self.place_entries(
+            session,
+            deployment=deployment,
+            eval_result=eval_result,
+            decision_id=decision_id,
+            lease_token=lease_token,
+            worker_id=worker_id,
+            cost_config=cost_config,
+            point_value=point_value,
+        )
+        if eval_result.timed_exit_at is not None and get_open_net_position(session, deployment.id) is not None:
+            set_open_position_timed_exit(session, deployment.id, exit_at=eval_result.timed_exit_at)
+            self._commit(session)
+
+    def place_entries(
+        self,
+        session: Session,
+        *,
+        deployment: Any,
+        eval_result: ForwardDecisionResult,
+        decision_id: Optional[uuid.UUID],
+        lease_token: str,
+        worker_id: str,
+        cost_config: Any,
+        point_value: Decimal,
+    ) -> Optional[str]:
+        """Place the bar's resting entry or OCO group, if it has one. Returns the outcome."""
+        quantity = Decimal(str(eval_result.requested_quantity or 0))
         if eval_result.pending_entry is not None:
-            self.place_pending(
+            return self.place_pending(
                 session,
                 deployment=deployment,
                 spec=eval_result.pending_entry,
-                quantity=Decimal(str(eval_result.requested_quantity or 0)),
+                quantity=quantity,
                 bar_close_time=eval_result.bar_close_time,
                 decision_id=decision_id,
                 lease_token=lease_token,
@@ -138,11 +166,11 @@ class ProtectiveOrders:
                 point_value=point_value,
             )
         if eval_result.pending_group is not None:
-            self.place_group(
+            return self.place_group(
                 session,
                 deployment=deployment,
                 legs=eval_result.pending_group,
-                quantity=Decimal(str(eval_result.requested_quantity or 0)),
+                quantity=quantity,
                 bar_close_time=eval_result.bar_close_time,
                 decision_id=decision_id,
                 lease_token=lease_token,
@@ -150,9 +178,7 @@ class ProtectiveOrders:
                 cost_config=cost_config,
                 point_value=point_value,
             )
-        if eval_result.timed_exit_at is not None and get_open_net_position(session, deployment.id) is not None:
-            set_open_position_timed_exit(session, deployment.id, exit_at=eval_result.timed_exit_at)
-            self._commit(session)
+        return None
 
     def place_pending(
         self,

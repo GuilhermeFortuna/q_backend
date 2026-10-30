@@ -256,11 +256,21 @@ class ExecutionService:
                 timing=timing,
             )
 
-        if eval_result.manages_orders and not flatten:
+        # A bar that closes the position and re-arms a resting entry places it once the close has
+        # filled, as the backtest works the entry from the next bar with the position gone.
+        rearm = (
+            not flatten
+            and eval_result.signal_action == SignalAction.CLOSE
+            and (eval_result.pending_entry is not None or eval_result.pending_group is not None)
+        )
+        bar_management = (
+            eval_result.model_copy(update={"pending_entry": None, "pending_group": None}) if rearm else eval_result
+        )
+        if bar_management.manages_orders and not flatten:
             self._protective.apply_bar(
                 session,
                 deployment=deployment,
-                eval_result=eval_result,
+                eval_result=bar_management,
                 decision_id=decision.id,
                 lease_token=lease_token,
                 worker_id=worker_id,
@@ -537,6 +547,21 @@ class ExecutionService:
                     producer=worker_id,
                 )
             raise
+
+        if rearm:
+            if get_open_net_position(session, deployment.id) is None:
+                self._protective.place_entries(
+                    session,
+                    deployment=deployment,
+                    eval_result=eval_result,
+                    decision_id=decision.id,
+                    lease_token=lease_token,
+                    worker_id=worker_id,
+                    cost_config=cost_config,
+                    point_value=point_value,
+                )
+            else:
+                logger.warning("re-armed entry not placed deployment=%s: the close left a position", deployment.id)
 
         timing = timing.model_copy(
             update={

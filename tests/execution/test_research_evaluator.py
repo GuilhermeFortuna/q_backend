@@ -318,3 +318,108 @@ def test_research_evaluator_recovery_replay_reconstructs_without_emitting():
     res2_b4 = evaluator2.ingest_completed_bar(bars.iloc[4:5])
     assert res2_b4.signal_action == res1_b4.signal_action
     assert res2_b4.signal_action == SignalAction.CLOSE
+
+
+def _open_long(evaluator: ResearchEvaluator, entry_time) -> None:
+    evaluator.set_open_trade(
+        Trade(
+            id="t1",
+            order_id="o1",
+            symbol="WIN$N",
+            action=OrderAction.BUY,
+            entry_time=entry_time,
+            entry_price=105.0,
+            quantity=1.0,
+        )
+    )
+
+
+class ExitListStrategy(ResearchStrategy):
+    """Returns an amendment and a timed close together, as one list."""
+
+    parameters = {}
+
+    def compute_indicators(self, frame):
+        return frame
+
+    def entry_strategy(self, frame, positions=()):
+        return None
+
+    def exit_strategy(self, frame, positions=()):
+        if positions:
+            return [TradeOrder.amend(stop_loss=99.0), TradeOrder.close(at=dt.time(16, 0), reason="time up")]
+        return None
+
+
+def test_research_evaluator_applies_every_exit_order_of_a_list():
+    bars = _sample_day_bars()
+    evaluator = ResearchEvaluator(
+        deployment_id="dep-list",
+        identity=_make_identity(),
+        strategy_instance=ExitListStrategy(),
+        window_bound=100,
+    )
+    evaluator.seed_window(bars.iloc[:2])
+    _open_long(evaluator, bars.index[1])
+
+    result = evaluator.ingest_completed_bar(bars.iloc[2:3])
+
+    assert result.signal_action == SignalAction.HOLD
+    assert result.protect_levels == {"stop_loss": 99.0, "take_profit": None}
+    assert result.timed_exit_at == pd.Timestamp("2024-01-02 16:00", tz=BRASILIA_TZ).to_pydatetime()
+
+
+class CloseAndRearmStrategy(ResearchStrategy):
+    """Closes the open position and, on the same bar, re-arms an OCO bracket for the next one."""
+
+    parameters = {}
+
+    def compute_indicators(self, frame):
+        return frame
+
+    def entry_strategy(self, frame, positions=()):
+        return TradeOrder.oco(
+            TradeOrder.buy_stop(130.0, reason="bracket buy"),
+            TradeOrder.sell_stop(90.0, reason="bracket sell"),
+        )
+
+    def exit_strategy(self, frame, positions=()):
+        return TradeOrder.close(reason="rotate") if positions else None
+
+
+def test_research_evaluator_rearms_a_bracket_on_the_bar_its_close_takes_the_position_out():
+    bars = _sample_day_bars()
+    evaluator = ResearchEvaluator(
+        deployment_id="dep-rearm",
+        identity=_make_identity(),
+        strategy_instance=CloseAndRearmStrategy(),
+        window_bound=100,
+    )
+    evaluator.seed_window(bars.iloc[:2])
+    _open_long(evaluator, bars.index[1])
+
+    result = evaluator.ingest_completed_bar(bars.iloc[2:3])
+
+    assert result.signal_action == SignalAction.CLOSE
+    assert result.reason == "rotate"
+    assert [leg["price"] for leg in result.pending_group] == [130.0, 90.0]
+    assert result.requested_quantity == 1.0
+
+
+def test_research_evaluator_does_not_rearm_on_a_day_trade_close():
+    bars = _sample_day_bars()
+    evaluator = ResearchEvaluator(
+        deployment_id="dep-rearm-eod",
+        identity=_make_identity(),
+        strategy_instance=CloseAndRearmStrategy(),
+        window_bound=100,
+    )
+    evaluator.seed_window(bars.iloc[:5])
+    _open_long(evaluator, bars.index[1])
+
+    # The 16:00 bar closes at 16:30, the day-trade close time.
+    result = evaluator.ingest_completed_bar(bars.iloc[5:6])
+
+    assert result.signal_action == SignalAction.CLOSE
+    assert result.reason == "day_trade_close"
+    assert result.pending_group is None

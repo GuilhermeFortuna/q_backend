@@ -26,8 +26,7 @@ from q_backend.research.frame import normalize_timeframe
 from q_backend.research.positions import ResearchPosition
 from q_backend.research.strategy import ResearchStrategy
 
-# Order kinds a forward deployment can run. Priced entries and closes, OCO groups and timed
-# exits stay outside the deployable set until their own tasks land.
+# Order kinds a forward deployment can run; validation.DEPLOYABLE_ORDER_KINDS holds the same set.
 _ENTRY_KINDS = frozenset(
     {"market_entry", "protective_levels", "resting_stop", "resting_limit", "expiring_entry", "cancel", "oco"}
 )
@@ -278,32 +277,39 @@ class ResearchEvaluator:
                     risk_rejection_message = f"exit_strategy error: {exc}"
                     exit_orders = ()
 
-                if exit_orders:
-                    first = exit_orders[0]
-                    kinds = classify_order(first)
-                    if kinds - _EXIT_KINDS:
-                        pause_requested = True
-                        risk_rejection_code = "unsupported_order_kind"
-                        risk_rejection_message = f"Order kind {sorted(kinds)} is not deployable"
-                    elif first.action == "close" and first.at is not None:
-                        timed_exit_at = self._expire_instant(first.at, bar_close_time_value)
-                    elif first.action == "close" and first.price is None:
-                        signal_action = SignalAction.CLOSE
-                        reason = first.reason or "exit_rule"
-                    elif first.action == "amend":
-                        protect_levels = {"stop_loss": first.stop_loss, "take_profit": first.take_profit}
-                    elif first.action == "cancel":
+                # Every order of the list applies, as in the backtest: the first plain close and the
+                # first timed close count, and later amendments override earlier ones.
+                kinds = set().union(*(classify_order(order) for order in exit_orders))
+                if kinds - _EXIT_KINDS:
+                    pause_requested = True
+                    risk_rejection_code = "unsupported_order_kind"
+                    risk_rejection_message = f"Order kind {sorted(kinds)} is not deployable"
+                    exit_orders = ()
+                for order in exit_orders:
+                    if order.action == "close" and order.at is not None:
+                        if timed_exit_at is None:
+                            timed_exit_at = self._expire_instant(order.at, bar_close_time_value)
+                    elif order.action == "close":
+                        if signal_action != SignalAction.CLOSE:
+                            signal_action = SignalAction.CLOSE
+                            reason = order.reason or "exit_rule"
+                    elif order.action == "amend":
+                        protect_levels = {"stop_loss": order.stop_loss, "take_profit": order.take_profit}
+                    elif order.action == "cancel":
                         cancel_pending = True
 
             # Working entries lapse once the day-trade window has closed.
             if self._day_trade and bar_time > end_t and not positions:
                 cancel_pending = True
 
-            # 3. Entry strategy hook
-            if signal_action == SignalAction.HOLD and not positions and not pause_requested:
+            # 3. Entry strategy hook: while flat, and on a bar whose own close takes the position
+            #    out, where the backtest also asks it (a resting entry then works from the next bar).
+            closing_bar = signal_action == SignalAction.CLOSE and reason != "day_trade_close"
+            rearm_only = bool(positions) and closing_bar
+            if (signal_action == SignalAction.HOLD and not positions or rearm_only) and not pause_requested:
                 if self._day_trade and (bar_time < start_t or bar_time > end_t):
                     # Refuse entry outside trading window
-                    signal_action = SignalAction.HOLD
+                    pass
                 else:
                     try:
                         entry_orders = self._adapter._invoke_hook("entry_strategy", prefix, positions)
@@ -320,6 +326,10 @@ class ResearchEvaluator:
                             pause_requested = True
                             risk_rejection_code = "unsupported_order_kind"
                             risk_rejection_message = f"Order kind {sorted(kinds)} is not deployable"
+                        elif rearm_only and first.action in ("buy", "sell") and first.kind == "market":
+                            # One market order goes out per bar, so a market re-entry on the closing
+                            # bar is not sent; the next bar, flat, decides it again.
+                            pass
                         elif first.action in ("buy", "sell") and first.kind == "market" and first.price is None:
                             signal_action = SignalAction.BUY if first.action == "buy" else SignalAction.SELL
                             reason = first.reason or "entry"
@@ -327,7 +337,8 @@ class ResearchEvaluator:
                             entry_take_profit = first.take_profit
                         elif first.action in ("buy", "sell") and first.kind in ("stop", "limit"):
                             pending_entry = self._pending_entry_spec(first, bar_close_time_value)
-                            reason = first.reason or "entry"
+                            if not rearm_only:
+                                reason = first.reason or "entry"
                         elif first.action == "oco":
                             pending_group = tuple(
                                 self._pending_entry_spec(leg, bar_close_time_value) for leg in first.legs
