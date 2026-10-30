@@ -89,6 +89,48 @@ the instant, at that trade's price. A timed exit with no position open does noth
   position closes.
 * ``close(at=...)`` takes no ``price``, and carries a ``reason`` as any close does.
 
+Forward deployment on MT5
+-------------------------
+
+A deployment on an MT5 demo account sends each kind to the broker, which holds it
+across candles. The mapping follows the research order:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 60
+
+   * - Research order
+     - Broker action
+   * - ``buy()`` or ``sell()`` with ``stop_loss`` or ``take_profit``
+     - A market deal carrying the levels. The stop and target are broker-side exits.
+   * - ``amend(stop_loss=..., take_profit=...)``
+     - New levels on the open position. An amend with one level keeps the other.
+   * - ``buy_stop``, ``buy_limit``, ``sell_stop``, ``sell_limit``
+     - A pending order that rests until it fills, expires or is removed. Its expiry is
+       the earlier of ``expire_bars`` (counted from the deciding candle's close) and
+       ``expire_at``.
+   * - A new resting entry while one is working
+     - The working order is removed first, then the new one is placed. If the removal is
+       refused, nothing new is placed.
+   * - ``cancel()``
+     - Removal of the working entry.
+   * - ``TradeOrder.oco(...)``
+     - One pending order per leg under one group. The first leg to fill removes its
+       siblings. If two legs fill before a sibling can be removed, the excess is closed at
+       market, a risk event is recorded and the deployment pauses.
+   * - ``close(at=...)``
+     - The position is closed at market by the worker at the first poll at or after the
+       instant. Timed exits act at poll granularity, not per tick.
+
+Fills, expiries and cancellations of resting orders are reconciled with the broker
+before each decision and between candles. A stop or target that the broker triggers
+appears in the ledger as an exit with reason ``stop_loss`` or ``take_profit``. A
+working entry is removed when the deployment pauses, is stopped, the kill switch is
+on, the deployment flattens, or the day-trade window closes.
+
+Not yet deployable: trailing and breakeven exit rules (``exit_params``). A backtest that
+uses them is refused at deployment, because the live path does not yet move those stops.
+
 Expiry and latency
 ------------------
 
