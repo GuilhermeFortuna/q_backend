@@ -179,3 +179,38 @@ def test_timed_and_expiring_orders_are_validated():
         TradeOrder.close(at=time(10, 25, tzinfo=BRASILIA_TZ))
     with pytest.raises(ValueError, match="datetime.time, a datetime or None"):
         TradeOrder.close(at="10:25")
+
+
+class StopOutThenReenter(ResearchStrategy):
+    """The first trade sets a 10:45 timed exit and stops out; the second trade sets none."""
+
+    def entry_strategy(self, frame: pd.DataFrame, positions: tuple = ()) -> TradeOrder | None:
+        if len(frame) in (1, 3) and not positions:
+            return TradeOrder.buy(stop_loss=99.0, reason="go")
+        return None
+
+    def exit_strategy(self, frame: pd.DataFrame, positions: tuple = ()) -> TradeOrder | None:
+        if positions and len(frame) == 2:
+            return TradeOrder.close(at=time(10, 45), reason="time up")
+        return None
+
+
+def test_a_timed_exit_ends_with_the_trade_it_was_set_for(tmp_path):
+    store = _write_session(
+        tmp_path,
+        [
+            ("10:00:00", 100.0),
+            ("10:10:00", 100.0),
+            ("10:20:00", 98.0),
+            ("10:21:00", 100.0),
+            ("10:30:00", 100.0),
+            ("10:40:00", 100.5),
+            ("10:46:00", 101.0),
+            ("10:50:00", 101.5),
+            ("11:00:00", 102.0),
+            ("11:10:00", 103.0),
+        ],
+    )
+    result = _run(_m10_frame(store), StopOutThenReenter(), store)
+    assert result.trades.iloc[0]["exit_reason"] == "STOP_LOSS"
+    assert "time up" not in set(result.trades["exit_reason"])
