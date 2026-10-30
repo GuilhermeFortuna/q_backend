@@ -300,6 +300,14 @@ def test_flatten_queues_pending_action_and_audit(api_db_session: Session):
         DeploymentActionRequest(action="flatten", confirm=True, actor="operator"),
     )
     assert result.pending_action == "flatten"
+    with pytest.raises(HTTPException) as exc:
+        execution_service.apply_deployment_action(
+            api_db_session,
+            deployment.id,
+            DeploymentActionRequest(action="archive", confirm=True),
+        )
+    assert exc.value.status_code == 409
+    assert exc.value.detail == ("deployment has a pending flatten; the worker clears it once the position is closed")
     events, total = list_audit_events_page(api_db_session, deployment_id=deployment.id)
     assert total == 1
     assert events[0].event_type == "deployment_flatten"

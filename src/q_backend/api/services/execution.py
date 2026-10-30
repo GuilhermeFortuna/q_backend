@@ -598,7 +598,10 @@ def apply_deployment_action(
             if deployment.lifecycle == "running":
                 raise HTTPException(status_code=409, detail="stop the deployment before archiving it")
             if deployment.pending_action is not None:
-                raise HTTPException(status_code=409, detail="deployment has a pending action")
+                raise HTTPException(
+                    status_code=409,
+                    detail="deployment has a pending flatten; the worker clears it once the position is closed",
+                )
             position = get_open_net_position(session, deployment_id)
             if position is not None and position.is_open:
                 raise HTTPException(status_code=409, detail="flatten the open position before archiving")
