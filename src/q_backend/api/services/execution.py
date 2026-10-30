@@ -83,6 +83,7 @@ from q_backend.execution.validation import (
     identity_from_saved_backtest,
     resolve_catalog_configuration,
     resolve_saved_backtest,
+    MARKET_ORDER_KINDS,
     validate_broker_mode,
     validate_paper_cost_config,
     validate_risk_config,
@@ -259,6 +260,11 @@ def create_deployment(
                 sizing_config=body.identity.sizing_config if body.identity else None,
                 market_data_service=market_data_service,
             )
+            if broker_mode == BrokerMode.PAPER and resolved.order_kinds - MARKET_ORDER_KINDS:
+                raise ExecutionValidationError(
+                    "paper deployments cannot place stop, limit or protective orders; " "use an MT5 demo deployment",
+                    status_code=422,
+                )
             identity = resolved.identity
             source_kind = resolved.source_kind
             source_strategy_name = resolved.source_strategy_name

@@ -105,6 +105,7 @@ class RiskRejectionCode(str, Enum):
     BROKER_UNAVAILABLE = "broker_unavailable"
     UNKNOWN_PRIOR_ORDER = "unknown_prior_order"
     PROTECTIVE_LEVEL_REJECTED = "protective_level_rejected"
+    OCO_DOUBLE_FILL = "oco_double_fill"
 
 
 class LedgerEntryType(str, Enum):

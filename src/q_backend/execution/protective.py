@@ -33,12 +33,15 @@ from q_backend.execution.brokers.base import (
     BrokerSubmissionResult,
     CancelOrderRequest,
     ExecutionBroker,
+    MarketOrderRequest,
+    PaperCostConfig,
     PendingOrderRequest,
     PositionExitRequest,
     ProtectionRequest,
 )
 from q_backend.execution.domain import (
     BrokerMode,
+    DeploymentLifecycle,
     ExecutionIntentKind,
     ExecutionOrderStatus,
     ExecutionOrderType,
@@ -58,6 +61,8 @@ from q_backend.storage.db.execution_repositories import (
     mark_execution_dispatch_attempt,
     record_risk_event,
     set_open_position_protection,
+    set_open_position_timed_exit,
+    transition_deployment_lifecycle,
     transition_execution_order,
 )
 
@@ -132,6 +137,22 @@ class ProtectiveOrders:
                 cost_config=cost_config,
                 point_value=point_value,
             )
+        if eval_result.pending_group is not None:
+            self.place_group(
+                session,
+                deployment=deployment,
+                legs=eval_result.pending_group,
+                quantity=Decimal(str(eval_result.requested_quantity or 0)),
+                bar_close_time=eval_result.bar_close_time,
+                decision_id=decision_id,
+                lease_token=lease_token,
+                worker_id=worker_id,
+                cost_config=cost_config,
+                point_value=point_value,
+            )
+        if eval_result.timed_exit_at is not None and get_open_net_position(session, deployment.id) is not None:
+            set_open_position_timed_exit(session, deployment.id, exit_at=eval_result.timed_exit_at)
+            self._commit(session)
 
     def place_pending(
         self,
@@ -147,12 +168,73 @@ class ProtectiveOrders:
         cost_config: Any,
         point_value: Decimal,
     ) -> str:
-        """Replace the working entry with a new resting stop or limit order. Returns the outcome."""
-        if quantity <= 0:
-            return "invalid_quantity"
+        """Replace the working entries with one resting stop or limit order. Returns the outcome."""
+        replaced = self._replace_working(session, deployment=deployment, worker_id=worker_id)
+        if replaced != "clear":
+            return replaced
+        return self._place_one(
+            session,
+            deployment=deployment,
+            spec=spec,
+            quantity=quantity,
+            bar_close_time=bar_close_time,
+            decision_id=decision_id,
+            lease_token=lease_token,
+            worker_id=worker_id,
+            cost_config=cost_config,
+            point_value=point_value,
+            group_id=None,
+        )
+
+    def place_group(
+        self,
+        session: Session,
+        *,
+        deployment: Any,
+        legs: tuple[dict[str, Any], ...],
+        quantity: Decimal,
+        bar_close_time: datetime,
+        decision_id: Optional[uuid.UUID],
+        lease_token: str,
+        worker_id: str,
+        cost_config: Any,
+        point_value: Decimal,
+    ) -> str:
+        """Place an OCO group: one resting entry per leg, tagged with a shared group id.
+
+        A leg the broker does not accept takes the placed legs down with it, so the group
+        never rests partly.
+        """
+        replaced = self._replace_working(session, deployment=deployment, worker_id=worker_id)
+        if replaced != "clear":
+            return replaced
+        group_id = uuid.uuid4().hex
+        placed: list[ExecutionOrder] = []
+        for leg in legs:
+            outcome = self._place_one(
+                session,
+                deployment=deployment,
+                spec=leg,
+                quantity=quantity,
+                bar_close_time=bar_close_time,
+                decision_id=decision_id,
+                lease_token=lease_token,
+                worker_id=worker_id,
+                cost_config=cost_config,
+                point_value=point_value,
+                group_id=group_id,
+            )
+            if outcome != "working":
+                for sibling in placed:
+                    self._cancel(session, deployment, sibling, worker_id, reason="oco_leg_refused")
+                return outcome
+            placed.append(self._latest_entry(session, deployment.id, group_id))
+        return "working"
+
+    def _replace_working(self, session: Session, *, deployment: Any, worker_id: str) -> str:
+        """Remove the working entries a new placement replaces; ``clear`` when none is left."""
         if get_open_net_position(session, deployment.id) is not None:
             return "position_open"
-
         for working in list_working_orders(session, deployment.id):
             if working.status == ExecutionOrderStatus.UNKNOWN.value:
                 # Its fate is not known yet; placing a second order now could double the entry.
@@ -160,7 +242,25 @@ class ProtectiveOrders:
             outcome = self._cancel(session, deployment, working, worker_id, reason="replaced")
             if outcome != "cancelled":
                 return f"replace_{outcome}"
+        return "clear"
 
+    def _place_one(
+        self,
+        session: Session,
+        *,
+        deployment: Any,
+        spec: dict[str, Any],
+        quantity: Decimal,
+        bar_close_time: datetime,
+        decision_id: Optional[uuid.UUID],
+        lease_token: str,
+        worker_id: str,
+        cost_config: Any,
+        point_value: Decimal,
+        group_id: Optional[str],
+    ) -> str:
+        if quantity <= 0:
+            return "invalid_quantity"
         side = ExecutionSide(spec["side"])
         order_type = ExecutionOrderType(spec["order_type"])
         now = self._clock()
@@ -179,6 +279,9 @@ class ProtectiveOrders:
         if rejection is not None:
             return "risk_rejected"
 
+        details: dict[str, Any] = {"reason": spec.get("reason"), "bar_close_time": bar_close_time.isoformat()}
+        if group_id is not None:
+            details["oco_group"] = group_id
         order = create_execution_order_intent(
             session,
             deployment_id=deployment.id,
@@ -192,7 +295,7 @@ class ProtectiveOrders:
             stop_loss=_decimal_or_none(spec.get("stop_loss")),
             take_profit=_decimal_or_none(spec.get("take_profit")),
             expires_at=expires_at,
-            metadata={"reason": spec.get("reason"), "bar_close_time": bar_close_time.isoformat()},
+            metadata=details,
             intent_committed_at=now,
             producer=worker_id,
         )
@@ -228,6 +331,21 @@ class ProtectiveOrders:
                 metadata={"exception": str(exc)},
             )
         return self._record_pending_result(session, order, result, now=self._clock(), worker_id=worker_id)
+
+    def _latest_entry(self, session: Session, deployment_id: uuid.UUID, group_id: str) -> ExecutionOrder:
+        members = self._group_members(session, deployment_id, group_id)
+        return members[-1]
+
+    def _group_members(self, session: Session, deployment_id: uuid.UUID, group_id: str) -> list[ExecutionOrder]:
+        rows = session.execute(
+            select(ExecutionOrder)
+            .where(
+                ExecutionOrder.deployment_id == deployment_id,
+                ExecutionOrder.intent_kind == ExecutionIntentKind.ENTRY.value,
+            )
+            .order_by(ExecutionOrder.created_at)
+        ).scalars()
+        return [row for row in rows if (row.details or {}).get("oco_group") == group_id]
 
     def _record_pending_result(
         self,
@@ -517,9 +635,16 @@ class ProtectiveOrders:
         deployment: Any,
         worker_id: str,
         point_value: Decimal,
+        cost_config: Optional[PaperCostConfig] = None,
     ) -> None:
         """Bring working orders, unresolved management intents and broker-side exits up to date."""
-        self._reconcile_working_entries(session, deployment=deployment, worker_id=worker_id, point_value=point_value)
+        self._reconcile_working_entries(
+            session,
+            deployment=deployment,
+            worker_id=worker_id,
+            point_value=point_value,
+            cost_config=cost_config or PaperCostConfig(),
+        )
         self._reconcile_management_intents(session, deployment=deployment, worker_id=worker_id)
         self._reconcile_broker_exit(session, deployment=deployment, worker_id=worker_id, point_value=point_value)
 
@@ -547,14 +672,40 @@ class ProtectiveOrders:
         deployment: Any,
         worker_id: str,
         point_value: Decimal,
+        cost_config: PaperCostConfig,
     ) -> None:
         for order in list_working_orders(session, deployment.id):
+            if order.status not in _WORKING_ENTRY:
+                # Removed earlier in this pass, as the sibling of a filled OCO leg.
+                continue
             state = self._broker.lookup_pending_order(self._pending_request(deployment, order))
             now = self._clock()
             if state.status == BrokerOrderLookupStatus.FILLED and state.fill is not None:
+                group_id = (order.details or {}).get("oco_group")
+                siblings = (
+                    [m for m in self._group_members(session, deployment.id, group_id) if m.id != order.id]
+                    if group_id
+                    else []
+                )
+                double_fill = any(m.status == ExecutionOrderStatus.FILLED.value for m in siblings)
                 self._apply_pending_fill(
                     session, deployment, order, state, point_value=point_value, worker_id=worker_id
                 )
+                if group_id and double_fill:
+                    self._contain_double_fill(
+                        session,
+                        deployment,
+                        order,
+                        excess=state.fill.quantity,
+                        excess_side=_opposite(state.fill.side),
+                        cost_config=cost_config,
+                        point_value=point_value,
+                        worker_id=worker_id,
+                    )
+                elif group_id:
+                    for sibling in siblings:
+                        if sibling.status == ExecutionOrderStatus.WORKING.value:
+                            self._cancel(session, deployment, sibling, worker_id, reason="oco_sibling_filled")
             elif state.status == BrokerOrderLookupStatus.WORKING:
                 if order.status == ExecutionOrderStatus.UNKNOWN.value:
                     transition_execution_order(
@@ -631,6 +782,90 @@ class ProtectiveOrders:
             external_position_id=state.external_position_id,
         )
         self._commit(session)
+
+    def _contain_double_fill(
+        self,
+        session: Session,
+        deployment: Any,
+        order: ExecutionOrder,
+        *,
+        excess: Decimal,
+        excess_side: ExecutionSide,
+        cost_config: PaperCostConfig,
+        point_value: Decimal,
+        worker_id: str,
+    ) -> None:
+        """Two legs of an OCO group filled: close the excess at market, record it and pause."""
+        now = self._clock()
+        close = create_execution_order_intent(
+            session,
+            deployment_id=deployment.id,
+            decision_id=None,
+            broker_mode=BrokerMode(deployment.broker_mode),
+            side=excess_side,
+            quantity=excess,
+            order_type=ExecutionOrderType.MARKET,
+            intent_kind=ExecutionIntentKind.CLOSE,
+            metadata={"reason": "oco_double_fill", "closes_order_id": str(order.id)},
+            intent_committed_at=now,
+            producer=worker_id,
+        )
+        session.flush()
+        self._commit(session)
+        mark_execution_dispatch_attempt(session, close.id, attempted_at=self._clock(), producer=worker_id)
+        self._commit(session)
+        broker_mode = BrokerMode(deployment.broker_mode)
+        result = self._broker.submit_market_order(
+            MarketOrderRequest(
+                deployment_id=deployment.id,
+                order_id=close.id,
+                symbol=deployment.symbol,
+                side=excess_side,
+                quantity=excess,
+                external_fill_id=f"{broker_mode.value}:{close.id}",
+                broker_mode=broker_mode,
+                intent_created_at=close.intent_committed_at or now,
+                live_activation_enabled=bool(deployment.live_activation_enabled),
+            ),
+            cost_config=cost_config,
+        )
+        if result.accepted and result.fill is not None:
+            self._ledger.apply_fill(
+                session,
+                paper_account_id=deployment.paper_account_id,
+                deployment_id=deployment.id,
+                order_id=close.id,
+                fill=result.fill,
+                point_value=point_value,
+                symbol=deployment.symbol,
+                producer=worker_id,
+            )
+        else:
+            status = (
+                ExecutionOrderStatus.UNKNOWN
+                if result.outcome == BrokerSubmissionOutcome.UNKNOWN
+                else ExecutionOrderStatus.REJECTED
+            )
+            transition_execution_order(
+                session,
+                close.id,
+                status,
+                rejection_reason=_reason(result, "excess close refused"),
+                reconciliation_state=ReconciliationState.PENDING if status == ExecutionOrderStatus.UNKNOWN else None,
+                producer=worker_id,
+            )
+        record_risk_event(
+            session,
+            deployment_id=deployment.id,
+            rejection_code=RiskRejectionCode.OCO_DOUBLE_FILL,
+            message="two legs of an OCO group filled before the sibling could be removed",
+            order_id=order.id,
+            context={"excess_quantity": str(excess), "close_outcome": result.outcome.value},
+            producer=worker_id,
+        )
+        transition_deployment_lifecycle(session, deployment.id, DeploymentLifecycle.PAUSED)
+        self._commit(session)
+        logger.error("OCO double fill deployment=%s excess=%s; deployment paused", deployment.id, excess)
 
     def _reconcile_management_intents(self, session: Session, *, deployment: Any, worker_id: str) -> None:
         """Resolve protective and cancellation intents left in doubt by a transport failure."""

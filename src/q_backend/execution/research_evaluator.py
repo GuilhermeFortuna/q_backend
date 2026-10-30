@@ -29,9 +29,9 @@ from q_backend.research.strategy import ResearchStrategy
 # Order kinds a forward deployment can run. Priced entries and closes, OCO groups and timed
 # exits stay outside the deployable set until their own tasks land.
 _ENTRY_KINDS = frozenset(
-    {"market_entry", "protective_levels", "resting_stop", "resting_limit", "expiring_entry", "cancel"}
+    {"market_entry", "protective_levels", "resting_stop", "resting_limit", "expiring_entry", "cancel", "oco"}
 )
-_EXIT_KINDS = frozenset({"market_close", "amend", "cancel"})
+_EXIT_KINDS = frozenset({"market_close", "amend", "cancel", "timed_exit"})
 
 
 def _utc_aware(value: datetime) -> datetime:
@@ -239,8 +239,10 @@ class ResearchEvaluator:
         entry_stop_loss: Optional[float] = None
         entry_take_profit: Optional[float] = None
         pending_entry: Optional[dict[str, Any]] = None
+        pending_group: Optional[tuple[dict[str, Any], ...]] = None
         protect_levels: Optional[dict[str, Optional[float]]] = None
         cancel_pending = False
+        timed_exit_at: Optional[datetime] = None
 
         indicators_started = time.perf_counter()
         augmented = self._rolling
@@ -283,6 +285,8 @@ class ResearchEvaluator:
                         pause_requested = True
                         risk_rejection_code = "unsupported_order_kind"
                         risk_rejection_message = f"Order kind {sorted(kinds)} is not deployable"
+                    elif first.action == "close" and first.at is not None:
+                        timed_exit_at = self._expire_instant(first.at, bar_close_time_value)
                     elif first.action == "close" and first.price is None:
                         signal_action = SignalAction.CLOSE
                         reason = first.reason or "exit_rule"
@@ -324,6 +328,10 @@ class ResearchEvaluator:
                         elif first.action in ("buy", "sell") and first.kind in ("stop", "limit"):
                             pending_entry = self._pending_entry_spec(first, bar_close_time_value)
                             reason = first.reason or "entry"
+                        elif first.action == "oco":
+                            pending_group = tuple(
+                                self._pending_entry_spec(leg, bar_close_time_value) for leg in first.legs
+                            )
                         elif first.action == "cancel":
                             cancel_pending = True
 
@@ -336,9 +344,8 @@ class ResearchEvaluator:
             "reference_price": close_price,
             "point_value": self.point_value,
         }
-        if (
-            signal_action in {SignalAction.BUY, SignalAction.SELL} or pending_entry is not None
-        ) and not pause_requested:
+        wants_quantity = pending_entry is not None or pending_group is not None
+        if (signal_action in {SignalAction.BUY, SignalAction.SELL} or wants_quantity) and not pause_requested:
             requested_quantity = self._quantity
             sizing_inputs["order_quantity"] = requested_quantity
         sizing_ms = (time.perf_counter() - sizing_started) * 1000.0
@@ -404,8 +411,10 @@ class ResearchEvaluator:
             entry_stop_loss=entry_stop_loss if not pause_requested else None,
             entry_take_profit=entry_take_profit if not pause_requested else None,
             pending_entry=pending_entry if not pause_requested else None,
+            pending_group=pending_group if not pause_requested else None,
             protect_levels=protect_levels if not pause_requested else None,
             cancel_pending=cancel_pending and not pause_requested,
+            timed_exit_at=timed_exit_at if not pause_requested else None,
         )
 
     def _pending_entry_spec(self, order: TradeOrder, bar_close: datetime) -> dict[str, Any]:

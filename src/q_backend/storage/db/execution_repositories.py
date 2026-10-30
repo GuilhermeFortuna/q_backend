@@ -566,6 +566,21 @@ def list_working_orders(session: Session, deployment_id: uuid.UUID) -> list[Exec
     )
 
 
+def set_open_position_timed_exit(
+    session: Session,
+    deployment_id: uuid.UUID,
+    *,
+    exit_at: Optional[datetime],
+) -> Optional[ExecutionNetPosition]:
+    """Record (or clear) the instant at which the open position must close."""
+    position = get_open_net_position(session, deployment_id)
+    if position is None:
+        return None
+    position.exit_at = exit_at
+    session.flush()
+    return position
+
+
 def set_open_position_protection(
     session: Session,
     deployment_id: uuid.UUID,

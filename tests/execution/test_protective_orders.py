@@ -19,12 +19,13 @@ from q_backend.execution.brokers.base import (
     BrokerSubmissionResult,
 )
 from q_backend.execution.domain import (
+    BrokerMode,
+    DeploymentLifecycle,
     ExecutionIntentKind,
     ExecutionOrderStatus,
     ExecutionOrderType,
     ExecutionSide,
     FillRecord,
-    BrokerMode,
     PositionSide,
     ReconciliationState,
     RiskRejectionCode,
@@ -56,6 +57,7 @@ class ScriptedBroker:
         self.protection_states: list[BrokerOrderState] = []
         self.cancellation_states: list[BrokerOrderState] = []
         self.exit_state: BrokerOrderState = BrokerOrderState(status=BrokerOrderLookupStatus.NOT_FOUND)
+        self.market_results: list[BrokerSubmissionResult] = []
         self._ticket = 500
 
     def health(self):  # pragma: no cover - not used by the manager
@@ -105,6 +107,21 @@ class ScriptedBroker:
     def lookup_position_exit(self, request):
         self.calls.append(("lookup_exit", request.position_ticket))
         return self.exit_state
+
+    def submit_market_order(self, request, *, cost_config):
+        self.calls.append(("submit_market", request))
+        if self.market_results:
+            return self.market_results.pop(0)
+        fill = FillRecord(
+            broker_mode=BrokerMode.MT5_LIVE,
+            external_fill_id=request.external_fill_id,
+            side=request.side,
+            quantity=request.quantity,
+            price=Decimal("129990"),
+            filled_at=NOW,
+            metadata={},
+        )
+        return BrokerSubmissionResult(outcome=BrokerSubmissionOutcome.FILLED, fill=fill)
 
     def named(self, name: str) -> list[Any]:
         return [request for kind, request in self.calls if kind == name]
@@ -700,3 +717,171 @@ def test_working_orders_are_removed_for_non_trading_deployments(db_session, seed
     )
     assert manager.remove_working(db_session, deployment=deployment, worker_id="worker-a", reason=reason)
     assert _working(db_session, deployment) == []
+
+
+def _oco_legs() -> tuple[dict[str, Any], ...]:
+    return (
+        _spec(side="buy", order_type="stop", price=130100.0, stop_loss=129900.0, take_profit=130400.0),
+        _spec(side="sell", order_type="stop", price=129800.0, stop_loss=130000.0, take_profit=129500.0),
+    )
+
+
+def _place_group(manager, db_session, deployment, token):
+    return manager.place_group(
+        db_session,
+        deployment=deployment,
+        legs=_oco_legs(),
+        quantity=Decimal("1"),
+        bar_close_time=NOW,
+        decision_id=None,
+        lease_token=token,
+        worker_id="worker-a",
+        cost_config=None,
+        point_value=Decimal("0.2"),
+    )
+
+
+def _fill_for(order_external: str, side: ExecutionSide, quantity: Decimal = Decimal("1")) -> FillRecord:
+    return FillRecord(
+        broker_mode=BrokerMode.MT5_LIVE,
+        external_fill_id=f"fill-{order_external}",
+        side=side,
+        quantity=quantity,
+        price=Decimal("130105") if side == ExecutionSide.BUY else Decimal("129795"),
+        filled_at=NOW + timedelta(minutes=10),
+        metadata={},
+    )
+
+
+def test_an_oco_group_rests_one_entry_per_leg_under_one_group_id(db_session, seeded_deployment):
+    deployment, token = _deployment(seeded_deployment)
+    broker = ScriptedBroker()
+    assert _place_group(_manager(broker), db_session, deployment, token) == "working"
+
+    working = _working(db_session, deployment)
+    assert {order.side for order in working} == {"buy", "sell"}
+    groups = {order.details["oco_group"] for order in working}
+    assert len(groups) == 1
+
+
+def test_a_refused_oco_leg_takes_the_placed_legs_down(db_session, seeded_deployment):
+    deployment, token = _deployment(seeded_deployment)
+    broker = ScriptedBroker()
+    broker.pending_results = [
+        BrokerSubmissionResult(outcome=BrokerSubmissionOutcome.WORKING, external_order_id="801"),
+        BrokerSubmissionResult(
+            outcome=BrokerSubmissionOutcome.REJECTED,
+            rejection=BrokerRejection(code=BrokerRejectionCode.ORDER_SEND_FAILED, message="invalid stops"),
+        ),
+    ]
+
+    outcome = _place_group(_manager(broker), db_session, deployment, token)
+
+    assert outcome == "rejected"
+    assert _working(db_session, deployment) == []
+    assert len(broker.named("cancel")) == 1
+
+
+def test_a_filled_oco_leg_removes_its_sibling(db_session, seeded_deployment):
+    deployment, token = _deployment(seeded_deployment)
+    broker = ScriptedBroker()
+    manager = _manager(broker)
+    _place_group(manager, db_session, deployment, token)
+    buy_leg, sell_leg = _working(db_session, deployment)
+    broker.pending_states = [
+        BrokerOrderState(
+            status=BrokerOrderLookupStatus.FILLED,
+            fill=_fill_for(buy_leg.external_order_id, ExecutionSide.BUY),
+            external_position_id="42",
+        ),
+    ]
+
+    manager.reconcile(db_session, deployment=deployment, worker_id="worker-a", point_value=Decimal("0.2"))
+
+    db_session.refresh(sell_leg)
+    assert sell_leg.status == ExecutionOrderStatus.CANCELLED.value
+    position = get_open_net_position(db_session, deployment.id)
+    assert PositionSide(position.side) == PositionSide.LONG
+    assert position.quantity == Decimal("1")
+    assert (
+        db_session.execute(
+            select(ExecutionRiskEvent).where(
+                ExecutionRiskEvent.rejection_code == RiskRejectionCode.OCO_DOUBLE_FILL.value
+            )
+        ).first()
+        is None
+    )
+
+
+def test_a_double_fill_closes_the_excess_records_it_and_pauses(db_session, seeded_deployment):
+    deployment, token = _deployment(seeded_deployment)
+    broker = ScriptedBroker()
+    manager = _manager(broker)
+    _place_group(manager, db_session, deployment, token)
+    buy_leg, sell_leg = _working(db_session, deployment)
+    # The sibling's removal is refused because it filled meanwhile.
+    broker.cancel_results = [
+        BrokerSubmissionResult(
+            outcome=BrokerSubmissionOutcome.REJECTED,
+            rejection=BrokerRejection(code=BrokerRejectionCode.ORDER_SEND_FAILED, message="already filled"),
+        )
+    ]
+    broker.pending_states = [
+        BrokerOrderState(
+            status=BrokerOrderLookupStatus.FILLED,
+            fill=_fill_for(buy_leg.external_order_id, ExecutionSide.BUY),
+            external_position_id="42",
+        ),
+        BrokerOrderState(
+            status=BrokerOrderLookupStatus.FILLED,
+            fill=_fill_for(sell_leg.external_order_id, ExecutionSide.SELL),
+            external_position_id="42",
+        ),
+    ]
+    manager.reconcile(db_session, deployment=deployment, worker_id="worker-a", point_value=Decimal("0.2"))
+    assert get_open_net_position(db_session, deployment.id).quantity == Decimal("1")
+
+    manager.reconcile(db_session, deployment=deployment, worker_id="worker-a", point_value=Decimal("0.2"))
+
+    [close] = broker.named("submit_market")
+    assert close.side == ExecutionSide.BUY
+    assert close.quantity == Decimal("1")
+    assert get_open_net_position(db_session, deployment.id).quantity == Decimal("1")
+    event = db_session.execute(
+        select(ExecutionRiskEvent).where(ExecutionRiskEvent.rejection_code == RiskRejectionCode.OCO_DOUBLE_FILL.value)
+    ).scalar_one()
+    assert event.context["excess_quantity"] == "1"
+    db_session.refresh(deployment)
+    assert deployment.lifecycle == DeploymentLifecycle.PAUSED.value
+
+
+def test_apply_bar_places_an_oco_group_and_records_a_timed_exit(db_session, seeded_deployment):
+    deployment, token = _deployment(seeded_deployment)
+    broker = ScriptedBroker()
+    manager = _manager(broker)
+    manager.apply_bar(
+        db_session,
+        deployment=deployment,
+        eval_result=_forward(pending_group=_oco_legs()),
+        decision_id=None,
+        lease_token=token,
+        worker_id="worker-a",
+        cost_config=None,
+        point_value=Decimal("0.2"),
+    )
+    assert len(_working(db_session, deployment)) == 2
+
+    _open_long(db_session, deployment)
+    _forward_exit = _forward(timed_exit_at=NOW + timedelta(hours=3))
+    manager.apply_bar(
+        db_session,
+        deployment=deployment,
+        eval_result=_forward_exit,
+        decision_id=None,
+        lease_token=token,
+        worker_id="worker-a",
+        cost_config=None,
+        point_value=Decimal("0.2"),
+    )
+    position = get_open_net_position(db_session, deployment.id)
+    assert position.exit_at.replace(tzinfo=timezone.utc) == NOW + timedelta(hours=3)

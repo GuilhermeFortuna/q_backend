@@ -352,6 +352,7 @@ class ExecutionNetPosition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     stop_loss: Mapped[Optional[Decimal]] = mapped_column(PriceNumeric, nullable=True)
     take_profit: Mapped[Optional[Decimal]] = mapped_column(PriceNumeric, nullable=True)
     external_position_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    exit_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     is_open: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     opened_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

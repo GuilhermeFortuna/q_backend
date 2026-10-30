@@ -378,7 +378,36 @@ class ExecutionWorker:
                     deployment=deployment,
                     worker_id=self.settings.execution_worker_id,
                     point_value=point_value,
+                    cost_config=self._cost_config(deployment),
                 )
+                self._run_due_timed_exit(session, runtime, now=now)
+
+    def _run_due_timed_exit(self, session: Session, runtime: DeploymentRuntime, *, now: datetime) -> None:
+        """Close the open position at market once its timed exit instant has passed."""
+        deployment = runtime.deployment
+        position = get_open_net_position(session, deployment.id)
+        if position is None or position.exit_at is None:
+            return
+        exit_at = (
+            position.exit_at if position.exit_at.tzinfo is not None else position.exit_at.replace(tzinfo=timezone.utc)
+        )
+        if exit_at > now:
+            return
+        lease_token = self._lease_tokens.get(deployment.id)
+        if lease_token is None:
+            return
+        cost_config = self._cost_config(deployment)
+        logger.info("timed exit due deployment=%s exit_at=%s", deployment.id, exit_at.isoformat())
+        self.service.flatten_deployment(
+            session,
+            deployment=deployment,
+            lease_token=lease_token,
+            worker_id=self.settings.execution_worker_id,
+            cost_config=cost_config,
+            point_value=cost_config.point_value,
+            bar_close_time=now,
+        )
+        self._sync_open_trade(session, runtime, point_value=float(cost_config.point_value))
 
     def _sync_open_trade(self, session: Session, runtime: DeploymentRuntime, *, point_value: float) -> None:
         trade = open_trade_for_deployment(session, runtime.deployment, point_value=point_value)

@@ -9,7 +9,7 @@ from q_backend.storage.db.migrations import alembic_ini_path
 from q_backend.storage.settings import get_settings
 
 ORDER_COLUMNS = {"intent_kind", "price", "stop_loss", "take_profit", "expires_at", "external_position_id"}
-POSITION_COLUMNS = {"stop_loss", "take_profit", "external_position_id"}
+POSITION_COLUMNS = {"stop_loss", "take_profit", "external_position_id", "exit_at"}
 
 
 def test_protective_order_columns_upgrade_and_downgrade(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
