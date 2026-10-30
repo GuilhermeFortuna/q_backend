@@ -37,7 +37,11 @@ if [[ "${#push_revisions[@]}" -eq 0 ]]; then
     exit 0
 fi
 
-tmp_root="$(mktemp -d "${TMPDIR:-/tmp}/q-backend-pre-push.XXXXXX")"
+# The checkout and its virtual environment take several gigabytes. Keep them on disk:
+# /tmp is often a RAM-backed tmpfs, where they count against the CI memory limit.
+tmp_base="${Q_CI_TMPDIR:-/var/tmp}"
+mkdir -p "$tmp_base"
+tmp_root="$(mktemp -d "$tmp_base/q-backend-pre-push.XXXXXX")"
 worktree="$tmp_root/checkout"
 
 cleanup() {

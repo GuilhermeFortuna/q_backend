@@ -1231,6 +1231,11 @@ make hooks
 temporary detached worktree at each distinct commit being pushed, then removes
 the worktree. When a branch and tag point to the same commit, CI runs once.
 
+The worktree and its virtual environment take several gigabytes, so the hook
+creates them under `/var/tmp`, which is disk-backed, rather than `/tmp`, which
+is often a RAM-backed tmpfs. Set `Q_CI_TMPDIR` to use another directory, such
+as a faster build disk; `scripts/ci.sh` keeps its test data there too.
+
 ### ML filter worker imports and validation scores
 
 API schema imports do not initialize the ASGI application. The `q_backend.api`
