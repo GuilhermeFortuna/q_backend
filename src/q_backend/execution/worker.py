@@ -409,6 +409,21 @@ class ExecutionWorker:
         )
         self._sync_open_trade(session, runtime, point_value=float(cost_config.point_value))
 
+    def _flatten_previous_session(self, session: Session, runtime: DeploymentRuntime, *, lease_token: str) -> None:
+        """Close a day-trade position the deployment still holds past its session close."""
+        deployment = runtime.deployment
+        cost_config = self._cost_config(deployment)
+        logger.info("day-trade position from a closed session deployment=%s; flattening", deployment.id)
+        self.service.flatten_deployment(
+            session,
+            deployment=deployment,
+            lease_token=lease_token,
+            worker_id=self.settings.execution_worker_id,
+            cost_config=cost_config,
+            point_value=cost_config.point_value,
+        )
+        self._sync_open_trade(session, runtime, point_value=float(cost_config.point_value))
+
     def _sync_open_trade(self, session: Session, runtime: DeploymentRuntime, *, point_value: float) -> None:
         trade = open_trade_for_deployment(session, runtime.deployment, point_value=point_value)
         runtime.evaluator.set_open_trade(trade)
@@ -523,12 +538,10 @@ class ExecutionWorker:
                     lease_token=token,
                     point_value=float(self._cost_config(deployment).point_value),
                     initial_capital=initial_capital,
+                    now=now,
                 )
                 if runtime.needs_session_flatten:
-                    self.service.flatten_deployment(session, deployment=deployment, reason="day_trade_flatten")
-                    self._sync_open_trade(
-                        session, runtime, point_value=float(self._cost_config(deployment).point_value)
-                    )
+                    self._flatten_previous_session(session, runtime, lease_token=token)
                 self._runtimes[deployment.id] = runtime
                 self._lease_tokens[deployment.id] = token
             else:
@@ -551,12 +564,10 @@ class ExecutionWorker:
                         lease_token=token,
                         point_value=float(self._cost_config(deployment).point_value),
                         initial_capital=initial_capital,
+                        now=now,
                     )
                     if runtime.needs_session_flatten:
-                        self.service.flatten_deployment(session, deployment=deployment, reason="day_trade_flatten")
-                        self._sync_open_trade(
-                            session, runtime, point_value=float(self._cost_config(deployment).point_value)
-                        )
+                        self._flatten_previous_session(session, runtime, lease_token=token)
                     self._runtimes[deployment.id] = runtime
 
         for deployment_id in list(self._runtimes):
