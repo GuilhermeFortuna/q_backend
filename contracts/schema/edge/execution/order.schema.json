@@ -21,11 +21,15 @@
     },
     "type": {
       "type": "integer",
-      "description": "Raw MT5 order type (0=buy, 1=sell, etc.)."
+      "description": "Raw MT5 order type: 0=buy, 1=sell for deal; 2=buy limit, 3=sell limit, 4=buy stop, 5=sell stop for pending."
     },
     "price": {
       "type": "number",
-      "description": "Execution price or limit/stop trigger price."
+      "description": "Execution price for deal, or the trigger price of a pending order (required for pending)."
+    },
+    "expiration": {
+      "type": "integer",
+      "description": "Expiration instant of a pending order, in epoch seconds UTC. Omitted means good-till-cancelled."
     },
     "deviation": {
       "type": "integer",

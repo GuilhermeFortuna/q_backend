@@ -60,6 +60,15 @@
     "time_msc": {
       "type": "integer",
       "description": "Deal execution timestamp in raw MT5 milliseconds."
+    },
+    "position_id": {
+      "type": "integer",
+      "description": "Position ticket the deal opened, changed or closed."
+    },
+    "reason": {
+      "type": "string",
+      "enum": ["client", "expert", "sl", "tp", "so", "other"],
+      "description": "Origin of the deal: client (terminal), expert (an EA or this edge), sl or tp (broker-side stop loss or take profit), so (stop out) or other."
     }
   },
   "required": [

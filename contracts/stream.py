@@ -196,11 +196,18 @@ class ExecutionOrderState:
 
 
 ExecutionOrderStatus = Literal[
-    "intent", "submitted", "filled", "rejected", "unknown", "cancelled"
+    "intent",
+    "submitted",
+    "working",
+    "filled",
+    "rejected",
+    "unknown",
+    "cancelled",
+    "expired",
 ]
 
 
-ExecutionOrderType = Literal["market"]
+ExecutionOrderType = Literal["market", "stop", "limit"]
 
 
 @dataclass(frozen=True)

@@ -69,21 +69,25 @@
     "ExecutionOrderType": {
       "type": "string",
       "enum": [
-        "market"
+        "market",
+        "stop",
+        "limit"
       ],
-      "description": "Order type."
+      "description": "Order type: market, or a stop or limit order resting at the broker."
     },
     "ExecutionOrderStatus": {
       "type": "string",
       "enum": [
         "intent",
         "submitted",
+        "working",
         "filled",
         "rejected",
         "unknown",
-        "cancelled"
+        "cancelled",
+        "expired"
       ],
-      "description": "Order execution lifecycle status."
+      "description": "Order execution lifecycle status. working is a pending order resting at the broker; expired is a pending order that reached its expiration unfilled."
     },
     "PositionSide": {
       "type": "string",

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "edge/execution/orders-response",
+  "title": "OrdersResponse",
+  "description": "List of working pending orders returned by the execution edge.",
+  "type": "array",
+  "items": {
+    "$ref": "working-order.schema.json"
+  }
+}
