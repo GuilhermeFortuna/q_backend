@@ -3,10 +3,10 @@
 
 The example writes a deterministic multi-session store into a temporary directory, so it runs
 offline. Each session is a day of M10 bars with eight trade prints per bar. The entry rule and
-the trailing stop are the same in both runs; only the way the stop moves differs:
+the trailing stop differ in how the stop moves:
 
 - ``amend``: the stop moves to each closed bar's low with ``TradeOrder.amend``, confirmed from ticks;
-- ``priced``: the stop is a per-bar priced close calculated from the prior ten bars' lows.
+- ``floor``: the stop moves to the rolling low of the prior ten bars.
 
 Each strategy runs once with ``workers=1`` and once with ``--workers``. Parallel sessions apply
 to day-trade runs only, so the benchmark runs in day-trade mode. See docs/research-library.md.
@@ -100,17 +100,15 @@ class TrailingAmend(_Entries):
         return None
 
 
-class TrailingPriced(_Entries):
-    """Closes at the prior trailing level when a stored trade crosses it."""
+class TrailingFloor(_Entries):
+    """Moves the stop to the rolling low of completed bars."""
 
-    def exit_strategy(self, frame: pd.DataFrame, positions: tuple = (), *, ticks) -> TradeOrder | None:
+    def exit_strategy(self, frame: pd.DataFrame, positions: tuple = ()) -> TradeOrder | None:
         if not positions or len(frame) <= TRAIL_BARS:
             return None
-        floor = float(frame["low"].iloc[-TRAIL_BARS - 1 : -1].min())
-        stop = max(positions[0].entry_price - STOP_POINTS, floor)
-        if frame["low"].iloc[-1] <= stop and (ticks.bar()["last"] <= stop).any():
-            return TradeOrder.close(price=stop)
-        return None
+        floor = float(frame["low"].iloc[-TRAIL_BARS:].min())
+        current = positions[0].stop_loss
+        return TradeOrder.amend(stop_loss=floor) if current is None or floor > current else None
 
 
 def time_run(store: TickStore, bars: pd.DataFrame, strategy: ResearchStrategy, workers: int) -> tuple[float, int]:
@@ -127,7 +125,7 @@ def run_benchmark(sessions: int, workers: int) -> dict[str, tuple[float, float, 
             "M10", start=FIRST_DAY.isoformat(), end=(FIRST_DAY + timedelta(days=sessions - 1)).isoformat()
         )
         timings = {}
-        for name, strategy_type in (("amend", TrailingAmend), ("priced", TrailingPriced)):
+        for name, strategy_type in (("amend", TrailingAmend), ("floor", TrailingFloor)):
             serial, trades = time_run(store, bars, strategy_type(), 1)
             parallel, _ = time_run(store, bars, strategy_type(), workers)
             timings[name] = (serial, parallel, trades)

@@ -101,7 +101,7 @@ def test_a_group_needs_two_resting_legs():
     with pytest.raises(ValueError, match="at least two legs"):
         TradeOrder.oco(TradeOrder.buy_stop(105.0))
     with pytest.raises(ValueError, match="resting stop or limit"):
-        TradeOrder.oco(TradeOrder.buy_stop(105.0), TradeOrder.buy(price=106.0))
+        TradeOrder.oco(TradeOrder.buy_stop(105.0), TradeOrder.buy())
     with pytest.raises(ValueError, match="do not nest"):
         TradeOrder.oco(
             TradeOrder.oco(TradeOrder.buy_stop(105.0), TradeOrder.sell_stop(95.0)), TradeOrder.sell_stop(90.0)

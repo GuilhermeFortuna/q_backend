@@ -169,7 +169,7 @@ def test_timed_exits_and_expiry_record_their_order_kinds():
 
 
 def test_timed_and_expiring_orders_are_validated():
-    with pytest.raises(ValueError, match="either priced or timed"):
+    with pytest.raises(ValueError, match="priced closes are removed"):
         TradeOrder.close(price=100.0, at=time(10, 25))
     with pytest.raises(ValueError, match="at applies to close orders only"):
         TradeOrder(action="buy", at=time(10, 25))

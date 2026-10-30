@@ -41,8 +41,6 @@ def test_trade_order_immutability_and_validation() -> None:
     assert order_sell.action == "sell"
     order_close = TradeOrder.close()
     assert order_close.action == "close"
-    priced_close = TradeOrder.close(price=10.0)
-    assert (priced_close.action, priced_close.price) == ("close", 10.0)
 
     with pytest.raises(AttributeError):
         order.action = "sell"  # type: ignore[misc]
@@ -77,7 +75,7 @@ def test_trade_order_levels_are_validated_at_construction() -> None:
         TradeOrder("close", stop_loss=9.0)
     for bad in (0.0, -1.0, float("nan"), float("inf"), True, "9"):
         with pytest.raises(ValueError, match="price must be a finite positive price"):
-            TradeOrder.close(price=bad)  # type: ignore[arg-type]
+            TradeOrder.buy_stop(price=bad)  # type: ignore[arg-type]
     with pytest.raises(TypeError):
         TradeOrder.buy(9.0)  # type: ignore[misc]
 
@@ -442,7 +440,6 @@ def test_resting_order_constructors_set_kind_price_and_expiry() -> None:
 
     market = TradeOrder.buy()
     assert (market.kind, market.expire_bars) == ("market", None)
-    assert TradeOrder.buy(price=10.0).kind == "market"
 
 
 @pytest.mark.parametrize(

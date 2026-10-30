@@ -199,21 +199,6 @@ def test_cancel_removes_the_working_order(root):
     assert len(result.trades) == 0
 
 
-class PricedTrail(ResearchStrategy):
-    """A long trailing stop closed at its previously calculated price level."""
-
-    def entry_strategy(self, frame: pd.DataFrame, positions: tuple = ()) -> TradeOrder | None:
-        return TradeOrder.buy(stop_loss=95.0) if len(frame) == 1 else None
-
-    def exit_strategy(self, frame: pd.DataFrame, positions: tuple = (), *, ticks) -> TradeOrder | None:
-        if not positions or len(frame) < 3:
-            return None
-        stop = max([95.0, *frame["low"].iloc[1:-1]])
-        if frame["low"].iloc[-1] <= stop and (ticks.bar()["last"] <= stop).any():
-            return TradeOrder.close(price=stop)
-        return None
-
-
 class AmendTrail(ResearchStrategy):
     """The same trailing stop written with ``amend``, recording the stop each decision sees."""
 
@@ -263,19 +248,6 @@ def test_amended_stop_exits_at_the_latest_level_and_positions_show_each_amendmen
     # Bar 1 sees the entry's 95, bar 2 sees the 100 amended on bar 1. Bar 3's callback runs after its
     # intrabar stop, so the trade has already closed; 103 is the level in force at that exit.
     assert strategy.seen == [95.0, 100.0]
-
-
-def test_amend_trailing_stop_exits_on_the_same_trade_and_price_as_the_priced_close(root):
-    store = _write_session(root, TRAIL_ROWS)
-    priced = _run(_m10_frame(store), PricedTrail(), store).trades
-    amended = _run(_m10_frame(store), AmendTrail(), store).trades
-
-    assert priced["exit_time"].tolist() == amended["exit_time"].tolist() == [_bar("10:30")]
-    assert priced["exit_tick_time"].tolist() == amended["exit_tick_time"].tolist() == [_bar("10:34")]
-    # The tape jumps from 106 to 102.5 through the 103 stop: both fill at the trade that crossed it.
-    assert priced["exit_price"].tolist() == amended["exit_price"].tolist() == [102.5]
-    assert priced["exit_reason"].tolist() == ["SIGNAL"]
-    assert amended["exit_reason"].tolist() == ["STOP_LOSS"]
 
 
 def test_amend_while_flat_does_nothing(root):

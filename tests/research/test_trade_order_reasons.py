@@ -95,20 +95,6 @@ def test_market_entry_and_plain_close_carry_their_reasons(store):
     assert trade["exit_time"] == pd.Timestamp(f"{DAY.isoformat()} 10:40", tz=BRASILIA_TZ)
 
 
-def test_priced_close_takes_its_reason_on_its_own_bar(store):
-    result = _run(
-        store,
-        Scripted(
-            entries={1: TradeOrder.buy()},
-            exits={3: TradeOrder.close(price=102.5, reason="Priced exit")},
-        ),
-    )
-    trade = result.trades.iloc[0]
-    assert trade["exit_price"] == 102.5
-    assert trade["exit_reason"] == "Priced exit"
-    assert trade["entry_reason"] is None
-
-
 def test_unreasoned_orders_keep_signal_and_null_reasons(store):
     result = _run(store, Scripted(entries={1: TradeOrder.buy()}, exits={3: TradeOrder.close()}))
     trade = result.trades.iloc[0]
@@ -179,21 +165,6 @@ def test_a_reasoned_resting_order_replaced_by_an_unreasoned_one_loses_its_reason
         ),
     )
     assert result.trades["entry_reason"].isna().all()
-
-
-def test_a_priced_close_after_a_plain_close_already_filled_does_not_take_its_reason(store):
-    # The plain close requested on bar 2 fills at the open of bar 3. The priced close requested on bar 3
-    # then has no position to close, so the exit keeps the plain close's reason.
-    result = _run(
-        store,
-        Scripted(
-            entries={1: TradeOrder.buy()},
-            exits={2: TradeOrder.close(reason="Plain"), 3: TradeOrder.close(price=102.5, reason="Priced")},
-        ),
-    )
-    trade = result.trades.iloc[0]
-    assert trade["exit_time"] == pd.Timestamp(f"{DAY.isoformat()} 10:30", tz=BRASILIA_TZ)
-    assert trade["exit_reason"] == "Plain"
 
 
 @pytest.mark.parametrize("reason", ["", "   ", 3, b"bytes"])

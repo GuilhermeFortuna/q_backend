@@ -105,9 +105,6 @@ def test_classify_order_kinds():
     assert classify_order(TradeOrder.buy_limit(price=95.0)) == {"resting_limit"}
     assert classify_order(TradeOrder.buy_limit(price=95.0, take_profit=110.0)) == {"resting_limit", "protective_levels"}
 
-    assert classify_order(TradeOrder.buy(price=100.0)) == {"priced_entry"}
-    assert classify_order(TradeOrder.close(price=105.0)) == {"priced_close"}
-
     assert classify_order(TradeOrder.amend(stop_loss=98.0)) == {"amend"}
     assert classify_order(TradeOrder.cancel()) == {"cancel"}
 

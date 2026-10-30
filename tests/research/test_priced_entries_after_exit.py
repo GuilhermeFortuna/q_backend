@@ -1,4 +1,4 @@
-"""Priced entries after same-bar exits in research backtests (Q-133)."""
+"""Rejection reporting and shared tick fixtures."""
 
 from __future__ import annotations
 
@@ -61,78 +61,6 @@ class Scripted(ResearchStrategy):
 @pytest.fixture
 def root(tmp_path):
     return tmp_path / "ticks"
-
-
-# Acceptance criterion 1:
-# A research strategy on hand-built bars and a tmp_path tick store holds a long that is stopped mid-candle.
-# On that candle it returns a priced long at a price that traded only before the stop: no trade opens, and
-# rejected_entries has one row with reason touch_before_exit.
-def test_priced_entry_trading_only_before_same_candle_stop_is_rejected(root) -> None:
-    # Bar 0 (10:00): flat at 100.0, queued buy opens at 10:10:00 (bar 1 open)
-    # Bar 1 (10:10): trades at 100.0, 102.0, then stops out at 94.0 (stop_loss=95.0),
-    #                subsequent trades stay below 100.0 (96.0, 97.0).
-    rows = [
-        ("10:00:00", 100.0),
-        ("10:05:00", 100.0),
-        ("10:10:00", 100.0),
-        ("10:11:00", 102.0),
-        ("10:12:00", 94.0),
-        ("10:15:00", 96.0),
-        ("10:19:59", 97.0),
-    ]
-    store = _write_session(root, rows)
-    frame = _m10_frame(store)
-
-    orders = {
-        0: TradeOrder.buy(stop_loss=95.0, take_profit=110.0),
-        1: TradeOrder.buy(price=100.0, stop_loss=90.0),
-    }
-    result = backtest(frame, strategy=Scripted(orders), symbol=SYMBOL, ticks=store)
-
-    # Initial trade stopped out
-    assert len(result.trades) == 1
-    assert result.trades["exit_reason"].tolist() == ["STOP_LOSS"]
-    assert result.trades["exit_price"].tolist() == [94.0]
-
-    # Priced entry was rejected with reason touch_before_exit
-    rejected = result.rejected_entries
-    assert len(rejected) == 1
-    assert rejected["time"].tolist() == [_bar("10:10")]
-    assert rejected["side"].tolist() == ["long"]
-    assert rejected["fill_price"].tolist() == [100.0]
-    assert rejected["reason"].tolist() == ["touch_before_exit"]
-
-
-# Acceptance criterion 2:
-# If the price trades again after the stop, the long opens there, and its levels resolve from that touch.
-def test_priced_entry_trading_again_after_stop_opens_and_resolves_levels(root) -> None:
-    # Bar 0 (10:00): flat at 100.0, queued buy opens at 10:10:00 (bar 1 open)
-    # Bar 1 (10:10): trades at 100.0, stops at 94.0 (stop=95.0), rebounds to 100.0 (touch!),
-    #                then trades to 97.0 (triggering second trade's stop at 98.0).
-    rows = [
-        ("10:00:00", 100.0),
-        ("10:05:00", 100.0),
-        ("10:10:00", 100.0),
-        ("10:12:00", 94.0),
-        ("10:14:00", 100.0),
-        ("10:16:00", 97.0),
-        ("10:19:59", 98.0),
-    ]
-    store = _write_session(root, rows)
-    frame = _m10_frame(store)
-
-    orders = {
-        0: TradeOrder.buy(stop_loss=95.0, take_profit=110.0),
-        1: TradeOrder.buy(price=100.0, stop_loss=98.0),
-    }
-    result = backtest(frame, strategy=Scripted(orders), symbol=SYMBOL, ticks=store)
-
-    # Both trades executed
-    assert len(result.trades) == 2
-    assert result.trades["entry_price"].tolist() == [100.0, 100.0]
-    assert result.trades["exit_price"].tolist() == [94.0, 97.0]
-    assert result.trades["exit_reason"].tolist() == ["STOP_LOSS", "STOP_LOSS"]
-    assert result.rejected_entries.empty
 
 
 # Acceptance criterion 3:
@@ -200,8 +128,6 @@ class MultiSessionStrategy(ResearchStrategy):
         ts = f.index[-1]
         if ts == _bar("10:00", DAY_1):
             return TradeOrder.buy(stop_loss=95.0, take_profit=110.0)
-        if ts == _bar("10:10", DAY_1):
-            return TradeOrder.buy(price=100.0, stop_loss=90.0)
         if ts == _bar("10:00", DAY_2):
             return TradeOrder.buy(stop_loss=101.0, take_profit=120.0)
         return None
@@ -210,7 +136,7 @@ class MultiSessionStrategy(ResearchStrategy):
 # Acceptance criterion 4:
 # rejected_entries has the same columns and reasons with workers=1 and workers=2.
 def test_parallel_sessions_preserve_rejected_reasons(root) -> None:
-    # Session 1: includes a touch_before_exit rejection
+    # Session 1: a protective stop closes the trade
     rows_day1 = [
         ("10:00:00", 100.0),
         ("10:05:00", 100.0),
@@ -250,7 +176,7 @@ def test_parallel_sessions_preserve_rejected_reasons(root) -> None:
         workers=2,
     )
 
-    assert len(res_seq.rejected_entries) == 2
+    assert len(res_seq.rejected_entries) == 1
     assert "reason" in res_seq.rejected_entries.columns
-    assert set(res_seq.rejected_entries["reason"]) == {"touch_before_exit", "level_on_wrong_side"}
+    assert set(res_seq.rejected_entries["reason"]) == {"level_on_wrong_side"}
     pd.testing.assert_frame_equal(res_par.rejected_entries, res_seq.rejected_entries)
