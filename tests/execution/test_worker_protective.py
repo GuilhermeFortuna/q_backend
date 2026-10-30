@@ -255,3 +255,75 @@ def test_recovery_hands_the_stored_levels_to_the_evaluator_trade(db_engine):
     assert trade is not None
     assert trade.stop_loss == 129900.0
     assert trade.take_profit == 130400.0
+
+
+class _FlatteningRecovery:
+    """Rebuilds the runtime as recovery does when a day-trade position outlived its session."""
+
+    def __init__(self) -> None:
+        self.now = None
+
+    def build_runtime(self, session, deployment, *, worker_id, lease_token, point_value, initial_capital, now=None):
+        self.now = now
+        runtime = _runtime(session, deployment.id)
+        runtime.needs_session_flatten = True
+        runtime.config_revision = deployment.config_revision
+        runtime.activation_cutoff_at = deployment.activation_cutoff_at
+        return runtime
+
+
+def test_a_rebuilt_runtime_flattens_a_position_left_from_a_closed_session(db_engine):
+    _seed_account, deployment_id = _seed(db_engine, open_position=True)
+    factory = sessionmaker(bind=db_engine, expire_on_commit=False)
+    quotes = FakeQuoteSource(quotes={"WIN$": (Decimal("130000"), Decimal("130010"))}, timestamp=NOW)
+    worker = _worker(db_engine, broker=PaperBroker(quote_source=quotes, clock=FixedClock(NOW)))
+    recovery = _FlatteningRecovery()
+    worker.recovery = recovery
+
+    with factory() as session:
+        stale = _runtime(session, deployment_id)
+        stale.config_revision = stale.deployment.config_revision - 1
+        worker._runtimes[deployment_id] = stale
+        worker._lease_tokens[deployment_id] = TOKEN
+        worker._refresh_deployments(session, now=NOW)
+        session.commit()
+
+    assert recovery.now == NOW
+    with factory() as session:
+        assert get_open_net_position(session, deployment_id) is None
+
+
+def test_a_paused_deployment_still_records_a_broker_side_exit(db_engine):
+    _seed_account, deployment_id = _seed(db_engine, open_position=True)
+    factory = sessionmaker(bind=db_engine, expire_on_commit=False)
+    broker = ScriptedBroker()
+    broker.exit_state = BrokerOrderState(
+        status=BrokerOrderLookupStatus.FILLED,
+        fill=FillRecord(
+            broker_mode=BrokerMode.PAPER,
+            external_fill_id="exit-1",
+            side=ExecutionSide.SELL,
+            quantity=Decimal("1"),
+            price=Decimal("129900"),
+            filled_at=NOW,
+            metadata={"exit_reason": "stop_loss"},
+        ),
+        external_position_id="42",
+    )
+    worker = _worker(db_engine, broker=broker)
+    from q_backend.storage.db.execution_repositories import set_open_position_protection
+
+    with factory() as session:
+        set_open_position_protection(
+            session, deployment_id, stop_loss=Decimal("129900"), take_profit=None, external_position_id="42"
+        )
+        transition_deployment_lifecycle(session, deployment_id, DeploymentLifecycle.PAUSED)
+        session.commit()
+
+    with factory() as session:
+        worker._runtimes[deployment_id] = _runtime(session, deployment_id)
+        worker._reconcile_working_orders(session, now=NOW)
+        session.commit()
+
+    with factory() as session:
+        assert get_open_net_position(session, deployment_id) is None

@@ -159,7 +159,7 @@ breakeven exit rules are out of scope: a strategy that trails uses `amend`.
 8. A run using `protective_levels` and `resting_stop` deploys, as do runs using `oco`, `timed_exit` and
    `expiring_entry`. A run using `priced_close` is still refused.
 9. An OCO bracket removes its sibling on the first fill. A double fill is flattened to the intended position,
-   records a risk event and pauses the deployment. A timed exit closes at the first poll after its instant. A
+   records a risk event and pauses the deployment. A timed exit closes at the first poll after its instant.
    Trailing and breakeven exit rules are out of scope (see Out of scope).
 10. Existing edge, broker, worker, recovery and parity tests pass unchanged. `make check` passes in
    `q_contracts`, and `make contracts-check` passes in `q_backend`.

@@ -350,10 +350,11 @@ class ExecutionWorker:
     def _reconcile_working_orders(self, session: Session, *, now: datetime) -> None:
         """Remove working orders of deployments that must not trade; reconcile the rest on the order interval.
 
-        A paused or stopped deployment, or any deployment while the kill switch is on, gives up its
-        working orders on every poll until none is left. Other deployments are reconciled with the
-        broker every ``execution_order_poll_interval_s`` seconds, and the reconciliation also runs
-        before each bar decision.
+        Every deployment is reconciled with the broker every ``execution_order_poll_interval_s``
+        seconds, so fills and broker-side exits are recorded even while it must not trade; the
+        reconciliation also runs before each bar decision. A paused or stopped deployment, or any
+        deployment while the kill switch is on, then gives up its working orders on every poll until
+        none is left.
         """
         control = get_execution_control_state(session)
         interval = self.settings.execution_order_poll_interval_s
@@ -364,7 +365,17 @@ class ExecutionWorker:
             deployment = runtime.deployment
             protective = self.service.protective
             point_value = self._cost_config(deployment).point_value
-            if control.kill_switch_enabled or deployment.lifecycle != DeploymentLifecycle.RUNNING.value:
+            trading = not control.kill_switch_enabled and deployment.lifecycle == DeploymentLifecycle.RUNNING.value
+            if due:
+                # Fills and broker-side exits still happen while a deployment must not trade.
+                protective.reconcile(
+                    session,
+                    deployment=deployment,
+                    worker_id=self.settings.execution_worker_id,
+                    point_value=point_value,
+                    cost_config=self._cost_config(deployment),
+                )
+            if not trading:
                 reason = "kill_switch" if control.kill_switch_enabled else "not_running"
                 protective.remove_working(
                     session,
@@ -373,13 +384,6 @@ class ExecutionWorker:
                     reason=reason,
                 )
             elif due:
-                protective.reconcile(
-                    session,
-                    deployment=deployment,
-                    worker_id=self.settings.execution_worker_id,
-                    point_value=point_value,
-                    cost_config=self._cost_config(deployment),
-                )
                 self._run_due_timed_exit(session, runtime, now=now)
 
     def _run_due_timed_exit(self, session: Session, runtime: DeploymentRuntime, *, now: datetime) -> None:
@@ -406,6 +410,21 @@ class ExecutionWorker:
             cost_config=cost_config,
             point_value=cost_config.point_value,
             bar_close_time=now,
+        )
+        self._sync_open_trade(session, runtime, point_value=float(cost_config.point_value))
+
+    def _flatten_previous_session(self, session: Session, runtime: DeploymentRuntime, *, lease_token: str) -> None:
+        """Close a day-trade position the deployment still holds past its session close."""
+        deployment = runtime.deployment
+        cost_config = self._cost_config(deployment)
+        logger.info("day-trade position from a closed session deployment=%s; flattening", deployment.id)
+        self.service.flatten_deployment(
+            session,
+            deployment=deployment,
+            lease_token=lease_token,
+            worker_id=self.settings.execution_worker_id,
+            cost_config=cost_config,
+            point_value=cost_config.point_value,
         )
         self._sync_open_trade(session, runtime, point_value=float(cost_config.point_value))
 
@@ -523,12 +542,10 @@ class ExecutionWorker:
                     lease_token=token,
                     point_value=float(self._cost_config(deployment).point_value),
                     initial_capital=initial_capital,
+                    now=now,
                 )
                 if runtime.needs_session_flatten:
-                    self.service.flatten_deployment(session, deployment=deployment, reason="day_trade_flatten")
-                    self._sync_open_trade(
-                        session, runtime, point_value=float(self._cost_config(deployment).point_value)
-                    )
+                    self._flatten_previous_session(session, runtime, lease_token=token)
                 self._runtimes[deployment.id] = runtime
                 self._lease_tokens[deployment.id] = token
             else:
@@ -551,12 +568,10 @@ class ExecutionWorker:
                         lease_token=token,
                         point_value=float(self._cost_config(deployment).point_value),
                         initial_capital=initial_capital,
+                        now=now,
                     )
                     if runtime.needs_session_flatten:
-                        self.service.flatten_deployment(session, deployment=deployment, reason="day_trade_flatten")
-                        self._sync_open_trade(
-                            session, runtime, point_value=float(self._cost_config(deployment).point_value)
-                        )
+                        self._flatten_previous_session(session, runtime, lease_token=token)
                     self._runtimes[deployment.id] = runtime
 
         for deployment_id in list(self._runtimes):

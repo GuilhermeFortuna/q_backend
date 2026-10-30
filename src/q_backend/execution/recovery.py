@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
@@ -23,6 +23,7 @@ from q_backend.execution.research_evaluator import ResearchEvaluator
 from q_backend.execution.ledger import ExecutionLedger
 from q_backend.backtesting.models import Trade
 from q_backend.execution.position_adapter import execution_position_to_trade
+from q_backend.market_data.timezone import BRASILIA_TZ
 from q_backend.storage.db.execution_models import ExecutionDeployment
 from q_backend.storage.db.execution_repositories import (
     get_open_net_position,
@@ -164,6 +165,7 @@ class ExecutionRecovery:
         lease_token: str,
         point_value: float,
         initial_capital: float,
+        now: Optional[datetime] = None,
     ) -> DeploymentRuntime:
         identity = _identity_from_deployment(deployment)
         trade = open_trade_for_deployment(session, deployment, point_value=point_value)
@@ -183,12 +185,9 @@ class ExecutionRecovery:
                 last_evaluated_close=watermark,
             )
             if deployment.compiled_config.get("day_trade", True) and trade is not None:
-                import datetime as dt
-                from q_backend.market_data.timezone import BRASILIA_TZ
-
                 trade_entry = pd.Timestamp(trade.entry_time).tz_convert(BRASILIA_TZ)
-                close_t = dt.time.fromisoformat(str(deployment.compiled_config.get("day_trade_close_time", "17:00")))
-                now_local = pd.Timestamp(datetime.now(timezone.utc)).tz_convert(BRASILIA_TZ)
+                close_t = time.fromisoformat(str(deployment.compiled_config.get("day_trade_close_time", "17:00")))
+                now_local = pd.Timestamp(now or datetime.now(timezone.utc)).tz_convert(BRASILIA_TZ)
                 if now_local.date() > trade_entry.date() or (
                     now_local.date() == trade_entry.date() and now_local.time() >= close_t
                 ):

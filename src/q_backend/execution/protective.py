@@ -124,12 +124,40 @@ class ProtectiveOrders:
                 decision_id=decision_id,
                 worker_id=worker_id,
             )
+        self.place_entries(
+            session,
+            deployment=deployment,
+            eval_result=eval_result,
+            decision_id=decision_id,
+            lease_token=lease_token,
+            worker_id=worker_id,
+            cost_config=cost_config,
+            point_value=point_value,
+        )
+        if eval_result.timed_exit_at is not None and get_open_net_position(session, deployment.id) is not None:
+            set_open_position_timed_exit(session, deployment.id, exit_at=eval_result.timed_exit_at)
+            self._commit(session)
+
+    def place_entries(
+        self,
+        session: Session,
+        *,
+        deployment: Any,
+        eval_result: ForwardDecisionResult,
+        decision_id: Optional[uuid.UUID],
+        lease_token: str,
+        worker_id: str,
+        cost_config: Any,
+        point_value: Decimal,
+    ) -> Optional[str]:
+        """Place the bar's resting entry or OCO group, if it has one. Returns the outcome."""
+        quantity = Decimal(str(eval_result.requested_quantity or 0))
         if eval_result.pending_entry is not None:
-            self.place_pending(
+            return self.place_pending(
                 session,
                 deployment=deployment,
                 spec=eval_result.pending_entry,
-                quantity=Decimal(str(eval_result.requested_quantity or 0)),
+                quantity=quantity,
                 bar_close_time=eval_result.bar_close_time,
                 decision_id=decision_id,
                 lease_token=lease_token,
@@ -138,11 +166,11 @@ class ProtectiveOrders:
                 point_value=point_value,
             )
         if eval_result.pending_group is not None:
-            self.place_group(
+            return self.place_group(
                 session,
                 deployment=deployment,
                 legs=eval_result.pending_group,
-                quantity=Decimal(str(eval_result.requested_quantity or 0)),
+                quantity=quantity,
                 bar_close_time=eval_result.bar_close_time,
                 decision_id=decision_id,
                 lease_token=lease_token,
@@ -150,9 +178,7 @@ class ProtectiveOrders:
                 cost_config=cost_config,
                 point_value=point_value,
             )
-        if eval_result.timed_exit_at is not None and get_open_net_position(session, deployment.id) is not None:
-            set_open_position_timed_exit(session, deployment.id, exit_at=eval_result.timed_exit_at)
-            self._commit(session)
+        return None
 
     def place_pending(
         self,
@@ -687,15 +713,16 @@ class ProtectiveOrders:
                     if group_id
                     else []
                 )
-                double_fill = any(m.status == ExecutionOrderStatus.FILLED.value for m in siblings)
+                first_filled = next((m for m in siblings if m.status == ExecutionOrderStatus.FILLED.value), None)
                 self._apply_pending_fill(
                     session, deployment, order, state, point_value=point_value, worker_id=worker_id
                 )
-                if group_id and double_fill:
+                if group_id and first_filled is not None:
                     self._contain_double_fill(
                         session,
                         deployment,
                         order,
+                        intended=first_filled,
                         excess=state.fill.quantity,
                         excess_side=_opposite(state.fill.side),
                         cost_config=cost_config,
@@ -789,13 +816,18 @@ class ProtectiveOrders:
         deployment: Any,
         order: ExecutionOrder,
         *,
+        intended: ExecutionOrder,
         excess: Decimal,
         excess_side: ExecutionSide,
         cost_config: PaperCostConfig,
         point_value: Decimal,
         worker_id: str,
     ) -> None:
-        """Two legs of an OCO group filled: close the excess at market, record it and pause."""
+        """Two legs of an OCO group filled: close the excess at market, record it and pause.
+
+        The position left is the one the first leg opened, so it gets that leg's stop and target
+        back: on a netting account the second fill has removed them with the position.
+        """
         now = self._clock()
         close = create_execution_order_intent(
             session,
@@ -815,20 +847,26 @@ class ProtectiveOrders:
         mark_execution_dispatch_attempt(session, close.id, attempted_at=self._clock(), producer=worker_id)
         self._commit(session)
         broker_mode = BrokerMode(deployment.broker_mode)
-        result = self._broker.submit_market_order(
-            MarketOrderRequest(
-                deployment_id=deployment.id,
-                order_id=close.id,
-                symbol=deployment.symbol,
-                side=excess_side,
-                quantity=excess,
-                external_fill_id=f"{broker_mode.value}:{close.id}",
-                broker_mode=broker_mode,
-                intent_created_at=close.intent_committed_at or now,
-                live_activation_enabled=bool(deployment.live_activation_enabled),
-            ),
-            cost_config=cost_config,
-        )
+        try:
+            result = self._broker.submit_market_order(
+                MarketOrderRequest(
+                    deployment_id=deployment.id,
+                    order_id=close.id,
+                    symbol=deployment.symbol,
+                    side=excess_side,
+                    quantity=excess,
+                    external_fill_id=f"{broker_mode.value}:{close.id}",
+                    broker_mode=broker_mode,
+                    intent_created_at=close.intent_committed_at or now,
+                    live_activation_enabled=bool(deployment.live_activation_enabled),
+                    stop_loss=intended.stop_loss,
+                    take_profit=intended.take_profit,
+                ),
+                cost_config=cost_config,
+            )
+        except Exception as exc:  # noqa: BLE001 - an ambiguous send must not be retried
+            logger.exception("excess close raised for order %s", close.id)
+            result = BrokerSubmissionResult(outcome=BrokerSubmissionOutcome.UNKNOWN, metadata={"exception": str(exc)})
         if result.accepted and result.fill is not None:
             self._ledger.apply_fill(
                 session,
@@ -840,6 +878,14 @@ class ProtectiveOrders:
                 symbol=deployment.symbol,
                 producer=worker_id,
             )
+            if get_open_net_position(session, deployment.id) is not None:
+                set_open_position_protection(
+                    session,
+                    deployment.id,
+                    stop_loss=intended.stop_loss,
+                    take_profit=intended.take_profit,
+                    external_position_id=result.external_position_id,
+                )
         else:
             status = (
                 ExecutionOrderStatus.UNKNOWN

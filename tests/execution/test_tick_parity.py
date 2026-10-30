@@ -211,3 +211,32 @@ def test_a_timed_exit_closes_at_the_first_trade_after_its_instant(tmp_path, db_e
         exits={1: TradeOrder.close(at=time(10, 30))},
         expected=[(_at("10:10"), "buy", 100.5), (_at("10:31"), "sell", 103.5)],
     )
+
+
+def test_a_close_that_rearms_a_resting_entry_on_the_same_bar(tmp_path, db_engine):
+    # The 10:10 bar closes the long at the next open and places a buy stop that works from it.
+    rows = [
+        ("10:00:00", 100.0),
+        ("10:05:00", 100.0),
+        ("10:10:00", 101.0),
+        ("10:15:00", 101.0),
+        ("10:20:00", 102.0),
+        ("10:22:00", 104.5),
+        ("10:25:00", 104.5),
+        ("10:30:00", 105.5),
+        ("10:35:00", 105.5),
+        ("10:40:00", 105.5),
+    ]
+    _assert_parity(
+        tmp_path,
+        db_engine,
+        rows,
+        entries={0: TradeOrder.buy(), 1: TradeOrder.buy_stop(104.0, take_profit=105.0, expire_bars=2)},
+        exits={1: TradeOrder.close(reason="rotate")},
+        expected=[
+            (_at("10:10"), "buy", 101.0),
+            (_at("10:20"), "sell", 102.0),
+            (_at("10:22"), "buy", 104.5),
+            (_at("10:30"), "sell", 105.0),
+        ],
+    )
