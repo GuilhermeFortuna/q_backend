@@ -18,7 +18,7 @@ from sqlalchemy import func, select
 
 from q_backend.execution.bar_coordinator import BarCoordinator, DeploymentBarConsumer
 from q_backend.execution.brokers.base import ExecutionBroker, PaperCostConfig, QuoteSource
-from q_backend.execution.domain import DeploymentLifecycle, LedgerEntryType, PositionSide
+from q_backend.execution.domain import DeploymentLifecycle, LedgerEntryType, PositionSide, RiskRejectionCode
 from q_backend.execution.ledger import mark_price_for_position, unrealized_pnl
 from q_backend.execution.ledger import ExecutionLedger
 from q_backend.execution.reconciliation import OrderReconciler
@@ -34,6 +34,9 @@ from q_backend.storage.db.execution_repositories import (
     get_open_net_position,
     heartbeat_worker_lease,
     list_deployments,
+    list_orders_for_deployment,
+    clear_pending_deployment_action,
+    record_risk_event,
     record_worker_heartbeat,
     record_worker_stopped,
     release_worker_lease,
@@ -93,6 +96,7 @@ class ExecutionWorker:
     _running: bool = field(default=False, init=False)
     _reconciler: Optional[OrderReconciler] = field(default=None, init=False)
     _last_order_poll_at: Optional[datetime] = field(default=None, init=False)
+    _flatten_unpriceable: set[uuid.UUID] = field(default_factory=set, init=False)
 
     def __post_init__(self) -> None:
         self._health = WorkerHealth(
@@ -235,6 +239,7 @@ class ExecutionWorker:
                     runtime,
                     point_value=float(self._cost_config(runtime.deployment).point_value),
                 )
+            self._process_pending_flattens(session, now=now)
             consumers = [
                 DeploymentBarConsumer(
                     str(runtime.deployment.id),
@@ -265,24 +270,6 @@ class ExecutionWorker:
                 cost_config = self._cost_config(deployment)
                 point_value = cost_config.point_value
                 if deployment.pending_action == "flatten":
-                    lease_token = self._lease_tokens.get(deployment.id)
-                    if lease_token is not None:
-                        from q_backend.storage.db.execution_repositories import (
-                            clear_pending_deployment_action,
-                        )
-
-                        self.service.flatten_deployment(
-                            session,
-                            deployment=deployment,
-                            lease_token=lease_token,
-                            worker_id=self.settings.execution_worker_id,
-                            cost_config=cost_config,
-                            point_value=point_value,
-                        )
-                        clear_pending_deployment_action(
-                            session, deployment.id, producer=self.settings.execution_worker_id
-                        )
-                        self._sync_open_trade(session, runtime, point_value=float(point_value))
                     continue
 
             for runtime in list(self._runtimes.values()):
@@ -492,6 +479,72 @@ class ExecutionWorker:
             )
         )
         session.flush()
+
+    def _process_pending_flattens(self, session: Session, *, now: datetime) -> None:
+        """Run queued flatten actions even when their deployment has no runtime."""
+        for deployment in list_deployments(session):
+            if deployment.pending_action != "flatten":
+                continue
+
+            token = self._lease_tokens.get(deployment.id)
+            temporary_lease = token is None
+            if temporary_lease:
+                token = str(uuid.uuid4())
+                try:
+                    acquire_worker_lease(
+                        session,
+                        deployment_id=deployment.id,
+                        worker_id=self.settings.execution_worker_id,
+                        lease_token=token,
+                        ttl_seconds=self.settings.execution_lease_ttl_seconds,
+                        now=now,
+                    )
+                except LeaseConflictError:
+                    logger.info("skipping flatten for deployment %s: lease held", deployment.id)
+                    continue
+
+            try:
+                position = get_open_net_position(session, deployment.id)
+                unsettled = list_orders_for_deployment(
+                    session, deployment.id, statuses=["intent", "submitted", "unknown"]
+                )
+                if (position is None or not position.is_open) and not unsettled:
+                    clear_pending_deployment_action(session, deployment.id, producer=self.settings.execution_worker_id)
+                    self._flatten_unpriceable.discard(deployment.id)
+                    continue
+
+                if self.quote_source.get_quote(deployment.symbol) is None:
+                    if deployment.id not in self._flatten_unpriceable:
+                        record_risk_event(
+                            session,
+                            deployment_id=deployment.id,
+                            rejection_code=RiskRejectionCode.STALE_QUOTE,
+                            message="flatten cannot proceed without a quote",
+                            context={"action": "flatten"},
+                            producer=self.settings.execution_worker_id,
+                        )
+                        self._flatten_unpriceable.add(deployment.id)
+                    continue
+
+                self._flatten_unpriceable.discard(deployment.id)
+                cost_config = self._cost_config(deployment)
+                self.service.flatten_deployment(
+                    session,
+                    deployment=deployment,
+                    lease_token=token,
+                    worker_id=self.settings.execution_worker_id,
+                    cost_config=cost_config,
+                    point_value=cost_config.point_value,
+                )
+                position = get_open_net_position(session, deployment.id)
+                unsettled = list_orders_for_deployment(
+                    session, deployment.id, statuses=["intent", "submitted", "unknown"]
+                )
+                if (position is None or not position.is_open) and not unsettled:
+                    clear_pending_deployment_action(session, deployment.id, producer=self.settings.execution_worker_id)
+            finally:
+                if temporary_lease:
+                    self._release_deployment(session, deployment.id)
 
     def _refresh_deployments(self, session: Session, *, now: datetime) -> None:
         active_ids: set[uuid.UUID] = set()

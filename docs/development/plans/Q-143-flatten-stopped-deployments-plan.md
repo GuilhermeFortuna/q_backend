@@ -19,23 +19,23 @@
 **Files:** `tests/execution/test_worker_flatten_stopped.py` (new), beside `test_worker.py` and
 `test_worker_position_sync.py`.
 
-- [ ] Write failing tests for acceptance 1 to 5 against the fake edge and the paper broker, and commit.
+- [x] Write tests for acceptance 1 to 5 against the fake edge and the paper broker, and commit.
 
 ### 2. Worker
 
 **Files:** `src/q_backend/execution/worker.py`, and the lease helpers it uses.
 
-- [ ] Add a pass in `_poll_body`, before the early return, that lists non-archived deployments with a pending
+- [x] Add a pass in `_poll_body`, before the early return, that lists non-archived deployments with a pending
   flatten and no runtime. Lease each one, run `service.flatten_deployment`, clear the pending action and
   release the lease. Keep the existing runtime path for deployments that have one.
-- [ ] Clear a flatten at once when the deployment has no open position and no working orders.
-- [ ] Keep an unpriceable flatten queued and record one risk event per attempt window. Commit.
+- [x] Clear a flatten at once when the deployment has no open position and no working orders.
+- [x] Keep an unpriceable flatten queued and record one risk event per attempt window. Commit.
 
 ### 3. Message
 
 **Files:** `src/q_backend/api/services/execution.py`, `tests/api/test_execution_api.py`.
 
-- [ ] Reword the pending-action `409` and update its test. Commit.
+- [x] Reword the pending-action `409` and update its test. Commit.
 
 ## Verification
 
