@@ -614,3 +614,34 @@ def test_acceptance_7_deployment_submits_entry_and_day_trade_close_against_fake_
         assert decision_close.outcome == DecisionOutcome.ORDER_FILLED
         submits = [r for r in state.requests if r[1] == "/v1/submit"]
         assert len(submits) == 2  # Both entry and day-trade close were submitted!
+
+
+@pytest.mark.parametrize("order_kind", ["oco", "timed_exit", "expiring_entry"])
+def test_create_deployment_refuses_live_placeable_order_kinds_until_q137(
+    api_db_session: Session,
+    frozen_version: ResearchStrategyVersion,
+    order_kind: str,
+):
+    account = execution_service.create_account(
+        api_db_session,
+        PaperAccountCreateRequest(name=f"desk-{order_kind}", initial_balance=Decimal("100000")),
+    )
+    run = _create_saved_run(
+        api_db_session,
+        frozen_version,
+        order_kinds=["market_entry", order_kind],
+        timeframe="M5",
+        day_trade=True,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        execution_service.create_deployment(
+            api_db_session,
+            DeploymentCreateRequest(
+                paper_account_id=account.id,
+                name=f"live-placeable-{order_kind}",
+                source_backtest_run_id=run.id,
+            ),
+        )
+    assert exc.value.status_code == 422
+    assert order_kind in str(exc.value.detail)

@@ -37,6 +37,12 @@ same candle can reverse the position at the next open.
 Priced entries
 --------------
 
+.. note::
+
+   Same-candle priced orders (``price=``) are deprecated. They still backtest as described here, but
+   emit ``PricedOrderDeprecationWarning`` and will be removed. See :doc:`live_placeable_orders` for
+   their replacements and the cases where the results differ.
+
 A priced entry fills on the deciding candle if ``price`` lies between its low
 and high. A price outside the candle's range raises ``ValueError``; it is not
 queued for a later candle.

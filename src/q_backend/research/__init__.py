@@ -17,6 +17,9 @@ __all__ = (
     "NoMarketDataError",
     "indicators",
     "TradeOrder",
+    "PricedOrderDeprecationWarning",
+    "compare_results",
+    "ComparisonReport",
     "ResearchStrategy",
     "ResearchPosition",
     "ChartIndicator",
@@ -54,7 +57,8 @@ if TYPE_CHECKING:
     from q_backend.research.tick_data import TickData
     from q_backend.research.tick_store import TickStore, TickSyncReport
     from q_backend.research.errors import AdjustedSeriesWarning, NoMarketDataError
-    from q_backend.research.orders import TradeOrder
+    from q_backend.research.orders import PricedOrderDeprecationWarning, TradeOrder
+    from q_backend.research.compare import ComparisonReport, compare_results
     from q_backend.research.positions import ResearchPosition
     from q_backend.research.results import BacktestResult
     from q_backend.research.strategy import ResearchStrategy
@@ -111,6 +115,18 @@ def __getattr__(name: str):
         from q_backend.research.orders import TradeOrder
 
         return TradeOrder
+    if name == "PricedOrderDeprecationWarning":
+        from q_backend.research.orders import PricedOrderDeprecationWarning
+
+        return PricedOrderDeprecationWarning
+    if name == "compare_results":
+        from q_backend.research.compare import compare_results
+
+        return compare_results
+    if name == "ComparisonReport":
+        from q_backend.research.compare import ComparisonReport
+
+        return ComparisonReport
     if name == "ChartIndicator":
         from q_backend.research.charting import ChartIndicator
 

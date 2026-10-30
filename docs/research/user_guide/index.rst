@@ -14,5 +14,6 @@ The User guide covers the architecture, statistical methods, and mechanics of Q 
    decision_timeframes
    strategy_files
    execution
+   live_placeable_orders
    backtesting
    publishing

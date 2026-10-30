@@ -43,6 +43,7 @@ class BacktestEngine:
         costs: Optional[TransactionCostConfig] = None,
         intrabar_factory: Optional[Callable[[pd.DataFrame], Callable[[int], tuple]]] = None,
         tick_size: float | None = None,
+        latency_us: int = 0,
     ):
         self.strategy = strategy
         self.sizer = sizer
@@ -55,6 +56,7 @@ class BacktestEngine:
         self.costs = costs
         self.intrabar_factory = intrabar_factory
         self.tick_size = tick_size
+        self.latency_us = latency_us
         self.kernel_sizing = sizer_to_kernel(sizer)
 
     def run(
@@ -219,5 +221,6 @@ class BacktestEngine:
             tick_size=(
                 self.tick_size if self.tick_size is not None else chunk.attrs.get("q_research", {}).get("tick_size")
             ),
+            latency_us=self.latency_us,
         )
         return run

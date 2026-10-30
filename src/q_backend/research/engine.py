@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import warnings
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from dataclasses import replace
@@ -34,6 +35,7 @@ from q_backend.research.charting import STYLE_FIELDS, ChartIndicator
 from q_backend.research.frame import _validate_prices
 from q_backend.research.hooks import ticks_mode
 from q_backend.research.intrabar import intrabar_error, native_tick_source
+from q_backend.research.orders import PricedOrderDeprecationWarning
 from q_backend.research.progress import BacktestProgress, backtest_progress
 from q_backend.research.results import (
     BacktestResult,
@@ -221,6 +223,7 @@ def backtest(
     workers: int | Literal["auto"] = 1,
     progress: bool | None = None,
     check_causality: bool = False,
+    latency_ms: int = 0,
 ) -> BacktestResult:
     """
     Run a synchronous research backtest with deterministic Q execution semantics.
@@ -281,6 +284,9 @@ def backtest(
         spaced session ends and compare it with the full run. An indicator that reads a later bar
         raises ``ValueError`` naming its column and bar. Off, the check costs nothing. Custom
         strategies only.
+    latency_ms : int, default 0
+        Placement latency in milliseconds. An order decided at a bar's close fills only from
+        trades at or after the close plus this latency. The default leaves every fill unchanged.
 
     Returns
     -------
@@ -288,6 +294,8 @@ def backtest(
         Result container with metrics, trades, equity series, and metadata.
     """
     # 1. Validate scalar arguments
+    if isinstance(latency_ms, bool) or not isinstance(latency_ms, int) or latency_ms < 0:
+        raise ValueError(f"latency_ms must be a non-negative integer, got {latency_ms!r}")
     if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity <= 0:
         raise ValueError(f"quantity must be a positive integer, got {quantity!r}")
 
@@ -410,6 +418,7 @@ def backtest(
         costs=costs,
         intrabar_factory=None if ticks is None else _NativeTickSources(ticks),
         tick_size=tick_size,
+        latency_us=latency_ms * 1_000,
     )
 
     if isinstance(post_exit_bars, bool) or not 1 <= post_exit_bars <= 500:
@@ -439,6 +448,8 @@ def backtest(
         "post_exit_bars": post_exit_bars,
         "excursions": excursions,
     }
+    if latency_ms:
+        config_dict["latency_ms"] = latency_ms
     from q_backend.backtesting.candle_kernel import _exit_params_from_strategy
 
     effective_exit_params = _exit_params_from_strategy(trading_strategy)
@@ -486,6 +497,7 @@ def backtest(
                 check_causality=check_causality,
                 tick_source=tick_source,
             )
+            _warn_priced_orders(result.order_kinds)
             reporter.finish(len(result.trades))
     except kernel.IntrabarDataError as exc:
         raise intrabar_error(exc, validated_frame, ticks) from exc
@@ -564,6 +576,23 @@ def backtest(
         )
         result = replace(result, trades=output)
     return result
+
+
+_PRICED_HOOK = {"priced_entry": "entry_strategy", "priced_close": "exit_strategy"}
+
+
+def _warn_priced_orders(order_kinds: frozenset[str]) -> None:
+    """Warn once per run that placed same-candle priced orders, naming the hooks that returned them."""
+    hooks = sorted({hook for kind, hook in _PRICED_HOOK.items() if kind in order_kinds})
+    if not hooks:
+        return
+    warnings.warn(
+        f"{' and '.join(hooks)} returned same-candle priced orders (price=), which a broker cannot hold. "
+        "They are deprecated and will be removed; see the 'Live-placeable orders' migration guide "
+        "(docs/research/user_guide/live_placeable_orders.rst).",
+        PricedOrderDeprecationWarning,
+        stacklevel=3,
+    )
 
 
 def _check_causality(

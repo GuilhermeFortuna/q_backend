@@ -5,6 +5,10 @@
 **Depends on:** Q-138, Q-136
 **Implementation plan:** [Plan](../plans/Q-139-live-placeable-orders-in-research-backtests-plan.md)
 
+**Amended 2026-10-29** after the first `BracketMomentumStrategy` comparison: three known differences added,
+label-only differences counted as matched, the strategy-file marker dropped, and the data source recorded in
+each comparison. The finished ports are kept in the author's private `q_strategies` repository.
+
 ## Purpose
 
 A research strategy should be deployable as written. Same-candle priced orders (`price=`) are the one construct
@@ -48,8 +52,7 @@ removed.
 
 - Every `price=` entry or close, and every priced order list, still backtests exactly as today. On the first such
   order of a run, it emits `PricedOrderDeprecationWarning`, naming the hook and pointing to the migration guide.
-- A strategy *file* that places one is refused at deployment, as Q-136 already does. It is marked
-  "not deployable" in the stack's strategy list after its first run.
+- A strategy *file* that places one is refused at deployment, as Q-136 already does.
 
 ### Comparison tool
 
@@ -60,7 +63,9 @@ removed.
   - trades present in only one result;
   - total PnL, profit factor and drawdown for both.
 
-  `report.identical` is true only when every trade matches. Printing the report gives a readable summary.
+  `report.identical` is true only when every trade matches on entry and exit time, price, side, quantity and
+  PnL. Entry and exit reasons are compared too, but a pair that differs only in its reasons counts as matched
+  and is listed separately as a label difference. Printing the report gives a readable summary.
 
 ### Migration guide
 
@@ -69,27 +74,53 @@ removed.
 
   | Pattern | Replacement | Identical when |
   | --- | --- | --- |
-  | priced entry at a level fixed before the candle | resting stop or limit placed at the previous close, `expire_bars=1` | always |
+  | priced entry at a level fixed before the candle | resting stop or limit placed at the previous close, `expire_bars=1` | the kernel takes the fill mode from the price at the start of its scan: the open, or on a bar with an intrabar exit, the exit trade's price. The replacement's kind is fixed at the previous close, so identical only when that reference lies on the side the kind assumes |
   | priced entry list (bracket) | `TradeOrder.oco(...)` of resting entries | the levels are fixed before the candle |
-  | priced stop close at a level fixed before the candle | `stop_loss` set or moved by `amend` at the previous close | the stop is first set at the entry bar's close, as the legacy form cannot stop out on its entry bar |
+  | priced stop close at a level fixed before the candle | `stop_loss` set or moved by `amend` at the previous close | the stop is first set at the entry bar's close, as the legacy form cannot stop out on its entry bar; the exit reason differs (see below) |
   | priced close at the bar's open after a time | `close(at=time)` | always |
   | a condition that reads the candle's close, high or low and then prices a fill inside it | none | never: it uses information from after the fill |
 
 - Known differences that the guide explains with examples:
   - **Strictly beyond.** A condition such as `high > prev_high` (strictly beyond) gating a stop at `prev_high`
-    enters on exact touches once it is a stop order.
+    enters on exact touches once it is a stop order. The same holds for exits: the legacy stop closes only when
+    `low < stop`, and a resting stop fills on an exact touch.
+  - **Entry-bar take-profit.** A legacy form may close on its entry bar at a target measured from the fill price.
+    The replacement sets a target only once the fill is known, so it first applies on the next bar.
   - **Several stops.** Several priced stop closes, resolved by the hook's own precedence, become one stop at
     the level reached first.
+  - **Stop exit reason.** A priced stop close keeps the reason the hook gave it. A protective stop exits as
+    `STOP_LOSS`. Fills, times and PnL are identical, so `compare_results` reports a label difference only.
+  - **Protective levels from a gap fill.** A legacy bracket entry that fills at the open beyond its level
+    (`max(open, level)`) computes its stop and target from that fill price. A resting entry carries levels
+    fixed before the candle, measured from the entry level. On gap bars the exit prices differ. This is a
+    permanent difference: the port measures its levels from the entry level.
+  - **Re-entry after an intrabar exit.** On a bar where a trade stops out or hits its target, a legacy hook
+    prices a new entry on that bar. The kernel approaches it from the exit trade's price: when that price is on
+    the far side of the level, the entry fills at its own price once a later trade reaches it, and is rejected
+    with `touch_before_exit` when none does. The replacement places no order on those bars. It places its
+    bracket only while flat, or while the open position closes at the next open (hold time or time limit), so
+    the port skips these re-entries by design. The known difference is therefore the absence of those trades,
+    and the cascade that follows them.
+- The guide also states that a later `close(at=...)` replaces a working timed exit, and that the timed exit
+  is dropped when the position closes.
 
 ### Equivalence of the author's strategies
 
-The implementing agent proves the before/after match on real strategies without committing them, because they
-are private and the repositories are public. In a scratch directory outside every repository, it ports
-`BracketMomentumStrategy` (IND), `RSIStrategy` and `AlphaExperimentStrategy` (WDO) from
-`experiments/strategies/` on the `research/experiments` branch. It then runs each original and its port on the
-same bars and tick store with `compare_results`. The board message reports, for each strategy:
+The author's strategies are private and the Q repositories are public, so neither the strategies nor their
+ports go into a public repository. The implementing agent proves the before/after match on real strategies: in
+a scratch directory outside every repository, it ports `BracketMomentumStrategy` (IND) and
+`AlphaExperimentStrategy` (WDO) from `experiments/strategies/` on the `research/experiments` branch. The
+finished ports are kept in the author's private `q_strategies` repository, one self-contained module per
+strategy. `RSIStrategy` is dropped from the comparisons: it reads the candle's high and low
+before pricing a fill, which the migration table already marks as having no replacement. It then runs each original and its port on the
+same bars and tick store with `compare_results`, over each strategy's full `main()` range. The board message
+reports, for each strategy:
+- the symbol, date range and market-data source of the bars and ticks (the tick store holds data from more
+  than one broker, so the source matters when the result is compared with earlier runs);
 - whether the results are identical;
-- otherwise, the differing trades, each attributed to a known difference from the guide.
+- otherwise, the differing trades, each attributed to a known difference from the guide. Trades present in only
+  one result after an attributed difference may be attributed to it as a cascade, by naming the first
+  divergent trade and its cause.
 
 Any unexplained difference is a defect in this task or in Q-138.
 
@@ -98,17 +129,25 @@ Any unexplained difference is a defect in this task or in Q-138.
 1. Every existing research and backtest test passes unchanged, and results for strategies without priced orders
    are byte-identical to the previous release.
 2. Fixture strategies written for the tests reproduce the identical rows of the migration table through
-   `backtest()`: legacy form and port give `compare_results(...).identical`. The known-difference rows produce
-   exactly the documented differing trades.
+   `backtest()`: legacy form and port give `compare_results(...).identical`. The known differences, including
+   the three added after the first comparison (stop exit reason, protective levels from a gap fill, re-entry
+   after an intrabar exit) and the two added after the Alpha comparison (exact-touch stop exits, entry-bar
+   take-profit), each have a fixture pair that produces exactly the documented difference.
 3. OCO, timed exit, `expire_at` and `latency_ms` behave as Q-138 defines, through the library.
 4. The deprecation warning appears once per run with priced orders, and never otherwise.
 5. `order_kinds` records the new kinds, and Q-136's deployment check refuses them until Q-137.
-6. `compare_results` reports matches, field differences and one-sided trades correctly on constructed results.
-7. The board message contains the three comparisons described above.
+6. `compare_results` reports matches, field differences, label-only differences and one-sided trades correctly
+   on constructed results.
+7. The board message contains the two comparisons described above (`BracketMomentumStrategy` and
+   `AlphaExperimentStrategy`), each attributed per session.
 
 ## Out of scope
 
 - Removing `price=` (Q-141).
 - Decision timeframes (Q-140).
 - Live submission of the new orders (Q-137).
-- Committing the author's strategies or their ports anywhere.
+- A "not deployable" marker in the strategy-file listing. Q-141 removes priced orders, Q-136 already greys out
+  undeployable runs in `q_terminal`, and the deprecation warning flags priced orders at backtest time.
+- Protective levels measured from the fill.
+- A library call that cancels a working timed exit without replacing it.
+- Committing the author's strategies or their ports to a public repository.

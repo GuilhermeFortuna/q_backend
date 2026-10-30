@@ -14,8 +14,9 @@ match their originals.
 
 - `q_backend` only. Pin the Q-138 release.
 - Do not edit expected values in existing tests. A changed existing result is a regression to report.
-- Never commit the author's strategies or their ports. Read them with
-  `git show research/experiments:experiments/strategies/<file>` into a scratch directory outside every repository.
+- Never commit the author's strategies or their ports to a public repository. Read them with
+  `git show research/experiments:experiments/strategies/<file>` into a scratch directory outside every repository,
+  and keep the finished ports in the private `q_strategies` repository.
 - Tests use hand-built bars and a `tmp_path` tick store. No MT5, worker, Docker, GPU or desktop.
 - Backend environment: `UV_PROJECT_ENVIRONMENT=/mnt/build/venvs/<name>`, also when committing.
 
@@ -50,8 +51,7 @@ classification, plus `tests/research/test_oco_orders.py`, `test_timed_orders.py`
 (new), `tests/research/test_priced_deprecation.py` (new).
 
 - [ ] Write fixture strategy pairs for each migration-table row, and test acceptance 2 with `compare_results`.
-- [ ] Add the deprecation warning (acceptance 4), and the "not deployable" marker in the strategy-file listing.
-  Commit.
+- [ ] Add the deprecation warning (acceptance 4). Commit. (The strategy-file marker is out of scope.)
 
 ### 5. Guide
 
@@ -65,6 +65,23 @@ classification, plus `tests/research/test_oco_orders.py`, `test_timed_orders.py`
 - [ ] In the scratch directory, port the three strategies with the guide only, run each port on the baseline
   setup, and compare. Attribute every difference to a known one; an unexplained difference blocks the task.
   Record the reports for the board message.
+
+### 7. Amendment of 2026-10-29
+
+**Files:** `research/compare.py`, `tests/research/test_compare_results.py`,
+`tests/research/test_live_placeable_equivalence.py`, `docs/research/user_guide/live_placeable_orders.rst`.
+
+- [ ] `compare_results`: count a pair that differs only in its reasons as matched and list it as a label
+  difference. Extend the acceptance 6 tests. Commit.
+- [ ] Add fixture pairs for the three new known differences (stop exit reason, protective levels from a gap
+  fill, re-entry after an intrabar exit) and document them in the guide with examples, together with the
+  timed-exit replacement rule. Commit.
+- [ ] Re-port `BracketMomentumStrategy` to place its resting OCO bracket only while flat, or while the open
+  position closes at the next open. Port `AlphaExperimentStrategy`. `RSIStrategy` is dropped. Run both over
+  their full `main()` ranges and record the data source and range of each. Attribute each diverging session to
+  its first divergence.
+- [x] Add both ports to the private `q_strategies` repository as self-contained modules (`bracket_momentum.py`,
+  `alpha_experiment.py`), each reproducing its comparison port trade for trade.
 
 ## Verification
 
