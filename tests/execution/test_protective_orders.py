@@ -885,3 +885,71 @@ def test_apply_bar_places_an_oco_group_and_records_a_timed_exit(db_session, seed
     )
     position = get_open_net_position(db_session, deployment.id)
     assert position.exit_at.replace(tzinfo=timezone.utc) == NOW + timedelta(hours=3)
+
+
+def _double_fill(db_session, deployment, token, broker):
+    """Fill the buy leg, then the sell leg whose removal the broker refused because it had filled."""
+    manager = _manager(broker)
+    _place_group(manager, db_session, deployment, token)
+    buy_leg, sell_leg = _working(db_session, deployment)
+    broker.cancel_results = [
+        BrokerSubmissionResult(
+            outcome=BrokerSubmissionOutcome.REJECTED,
+            rejection=BrokerRejection(code=BrokerRejectionCode.ORDER_SEND_FAILED, message="already filled"),
+        )
+    ]
+    broker.pending_states = [
+        BrokerOrderState(
+            status=BrokerOrderLookupStatus.FILLED,
+            fill=_fill_for(buy_leg.external_order_id, ExecutionSide.BUY),
+            external_position_id="42",
+        ),
+        BrokerOrderState(
+            status=BrokerOrderLookupStatus.FILLED,
+            fill=_fill_for(sell_leg.external_order_id, ExecutionSide.SELL),
+            external_position_id="42",
+        ),
+    ]
+    manager.reconcile(db_session, deployment=deployment, worker_id="worker-a", point_value=Decimal("0.2"))
+    manager.reconcile(db_session, deployment=deployment, worker_id="worker-a", point_value=Decimal("0.2"))
+    return buy_leg
+
+
+def test_a_double_fill_restores_the_first_legs_stop_and_target(db_session, seeded_deployment):
+    deployment, token = _deployment(seeded_deployment)
+    broker = ScriptedBroker()
+    buy_leg = _double_fill(db_session, deployment, token, broker)
+
+    [close] = broker.named("submit_market")
+    assert (close.stop_loss, close.take_profit) == (buy_leg.stop_loss, buy_leg.take_profit)
+    position = get_open_net_position(db_session, deployment.id)
+    assert (position.stop_loss, position.take_profit) == (buy_leg.stop_loss, buy_leg.take_profit)
+
+
+class _RaisingMarketBroker(ScriptedBroker):
+    def submit_market_order(self, request, *, cost_config):
+        self.calls.append(("submit_market", request))
+        raise ConnectionError("edge unreachable")
+
+
+def test_a_double_fill_whose_close_send_raises_is_left_unknown_recorded_and_paused(db_session, seeded_deployment):
+    deployment, token = _deployment(seeded_deployment)
+    _double_fill(db_session, deployment, token, _RaisingMarketBroker())
+
+    close = db_session.execute(
+        select(ExecutionOrder).where(
+            ExecutionOrder.deployment_id == deployment.id,
+            ExecutionOrder.intent_kind == ExecutionIntentKind.CLOSE.value,
+        )
+    ).scalar_one()
+    assert close.status == ExecutionOrderStatus.UNKNOWN.value
+    assert (
+        db_session.execute(
+            select(ExecutionRiskEvent).where(
+                ExecutionRiskEvent.rejection_code == RiskRejectionCode.OCO_DOUBLE_FILL.value
+            )
+        ).scalar_one()
+        is not None
+    )
+    db_session.refresh(deployment)
+    assert deployment.lifecycle == DeploymentLifecycle.PAUSED.value
