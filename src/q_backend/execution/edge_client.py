@@ -276,6 +276,22 @@ class EdgeClient:
             body["kind"] = kind
         return self._request_json("POST", "/v1/lookup", read_timeout=self._timeouts.read_s, json_body=body)
 
+    def deals(
+        self,
+        window_start: datetime,
+        window_end: datetime,
+        *,
+        symbol: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Deal history in a window, optionally for one symbol (read-only)."""
+        body: dict[str, Any] = {
+            "window_start": _iso_timestamp(window_start),
+            "window_end": _iso_timestamp(window_end),
+        }
+        if symbol:
+            body["symbol"] = symbol
+        return self._request_rows("/v1/deals", method="POST", body=body)
+
     def positions(self, symbol: str | None = None) -> list[dict[str, Any]]:
         """Open positions in the terminal (read-only)."""
         return self._request_rows("/v1/positions", symbol)
@@ -284,11 +300,18 @@ class EdgeClient:
         """Working pending orders in the terminal (read-only)."""
         return self._request_rows("/v1/orders", symbol)
 
-    def _request_rows(self, path: str, symbol: str | None) -> list[dict[str, Any]]:
+    def _request_rows(
+        self,
+        path: str,
+        symbol: str | None = None,
+        *,
+        method: str = "GET",
+        body: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
         params = {"symbol": symbol} if symbol else None
         try:
             with self._client(read_timeout=self._timeouts.read_s) as client:
-                response = client.get(path, params=params)
+                response = client.request(method, path, params=params, json=body)
         except httpx.HTTPError as exc:
             raise EdgeUnavailable(str(exc)) from exc
         if response.status_code >= 400:

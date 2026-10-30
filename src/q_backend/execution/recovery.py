@@ -69,6 +69,8 @@ def open_trade_for_deployment(
         average_entry_price=position.average_entry_price,
         opened_at=position.opened_at,
         point_value=point_value,
+        stop_loss=position.stop_loss,
+        take_profit=position.take_profit,
     )
 
 

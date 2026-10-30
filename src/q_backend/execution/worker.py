@@ -28,6 +28,7 @@ from q_backend.storage.db.execution_repositories import (
     EdgeHealthSnapshot,
     LeaseConflictError,
     acquire_worker_lease,
+    get_execution_control_state,
     get_execution_deployment,
     get_paper_account,
     get_open_net_position,
@@ -91,6 +92,7 @@ class ExecutionWorker:
     _health: WorkerHealth = field(init=False)
     _running: bool = field(default=False, init=False)
     _reconciler: Optional[OrderReconciler] = field(default=None, init=False)
+    _last_order_poll_at: Optional[datetime] = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         self._health = WorkerHealth(
@@ -227,6 +229,7 @@ class ExecutionWorker:
             reconciler = self._order_reconciler()
             for runtime in list(self._runtimes.values()):
                 reconciler.reconcile_deployment(session, runtime.deployment)
+            self._reconcile_working_orders(session, now=now)
             for runtime in list(self._runtimes.values()):
                 self._sync_open_trade(
                     session,
@@ -343,6 +346,39 @@ class ExecutionWorker:
             session.commit()
             self._health.last_poll_at = now
             self._health.last_error = None
+
+    def _reconcile_working_orders(self, session: Session, *, now: datetime) -> None:
+        """Remove working orders of deployments that must not trade; reconcile the rest on the order interval.
+
+        A paused or stopped deployment, or any deployment while the kill switch is on, gives up its
+        working orders on every poll until none is left. Other deployments are reconciled with the
+        broker every ``execution_order_poll_interval_s`` seconds, and the reconciliation also runs
+        before each bar decision.
+        """
+        control = get_execution_control_state(session)
+        interval = self.settings.execution_order_poll_interval_s
+        due = self._last_order_poll_at is None or (now - self._last_order_poll_at).total_seconds() >= interval
+        if due:
+            self._last_order_poll_at = now
+        for runtime in list(self._runtimes.values()):
+            deployment = runtime.deployment
+            protective = self.service.protective
+            point_value = self._cost_config(deployment).point_value
+            if control.kill_switch_enabled or deployment.lifecycle != DeploymentLifecycle.RUNNING.value:
+                reason = "kill_switch" if control.kill_switch_enabled else "not_running"
+                protective.remove_working(
+                    session,
+                    deployment=deployment,
+                    worker_id=self.settings.execution_worker_id,
+                    reason=reason,
+                )
+            elif due:
+                protective.reconcile(
+                    session,
+                    deployment=deployment,
+                    worker_id=self.settings.execution_worker_id,
+                    point_value=point_value,
+                )
 
     def _sync_open_trade(self, session: Session, runtime: DeploymentRuntime, *, point_value: float) -> None:
         trade = open_trade_for_deployment(session, runtime.deployment, point_value=point_value)

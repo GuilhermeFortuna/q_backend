@@ -23,6 +23,7 @@ from q_backend.execution.brokers.base import (
     MarketOrderRequest,
     PaperCostConfig,
     PendingOrderRequest,
+    PositionExitRequest,
     ProtectionRequest,
 )
 from q_backend.execution.brokers.live_gates import (
@@ -265,6 +266,7 @@ class EdgeBroker:
                 status=BrokerOrderLookupStatus.FILLED,
                 fill=fill,
                 external_order_id=external_order_id,
+                external_position_id=_position_id_from_deals(deals),
                 external_deal_ids=deal_ids,
                 message="reconciled from edge deal history",
             )
@@ -384,6 +386,7 @@ class EdgeBroker:
                 outcome=BrokerSubmissionOutcome.FILLED,
                 fill=lookup.fill,
                 external_order_id=external_order_id,
+                external_position_id=lookup.external_position_id,
                 external_deal_ids=lookup.external_deal_ids,
                 raw_response={"submit": submit_outcome, "lookup": "filled"},
                 cost_config=cost_config,
@@ -559,6 +562,47 @@ class EdgeBroker:
             message="position does not carry the requested levels",
         )
 
+    def lookup_position_exit(self, request: PositionExitRequest) -> BrokerOrderState:
+        """Read-only: deals that closed a position on the broker side, aggregated into one exit fill."""
+        try:
+            open_now = self._client.positions(request.symbol)
+        except EdgeUnavailable as exc:
+            return BrokerOrderState(status=BrokerOrderLookupStatus.UNAVAILABLE, message=str(exc))
+        if any(str(row.get("ticket")) == request.position_ticket for row in open_now):
+            return BrokerOrderState(
+                status=BrokerOrderLookupStatus.NOT_FOUND,
+                external_position_id=request.position_ticket,
+                message="position is still open at the broker",
+            )
+        window_end = self._clock.now()
+        try:
+            deals = self._client.deals(_as_utc(request.opened_at), _as_utc(window_end), symbol=request.symbol)
+        except EdgeUnavailable as exc:
+            return BrokerOrderState(status=BrokerOrderLookupStatus.UNAVAILABLE, message=str(exc))
+        exits = [
+            deal
+            for deal in deals
+            if str(deal.get("position_id")) == request.position_ticket and deal.get("reason") in _EXIT_REASONS
+        ]
+        if not exits:
+            return BrokerOrderState(
+                status=BrokerOrderLookupStatus.UNAVAILABLE,
+                external_position_id=request.position_ticket,
+                message="position closed but no broker-side exit deal was found",
+            )
+        exits.sort(key=lambda d: int(d.get("time_msc", 0) or 0))
+        exit_reason = _EXIT_REASONS[exits[-1]["reason"]]
+        fill, deal_ids = _exit_fill_from_deals(request, exits, exit_reason=exit_reason, now=self._clock.now())
+        if fill is None:
+            return BrokerOrderState(status=BrokerOrderLookupStatus.UNAVAILABLE, message="exit deals unusable")
+        return BrokerOrderState(
+            status=BrokerOrderLookupStatus.FILLED,
+            fill=fill,
+            external_position_id=request.position_ticket,
+            external_deal_ids=deal_ids,
+            message=f"broker-side exit ({exit_reason})",
+        )
+
     def lookup_cancellation(self, request: CancelOrderRequest) -> BrokerOrderState:
         """Read-only check that a working order has left the terminal's order list."""
         try:
@@ -580,12 +624,58 @@ class EdgeBroker:
 
 _PENDING_MIN_EDGE = (1, 2)
 _NO_COST = PaperCostConfig()
+_EXIT_REASONS = {"sl": "stop_loss", "tp": "take_profit", "so": "stop_out"}
 
 
 def _same_level(value: Any, expected: Optional[Decimal]) -> bool:
     if expected is None or float(expected) == 0.0:
         return value in (None, 0, 0.0)
     return value is not None and abs(float(value) - float(expected)) < 1e-9
+
+
+def _exit_fill_from_deals(
+    request: PositionExitRequest,
+    deals: list[dict[str, Any]],
+    *,
+    exit_reason: str,
+    now: datetime,
+) -> tuple[Optional[FillRecord], tuple[str, ...]]:
+    """One aggregated exit fill; the side of each deal is its direction (0 buy, 1 sell)."""
+    total_qty = Decimal("0")
+    notional = Decimal("0")
+    deal_ids: list[str] = []
+    latest_time = now
+    side = ExecutionSide.SELL
+    for deal in deals:
+        qty = Decimal(str(deal.get("volume", 0)))
+        if qty <= 0:
+            continue
+        deal_ids.append(str(int(deal.get("ticket", 0))))
+        total_qty += qty
+        notional += qty * Decimal(str(deal.get("price", 0)))
+        side = ExecutionSide.BUY if int(deal.get("type", 1)) == 0 else ExecutionSide.SELL
+        if deal.get("time_msc") is not None:
+            latest_time = datetime.fromtimestamp(int(deal["time_msc"]) / 1000.0, tz=timezone.utc)
+    if total_qty <= 0:
+        return None, ()
+    fill = FillRecord(
+        broker_mode=BrokerMode.MT5_LIVE,
+        external_fill_id=deal_ids[-1],
+        side=side,
+        quantity=total_qty,
+        price=notional / total_qty,
+        fee=Decimal("0"),
+        slippage=Decimal("0"),
+        filled_at=latest_time,
+        metadata={
+            "symbol": request.symbol,
+            "deployment_id": str(request.deployment_id),
+            "position_ticket": request.position_ticket,
+            "exit_reason": exit_reason,
+            "deal_tickets": deal_ids,
+        },
+    )
+    return fill, tuple(deal_ids)
 
 
 def _position_id_from_deals(deals: list[dict[str, Any]]) -> Optional[str]:

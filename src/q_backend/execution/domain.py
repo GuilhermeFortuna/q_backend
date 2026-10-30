@@ -104,6 +104,7 @@ class RiskRejectionCode(str, Enum):
     DATABASE_UNAVAILABLE = "database_unavailable"
     BROKER_UNAVAILABLE = "broker_unavailable"
     UNKNOWN_PRIOR_ORDER = "unknown_prior_order"
+    PROTECTIVE_LEVEL_REJECTED = "protective_level_rejected"
 
 
 class LedgerEntryType(str, Enum):

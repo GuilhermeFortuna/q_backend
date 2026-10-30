@@ -20,6 +20,7 @@ from q_backend.execution.brokers.base import (
     MarketOrderRequest,
     PaperCostConfig,
     PendingOrderRequest,
+    PositionExitRequest,
     ProtectionRequest,
     QuoteSource,
 )
@@ -158,6 +159,8 @@ class PaperBroker:
         *,
         cost_config: PaperCostConfig,
     ) -> BrokerSubmissionResult:
+        if request.stop_loss is not None or request.take_profit is not None:
+            return _unsupported_on_paper("protective levels", request.order_id)
         now = self._clock.now()
         quote = self._quote_source.get_quote(request.symbol)
         quote_rejection = validate_quote(
@@ -237,6 +240,13 @@ class PaperBroker:
         return BrokerOrderState(
             status=BrokerOrderLookupStatus.REJECTED,
             message="paper broker never holds working orders",
+        )
+
+    def lookup_position_exit(self, request: PositionExitRequest) -> BrokerOrderState:
+        # Paper positions close only through Q's own ledger, never on a broker.
+        return BrokerOrderState(
+            status=BrokerOrderLookupStatus.NOT_FOUND,
+            message="paper broker never closes positions on its own",
         )
 
     def lookup_order(self, request: MarketOrderRequest) -> BrokerOrderState:

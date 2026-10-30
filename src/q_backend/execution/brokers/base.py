@@ -178,6 +178,18 @@ class ProtectionRequest(BaseModel):
     live_activation_enabled: bool = False
 
 
+class PositionExitRequest(BaseModel):
+    """Question to the broker: did this position close on the broker side (stop, target or stop-out)?"""
+
+    model_config = ConfigDict(frozen=True)
+
+    deployment_id: UUID
+    symbol: str
+    position_ticket: str
+    opened_at: datetime
+    broker_mode: BrokerMode = BrokerMode.PAPER
+
+
 class CancelOrderRequest(BaseModel):
     """Removal of a working pending order at the broker."""
 
@@ -260,4 +272,8 @@ class ExecutionBroker(Protocol):
 
     def lookup_cancellation(self, request: CancelOrderRequest) -> BrokerOrderState:
         """Read-only: has the working order left the broker's order list?"""
+        ...
+
+    def lookup_position_exit(self, request: PositionExitRequest) -> BrokerOrderState:
+        """Read-only: the aggregated broker-side exit of a position, with its reason in fill metadata."""
         ...

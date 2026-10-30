@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from q_backend.backtesting.models import OrderAction, SignalAction as BacktestSignalAction, Trade
+from q_backend.market_data.exogenous_context import bar_duration
 from q_backend.backtesting.position_sizing import PositionSizingConfig, build_position_sizer
 from q_backend.execution.bars import frame_close_times, trim_rolling_window
 from q_backend.execution.domain import SignalAction, StrategyIdentity
@@ -20,9 +21,17 @@ from q_backend.execution.strategy_build import build_research_strategy_from_comp
 from q_backend.execution.warmup import compute_window_bound_bars
 from q_backend.market_data.timezone import BRASILIA_TZ
 from q_backend.research.adapter import ResearchStrategyAdapter, classify_order
+from q_backend.research.orders import TradeOrder
 from q_backend.research.frame import normalize_timeframe
 from q_backend.research.positions import ResearchPosition
 from q_backend.research.strategy import ResearchStrategy
+
+# Order kinds a forward deployment can run. Priced entries and closes, OCO groups and timed
+# exits stay outside the deployable set until their own tasks land.
+_ENTRY_KINDS = frozenset(
+    {"market_entry", "protective_levels", "resting_stop", "resting_limit", "expiring_entry", "cancel"}
+)
+_EXIT_KINDS = frozenset({"market_close", "amend", "cancel"})
 
 
 def _utc_aware(value: datetime) -> datetime:
@@ -227,6 +236,11 @@ class ResearchEvaluator:
         pause_requested = False
         risk_rejection_code: Optional[str] = None
         risk_rejection_message: Optional[str] = None
+        entry_stop_loss: Optional[float] = None
+        entry_take_profit: Optional[float] = None
+        pending_entry: Optional[dict[str, Any]] = None
+        protect_levels: Optional[dict[str, Optional[float]]] = None
+        cancel_pending = False
 
         indicators_started = time.perf_counter()
         augmented = self._rolling
@@ -251,7 +265,8 @@ class ResearchEvaluator:
                     signal_action = SignalAction.CLOSE
                     reason = "day_trade_close"
 
-            # 2. Exit strategy hook
+            # 2. Exit strategy hook: exit rules, amendments of the open position's levels
+            #    and cancellations of working entries
             if signal_action == SignalAction.HOLD and positions:
                 try:
                     exit_orders = self._adapter._invoke_hook("exit_strategy", prefix, positions)
@@ -264,13 +279,21 @@ class ResearchEvaluator:
                 if exit_orders:
                     first = exit_orders[0]
                     kinds = classify_order(first)
-                    if kinds - {"market_close"}:
+                    if kinds - _EXIT_KINDS:
                         pause_requested = True
                         risk_rejection_code = "unsupported_order_kind"
                         risk_rejection_message = f"Order kind {sorted(kinds)} is not deployable"
                     elif first.action == "close" and first.price is None:
                         signal_action = SignalAction.CLOSE
                         reason = first.reason or "exit_rule"
+                    elif first.action == "amend":
+                        protect_levels = {"stop_loss": first.stop_loss, "take_profit": first.take_profit}
+                    elif first.action == "cancel":
+                        cancel_pending = True
+
+            # Working entries lapse once the day-trade window has closed.
+            if self._day_trade and bar_time > end_t and not positions:
+                cancel_pending = True
 
             # 3. Entry strategy hook
             if signal_action == SignalAction.HOLD and not positions and not pause_requested:
@@ -289,13 +312,20 @@ class ResearchEvaluator:
                     if entry_orders:
                         first = entry_orders[0]
                         kinds = classify_order(first)
-                        if kinds - {"market_entry"}:
+                        if kinds - _ENTRY_KINDS:
                             pause_requested = True
                             risk_rejection_code = "unsupported_order_kind"
                             risk_rejection_message = f"Order kind {sorted(kinds)} is not deployable"
                         elif first.action in ("buy", "sell") and first.kind == "market" and first.price is None:
                             signal_action = SignalAction.BUY if first.action == "buy" else SignalAction.SELL
                             reason = first.reason or "entry"
+                            entry_stop_loss = first.stop_loss
+                            entry_take_profit = first.take_profit
+                        elif first.action in ("buy", "sell") and first.kind in ("stop", "limit"):
+                            pending_entry = self._pending_entry_spec(first, bar_close_time_value)
+                            reason = first.reason or "entry"
+                        elif first.action == "cancel":
+                            cancel_pending = True
 
         evaluate_ms = (time.perf_counter() - evaluate_started) * 1000.0
 
@@ -306,7 +336,9 @@ class ResearchEvaluator:
             "reference_price": close_price,
             "point_value": self.point_value,
         }
-        if signal_action in {SignalAction.BUY, SignalAction.SELL} and not pause_requested:
+        if (
+            signal_action in {SignalAction.BUY, SignalAction.SELL} or pending_entry is not None
+        ) and not pause_requested:
             requested_quantity = self._quantity
             sizing_inputs["order_quantity"] = requested_quantity
         sizing_ms = (time.perf_counter() - sizing_started) * 1000.0
@@ -369,4 +401,45 @@ class ResearchEvaluator:
             pause_requested=pause_requested,
             risk_rejection_code=risk_rejection_code,
             risk_rejection_message=risk_rejection_message,
+            entry_stop_loss=entry_stop_loss if not pause_requested else None,
+            entry_take_profit=entry_take_profit if not pause_requested else None,
+            pending_entry=pending_entry if not pause_requested else None,
+            protect_levels=protect_levels if not pause_requested else None,
+            cancel_pending=cancel_pending and not pause_requested,
         )
+
+    def _pending_entry_spec(self, order: TradeOrder, bar_close: datetime) -> dict[str, Any]:
+        """The resting entry a stop or limit order asks for, with its expiry instant.
+
+        ``expire_bars`` counts bars after the deciding bar; ``expire_at`` is an instant or a time
+        of day (its next occurrence after the deciding bar, in the frame's timezone). The earlier
+        of the two wins.
+        """
+        bar_close_utc = _utc_aware(bar_close)
+        candidates: list[datetime] = []
+        if order.expire_bars is not None:
+            candidates.append(bar_close_utc + int(order.expire_bars) * self._bar_span())
+        if order.expire_at is not None:
+            candidates.append(self._expire_instant(order.expire_at, bar_close_utc))
+        expires_at = min(candidates) if candidates else None
+        return {
+            "side": order.action,
+            "order_type": order.kind,
+            "price": float(order.price) if order.price is not None else None,
+            "stop_loss": order.stop_loss,
+            "take_profit": order.take_profit,
+            "expires_at": expires_at,
+            "reason": order.reason,
+        }
+
+    def _bar_span(self) -> pd.Timedelta:
+        return bar_duration(self.timeframe)
+
+    def _expire_instant(self, value: dt.time | datetime, bar_close: datetime) -> datetime:
+        if isinstance(value, datetime):
+            return _utc_aware(value)
+        local_bar = pd.Timestamp(bar_close).tz_convert(BRASILIA_TZ)
+        candidate = pd.Timestamp.combine(local_bar.date(), value).tz_localize(BRASILIA_TZ)
+        if candidate <= local_bar:
+            candidate = candidate + pd.Timedelta(days=1)
+        return _utc_aware(candidate.tz_convert("UTC").to_pydatetime())

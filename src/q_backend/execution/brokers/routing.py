@@ -13,11 +13,18 @@ from q_backend.execution.brokers.base import (
     MarketOrderRequest,
     PaperCostConfig,
     PendingOrderRequest,
+    PositionExitRequest,
     ProtectionRequest,
 )
 from q_backend.execution.domain import BrokerMode
 
-BrokerRequest = Union[MarketOrderRequest, PendingOrderRequest, ProtectionRequest, CancelOrderRequest]
+BrokerRequest = Union[
+    MarketOrderRequest,
+    PendingOrderRequest,
+    ProtectionRequest,
+    CancelOrderRequest,
+    PositionExitRequest,
+]
 
 
 class BrokerRouter:
@@ -70,3 +77,6 @@ class BrokerRouter:
 
     def lookup_cancellation(self, request: CancelOrderRequest) -> BrokerOrderState:
         return self._broker_for(request).lookup_cancellation(request)
+
+    def lookup_position_exit(self, request: PositionExitRequest) -> BrokerOrderState:
+        return self._broker_for(request).lookup_position_exit(request)

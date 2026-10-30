@@ -29,6 +29,7 @@ from q_backend.execution.domain import (
     SignalAction,
 )
 from q_backend.execution.ledger import ExecutionLedger
+from q_backend.execution.protective import ProtectiveOrders
 from q_backend.execution.results import ForwardDecisionResult
 from q_backend.execution.risk import RiskContext, RiskGate, deployment_has_unknown_orders
 from q_backend.execution.timing import DecisionProcessTiming
@@ -37,6 +38,7 @@ from q_backend.storage.db.execution_repositories import (
     create_execution_decision,
     create_execution_order_intent,
     mark_execution_dispatch_attempt,
+    set_open_position_protection,
     get_decision_for_bar,
     get_execution_control_state,
     get_open_net_position,
@@ -86,6 +88,10 @@ def _elapsed_ms(started: float) -> float:
     return (time.perf_counter() - started) * 1000.0
 
 
+def _decimal_or_none(value: Optional[float]) -> Optional[Decimal]:
+    return Decimal(str(value)) if value is not None else None
+
+
 def map_signal_to_order(
     *,
     signal: SignalAction,
@@ -131,6 +137,18 @@ class ExecutionService:
         self._max_bar_age_seconds = max_bar_age_seconds
         self._commit = commit or (lambda session: session.commit())
         self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._protective = ProtectiveOrders(
+            broker=broker,
+            ledger=ledger,
+            clock=self._clock,
+            commit=self._commit,
+            risk_check=self._entry_risk_rejection,
+        )
+
+    @property
+    def protective(self) -> ProtectiveOrders:
+        """Working-order and protective-level handling for this service's broker and ledger."""
+        return self._protective
 
     def process_completed_bar(
         self,
@@ -240,6 +258,17 @@ class ExecutionService:
                 timing=timing,
             )
 
+        if eval_result.manages_orders and not flatten:
+            self._protective.apply_bar(
+                session,
+                deployment=deployment,
+                eval_result=eval_result,
+                decision_id=decision.id,
+                lease_token=lease_token,
+                worker_id=worker_id,
+                cost_config=cost_config,
+                point_value=point_value,
+            )
         if eval_result.signal_action == SignalAction.HOLD and not flatten:
             update_deployment_last_bar_close(session, deployment.id, eval_result.bar_close_time, producer=worker_id)
             self._commit(session)
@@ -308,51 +337,19 @@ class ExecutionService:
         account = get_paper_account(session, deployment.paper_account_id)
         if account is None:
             raise ValueError(f"PaperAccount {deployment.paper_account_id} not found")
-
-        quote = self._quote_source.get_quote(deployment.symbol)
-        now = self._clock()
-        lease = get_worker_lease(session, deployment.id)
-        lease_held = lease is not None and lease.worker_id == worker_id and lease.lease_token == lease_token
-        orders = list_orders_for_deployment(session, deployment.id)
-        control = get_execution_control_state(session)
-        risk_cfg = deployment.risk_config or account.risk_config or {}
-        max_daily_loss = risk_cfg.get("max_daily_loss")
-        max_notional = risk_cfg.get("max_notional")
-        snapshot = self._ledger.account_snapshot(
+        rejection = self._entry_risk_rejection(
             session,
-            paper_account_id=account.id,
-            deployment_id=deployment.id,
-            symbol=deployment.symbol,
-            quote=quote,
-            point_value=point_value,
-            as_of=now,
-        )
-        ctx = RiskContext(
-            deployment_id=deployment.id,
-            paper_account_id=account.id,
-            lifecycle=DeploymentLifecycle(deployment.lifecycle),
-            symbol=deployment.symbol,
-            bar_close_time=eval_result.bar_close_time,
+            deployment=deployment,
             side=side,
             quantity=quantity,
-            quote=quote,
-            now=now,
-            kill_switch_enabled=control.kill_switch_enabled,
-            lease_held=lease_held,
-            has_unknown_orders=deployment_has_unknown_orders(orders),
-            position_side=position_side,
-            position_quantity=position_qty,
-            cash_balance=account.cash_balance,
-            equity=snapshot.equity,
-            daily_realized_pnl=sum_realized_pnl_since(session, account.id, _utc_day_start(now)),
-            max_daily_loss=Decimal(str(max_daily_loss)) if max_daily_loss is not None else None,
-            max_notional=Decimal(str(max_notional)) if max_notional is not None else None,
-            point_value=point_value,
+            bar_close_time=eval_result.bar_close_time,
+            lease_token=lease_token,
+            worker_id=worker_id,
             cost_config=cost_config,
-            max_bar_age_seconds=self._max_bar_age_seconds,
-            allow_lifecycle_bypass=allow_lifecycle_bypass or flatten,
+            point_value=point_value,
+            allow_lifecycle_bypass=allow_lifecycle_bypass,
+            flatten=flatten,
         )
-        rejection = self._risk_gate.evaluate(ctx)
         timing = timing.model_copy(update={"risk_ms": (time.perf_counter() - risk_started) * 1000.0})
         if rejection is not None:
             record_risk_event(
@@ -384,6 +381,9 @@ class ExecutionService:
             )
 
         persistence_started = time.perf_counter()
+        is_entry = eval_result.signal_action in {SignalAction.BUY, SignalAction.SELL}
+        entry_stop_loss = _decimal_or_none(eval_result.entry_stop_loss) if is_entry else None
+        entry_take_profit = _decimal_or_none(eval_result.entry_take_profit) if is_entry else None
         order = create_execution_order_intent(
             session,
             deployment_id=deployment.id,
@@ -397,6 +397,8 @@ class ExecutionService:
                 "config_revision": deployment.config_revision,
             },
             producer=worker_id,
+            stop_loss=entry_stop_loss,
+            take_profit=entry_take_profit,
         )
         session.flush()
         self._crash.maybe_raise("before_intent_commit")
@@ -420,6 +422,8 @@ class ExecutionService:
                 broker_mode=broker_mode,
                 intent_created_at=order.intent_committed_at or now,
                 live_activation_enabled=bool(deployment.live_activation_enabled),
+                stop_loss=entry_stop_loss,
+                take_profit=entry_take_profit,
             ),
             cost_config=cost_config,
         )
@@ -495,6 +499,14 @@ class ExecutionService:
                 producer=worker_id,
                 position_opened_at=eval_result.bar_close_time,
             )
+            if is_entry:
+                set_open_position_protection(
+                    session,
+                    deployment.id,
+                    stop_loss=entry_stop_loss,
+                    take_profit=entry_take_profit,
+                    external_position_id=submission.external_position_id,
+                )
             self._crash.maybe_raise("before_fill_commit")
             update_execution_decision_outcome(
                 session,
@@ -543,6 +555,74 @@ class ExecutionService:
             timing=timing,
         )
 
+    def _entry_risk_rejection(
+        self,
+        session: Session,
+        *,
+        deployment: ExecutionDeployment,
+        side: ExecutionSide,
+        quantity: Decimal,
+        bar_close_time: datetime,
+        lease_token: str,
+        worker_id: str,
+        cost_config: PaperCostConfig,
+        point_value: Decimal,
+        allow_lifecycle_bypass: bool = False,
+        flatten: bool = False,
+    ) -> Optional[RiskRejection]:
+        """Run the risk gate for an order the deployment is about to place."""
+        position = get_open_net_position(session, deployment.id)
+        position_side = PositionSide(position.side) if position is not None and position.is_open else PositionSide.FLAT
+        position_qty = position.quantity if position is not None else Decimal("0")
+        account = get_paper_account(session, deployment.paper_account_id)
+        if account is None:
+            raise ValueError(f"PaperAccount {deployment.paper_account_id} not found")
+
+        quote = self._quote_source.get_quote(deployment.symbol)
+        now = self._clock()
+        lease = get_worker_lease(session, deployment.id)
+        lease_held = lease is not None and lease.worker_id == worker_id and lease.lease_token == lease_token
+        orders = list_orders_for_deployment(session, deployment.id)
+        control = get_execution_control_state(session)
+        risk_cfg = deployment.risk_config or account.risk_config or {}
+        max_daily_loss = risk_cfg.get("max_daily_loss")
+        max_notional = risk_cfg.get("max_notional")
+        snapshot = self._ledger.account_snapshot(
+            session,
+            paper_account_id=account.id,
+            deployment_id=deployment.id,
+            symbol=deployment.symbol,
+            quote=quote,
+            point_value=point_value,
+            as_of=now,
+        )
+        ctx = RiskContext(
+            deployment_id=deployment.id,
+            paper_account_id=account.id,
+            lifecycle=DeploymentLifecycle(deployment.lifecycle),
+            symbol=deployment.symbol,
+            bar_close_time=bar_close_time,
+            side=side,
+            quantity=quantity,
+            quote=quote,
+            now=now,
+            kill_switch_enabled=control.kill_switch_enabled,
+            lease_held=lease_held,
+            has_unknown_orders=deployment_has_unknown_orders(orders),
+            position_side=position_side,
+            position_quantity=position_qty,
+            cash_balance=account.cash_balance,
+            equity=snapshot.equity,
+            daily_realized_pnl=sum_realized_pnl_since(session, account.id, _utc_day_start(now)),
+            max_daily_loss=Decimal(str(max_daily_loss)) if max_daily_loss is not None else None,
+            max_notional=Decimal(str(max_notional)) if max_notional is not None else None,
+            point_value=point_value,
+            cost_config=cost_config,
+            max_bar_age_seconds=self._max_bar_age_seconds,
+            allow_lifecycle_bypass=allow_lifecycle_bypass or flatten,
+        )
+        return self._risk_gate.evaluate(ctx)
+
     def flatten_deployment(
         self,
         session: Session,
@@ -555,6 +635,7 @@ class ExecutionService:
         bar_close_time: Optional[datetime] = None,
     ) -> BarProcessResult:
         now = bar_close_time or self._clock()
+        self._protective.remove_working(session, deployment=deployment, worker_id=worker_id, reason="flatten")
         from q_backend.execution.domain import StrategyIdentity
         from q_backend.execution.results import EvaluationPhaseTiming
 
