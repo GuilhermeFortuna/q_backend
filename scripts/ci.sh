@@ -123,7 +123,9 @@ _ci_start_local_services() {
   trap _ci_cleanup_local_services EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
-  CI_TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/q-backend-ci.XXXXXX")"
+  # Test data stays on disk, like the pre-push checkout (see .githooks/pre-push).
+  mkdir -p "${Q_CI_TMPDIR:-/var/tmp}"
+  CI_TMP_ROOT="$(mktemp -d "${Q_CI_TMPDIR:-/var/tmp}/q-backend-ci.XXXXXX")"
 
   export Q_DATA_LAKE_ROOT="${CI_TMP_ROOT}/lake"
   export Q_MARKET_DATA_ROOT="${CI_TMP_ROOT}/market"

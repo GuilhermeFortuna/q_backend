@@ -181,6 +181,7 @@ def _controlled_env(mock_bin, extra_env: dict[str, str] | None = None) -> dict[s
     env = {k: os.environ[k] for k in keep if k in os.environ}
     env["CI_RESOURCE_CONTROLLED"] = "1"
     env["Q_CI_PREFLIGHT_ONLY"] = "1"
+    env["Q_CI_TMPDIR"] = str(mock_bin.state_dir)
     env["PATH"] = f"{mock_bin.path}{os.pathsep}{env.get('PATH', '')}"
     if extra_env:
         env.update(extra_env)

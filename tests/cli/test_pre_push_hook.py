@@ -127,6 +127,7 @@ def test_pre_push_runs_ci_for_pushed_revision_and_removes_temporary_worktree(tmp
         'git rev-parse HEAD >> "$HOOK_RESULT"\n'
         '[[ "$UV_PROJECT_ENVIRONMENT" == "$PWD/.venv" ]] || exit 43\n'
         '[[ "$(cat revision.txt)" == pushed ]] || exit 42\n'
+        '[[ "$PWD" == "$Q_CI_TMPDIR"/q-backend-pre-push.*/checkout ]] || exit 44\n'
         'exit "$HOOK_CI_EXIT"\n'
     )
     ci.chmod(0o755)
@@ -152,7 +153,7 @@ def test_pre_push_runs_ci_for_pushed_revision_and_removes_temporary_worktree(tmp
         HOOK_RESULT=str(result_file),
         HOOK_CI_EXIT=str(ci_exit_code),
         UV_PROJECT_ENVIRONMENT=str(tmp_path / "wrong-venv"),
-        TMPDIR=str(tmp_path),
+        Q_CI_TMPDIR=str(tmp_path),
         PATH=f"{bin_dir}:{env['PATH']}",
     )
     pushed_ref = f"refs/heads/development {pushed_revision} refs/heads/development {'0' * 40}\n"
