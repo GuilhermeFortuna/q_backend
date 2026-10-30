@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Callable, Optional
 
+from sqlalchemy.orm import Session
+
 from q_backend.execution.brokers.base import (
     BrokerSubmissionOutcome,
     ExecutionBroker,
@@ -416,7 +418,7 @@ class ExecutionService:
                 quantity=quantity,
                 external_fill_id=f"{broker_mode.value}:{order.id}",
                 broker_mode=broker_mode,
-                intent_created_at=order.intent_committed_at or now,
+                intent_created_at=order.intent_committed_at or self._clock(),
                 live_activation_enabled=bool(deployment.live_activation_enabled),
                 stop_loss=entry_stop_loss,
                 take_profit=entry_take_profit,
@@ -462,7 +464,7 @@ class ExecutionService:
                 order.id,
                 ExecutionOrderStatus.REJECTED,
                 rejection_reason=reason,
-                completed_at=now,
+                completed_at=self._clock(),
                 producer=worker_id,
             )
             update_execution_decision_outcome(

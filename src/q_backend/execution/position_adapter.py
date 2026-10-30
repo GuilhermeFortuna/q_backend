@@ -38,6 +38,9 @@ def execution_position_to_trade(
     if average_entry_price is None or opened_at is None:
         raise ValueError("open execution position requires entry price and opened_at")
 
+    if opened_at.tzinfo is None:
+        # Some stores return naive timestamps (SQLite); the ledger writes UTC.
+        opened_at = opened_at.replace(tzinfo=timezone.utc)
     action = OrderAction.BUY if side == PositionSide.LONG else OrderAction.SELL
     trade_id = position_trade_id(deployment_id, opened_at)
     return Trade(

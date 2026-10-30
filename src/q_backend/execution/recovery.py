@@ -8,6 +8,7 @@ from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
+import pandas as pd
 from sqlalchemy.orm import Session
 
 from q_backend.execution.bar_coordinator import (
