@@ -58,8 +58,6 @@ class Settings(BaseSettings):
     execution_initial_window_bars: int = 260
     execution_research_warmup_bars: int = 2000
     execution_live_capability_locked: bool = True
-    # Forced by the dev execution systemd units; prevents live adapter routing.
-    execution_paper_only: bool = False
     # Q-050: the frontend execution workspace is gone; keyless commands are refused.
     execution_idempotency_enforced: bool = True
     mt5_edge_url: str = "http://127.0.0.1:18813"

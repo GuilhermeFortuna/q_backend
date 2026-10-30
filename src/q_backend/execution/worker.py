@@ -109,7 +109,6 @@ class ExecutionWorker:
                 point_value=Decimal(str(self.settings.execution_default_point_value)),
                 clock=self.clock,
                 worker_id=self.settings.execution_worker_id,
-                paper_only=self.settings.execution_paper_only,
             )
         return self._reconciler
 
@@ -504,12 +503,6 @@ class ExecutionWorker:
             ],
         ):
             active_ids.add(deployment.id)
-            if self.settings.execution_paper_only and deployment.broker_mode != "paper":
-                if deployment.lifecycle != DeploymentLifecycle.ERROR.value:
-                    logger.error("deployment %s refused: live_locked by paper-only profile", deployment.id)
-                    transition_deployment_lifecycle(session, deployment.id, DeploymentLifecycle.ERROR)
-                self._release_deployment(session, deployment.id)
-                continue
             lifecycle = DeploymentLifecycle(deployment.lifecycle)
             if lifecycle == DeploymentLifecycle.PAUSED:
                 if deployment.id in self._runtimes:

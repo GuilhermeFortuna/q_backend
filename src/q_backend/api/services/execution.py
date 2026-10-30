@@ -236,8 +236,6 @@ def create_deployment(
     market_data_service: Optional[Any] = None,
 ) -> DeploymentDetailResponse:
     settings = get_settings()
-    if settings.execution_paper_only and (body.broker_mode == "mt5_live" or body.live_activation_enabled):
-        raise HTTPException(status_code=403, detail="execution profile is paper-only; live_locked")
     account = get_paper_account(session, body.paper_account_id)
     if account is None:
         raise HTTPException(status_code=404, detail="paper account not found")
@@ -262,7 +260,7 @@ def create_deployment(
             )
             if broker_mode == BrokerMode.PAPER and resolved.order_kinds - MARKET_ORDER_KINDS:
                 raise ExecutionValidationError(
-                    "paper deployments cannot place stop, limit or protective orders; " "use an MT5 demo deployment",
+                    "paper deployments cannot place stop, limit or protective orders; use an MT5 demo deployment",
                     status_code=422,
                 )
             identity = resolved.identity
@@ -576,9 +574,6 @@ def apply_deployment_action(
         raise HTTPException(status_code=404, detail="deployment not found")
     if deployment.archived:
         raise HTTPException(status_code=404, detail="deployment not found")
-    settings = get_settings()
-    if settings.execution_paper_only and body.action == "start" and deployment.broker_mode == "mt5_live":
-        raise HTTPException(status_code=403, detail="execution profile is paper-only; live_locked")
     if body.action == "flatten" and not body.confirm:
         raise HTTPException(
             status_code=400,

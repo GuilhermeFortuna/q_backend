@@ -17,7 +17,6 @@ read the same environment (`.env` or the process environment).
 | `Q_LIVE_EXECUTION_ENABLED` | `true` | Global enable for MT5 live execution. |
 | `Q_LIVE_EXECUTION_ACCOUNT_ALLOWLIST` | the demo login, for example `10987654` | Logins that may receive orders. Comma-separated. |
 | `Q_EXECUTION_LIVE_CAPABILITY_LOCKED` | `false` | The API refuses to create an `mt5_live` deployment with live activation while this is `true`. |
-| `Q_EXECUTION_PAPER_ONLY` | `false` | The paper-only profile refuses `mt5_live` deployments. |
 | `Q_LIVE_EXECUTION_VALIDATED` | `false` | Leave unset for demo trading. See [Real accounts stay locked](#real-accounts-stay-locked). |
 | `Q_MT5_EDGE_URL` | `http://127.0.0.1:18813` | Execution edge base URL. |
 

@@ -194,36 +194,6 @@ def test_create_mt5_live_deployment(api_db_session: Session):
     assert detail.broker_mode == "mt5_live"
 
 
-def test_paper_only_profile_rejects_live_deployment(api_db_session: Session, monkeypatch):
-    account = execution_service.create_account(
-        api_db_session,
-        PaperAccountCreateRequest(name="desk-paper-only", initial_balance=Decimal("10000")),
-    )
-    monkeypatch.setattr(
-        execution_service,
-        "get_settings",
-        lambda: type(
-            "S",
-            (),
-            {
-                "execution_paper_only": True,
-                "execution_live_capability_locked": False,
-            },
-        )(),
-    )
-    with pytest.raises(HTTPException, match="paper-only"):
-        execution_service.create_deployment(
-            api_db_session,
-            DeploymentCreateRequest(
-                paper_account_id=account.id,
-                name="live-blocked",
-                broker_mode="mt5_live",
-                live_activation_enabled=True,
-                identity=_identity_payload(),
-            ),
-        )
-
-
 def test_performance_summary_has_exact_zero_baseline(api_db_session: Session):
     account = execution_service.create_account(
         api_db_session,
@@ -242,33 +212,6 @@ def test_performance_summary_has_exact_zero_baseline(api_db_session: Session):
     assert result.net_pnl is None
     history = execution_service.deployment_performance_marks(api_db_session, deployment.id, limit=10, offset=0)
     assert history.total == 0
-
-
-def test_paper_only_profile_refuses_starting_existing_live_row(api_db_session: Session, monkeypatch):
-    account = execution_service.create_account(
-        api_db_session,
-        PaperAccountCreateRequest(name="existing-live", initial_balance=Decimal("10000")),
-    )
-    live = execution_service.create_deployment(
-        api_db_session,
-        DeploymentCreateRequest(
-            paper_account_id=account.id,
-            name="legacy-live",
-            broker_mode="mt5_live",
-            identity=_identity_payload(),
-        ),
-    )
-    monkeypatch.setattr(
-        execution_service,
-        "get_settings",
-        lambda: type("S", (), {"execution_paper_only": True})(),
-    )
-    with pytest.raises(HTTPException, match="live_locked"):
-        execution_service.apply_deployment_action(
-            api_db_session,
-            live.id,
-            DeploymentActionRequest(action="start", confirm=True),
-        )
 
 
 def test_reject_live_activation(api_db_session: Session):

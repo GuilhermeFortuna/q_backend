@@ -452,7 +452,6 @@ def test_acceptance_7_deployment_submits_entry_and_day_trade_close_against_fake_
             "S",
             (),
             {
-                "execution_paper_only": False,
                 "execution_live_capability_locked": False,
             },
         )(),
