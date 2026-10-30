@@ -29,7 +29,7 @@ from q_backend.execution.domain import (
     SignalAction,
 )
 from q_backend.execution.ledger import ExecutionLedger
-from q_backend.execution.protective import ProtectiveOrders
+from q_backend.execution.protective import ProtectiveOrders, optional_decimal
 from q_backend.execution.results import ForwardDecisionResult
 from q_backend.execution.risk import RiskContext, RiskGate, deployment_has_unknown_orders
 from q_backend.execution.timing import DecisionProcessTiming
@@ -86,10 +86,6 @@ def _utc_day_start(now: datetime) -> datetime:
 
 def _elapsed_ms(started: float) -> float:
     return (time.perf_counter() - started) * 1000.0
-
-
-def _decimal_or_none(value: Optional[float]) -> Optional[Decimal]:
-    return Decimal(str(value)) if value is not None else None
 
 
 def map_signal_to_order(
@@ -382,8 +378,8 @@ class ExecutionService:
 
         persistence_started = time.perf_counter()
         is_entry = eval_result.signal_action in {SignalAction.BUY, SignalAction.SELL}
-        entry_stop_loss = _decimal_or_none(eval_result.entry_stop_loss) if is_entry else None
-        entry_take_profit = _decimal_or_none(eval_result.entry_take_profit) if is_entry else None
+        entry_stop_loss = optional_decimal(eval_result.entry_stop_loss) if is_entry else None
+        entry_take_profit = optional_decimal(eval_result.entry_take_profit) if is_entry else None
         order = create_execution_order_intent(
             session,
             deployment_id=deployment.id,

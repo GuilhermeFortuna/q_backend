@@ -407,9 +407,9 @@ class EdgeBroker:
         try:
             health = self._client.health()
         except EdgeUnavailable as exc:
-            return str(exc)
+            return f"unreachable ({exc})"
         if _edge_version(health.schema_version) < _PENDING_MIN_EDGE:
-            return health.schema_version
+            return f"schema {health.schema_version}"
         return None
 
     def submit_pending_order(self, request: PendingOrderRequest) -> BrokerSubmissionResult:

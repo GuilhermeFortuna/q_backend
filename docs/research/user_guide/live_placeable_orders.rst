@@ -128,8 +128,9 @@ appears in the ledger as an exit with reason ``stop_loss`` or ``take_profit``. A
 working entry is removed when the deployment pauses, is stopped, the kill switch is
 on, the deployment flattens, or the day-trade window closes.
 
-Not yet deployable: trailing and breakeven exit rules (``exit_params``). A backtest that
-uses them is refused at deployment, because the live path does not yet move those stops.
+Not yet deployable: exit rules in ``exit_params`` (trailing, breakeven, fixed or ATR stops,
+targets and time exits). The forward path does not apply them yet, so a backtest that enables one
+is refused at deployment rather than run without it.
 
 Expiry and latency
 ------------------

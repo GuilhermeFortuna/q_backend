@@ -291,9 +291,9 @@ class ProtectiveOrders:
             quantity=quantity,
             order_type=order_type,
             intent_kind=ExecutionIntentKind.ENTRY,
-            price=_decimal_or_none(spec.get("price")),
-            stop_loss=_decimal_or_none(spec.get("stop_loss")),
-            take_profit=_decimal_or_none(spec.get("take_profit")),
+            price=optional_decimal(spec.get("price")),
+            stop_loss=optional_decimal(spec.get("stop_loss")),
+            take_profit=optional_decimal(spec.get("take_profit")),
             expires_at=expires_at,
             metadata=details,
             intent_committed_at=now,
@@ -405,8 +405,8 @@ class ProtectiveOrders:
         position = get_open_net_position(session, deployment.id)
         if position is None:
             return "no_position"
-        stop_loss = _decimal_or_none(levels.get("stop_loss"))
-        take_profit = _decimal_or_none(levels.get("take_profit"))
+        stop_loss = optional_decimal(levels.get("stop_loss"))
+        take_profit = optional_decimal(levels.get("take_profit"))
         stop_loss = stop_loss if stop_loss is not None else position.stop_loss
         take_profit = take_profit if take_profit is not None else position.take_profit
         if stop_loss is None and take_profit is None:
@@ -1036,7 +1036,7 @@ class ProtectiveOrders:
         )
 
 
-def _decimal_or_none(value: Any) -> Optional[Decimal]:
+def optional_decimal(value: Any) -> Optional[Decimal]:
     if value is None:
         return None
     return Decimal(str(value))

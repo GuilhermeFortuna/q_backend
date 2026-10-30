@@ -110,6 +110,7 @@ Timing: working orders are reconciled every `Q_EXECUTION_ORDER_POLL_INTERVAL_S` 
 (default 2). Timed exits and their closes act at that poll granularity, not on every tick.
 This is the one known timing difference between a live demo run and its backtest.
 
-Limits in this release: trailing and breakeven exit rules are not deployable, and a
-partly filled resting order is recorded only once the terminal reports it filled.
+Limits in this release: runs with exit rules from `exit_params` (trailing, breakeven, fixed
+or ATR stops, targets, time exits) are refused at deployment, and a partly filled resting
+order is recorded only once the terminal reports it filled.
 

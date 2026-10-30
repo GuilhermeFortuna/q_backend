@@ -269,14 +269,14 @@ MARKET_ORDER_KINDS = frozenset({"market_entry", "market_close"})
 
 
 def _refuse_exit_rules(exit_params: Any) -> None:
-    """Exit rules move stops inside each bar in backtests; the forward path does not move them yet."""
+    """Exit rules are applied inside each bar in backtests; the forward path does not apply them yet."""
     from q_backend.backtesting.exit_rules.registry import enabled_rules
 
     rules = enabled_rules(dict(exit_params or {}))
     if rules:
         raise ExecutionValidationError(
             f"exit rules {sorted(rule.id for rule in rules)} are not deployable yet; "
-            "the forward path does not move their stops",
+            "the forward path does not apply them",
             status_code=422,
         )
 

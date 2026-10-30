@@ -127,8 +127,10 @@ or to an MT5 demo account):
   resting stop and limit entries, ``amend``, ``cancel``, OCO groups, timed exits and expiring entries.
   Only an MT5 demo deployment can hold resting or protective orders: a paper deployment of a run that
   uses them is refused with HTTP 422 at creation. Priced entries, priced closes and tick hooks are
-  refused with HTTP 422 (see :doc:`live_placeable_orders`). A run with an enabled exit rule
-  (``trailing`` or ``breakeven``) is also refused with HTTP 422 until its stops are managed live.
+  refused with HTTP 422 (see :doc:`live_placeable_orders`). A run with any enabled exit rule in its
+  ``exit_params`` (for example ``trailing_stop_pct``, ``breakeven_trigger_pct``, a fixed or ATR stop,
+  a target or a time exit) is also refused with HTTP 422, because the forward path does not apply
+  those rules yet.
   If an order of a non-deployable kind or an exception is raised at runtime, the deployment pauses
   fail-closed with a risk event.
 * **Timeframe**: Forward timeframes must be at least **M5** (e.g. M5, M10, M15, H1). M1 runs are

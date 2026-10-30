@@ -37,7 +37,7 @@ def test_no_exit_rules_is_deployable():
 
 
 @pytest.mark.parametrize("params", [{"trailing_stop_pct": 2.0}, {"breakeven_trigger_pct": 1.0}])
-def test_enabled_exit_rules_are_refused_until_their_stops_are_worker_managed(params):
+def test_enabled_exit_rules_are_refused_until_the_forward_path_applies_them(params):
     with pytest.raises(ExecutionValidationError) as exc:
         _refuse_exit_rules(params)
     assert exc.value.status_code == 422
