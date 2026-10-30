@@ -75,9 +75,10 @@ classification, plus `tests/research/test_oco_orders.py`, `test_timed_orders.py`
 - [ ] Add fixture pairs for the three new known differences (stop exit reason, protective levels from a gap
   fill, re-entry after an intrabar exit) and document them in the guide with examples, together with the
   timed-exit replacement rule. Commit.
-- [ ] Re-port `BracketMomentumStrategy` keeping its OCO group working while a position is open, and port
-  `RSIStrategy` and `AlphaExperimentStrategy`. Run all three over their full `main()` ranges and record the
-  data source and range of each.
+- [ ] Re-port `BracketMomentumStrategy` to place its resting OCO bracket only while flat, or while the open
+  position closes at the next open. Port `AlphaExperimentStrategy`. `RSIStrategy` is dropped. Run both over
+  their full `main()` ranges and record the data source and range of each. Attribute each diverging session to
+  its first divergence.
 
 ## Verification
 

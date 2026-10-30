@@ -74,7 +74,7 @@ removed.
 
   | Pattern | Replacement | Identical when |
   | --- | --- | --- |
-  | priced entry at a level fixed before the candle | resting stop or limit placed at the previous close, `expire_bars=1` | always |
+  | priced entry at a level fixed before the candle | resting stop or limit placed at the previous close, `expire_bars=1` | the kernel takes the fill mode from the price at the start of its scan: the open, or on a bar with an intrabar exit, the exit trade's price. The replacement's kind is fixed at the previous close, so identical only when that reference lies on the side the kind assumes |
   | priced entry list (bracket) | `TradeOrder.oco(...)` of resting entries | the levels are fixed before the candle |
   | priced stop close at a level fixed before the candle | `stop_loss` set or moved by `amend` at the previous close | the stop is first set at the entry bar's close, as the legacy form cannot stop out on its entry bar; the exit reason differs (see below) |
   | priced close at the bar's open after a time | `close(at=time)` | always |
@@ -92,11 +92,12 @@ removed.
     fixed before the candle, measured from the entry level. On gap bars the exit prices differ. This is a
     permanent difference: the port measures its levels from the entry level.
   - **Re-entry after an intrabar exit.** On a bar where a trade stops out or hits its target, a legacy hook
-    sees no position and prices a new entry on that bar. The replacement places its resting entry or OCO group
-    at the previous close even while a position is open; the kernel fills it only from trades at or after the
-    exit (Q-132). The fills still differ: a legacy priced entry opens at its own price at the first trade that
-    reaches it after the exit, while a resting stop opens at the first trade at or beyond its level, at that
-    trade's price. The resting stop is the fill a broker gives.
+    prices a new entry on that bar. The kernel approaches it from the exit trade's price: when that price is on
+    the far side of the level, the entry fills at its own price once a later trade reaches it, and is rejected
+    with `touch_before_exit` when none does. The replacement places no order on those bars. It places its
+    bracket only while flat, or while the open position closes at the next open (hold time or time limit), so
+    the port skips these re-entries by design. The known difference is therefore the absence of those trades,
+    and the cascade that follows them.
 - The guide also states that a later `close(at=...)` replaces a working timed exit, and that the timed exit
   is dropped when the position closes.
 
@@ -104,8 +105,9 @@ removed.
 
 The implementing agent proves the before/after match on real strategies without committing them, because they
 are private and the repositories are public. In a scratch directory outside every repository, it ports
-`BracketMomentumStrategy` (IND), `RSIStrategy` and `AlphaExperimentStrategy` (WDO) from
-`experiments/strategies/` on the `research/experiments` branch. It then runs each original and its port on the
+`BracketMomentumStrategy` (IND) and `AlphaExperimentStrategy` (WDO) from `experiments/strategies/` on the
+`research/experiments` branch. `RSIStrategy` is dropped from the comparisons: it reads the candle's high and low
+before pricing a fill, which the migration table already marks as having no replacement. It then runs each original and its port on the
 same bars and tick store with `compare_results`, over each strategy's full `main()` range. The board message
 reports, for each strategy:
 - the symbol, date range and market-data source of the bars and ticks (the tick store holds data from more
@@ -130,7 +132,8 @@ Any unexplained difference is a defect in this task or in Q-138.
 5. `order_kinds` records the new kinds, and Q-136's deployment check refuses them until Q-137.
 6. `compare_results` reports matches, field differences, label-only differences and one-sided trades correctly
    on constructed results.
-7. The board message contains the three comparisons described above.
+7. The board message contains the two comparisons described above (`BracketMomentumStrategy` and
+   `AlphaExperimentStrategy`), each attributed per session.
 
 ## Out of scope
 

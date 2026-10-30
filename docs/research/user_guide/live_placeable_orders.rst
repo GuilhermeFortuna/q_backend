@@ -28,7 +28,9 @@ Migration table
      - Identical when
    * - Priced entry at a level fixed before the candle
      - Resting stop or limit placed at the previous close, with ``expire_bars=1``
-     - Always
+     - The kernel takes the fill mode from the price at the start of its scan: the open, or on a bar with an
+       intrabar exit, the exit trade's price. The replacement's kind is fixed at the previous close, so the two
+       are identical only when that reference lies on the side the kind assumes
    * - Priced entry list (a bracket)
      - ``TradeOrder.oco(...)`` of resting entries placed at the previous close
      - The levels are fixed before the candle
@@ -127,14 +129,15 @@ exit prices differ on gap bars. This difference is permanent: the replacement me
 its levels from the entry level.
 
 **Re-entry after an intrabar exit.** On a bar where a trade stops out or hits its
-target, the legacy hook sees no position and prices a new entry on that bar. A priced
-entry fills only from trades at or after the exit. If no trade after the exit reaches
-its price, the entry is rejected with reason ``touch_before_exit``. The replacement
-rests at the previous close while the position is open, and fills at the first trade
-at or beyond its level after the exit, at that trade's price. A bracket re-entry on a
-bar that opened beyond its level therefore fills in the replacement and is rejected
-in the legacy form. The two forms agree when the bar opened inside the level, so the
-legacy price is the level, and a trade after the exit reaches it.
+target, the legacy hook prices a new entry on that bar. The kernel approaches that
+entry from the exit trade's price. When the exit price is on the far side of the level,
+the entry fills at its own price once a later trade reaches it, and is rejected with
+``touch_before_exit`` when no later trade does. A replacement that rests at the
+previous close fills at the first trade at or beyond its level after the exit, at that
+trade's price. A replacement can therefore fill where the legacy form is rejected, or
+at a different price. Replacing these re-entries is a choice of the strategy: a
+strategy that places no order on exit bars has no such fills. The known difference is
+the set of re-entries the replacement skips, and the cascade that follows them.
 
 **Exit label of a stop-out.** When a protective stop closes the trade, the engine
 labels the exit ``STOP_LOSS``. A priced close carries the reason it was given (or
