@@ -131,15 +131,8 @@ def _check_order_list(label: str, name: str, orders: tuple[TradeOrder, ...]) -> 
         amends = sum(order.action == "amend" for order in orders)
         if plain > 1 or timed > 1 or amends > 1:
             raise ValueError(
-                f"{label} returned {orders!r}; an exit list holds any number of priced closes, "
+                f"{label} returned {orders!r}; an exit list holds "
                 "at most one close without a price, at most one timed close and at most one amend"
             )
         return
-    priced = [
-        order.action in ("buy", "sell") and order.kind == "market" and order.price is not None for order in orders
-    ]
-    if not all(priced):
-        raise ValueError(
-            f"{label} returned {orders!r}; an entry list holds only priced market entries "
-            "(TradeOrder.buy/sell with price=...), of which the first the tape touches fills"
-        )
+    raise ValueError(f"{label} returned {orders!r}; use TradeOrder.oco for multiple resting entries")

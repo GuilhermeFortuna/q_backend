@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Breakout with stop and target orders and a price-level exit confirmed from a TickStore.
+"""Breakout with stop and target orders confirmed from a TickStore.
 
-The entry carries its stop and target. The exit decides once per closed bar and requests its
-previously calculated floor when the candle and its stored trades cross that level.
+The entry carries its stop and target. The exit amends the stop to a rolling floor
+at each completed candle.
 Requires the sessions of the backtest window on disk; see sync_ticks.py.
 See docs/research-library.md for documentation.
 """
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from q_backend.research import ResearchStrategy, TickData, TickStore, TradeOrder, backtest
+from q_backend.research import ResearchStrategy, TickStore, TradeOrder, backtest
 from q_backend.research.results import BacktestResult
 
 BREAKOUT_BARS = 20
@@ -43,13 +43,12 @@ class StopTargetBreakout(ResearchStrategy):
             take_profit=float(last["close"] + TARGET_ATR * last["atr"]),
         )
 
-    def exit_strategy(self, frame: pd.DataFrame, positions: tuple = (), *, ticks: TickData) -> TradeOrder | None:
+    def exit_strategy(self, frame: pd.DataFrame, positions: tuple = ()) -> TradeOrder | None:
         if not positions or len(frame) <= EXIT_BARS:
             return None
-        floor = float(frame["low"].iloc[-EXIT_BARS - 1 : -1].min())
-        if frame["low"].iloc[-1] <= floor and (ticks.bar()["last"] <= floor).any():
-            return TradeOrder.close(price=floor)
-        return None
+        floor = float(frame["low"].iloc[-EXIT_BARS:].min())
+        current = positions[0].stop_loss
+        return TradeOrder.amend(stop_loss=floor) if current is None or floor > current else None
 
 
 def run_stop_target_backtest(

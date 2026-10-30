@@ -177,11 +177,16 @@ def test_resting_entries_lapse_after_the_day_trade_window():
     assert result.cancel_pending is True
 
 
-def test_a_priced_entry_still_pauses_the_deployment():
-    result = _result_at(_evaluate(_scripted(entries={"10:00": (TradeOrder.buy(price=110.0),)})), "10:00")
+def test_a_removed_priced_entry_in_a_hook_pauses_the_deployment():
+    class PricedEntry(_Scripted):
+        def entry_strategy(self, frame, positions=()):
+            return TradeOrder.buy(price=110.0) if _bar_key(frame) == "10:00" else None
+
+    result = _result_at(_evaluate(PricedEntry()), "10:00")
 
     assert result.pause_requested is True
-    assert result.risk_rejection_code == "unsupported_order_kind"
+    assert result.risk_rejection_code == "hook_error"
+    assert "priced entries are removed" in result.risk_rejection_message
 
 
 @pytest.mark.parametrize("hhmm", ["09:00", "09:30"])

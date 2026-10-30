@@ -174,7 +174,6 @@ def test_positional_only_context_and_frame_attributes(bars):
         ("entry_strategy", "buy", TypeError),
         ("exit_strategy", [TradeOrder.close(), "close"], TypeError),
         ("exit_strategy", [TradeOrder.close(), TradeOrder.close()], ValueError),
-        ("entry_strategy", [TradeOrder.buy(price=100.0), TradeOrder.buy()], ValueError),
     ],
 )
 def test_invalid_runtime_orders(bars, hook, decision, error):

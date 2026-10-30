@@ -392,7 +392,7 @@ def test_stop_target_backtest_example_runs_over_a_store(tmp_path: Path) -> None:
     result = run_stop_target_backtest(store, symbol="WDO$N", start="2026-10-05")
 
     trade = result.trades.iloc[0]
-    assert trade["exit_reason"] == "SIGNAL"
+    assert trade["exit_reason"] == "STOP_LOSS"
     # The tape jumps from 102 to 98 through the 99 floor, a stop, so the close fills at 98.
     assert trade["exit_price"] == 98.0
     assert trade["exit_tick_time"] == pd.Timestamp("2026-10-05 14:50:06", tz=BRASILIA_TZ)
@@ -408,7 +408,7 @@ def test_tick_backtest_benchmark_times_both_exits_with_and_without_workers(capsy
     lines = capsys.readouterr().out.splitlines()
     assert lines[0] == "sessions: 2, workers: 2"
     rows = {line.split()[0]: line.split() for line in lines[2:]}
-    assert set(rows) == {"amend", "priced"}
+    assert set(rows) == {"amend", "floor"}
     assert all(float(rows[name][1]) >= 0.0 and int(rows[name][3]) > 0 for name in rows)
 
 

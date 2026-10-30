@@ -21,7 +21,7 @@ live-placeable.
 
 **Files:** `research/orders.py`, `research/adapter.py`, `tests/research/test_priced_orders_removed.py` (new).
 
-- [ ] Write failing tests for acceptance 2, implement the refusals with replacement-naming messages, and commit.
+- [x] Write failing tests for acceptance 2, implement the refusals with replacement-naming messages, and commit.
 
 ### 2. Tests and kinds
 
@@ -29,10 +29,10 @@ live-placeable.
 `test_priced_entries.py`, `test_priced_entries_after_exit.py` and `test_stop_target_backtest.py`), and the
 order-kind classification.
 
-- [ ] Rewrite each test to its replacement form, or remove it when the replacement is already covered by Q-139's
+- [x] Rewrite each test to its replacement form, or remove it when the replacement is already covered by Q-139's
   fixtures, and list each one for the board message. Keep the new-form halves of the equivalence fixtures
   unchanged.
-- [ ] Remove the priced kinds from classification. Run `tests/research tests/backtesting tests/execution`.
+- [x] Remove the priced kinds from classification. Run `tests/research tests/backtesting tests/execution`.
   Commit.
 
 ### 3. Guide
@@ -40,7 +40,7 @@ order-kind classification.
 **Files:** `docs/research/user_guide/execution.rst`, `live_placeable_orders.rst`, `backtesting.rst`, and the
 `TradeOrder` docstrings.
 
-- [ ] Remove the priced-order documentation and the deprecation notes. Commit.
+- [x] Remove the priced-order documentation and the deprecation notes. Commit.
 
 ## Verification
 

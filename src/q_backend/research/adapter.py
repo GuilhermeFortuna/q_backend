@@ -75,10 +75,7 @@ def classify_order(order: TradeOrder) -> set[str]:
         return kinds
     if order.action in ("buy", "sell"):
         if order.kind == "market":
-            if order.price is None:
-                kinds.add("market_entry")
-            else:
-                kinds.add("priced_entry")
+            kinds.add("market_entry")
         elif order.kind == "stop":
             kinds.add("resting_stop")
         elif order.kind == "limit":
@@ -90,10 +87,8 @@ def classify_order(order: TradeOrder) -> set[str]:
     elif order.action == "close":
         if order.at is not None:
             kinds.add("timed_exit")
-        elif order.price is None:
-            kinds.add("market_close")
         else:
-            kinds.add("priced_close")
+            kinds.add("market_close")
     elif order.action == "amend":
         kinds.add("amend")
     elif order.action == "cancel":

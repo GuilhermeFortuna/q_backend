@@ -23,8 +23,7 @@ class ResearchStrategy(ABC):
     Notes
     -----
     Decision hooks (``entry_strategy`` and ``exit_strategy``) run per closed bar:
-    ``exit_strategy`` first, then ``entry_strategy`` once the exit's priced closes have
-    resolved. Either may return a list of orders whose fills the bar's ticks decide.
+    ``exit_strategy`` first, then ``entry_strategy``.
     Both hooks can optionally declare a ``positions`` parameter to receive an immutable
     tuple of currently filled :class:`~q_backend.research.ResearchPosition` snapshots.
     ``compute_indicators`` and both decision hooks can declare a ``ticks`` parameter to read
@@ -82,8 +81,7 @@ class ResearchStrategy(ABC):
         """
         Evaluate entry logic for the current bar given historical prefix.
 
-        Evaluated after ``exit_strategy`` and its priced closes on each bar, so ``positions``
-        no longer holds a position one of them closed.
+        Evaluated after ``exit_strategy`` on each bar.
 
         Parameters
         ----------
@@ -99,9 +97,7 @@ class ResearchStrategy(ABC):
         -------
         TradeOrder, list of TradeOrder or None
             A buy or sell order request of any kind, ``TradeOrder.cancel()`` to remove the working
-            entry order, or ``None`` to take no action. A list holds priced market entries
-            (``TradeOrder.buy/sell(price=...)``): the first one the bar's ticks touch fills with its
-            own levels and reason, and the others are cancelled.
+            entry order, an OCO group of resting entries, or ``None`` to take no action.
         """
         ...
 
@@ -111,10 +107,7 @@ class ResearchStrategy(ABC):
         """
         Evaluate exit logic for the current bar given historical prefix.
 
-        Evaluated prior to ``entry_strategy`` on each bar. When a priced entry fills on the
-        bar and stays open, it is evaluated once more with that position, and only a
-        ``TradeOrder.close()`` without a price, which exits at the next bar's open, is
-        accepted from that call.
+        Evaluated prior to ``entry_strategy`` on each bar.
 
         Parameters
         ----------
@@ -129,13 +122,9 @@ class ResearchStrategy(ABC):
         Returns
         -------
         TradeOrder, list of TradeOrder or None
-            A close request (:meth:`TradeOrder.close()`), optionally with an explicit traded exit
-            price, an amendment of the open position's levels (:meth:`TradeOrder.amend`), or ``None``.
-            A list holds any number of priced closes, at most one close without a price and at most
-            one amend: the position closes at the priced close its ticks reach first, under that
-            close's reason; the close without a price exits at the next open if none is reached.
-            List only prices the strategy could have placed before the bar, such as its stop and
-            target levels; the engine orders them by the ticks but cannot verify their causality.
+            A close request (:meth:`TradeOrder.close()`), an amendment of the open position's
+            levels (:meth:`TradeOrder.amend`), or ``None``. A list may contain at most one
+            market close, one timed close and one amendment.
 
         Notes
         -----
