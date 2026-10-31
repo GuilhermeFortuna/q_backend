@@ -12,7 +12,7 @@ the external CLI owns replay controls. Numerical execution primitives come from 
 **Tech stack:** Python, existing FastAPI/httpx/NumPy/Arrow/Parquet, stdlib SQLite, q_core; current Qt terminal,
 systemd and Compose launcher infrastructure.
 **Spec:** [Q-145 specification](../specs/Q-145-market-replay-and-simulated-broker-spec.md).
-**Status:** implementation in progress; full-stack and human terminal verification pending.
+**Status:** implementation in progress; review follow-ups, full-stack and human terminal verification pending.
 
 ## Status (implementation session)
 
@@ -40,6 +40,49 @@ tests/execution/test_symbol_ownership.py tests/api/test_execution_demo_account.p
 as did the eight creation/catalog cases selected from `tests/api/test_execution_api.py` with
 `-k 'create_deployment or create_mt5_live_deployment or catalog_create'`. Changed-file Black/Ruff and
 `git diff --check` passed. The test runs reported two existing Pydantic configuration deprecations.
+
+## Review follow-ups (2026-10-31)
+
+A review reopened this task after In Review. The focused suites passed, but none of them cover the items below.
+Fix each with a regression test. Items 1 to 4 block the full live-stack run and come from reading the code; items
+5 to 10 were reproduced against the simulator.
+
+**Full-stack blockers**
+
+- [ ] 1. `./dev replay` starts only the simulator. Add the isolated Postgres (5436), Redis (6382), API (8002), worker
+  and publisher, pass them the run's generation, clock and endpoints, open q_terminal, and add replay entries to
+  `tools/dev/shell.sh`.
+- [ ] 2. The API has no market clock, so starting a deployment sets `activation_cutoff_at` to wall time. The worker's
+  watermark then excludes every historical bar and the strategy never trades. Wire the clock into the API and use
+  market time for the cutoff.
+- [ ] 3. `ExecutionWorker._refresh_deployments` acquires and renews leases with market time, so a historical run's
+  lease looks expired to the API. Use operational time.
+- [ ] 4. `ExecutionWorker.poll_once` reads the market clock before its `try`, so an unavailable clock also skips the
+  heartbeat. Health must keep reporting while market actions fail closed.
+
+**Broker and edge bugs (reproduced)**
+
+- [ ] 5. A take-profit that triggers, retreats before execution and touches again fills twice and leaves a reversed
+  position: the re-armed order and a new protection order both execute.
+- [ ] 6. With `broker_response_ms` above 0, reads after completion or stop wait for a cursor that never advances and
+  time out. Completed runs must answer from frozen visible state.
+- [ ] 7. A fill whose response falls after `end` stays `unavailable`. Implement the response drain through
+  `end + broker_response_ms`.
+- [ ] 8. A submission after completion or stop is never answered and looks in flight forever. Refuse it.
+- [ ] 9. `_read` does not catch the read timeout, so a read while paused with a response delay returns HTTP 500.
+  Return a contracted error.
+- [ ] 10. Account equity always equals balance. Include floating profit on open positions.
+
+**Smaller gaps**
+
+- [ ] 11. Report real `lag_ms` and `outstanding_intents` (both hardcoded to 0) and source coverage in run status.
+- [ ] 12. Reach `freeze_tickstore` from `q-replay` and correct the operations document, which says it is not implemented.
+- [ ] 13. Re-verify dataset checksums when a run recovers after a restart.
+- [ ] 14. Pin and vendor the contracts in q_terminal, and capture the affected gallery states.
+- [ ] 15. Remove the duplicate `import os` in `market_data/service.py`.
+- [ ] 16. Extend the opt-in integration scenario to the ordinary API, Redis, publisher and worker, as step 8 requires.
+
+Q-146 depends on this task and adds the Research UI page; the Research UI is out of scope here.
 
 ## Global constraints
 
@@ -83,7 +126,7 @@ Run configuration/state fields, durations, state transitions and command revisio
   for touched generator code. Regenerate using documented commands and commit the source/generated changes.
 - [x] Pin/vendor the resulting local contract commit in q_backend and q_terminal and run their
   `make contracts-check CONTRACTS_REPO=<contracts-worktree>`. Pin Q-144's release in backend and update uv.lock.
-  (q_backend done; q_terminal pending step 6.)
+  (q_backend done; q_terminal pending, follow-up 14.)
 
 ### 2. Durable timeline, immutable input and external controller
 
@@ -166,10 +209,10 @@ No runtime switch inside the evaluator; all historical timestamps remain histori
 - [x] Write failing tests for historical deployment activation and warmup, market-age rejection, recovery
   lookup windows, session flatten, delayed/coarser bars, paused healthy leases, stale/unreachable clock failure,
   speed changes and run-generation cache isolation. Verify real-clock defaults against current behavior.
-- [x] Audit each `now` used by worker/service/API/recovery/lease code and assign its domain. Keep DB-owned
+- [ ] Audit each `now` used by worker/service/API/recovery/lease code and assign its domain. Keep DB-owned
   timestamps and worker lease/heartbeat health on operational UTC; pass market time explicitly for market
   semantics. Test both domains together rather than replacing every datetime globally.
-- [x] Wire one market-clock provider into every market-facing process; validate clock freshness with real
+- [ ] Wire one market-clock provider into every market-facing process; validate clock freshness with real
   elapsed time and reject cross-generation sources. Disable cache paths that cannot carry causal source
   identity. Restrict same account/symbol deployment ownership for this supported execution profile.
 - [x] Run the new clock tests, `tests/execution/test_worker_heartbeat.py`, `test_bar_coordinator.py`,
@@ -185,9 +228,9 @@ general demo support.
 **Interfaces:** consumes step 1's generic account capabilities; creates an `mt5_live` deployment to that
 demo account using the normal activation request/confirmation. It does not call administrative replay routes.
 
-- [ ] Write failing Rust tests for demo capability available/absent, account allowlist/activation refusals,
+- [x] Write failing Rust tests for demo capability available/absent, account allowlist/activation refusals,
   no automatic real-account enablement, deployment selection and commands carrying the correct account.
-- [ ] Add the demo choice/confirmation and capability-driven enablement. Preserve ordinary paper behavior,
+- [x] Add the demo choice/confirmation and capability-driven enablement. Preserve ordinary paper behavior,
   kill-switch and unknown-order handling. No speed, step, pause-market or run selector in the terminal.
 - [ ] Run the affected Rust tests, crate formatting/clippy and `qmllint` for touched QML using repository
   tooling; capture and inspect affected gallery states per AGENTS.md. Do not run a full terminal check/build
@@ -216,7 +259,7 @@ receive the same validated run generation. State is provisioned before normal st
 **Files (q_backend):** `tests/replay/test_stack_integration.py`, `tests/replay/test_journal_reproduction.py`,
 `docs/operations/market-replay.md`, `README.md` and the batch document.
 
-- [x] Add one opt-in integration scenario with isolated PostgreSQL/Redis, the simulator, the ordinary API,
+- [ ] Add one opt-in integration scenario with isolated PostgreSQL/Redis, the simulator, the ordinary API,
   publisher/worker, a public fixture strategy and normal activation. Assert intent → delayed fill → ledger
   → outbox/stream events plus timeout/reconciliation, fee persistence and one fill after restart. Inject
   actual request delay; do not bypass HTTP with a direct test broker or replace the production evaluator.
