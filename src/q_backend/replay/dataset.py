@@ -45,6 +45,8 @@ class SymbolSpec(BaseModel):
     volume_max: float = Field(gt=0, allow_inf_nan=False)
     trade_contract_size: float = Field(gt=0, allow_inf_nan=False)
     margin_per_contract: str = Field(pattern=r"^[0-9]+(\.[0-9]+)?$")
+    commission_per_contract: str = Field(default="0", pattern=r"^[0-9]+(\.[0-9]+)?$")
+    slippage_ticks: int = Field(default=0, ge=0)
 
 
 class DatasetManifest(BaseModel):

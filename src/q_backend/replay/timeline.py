@@ -111,14 +111,16 @@ class ReplayTimeline:
                 self._store.update_run(conn, cursor_us=event.at_us)
             handler(event, conn)
             self._store.set_queue_status(conn, event.seq, "processed")
-            self._store.append_journal(
-                conn,
-                kind="scheduled",
-                market_time_us=event.at_us,
-                priority=event.priority,
-                payload={"kind": event.kind, "payload": event.payload},
-                max_journal_bytes=max_journal_bytes,
-            )
+            # Market ticks are derivable from the frozen dataset, so only other events are journaled.
+            if event.kind != "market_tick":
+                self._store.append_journal(
+                    conn,
+                    kind="scheduled",
+                    market_time_us=event.at_us,
+                    priority=event.priority,
+                    payload={"kind": event.kind, "payload": event.payload},
+                    max_journal_bytes=max_journal_bytes,
+                )
             processed += 1
         if bound > self.cursor_us(conn):
             self._store.update_run(conn, cursor_us=bound)

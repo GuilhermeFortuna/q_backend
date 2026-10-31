@@ -94,10 +94,12 @@ class ReplayController:
         *,
         handler: EventHandler = _noop_handler,
         mono_ns: Callable[[], int] = time.monotonic_ns,
+        on_finish: Callable[[sqlite3.Connection, int], None] | None = None,
     ) -> None:
         self._store = store
         self._timeline = ReplayTimeline(store)
         self._handler = handler
+        self._on_finish = on_finish
         self._mono = mono_ns
         self._clock: ReplayClock | None = None
         run = store.load_run()
@@ -113,8 +115,13 @@ class ReplayController:
         run_id: str,
         generation: str,
         dataset_checksums: tuple[str, ...],
+        setup: Callable[[sqlite3.Connection], None] | None = None,
     ) -> RunStatus:
-        """Record a new run in ``prepared`` state, positioned at the interval start."""
+        """Record a new run in ``prepared`` state, positioned at the interval start.
+
+        ``setup`` runs in the same transaction, so components that schedule their first events
+        (for example the market feed) either all exist with the run or none do.
+        """
         start_us = config.start_us
         with self._store.transaction() as conn:
             self._store.create_run(
@@ -139,6 +146,8 @@ class ReplayController:
                 payload={"event": "created", "config_hash": config.config_hash()},
                 max_journal_bytes=config.limits.max_journal_bytes,
             )
+            if setup is not None:
+                setup(conn)
         self._clock = ReplayClock.start(rate=config.rate, market_us=start_us, mono_ns=self._mono(), paused=True)
         return self.status()
 
@@ -186,6 +195,8 @@ class ReplayController:
                 )
                 cursor_after = self._timeline.cursor_us(conn)
             if action == STOP:
+                if self._on_finish is not None:
+                    self._on_finish(conn, cursor_after)
                 cancelled = self._store.cancel_pending(conn)
                 state_after = STOPPED
                 if cancelled:
@@ -199,6 +210,8 @@ class ReplayController:
                     )
             elif cursor_after >= run.end_us:
                 state_after = COMPLETED
+                if self._on_finish is not None:
+                    self._on_finish(conn, run.end_us)
             else:
                 state_after = _state_after(action, run.state)
             revision_after = run.revision + 1
@@ -262,6 +275,8 @@ class ReplayController:
                 cursor = self._timeline.cursor_us(conn)
                 state_after = COMPLETED if cursor >= run.end_us else RUNNING
                 if state_after == COMPLETED:
+                    if self._on_finish is not None:
+                        self._on_finish(conn, run.end_us)
                     self._store.update_run(conn, state=COMPLETED, revision=run.revision + 1, cursor_us=cursor)
                     self._store.append_journal(
                         conn,

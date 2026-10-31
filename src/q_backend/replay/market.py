@@ -228,6 +228,32 @@ class ReplayMarket:
             raise MarketError(404, "symbol_not_found", f"unknown symbol {symbol!r}")
         return spec
 
+    def quote_at(self, symbol: str, utc_us: int) -> tuple[float, float, int] | None:
+        """Latest priced quote at or before ``utc_us``: (bid, ask, time_msc UTC), or None."""
+        series = self._series_for(symbol)
+        index = int(np.searchsorted(series.time_msc, utc_us // 1000, side="right")) - 1
+        while index >= 0:
+            bid = float(series.bid[index])
+            ask = float(series.ask[index])
+            if bid > 0 and ask > 0 and ask >= bid:
+                return bid, ask, int(series.time_msc[index])
+            index -= 1
+        return None
+
+    def tick_count(self, symbol: str) -> int:
+        return len(self._series_for(symbol).time_msc)
+
+    def tick_at(self, symbol: str, index: int) -> tuple[int, float, float]:
+        """(time_msc UTC, bid, ask) of one tick in source order."""
+        series = self._series_for(symbol)
+        return int(series.time_msc[index]), float(series.bid[index]), float(series.ask[index])
+
+    def first_index_at_or_after(self, symbol: str, utc_ms: int) -> int:
+        return int(np.searchsorted(self._series_for(symbol).time_msc, utc_ms, side="left"))
+
+    def spec(self, symbol: str) -> SymbolSpec:
+        return self._spec_for(symbol)
+
     # -- symbols ------------------------------------------------------------
     def symbol_info(self, symbol: str) -> dict:
         spec = self._spec_for(symbol)

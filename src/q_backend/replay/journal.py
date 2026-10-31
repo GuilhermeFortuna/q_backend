@@ -142,6 +142,10 @@ class ReplayRunStore:
     def close(self) -> None:
         self._conn.close()
 
+    def install_schema(self, ddl: str) -> None:
+        """Create the tables of a component (idempotent ``CREATE ... IF NOT EXISTS`` statements)."""
+        self._conn.executescript(ddl)
+
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
         """Run a block atomically; any exception rolls back every write in it."""
