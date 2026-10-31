@@ -24,6 +24,9 @@ Q-144 spec/plan belong in q_core at `docs/development/{specs,plans}/Q-144-increm
 Q-145 [spec](../specs/Q-145-market-replay-and-simulated-broker-spec.md) and
 [plan](../plans/Q-145-market-replay-and-simulated-broker-plan.md) belong in q_backend.
 Planning branches in both owners: `docs/batch-42-market-replay`. They are local and not pushed.
+Q-146 [spec](../specs/Q-146-research-replay-control-spec.md) and
+[plan](../plans/Q-146-research-replay-control-plan.md) belong in q_backend, on branch
+`docs/q-146-research-replay-control`; its issue is https://github.com/GuilhermeFortuna/q_backend/issues/67.
 Issues embed the full written documents so remote review does not rely on unavailable branch links.
 
 After approval, the human makes Q-144 Todo and launches `./work start Q-144 --agent <agent> --worktree`.
