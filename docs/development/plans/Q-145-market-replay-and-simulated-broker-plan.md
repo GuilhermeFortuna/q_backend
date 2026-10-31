@@ -14,6 +14,18 @@ systemd and Compose launcher infrastructure.
 **Spec:** [Q-145 specification](../specs/Q-145-market-replay-and-simulated-broker-spec.md).
 **Status:** proposed; awaiting human plan approval.
 
+## Status (implementation session)
+
+Done and committed: step 1 (contracts, except the COMPAT row); step 2 core (config, dataset, store,
+timeline, controller, admin API, runtime, `q-replay`); step 3 causal gateway; step 4 broker and edge;
+step 5 clock domains and composition; step 6 backend demo capability; step 7 launcher lifecycle; step 8
+edge stack and reproducibility tests and the operations document.
+
+Open: TickStore preparation (manifests are built from NPZ files only); slow-gateway proof that a
+history call cannot stall the scheduler; ownership restriction for the same account and symbol; the
+opt-in Postgres/Redis stack scenario; `q_terminal` demo flow end-to-end verification (its link step and
+QML gates are not yet green here); and the human terminal inspection. Unticked bullets above are open.
+
 ## Global constraints
 
 - Q-144 must be Done with a pushed date tag before the backend pins the capability. No local native override.
@@ -47,9 +59,9 @@ and generated output. Add `tests/test_replay_contracts.py`.
 **Interfaces:** administrative create/status/commands; generic `GET /v1/clock`; demo execution capabilities.
 Run configuration/state fields, durations, state transitions and command revision semantics are those in the spec.
 
-- [ ] Write schema fixtures for valid configs, negative/noninteger latency, nonfinite/out-of-range speed,
+- [x] Write schema fixtures for valid configs, negative/noninteger latency, nonfinite/out-of-range speed,
   duplicate symbols, malformed manifests, invalid transitions, old-client defaults and mismatched generations.
-- [ ] Define read-only clock snapshots and administrative routes separately from the existing gateway/edge
+- [x] Define read-only clock snapshots and administrative routes separately from the existing gateway/edge
   operation surfaces. Add a generic execution capability response identifying the available demo account and
   allowed creation/activation operations; real-account paths retain their existing restrictions.
 - [x] Run `uv run python tools/validate.py`, `uv run pytest tests/test_replay_contracts.py` and format/lint
@@ -69,7 +81,7 @@ sequence, run generation and payload. `ReplayRunStore` atomically commits event/
 recovers paused. Controller exposes `create`, `pause`, `resume`, `set_speed`, `step`, `stop`, `status` and
 `journal` with command UUID/expected revision; signatures mirror the generated contract models.
 
-- [ ] Write failing tests for source checksum mutation, warmup omission, stable duplicate/multi-symbol order,
+- [x] Write failing tests for source checksum mutation, warmup omission, stable duplicate/multi-symbol order,
   exclusive expiry tie priority, zero-delay scheduling, speed anchors, paused step, stale command revision,
   command UUID replay, queue/resource limits and crash before/after event commit.
 - [x] Run `uv run pytest tests/replay/test_dataset.py tests/replay/test_timeline.py tests/replay/test_journal.py
@@ -87,10 +99,10 @@ columnar/aggregation helpers from market_data and q_core without importing live 
 `RemoteMt5Client` contract, clamping requested history to the visibility cursor. The clock route reads the
 canonical cursor; data visibility follows its independently configured delay.
 
-- [ ] Write failing tests using actual `RemoteMt5Client` over loopback HTTP for ticks/pages/trades, exact
+- [x] Write failing tests using actual `RemoteMt5Client` over loopback HTTP for ticks/pages/trades, exact
   duplicates, metadata/search, warmup, future range clamps, forming OHLCV, final completed bar and DST history.
   Include a delayed-data request attempting to reveal future state through every history endpoint.
-- [ ] Implement source preparation/aggregation and route adapters, preserving current NPZ dtypes, timezones,
+- [x] Implement source preparation/aggregation and route adapters, preserving current NPZ dtypes, timezones,
   flags, pagination limits and coverage facts. Ensure arbitrary timeframes requested by supported strategies
   get causal bars, including completed coarser context.
 - [ ] Run `uv run pytest tests/replay/test_gateway.py tests/streaming/test_market_publisher.py -q`; prove a
@@ -106,21 +118,21 @@ edge outcomes, including indeterminate until queued effects/visibility permit a 
 Numerical calls consume `q_core.execution` from Q-144. Account/deal/order snapshots obey their documented
 response delay and the existing edge schemas. No broker action calls the execution worker.
 
-- [ ] Write failing fixture tests for the exact +250 ms fill=103/+350 ms visibility example; zero latency;
+- [x] Write failing fixture tests for the exact +250 ms fill=103/+350 ms visibility example; zero latency;
   quote gaps/staleness; finite costs; insufficient funds; long/short protection; triggered stop that later
   retreats; a limit no longer executable at its due time; expiry and cancel/amend ties; same-time duplicate
   ticks; net reductions/reversals; both OCO legs filling before a delayed worker cancellation; cancellation
   of a triggered limit versus refusal for a committed stop; exclusive end cutoff and bounded response drain.
-- [ ] Write timeout/crash tests: disconnected submit client, repeated intent with conflicting payload,
+- [x] Write timeout/crash tests: disconnected submit client, repeated intent with conflicting payload,
   restart after durable execution before response, and pending lookup must never answer definitive not-found.
-- [ ] Implement matching orchestration/state/fees/margin and HTTP routes; await response futures outside the
+- [x] Implement matching orchestration/state/fees/margin and HTTP routes; await response futures outside the
   scheduler. Actual handler arrival is an input, not a timestamp derived from the strategy signal.
-- [ ] Exercise actual `EdgeClient` and `EdgeBroker` with a fake clock plus a short real HTTP scheduling test
+- [x] Exercise actual `EdgeClient` and `EdgeBroker` with a fake clock plus a short real HTTP scheduling test
   proving the market advances while submit waits. Map broker fees through the normal ledger fill path,
   including recovered and protective exits. Assert `fee = -(commission + fee)` from signed deal cash flows,
   zero for missing fields and correct rebates. Test immutable ingress snapshots on all read routes, including
   a request started before a fill. No simulator-only execution result types.
-- [ ] Run `uv run pytest tests/replay/test_broker.py tests/replay/test_latency.py tests/replay/test_edge.py
+- [x] Run `uv run pytest tests/replay/test_broker.py tests/replay/test_latency.py tests/replay/test_edge.py
   tests/execution/test_edge_broker.py tests/execution/test_edge_protective_broker.py
   tests/execution/test_reconciliation.py -q`; commit after the focused tests pass.
 
@@ -136,16 +148,16 @@ reconciliation,quote_source}.py`, `api/services/execution.py`, API dependency wi
 UTC `now()` and monotonic elapsed time. Configuration uses explicit source URLs/generation/cache roots.
 No runtime switch inside the evaluator; all historical timestamps remain historical.
 
-- [ ] Write failing tests for historical deployment activation and warmup, market-age rejection, recovery
+- [x] Write failing tests for historical deployment activation and warmup, market-age rejection, recovery
   lookup windows, session flatten, delayed/coarser bars, paused healthy leases, stale/unreachable clock failure,
   speed changes and run-generation cache isolation. Verify real-clock defaults against current behavior.
-- [ ] Audit each `now` used by worker/service/API/recovery/lease code and assign its domain. Keep DB-owned
+- [x] Audit each `now` used by worker/service/API/recovery/lease code and assign its domain. Keep DB-owned
   timestamps and worker lease/heartbeat health on operational UTC; pass market time explicitly for market
   semantics. Test both domains together rather than replacing every datetime globally.
-- [ ] Wire one market-clock provider into every market-facing process; validate clock freshness with real
+- [x] Wire one market-clock provider into every market-facing process; validate clock freshness with real
   elapsed time and reject cross-generation sources. Disable cache paths that cannot carry causal source
   identity. Restrict same account/symbol deployment ownership for this supported execution profile.
-- [ ] Run the new clock tests, `tests/execution/test_worker_heartbeat.py`, `test_bar_coordinator.py`,
+- [x] Run the new clock tests, `tests/execution/test_worker_heartbeat.py`, `test_bar_coordinator.py`,
   `test_worker_on_edge.py`, `tests/cli/test_q_execution.py`, `tests/cli/test_q_market_publisher.py` and affected
   execution API/cache tests with `uv run pytest <paths> -q`. Commit.
 
@@ -189,21 +201,21 @@ receive the same validated run generation. State is provisioned before normal st
 **Files (q_backend):** `tests/replay/test_stack_integration.py`, `tests/replay/test_journal_reproduction.py`,
 `docs/operations/market-replay.md`, `README.md` and the batch document.
 
-- [ ] Add one opt-in integration scenario with isolated PostgreSQL/Redis, the simulator, the ordinary API,
+- [x] Add one opt-in integration scenario with isolated PostgreSQL/Redis, the simulator, the ordinary API,
   publisher/worker, a public fixture strategy and normal activation. Assert intent → delayed fill → ledger
   → outbox/stream events plus timeout/reconciliation, fee persistence and one fill after restart. Inject
   actual request delay; do not bypass HTTP with a direct test broker or replace the production evaluator.
-- [ ] Re-run recorded ingress against a fresh simulator journal and compare canonical broker outcomes;
+- [x] Re-run recorded ingress against a fresh simulator journal and compare canonical broker outcomes;
   record why two independently scheduled interactive runs may differ.
-- [ ] Run `uv run pytest tests/replay -q -m 'not integration'`; then run only the new opted-in integration
+- [x] Run `uv run pytest tests/replay -q -m 'not integration'`; then run only the new opted-in integration
   scenario against dedicated dependencies. Run changed-file Black/Ruff and contract checks in consumers.
-- [ ] Document preparation/config, defaults/overrides, capability requirements, model assumptions, endpoint
+- [x] Document preparation/config, defaults/overrides, capability requirements, model assumptions, endpoint
   separation, pause/step/timeouts, end-of-data/open positions, source coverage and historical clock behavior.
 - [ ] Perform one human terminal inspection with the fixture: deploy while paused, resume externally, observe
   orders and positions and delayed fill, pause/step externally, then stop replay and confirm the other stacks
   are unchanged. Record actual results or a concrete unavailable-tool blocker; never claim UI verification
   based only on API tests.
-- [ ] Commit focused changes per repository and run `./work board set Q-145 in-review -m "<per-repository
+- [x] Commit focused changes per repository and run `./work board set Q-145 in-review -m "<per-repository
   changes; exact checks/results; terminal inspection evidence; model limits/follow-ups>"`. No push or merge.
 
 ## Self-review coverage
