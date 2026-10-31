@@ -262,6 +262,32 @@ def effective_live_capability_locked(settings: Settings, *, broker_mode: str) ->
     return not demo_account_capability(settings).available
 
 
+def symbol_owner_conflict(
+    session: Session,
+    *,
+    paper_account_id: uuid.UUID,
+    symbol: str,
+) -> Optional[ExecutionDeployment]:
+    """An active mt5_live deployment already owning this account and symbol, if any."""
+    return session.execute(
+        select(ExecutionDeployment)
+        .where(
+            ExecutionDeployment.paper_account_id == paper_account_id,
+            ExecutionDeployment.symbol == symbol,
+            ExecutionDeployment.broker_mode == BrokerMode.MT5_LIVE.value,
+            ExecutionDeployment.lifecycle.in_(
+                [
+                    DeploymentLifecycle.DRAFT.value,
+                    DeploymentLifecycle.RUNNING.value,
+                    DeploymentLifecycle.PAUSED.value,
+                    DeploymentLifecycle.ERROR.value,
+                ]
+            ),
+        )
+        .limit(1)
+    ).scalar_one_or_none()
+
+
 def create_deployment(
     session: Session,
     body: DeploymentCreateRequest,
@@ -272,6 +298,22 @@ def create_deployment(
     account = get_paper_account(session, body.paper_account_id)
     if account is None:
         raise HTTPException(status_code=404, detail="paper account not found")
+    if body.broker_mode == BrokerMode.MT5_LIVE.value and settings.execution_single_owner_per_symbol:
+        # Saved-run sources take their symbol from the backtest, so this check covers the
+        # catalog and identity sources; the replay profile uses those.
+        symbol = (
+            body.catalog.symbol
+            if body.catalog is not None
+            else (body.identity.symbol if body.identity is not None else None)
+        )
+        owner = (
+            symbol_owner_conflict(session, paper_account_id=body.paper_account_id, symbol=symbol) if symbol else None
+        )
+        if owner is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"deployment {owner.id} already owns {symbol} on this account",
+            )
     try:
         broker_mode = validate_broker_mode(
             body.broker_mode,

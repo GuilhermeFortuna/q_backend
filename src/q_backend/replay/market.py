@@ -485,3 +485,9 @@ def load_market(
         series[symbol] = TickSeries(symbol=symbol, **columns)
         specs[symbol] = manifest.symbol_specs[symbol]
     return ReplayMarket(generation=generation, series=series, specs=specs, zone=zone)
+
+
+def wire_to_utc_ms_array(wire_ms: np.ndarray, zone: ZoneInfo) -> np.ndarray:
+    """Vectorised inverse of :func:`utc_to_wire_ms` (two passes handle offset changes)."""
+    first = wire_ms - offset_ms(wire_ms, zone)
+    return wire_ms - offset_ms(first, zone)

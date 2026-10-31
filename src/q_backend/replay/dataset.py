@@ -59,6 +59,8 @@ class DatasetManifest(BaseModel):
     coverage_end_utc: AwareDatetime
     files: list[DatasetFile] = Field(min_length=1)
     symbol_specs: dict[str, SymbolSpec] = Field(min_length=1)
+    # Optional provenance (for example the TickStore range a file was frozen from). Not verified.
+    source: dict[str, str] | None = None
 
     @model_validator(mode="after")
     def _consistent(self) -> DatasetManifest:
