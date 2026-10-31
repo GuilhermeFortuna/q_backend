@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from q_backend.backtesting.position_sizing import FixedQuantityPositionSizing, PositionSizingConfig
 from q_backend.research.params import (
     coerce_params,
     declared_from_wire,
@@ -135,21 +136,20 @@ def check_strategy_run_request(
     *,
     engine: str,
     ml_filter: object | None,
-    position_sizing: Any | None,
-) -> int:
-    """Refuse what a strategy-file run does not support; return the fixed order quantity."""
+    position_sizing: PositionSizingConfig | None,
+) -> PositionSizingConfig:
+    """Refuse what a strategy-file run does not support; return the sizing rule the run uses."""
     if engine != "candle":
         raise StrategyFileRequestError("Strategy files run on the candle engine only.")
     if ml_filter is not None:
         raise StrategyFileRequestError("ML filters do not apply to strategy files.")
     if position_sizing is None:
-        return 1
-    if getattr(position_sizing, "type", None) != "fixed_quantity":
-        raise StrategyFileRequestError("Strategy files support fixed-quantity position sizing only.")
-    quantity = float(position_sizing.quantity)
-    if not quantity.is_integer() or quantity < 1:
-        raise StrategyFileRequestError("Strategy file quantity must be a positive whole number.")
-    return int(quantity)
+        return FixedQuantityPositionSizing()
+    if position_sizing.type == "fixed_quantity":
+        quantity = float(position_sizing.quantity)
+        if not quantity.is_integer() or quantity < 1:
+            raise StrategyFileRequestError("Strategy file quantity must be a positive whole number.")
+    return position_sizing
 
 
 def resolve_strategy_run(

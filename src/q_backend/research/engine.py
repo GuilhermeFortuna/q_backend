@@ -22,7 +22,11 @@ from q_backend.backtesting.engine import BacktestEngine
 from q_backend.backtesting.exit_rules.registry import all_param_specs
 from q_backend.backtesting.factory import build_strategy
 from q_backend.backtesting.indicator_frame import augment_indicator_frame
-from q_backend.backtesting.position_sizing import FixedQuantitySizer
+from q_backend.backtesting.position_sizing import (
+    FixedQuantityPositionSizing,
+    PositionSizingConfig,
+    build_position_sizer,
+)
 from q_backend.backtesting.signal_columns import BAR_INDEX, LEVEL_COLUMNS, SIGNAL_COLUMNS
 from q_backend.backtesting.strategy import TradingStrategy
 from q_backend.backtesting.strategy_registry import (
@@ -206,7 +210,8 @@ def backtest(
     strategy: ResearchStrategy | str,
     symbol: str,
     strategy_params: Mapping[str, Any] | None = None,
-    quantity: int = 1,
+    quantity: int | None = None,
+    position_sizing: PositionSizingConfig | None = None,
     point_value: float = 1.0,
     initial_capital: float = 100000.0,
     costs: TransactionCostConfig | None = None,
@@ -238,8 +243,12 @@ def backtest(
         Trading symbol ticker (must match ticks symbol if ticks are provided).
     strategy_params : Mapping[str, Any], optional
         Parameter overrides for registered strategies.
-    quantity : int, default 1
-        Fixed order quantity per trade (positive integer).
+    quantity : int, optional
+        Fixed order quantity per trade (positive integer). Defaults to 1 when neither this nor
+        ``position_sizing`` is given. Mutually exclusive with ``position_sizing``.
+    position_sizing : PositionSizingConfig, optional
+        Sizing rule for each entry: fixed quantity, fixed safety margin or inverse volatility.
+        Inverse volatility reads a ``volatility`` column from the indicator frame.
     point_value : float, default 1.0
         Financial value per price point (e.g., 0.20 for WIN, 10.0 for WDO).
     initial_capital : float, default 100000.0
@@ -296,8 +305,13 @@ def backtest(
     # 1. Validate scalar arguments
     if isinstance(latency_ms, bool) or not isinstance(latency_ms, int) or latency_ms < 0:
         raise ValueError(f"latency_ms must be a non-negative integer, got {latency_ms!r}")
-    if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity <= 0:
-        raise ValueError(f"quantity must be a positive integer, got {quantity!r}")
+    if position_sizing is not None and quantity is not None:
+        raise ValueError("quantity and position_sizing are mutually exclusive; pass one of them")
+    if position_sizing is None:
+        quantity = 1 if quantity is None else quantity
+        if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity <= 0:
+            raise ValueError(f"quantity must be a positive integer, got {quantity!r}")
+        position_sizing = FixedQuantityPositionSizing(quantity=float(quantity))
 
     if (
         not isinstance(point_value, (int, float))
@@ -403,7 +417,7 @@ def backtest(
         raise TypeError(f"strategy must be a ResearchStrategy instance or str, got {type(strategy).__name__}")
 
     # 3. Position Sizer
-    sizer = FixedQuantitySizer(quantity=float(quantity), scale_by_signal_strength=False)
+    sizer = build_position_sizer(position_sizing, point_value=float(point_value))
 
     # 4. Engine Run
     engine = BacktestEngine(
@@ -434,7 +448,6 @@ def backtest(
         "symbol": symbol,
         "strategy": strat_name,
         "strategy_params": strat_params,
-        "quantity": quantity,
         "point_value": float(point_value),
         "initial_capital": float(initial_capital),
         "costs": costs,
@@ -447,7 +460,10 @@ def backtest(
         "timeframe": timeframe,
         "post_exit_bars": post_exit_bars,
         "excursions": excursions,
+        "position_sizing": position_sizing.model_dump(mode="json"),
     }
+    if isinstance(position_sizing, FixedQuantityPositionSizing):
+        config_dict["quantity"] = position_sizing.quantity
     if latency_ms:
         config_dict["latency_ms"] = latency_ms
     from q_backend.backtesting.candle_kernel import _exit_params_from_strategy

@@ -105,8 +105,10 @@ are shown disabled, with their error. The list refreshes when the window regains
 your editor appears without a restart. ``bool`` parameters render as checkboxes and ``time`` parameters
 as ``HH:MM`` inputs.
 
-Strategy-file runs use the candle engine, fixed-quantity sizing and the same costs, exit parameters and
-day-trade settings as registry runs. They run through the research library's ``backtest()`` with
+Strategy-file runs use the candle engine, the position sizing chosen in the workspace (fixed quantity,
+fixed safety margin or inverse volatility) and the same costs, exit parameters and day-trade settings as
+registry runs. Inverse volatility reads a ``volatility`` column, so the file's ``compute_indicators`` must
+return one; without it the run fails rather than taking no trades. They run through the research library's ``backtest()`` with
 ``check_causality=True``, so an indicator that reads a later bar fails the run with an error naming the
 column and the bar. Optimize, Validate (walk-forward) and Discover do not list strategy files; keep
 running optimizations from scripts through ``load_strategy()``.

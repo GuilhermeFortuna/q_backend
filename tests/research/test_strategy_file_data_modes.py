@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from q_backend.api.schemas.backtest import BacktestRequest
+from q_backend.backtesting.position_sizing import FixedQuantityPositionSizing
 from q_backend.research import ResearchStrategy, TradeOrder, backtest
 from q_backend.research import strategy_file_runs as runs
 from q_backend.research.publishing import build_import_request
@@ -57,7 +58,7 @@ def setup_run(tmp_path, monkeypatch):
         start=datetime(2026, 10, 5),
         end=datetime(2026, 10, 5, 23, 59, 59),
         strategy_params={},
-        quantity=1,
+        position_sizing=FixedQuantityPositionSizing(quantity=1.0),
         point_value=1.0,
         initial_capital=100000.0,
         costs=None,

@@ -16,8 +16,13 @@ from q_backend.api.backtest_jobs import BacktestJobRequest
 from q_backend.api.routers import backtest as backtest_router
 from q_backend.backtesting import run_service
 from q_backend.backtesting.models import OrderAction
+from q_backend.backtesting.position_sizing import (
+    FixedSafetyMarginPositionSizing,
+    InverseVolatilityPositionSizing,
+)
 from q_backend.research import backtest
 from q_backend.research.strategy_file_runs import _bars_frame
+from q_backend.research.strategy_files import load_strategy
 from q_backend.storage.db.models import BacktestRun, ResearchStrategyVersion
 from q_backend.storage.settings import get_settings
 from q_backend.tasks import worker_context
@@ -97,6 +102,13 @@ class Lookahead(ResearchStrategy):
 '''
 
 
+VOLATILITY_MA = SIMPLE_MA.replace(
+    '        out["ma"] = frame["close"].rolling(self.length).mean()\n',
+    '        out["ma"] = frame["close"].rolling(self.length).mean()\n'
+    '        out["volatility"] = frame["close"].pct_change().rolling(20).std() * 252**0.5\n',
+)
+
+
 def _write(root: Path, name: str, text: str) -> None:
     (root / name).write_text(text, encoding="utf-8")
 
@@ -151,17 +163,18 @@ def _clean(value):
     return value
 
 
-def _direct_metrics(run_jobs_sync, strategy_class, **params):
+def _direct_metrics(run_jobs_sync, strategy_class, *, position_sizing=None, **params):
     """The metrics of a direct research ``backtest()`` on the same bars and parameters."""
     frame = _bars_frame(
         worker_context.get_worker_market_data_service(), symbol=SYMBOL, timeframe="D1", start=START, end=END
     )
+    sizing = {"position_sizing": position_sizing} if position_sizing is not None else {"quantity": 1}
     return backtest(
         frame,
         strategy=strategy_class(**params),
         symbol=SYMBOL,
-        quantity=1,
         point_value=1.0,
+        **sizing,
         initial_capital=100000.0,
         check_causality=True,
         progress=False,
@@ -183,8 +196,6 @@ def test_a_strategy_file_run_matches_a_direct_backtest_and_records_its_version(r
     assert row.config["research_data_mode"] == "auto"
     assert run_service.backtest_run_detail(row).config["research_data_mode"] == "bars"
     assert row.result_summary["order_kinds"] == ["market_close", "market_entry"]
-
-    from q_backend.research.strategy_files import load_strategy
 
     direct = _direct_metrics(
         run_jobs_sync,
@@ -236,6 +247,63 @@ def test_a_lookahead_indicator_fails_the_run_with_the_causality_error(run_jobs_s
     assert row.status == "failed"
     assert "is not causal" in row.error_message
     assert "peek" in row.error_message
+
+
+def _assert_matches_direct(row: BacktestRun, direct) -> None:
+    assert row.status == "completed"
+    assert _clean(
+        {k: v for k, v in row.result_summary.items() if k not in ("ticks_used", "order_kinds", "research_data_mode")}
+    ) == _clean(direct.metrics)
+
+
+def test_a_fixed_safety_margin_run_matches_a_direct_backtest_with_the_same_sizing(run_jobs_sync, strategy_env):
+    _write(strategy_env, "simple_ma.py", SIMPLE_MA)
+
+    row = _row(
+        run_jobs_sync,
+        _start(position_sizing={"type": "fixed_safety_margin", "safety_margin_per_contract": 25000.0}),
+    )
+
+    direct = _direct_metrics(
+        run_jobs_sync,
+        load_strategy("simple_ma", root=strategy_env, bundle_root=strategy_env.parent / "bundles"),
+        position_sizing=FixedSafetyMarginPositionSizing(safety_margin_per_contract=25000.0),
+        length=5,
+    )
+    assert direct.trades["quantity"].max() > 1
+    _assert_matches_direct(row, direct)
+
+
+def test_an_inverse_volatility_run_matches_a_direct_backtest_with_the_same_sizing(run_jobs_sync, strategy_env):
+    _write(strategy_env, "vol_ma.py", VOLATILITY_MA)
+
+    row = _row(
+        run_jobs_sync,
+        _start(strategy_file="vol_ma", position_sizing={"type": "inverse_volatility", "target_volatility_pct": 10.0}),
+    )
+
+    direct = _direct_metrics(
+        run_jobs_sync,
+        load_strategy("vol_ma", root=strategy_env, bundle_root=strategy_env.parent / "bundles"),
+        position_sizing=InverseVolatilityPositionSizing(target_volatility_pct=10.0),
+        length=5,
+    )
+    assert direct.metrics["total_trades"] > 0
+    _assert_matches_direct(row, direct)
+
+
+def test_an_inverse_volatility_run_without_a_volatility_column_fails_instead_of_trading_nothing(
+    run_jobs_sync, strategy_env
+):
+    _write(strategy_env, "simple_ma.py", SIMPLE_MA)
+
+    row = _row(
+        run_jobs_sync,
+        _start(position_sizing={"type": "inverse_volatility", "target_volatility_pct": 10.0}),
+    )
+
+    assert row.status == "failed"
+    assert "'volatility' column" in row.error_message
 
 
 def test_a_run_of_an_edited_file_uses_the_frozen_version_not_the_live_file(run_jobs_sync, strategy_env):
