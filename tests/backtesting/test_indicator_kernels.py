@@ -165,6 +165,7 @@ def test_indicator_modules_hygiene():
         "backtesting/exit_strategy.py",
         "backtesting/indicator_kernels.py",
         "backtesting/tick/kernel.py",
+        "replay/broker.py",
     ]
 
     # 2. The three indicator modules contain no legacy pandas/numpy arithmetic constructs
