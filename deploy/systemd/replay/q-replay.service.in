@@ -8,8 +8,8 @@ After=network-online.target
 
 [Service]
 Type=simple
-EnvironmentFile=__REPLAY_ENV_FILE__
-ExecStart=__REPLAY_BIN__ serve --store ${Q_REPLAY_STORE} --root ${Q_REPLAY_ROOT} --market-port ${Q_REPLAY_MARKET_PORT} --edge-port ${Q_REPLAY_EDGE_PORT} --admin-port ${Q_REPLAY_ADMIN_PORT}
+EnvironmentFile="__REPLAY_ENV_FILE__"
+ExecStart="__REPLAY_BIN__" serve --store ${Q_REPLAY_STORE} --root ${Q_REPLAY_ROOT} --market-port ${Q_REPLAY_MARKET_PORT} --edge-port ${Q_REPLAY_EDGE_PORT} --admin-port ${Q_REPLAY_ADMIN_PORT}
 Restart=on-failure
 RestartSec=2
 NoNewPrivileges=true
