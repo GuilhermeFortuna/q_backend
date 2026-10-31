@@ -82,7 +82,9 @@ def lookup_request_for_order(order: ExecutionOrder, deployment: ExecutionDeploym
     broker_mode = BrokerMode(order.broker_mode)
     market_created_at = (order.details or {}).get("market_created_at")
     intent_created_at = (
-        datetime.fromisoformat(market_created_at) if market_created_at else order.intent_committed_at or order.created_at
+        datetime.fromisoformat(market_created_at)
+        if market_created_at
+        else order.intent_committed_at or order.created_at
     )
     return MarketOrderRequest(
         deployment_id=deployment.id,
