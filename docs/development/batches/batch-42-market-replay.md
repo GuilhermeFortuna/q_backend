@@ -1,6 +1,6 @@
 # Batch 42 — Market replay
 
-**Status:** proposed specifications/plans awaiting human review; the Q project board is the status of record.
+**Status:** Q-144 released; Q-145 implementation ready for human review. Final testing and terminal runtime inspection remain with the human. The Q project board is the status of record.
 
 ## Outcome
 
@@ -32,7 +32,7 @@ Q-145 spans q_backend, q_contracts, q and q_terminal: create its exact printed t
 in each additional repository's worktree and report all changes in one board message. No replay code is
 implemented by this planning batch, and no task is agent-approved as Todo.
 
-## Decisions requiring review
+## Approved design decisions
 
 - Quote-based broker fills differ explicitly from trade-based research limits/targets.
 - Fixed latency components run in historical market time; actual stack processing contributes measured delay.

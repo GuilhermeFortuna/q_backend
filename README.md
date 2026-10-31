@@ -9,6 +9,15 @@
 
 ---
 
+
+## Historical market replay
+
+`q-replay` serves a frozen historical market and simulated demo broker over the ordinary gateway
+and execution edge protocols. From the workspace root, `./dev replay --config run.json --root <dataset-dir>`
+starts an isolated Live stack and terminal; the external CLI controls market pause, speed and stepping.
+See [market replay operations](docs/operations/market-replay.md) for TickStore preparation, configuration,
+latency, clock domains and the broker model.
+
 ## 🏛 Architecture & Capabilities
 
 `q_backend` is engineered around a clean separation of concerns:

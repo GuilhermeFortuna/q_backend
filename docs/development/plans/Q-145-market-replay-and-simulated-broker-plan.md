@@ -12,75 +12,67 @@ the external CLI owns replay controls. Numerical execution primitives come from 
 **Tech stack:** Python, existing FastAPI/httpx/NumPy/Arrow/Parquet, stdlib SQLite, q_core; current Qt terminal,
 systemd and Compose launcher infrastructure.
 **Spec:** [Q-145 specification](../specs/Q-145-market-replay-and-simulated-broker-spec.md).
-**Status:** implementation in progress; review follow-ups, full-stack and human terminal verification pending.
+**Status:** implementation complete for human review; final testing and terminal runtime inspection are reserved for the human.
 
-## Status (implementation session)
+## Status (2026-10-31 handoff)
 
-Done and committed: step 1 (contracts, except the COMPAT row); step 2 core (config, dataset, store,
-timeline, controller, admin API, runtime, `q-replay`); step 3 causal gateway; step 4 broker and edge;
-step 5 clock domains and composition; step 6 backend demo capability; step 7 launcher lifecycle; step 8
-edge stack and reproducibility tests and the operations document.
+All sixteen reopened implementation items are addressed across q_backend, q_contracts, q and q_terminal.
+The complete isolated launcher includes PostgreSQL, Redis, API, publisher, outbox relay, execution worker
+and terminal. Both consumers pin contracts `9c758fa`. The normal HTTP API/evaluator/worker path has
+exercised a delayed fill, timeout, fresh-worker reconciliation, persisted fees and Redis publication.
+Integration additionally exposed and fixed naïve Brasília provider timestamps at the UTC execution boundary.
+Market-order intents now also retain market creation time separately from operational commit time for lookup.
 
-Completed since: TickStore import (read-only, UTC conversion, checksums); scheduler isolation proof
-(a stuck history query does not stall the market); single active mt5_live owner per account and symbol
-(opt-in setting, catalog, identity and saved-run sources); PostgreSQL edge scenario (tests/replay/test_stack_integration.py,
-run against an isolated postgres:16).
+Completed checks before the human requested testing stop: replay suite 118 passed; clock/API/worker suite
+96 passed; coordinator/worker suite 20 passed; EdgeBroker/publisher 6 passed; full-stack scenario 1 passed;
+launcher mocks 82, existing launcher 59 and Research 66 passed; contracts 22 and terminal focused tests 18
+passed. Contract vendoring checks and the inspected terminal gallery captures completed.
 
-Open: a full live-stack run (API, Redis, outbox and execution worker deciding on bars served by the replay
-gateway and filling through the replay edge). The configuration hooks exist (Q_MT5_EDGE_URL, Q_MT5_GATEWAY_URL,
-runtime data_source=remote, Q_MARKET_CLOCK_*), but this path has not been executed. Also open: the human
-terminal inspection, which needs a person at the UI.
-
-Saved-run ownership follow-up: enforce ownership after resolving the strategy source, using the resolved
-symbol for every source type. Regression coverage exercises draft/running/paused/error owners, stopped and
-paper owners, separate accounts/symbols and the disabled setting. Full-stack and UI checks remain open.
-
-Follow-up verification: `pytest tests/api/test_execution_deploy_strategy_version.py
-tests/execution/test_symbol_ownership.py tests/api/test_execution_demo_account.py -q` passed (42 tests),
-as did the eight creation/catalog cases selected from `tests/api/test_execution_api.py` with
-`-k 'create_deployment or create_mt5_live_deployment or catalog_create'`. Changed-file Black/Ruff and
-`git diff --check` passed. The test runs reported two existing Pydantic configuration deprecations.
+Per the user's instruction, further verification stopped. The final market-intent lookup-time adjustment,
+additional API/decoded-stream integration assertions and final gallery refinements have not been rerun;
+final gallery Clippy was interrupted. A fresh whole-branch review and manual terminal runtime inspection
+are left to the human. No claim is made that the terminal runtime scenario has been performed.
 
 ## Review follow-ups (2026-10-31)
 
-A review reopened this task after In Review. The focused suites passed, but none of them cover the items below.
-Fix each with a regression test. Items 1 to 4 block the full live-stack run and come from reading the code; items
+A review reopened this task after In Review. The following implementation fixes are now present;
+see the handoff above for completed checks and verification deliberately left to the human. Items 1 to 4 block the full live-stack run and come from reading the code; items
 5 to 10 were reproduced against the simulator.
 
 **Full-stack blockers**
 
-- [ ] 1. `./dev replay` starts only the simulator. Add the isolated Postgres (5436), Redis (6382), API (8002), worker
+- [x] 1. `./dev replay` starts only the simulator. Add the isolated Postgres (5436), Redis (6382), API (8002), worker
   and publisher, pass them the run's generation, clock and endpoints, open q_terminal, and add replay entries to
   `tools/dev/shell.sh`.
-- [ ] 2. The API has no market clock, so starting a deployment sets `activation_cutoff_at` to wall time. The worker's
+- [x] 2. The API has no market clock, so starting a deployment sets `activation_cutoff_at` to wall time. The worker's
   watermark then excludes every historical bar and the strategy never trades. Wire the clock into the API and use
   market time for the cutoff.
-- [ ] 3. `ExecutionWorker._refresh_deployments` acquires and renews leases with market time, so a historical run's
+- [x] 3. `ExecutionWorker._refresh_deployments` acquires and renews leases with market time, so a historical run's
   lease looks expired to the API. Use operational time.
-- [ ] 4. `ExecutionWorker.poll_once` reads the market clock before its `try`, so an unavailable clock also skips the
+- [x] 4. `ExecutionWorker.poll_once` reads the market clock before its `try`, so an unavailable clock also skips the
   heartbeat. Health must keep reporting while market actions fail closed.
 
 **Broker and edge bugs (reproduced)**
 
-- [ ] 5. A take-profit that triggers, retreats before execution and touches again fills twice and leaves a reversed
+- [x] 5. A take-profit that triggers, retreats before execution and touches again fills twice and leaves a reversed
   position: the re-armed order and a new protection order both execute.
-- [ ] 6. With `broker_response_ms` above 0, reads after completion or stop wait for a cursor that never advances and
+- [x] 6. With `broker_response_ms` above 0, reads after completion or stop wait for a cursor that never advances and
   time out. Completed runs must answer from frozen visible state.
-- [ ] 7. A fill whose response falls after `end` stays `unavailable`. Implement the response drain through
+- [x] 7. A fill whose response falls after `end` stays `unavailable`. Implement the response drain through
   `end + broker_response_ms`.
-- [ ] 8. A submission after completion or stop is never answered and looks in flight forever. Refuse it.
-- [ ] 9. `_read` does not catch the read timeout, so a read while paused with a response delay returns HTTP 500.
+- [x] 8. A submission after completion or stop is never answered and looks in flight forever. Refuse it.
+- [x] 9. `_read` does not catch the read timeout, so a read while paused with a response delay returns HTTP 500.
   Return a contracted error.
-- [ ] 10. Account equity always equals balance. Include floating profit on open positions.
+- [x] 10. Account equity always equals balance. Include floating profit on open positions.
 
 **Smaller gaps**
 
-- [ ] 11. Report real `lag_ms` and `outstanding_intents` (both hardcoded to 0) and source coverage in run status.
-- [ ] 12. Reach `freeze_tickstore` from `q-replay` and correct the operations document, which says it is not implemented.
-- [ ] 13. Re-verify dataset checksums when a run recovers after a restart.
-- [ ] 14. Pin and vendor the contracts in q_terminal, and capture the affected gallery states.
-- [ ] 15. Remove the duplicate `import os` in `market_data/service.py`.
-- [ ] 16. Extend the opt-in integration scenario to the ordinary API, Redis, publisher and worker, as step 8 requires.
+- [x] 11. Report real `lag_ms` and `outstanding_intents` (both hardcoded to 0) and source coverage in run status.
+- [x] 12. Reach `freeze_tickstore` from `q-replay` and correct the operations document, which says it is not implemented.
+- [x] 13. Re-verify dataset checksums when a run recovers after a restart.
+- [x] 14. Pin and vendor the contracts in q_terminal, and capture the affected gallery states.
+- [x] 15. Remove the duplicate `import os` in `market_data/service.py`.
+- [x] 16. Extend the opt-in integration scenario to the ordinary API, Redis, publisher and worker, as step 8 requires.
 
 Q-146 depends on this task and adds the Research UI page; the Research UI is out of scope here.
 
@@ -126,7 +118,7 @@ Run configuration/state fields, durations, state transitions and command revisio
   for touched generator code. Regenerate using documented commands and commit the source/generated changes.
 - [x] Pin/vendor the resulting local contract commit in q_backend and q_terminal and run their
   `make contracts-check CONTRACTS_REPO=<contracts-worktree>`. Pin Q-144's release in backend and update uv.lock.
-  (q_backend done; q_terminal pending, follow-up 14.)
+  (both consumers done; see handoff evidence above.)
 
 ### 2. Durable timeline, immutable input and external controller
 
@@ -146,7 +138,7 @@ recovers paused. Controller exposes `create`, `pause`, `resume`, `set_speed`, `s
   tests/replay/test_controller.py -q`; confirm missing implementations fail, then implement and pass them.
 - [x] Keep one state owner, bounded input pages and transactional cursor advancement. Read-only HTTP snapshots
   use immutable/copy snapshots; disk reads/encoding and response waits execute outside the scheduler owner.
-- [ ] Add manifest preparation from explicitly selected TickStore files without syncing; emit metadata and
+- [x] Add manifest preparation from explicitly selected TickStore files without syncing; emit metadata and
   contract/core/config revisions. Implement CLI/admin endpoints and authenticated loopback binding. Commit.
 
 ### 3. Causal market gateway
@@ -163,7 +155,7 @@ canonical cursor; data visibility follows its independently configured delay.
 - [x] Implement source preparation/aggregation and route adapters, preserving current NPZ dtypes, timezones,
   flags, pagination limits and coverage facts. Ensure arbitrary timeframes requested by supported strategies
   get causal bars, including completed coarser context.
-- [ ] Run `uv run pytest tests/replay/test_gateway.py tests/streaming/test_market_publisher.py -q`; prove a
+- [x] Run `uv run pytest tests/replay/test_gateway.py tests/streaming/test_market_publisher.py -q`; prove a
   slow gateway response cannot stall timeline advancement. Commit.
 
 ### 4. Broker state, latency, edge routes and outcome visibility
@@ -212,7 +204,7 @@ No runtime switch inside the evaluator; all historical timestamps remain histori
 - [ ] Audit each `now` used by worker/service/API/recovery/lease code and assign its domain. Keep DB-owned
   timestamps and worker lease/heartbeat health on operational UTC; pass market time explicitly for market
   semantics. Test both domains together rather than replacing every datetime globally.
-- [ ] Wire one market-clock provider into every market-facing process; validate clock freshness with real
+- [x] Wire one market-clock provider into every market-facing process; validate clock freshness with real
   elapsed time and reject cross-generation sources. Disable cache paths that cannot carry causal source
   identity. Restrict same account/symbol deployment ownership for this supported execution profile.
 - [x] Run the new clock tests, `tests/execution/test_worker_heartbeat.py`, `test_bar_coordinator.py`,
@@ -244,13 +236,13 @@ new `tools/tests/test-replay`, `README.md`. **Files (q_backend):** dedicated rep
 **Interfaces:** `./dev replay --config <path>`, status/log/restart/down aliases as specified; all services
 receive the same validated run generation. State is provisioned before normal stack services start.
 
-- [ ] Write failing shell mocks for all aliases, repeated start, persistent lifecycle, pause-on-start,
+- [x] Write failing shell mocks for all aliases, repeated start, persistent lifecycle, pause-on-start,
   port collision, absent core capability, mixed endpoints, live/Research coexistence, generation replacement
   refusal, scoped down and down-all. Assert no Wine/MT5/GPU commands or writes to existing environments.
-- [ ] Implement dedicated instances, run-scoped DB/cache/Redis/data and terminal settings, readiness and
+- [x] Implement dedicated instances, run-scoped DB/cache/Redis/data and terminal settings, readiness and
   external resume instructions. A new generation requires stopped replay services and fresh operational
   roots; preserve old artifacts. Keep the simulator unable to proxy a broker.
-- [ ] Run `bash -n dev tools/dev/replay.sh tools/dev/shell.sh`, `bash tools/tests/test-replay` and the relevant
+- [x] Run `bash -n dev tools/dev/replay.sh tools/dev/shell.sh`, `bash tools/tests/test-replay` and the relevant
   existing launcher mock tests. In q_backend, test unit/config rendering without starting host services.
   Commit in both repositories.
 
@@ -259,7 +251,7 @@ receive the same validated run generation. State is provisioned before normal st
 **Files (q_backend):** `tests/replay/test_stack_integration.py`, `tests/replay/test_journal_reproduction.py`,
 `docs/operations/market-replay.md`, `README.md` and the batch document.
 
-- [ ] Add one opt-in integration scenario with isolated PostgreSQL/Redis, the simulator, the ordinary API,
+- [x] Add one opt-in integration scenario with isolated PostgreSQL/Redis, the simulator, the ordinary API,
   publisher/worker, a public fixture strategy and normal activation. Assert intent → delayed fill → ledger
   → outbox/stream events plus timeout/reconciliation, fee persistence and one fill after restart. Inject
   actual request delay; do not bypass HTTP with a direct test broker or replace the production evaluator.

@@ -16,9 +16,12 @@ from q_backend.execution.bars import (
 )
 from q_backend.market_data.exogenous_context import bar_duration
 from q_backend.market_data.models import OHLCV
+from q_backend.market_data.timezone import BRASILIA_TZ
 
 
 class OhlcvProvider(Protocol):
+    """Provider bars carry aware instants or the market-data API's naive Brasília wall time."""
+
     def get_ohlcv(self, symbol: str, timeframe: str, start: datetime, end: datetime) -> list[OHLCV]: ...
 
 
@@ -140,6 +143,12 @@ class BarCoordinator:
         raw = self.provider.get_ohlcv(key.symbol, key.timeframe, start, end)
         self.fetch_count += 1
         frame = ohlcv_list_to_frame(raw)
+        if not frame.empty:
+            # The provider convention differs from execution's aware UTC timestamps.
+            # Localize before deciding which bars have closed or applying watermarks.
+            if frame.index.tz is None:
+                frame.index = frame.index.tz_localize(BRASILIA_TZ)
+            frame.index = frame.index.tz_convert("UTC")
         frame = drop_forming_bar(frame, key.timeframe, now=now)
         if frame.empty:
             return CompletedBarBatch(

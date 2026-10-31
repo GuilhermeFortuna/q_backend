@@ -66,3 +66,21 @@ def test_new_bars_for_consumer_respects_watermark():
     consumer = DeploymentBarConsumer("d1", "WIN$", "H1", last_evaluated_close=watermark)
     fresh = coordinator.new_bars_for_consumer(batch, consumer)
     assert len(fresh) == 2
+
+
+@pytest.mark.parametrize(
+    "local_open, utc_hour",
+    [(datetime(2026, 10, 1, 9), 12), (datetime(2018, 11, 5, 9), 11)],
+)
+def test_provider_wall_time_normalizes_before_completion_and_watermark(local_open, utc_hour):
+    """MT5 providers use naive Brasília, including historical DST sessions."""
+    utc_open = local_open.replace(hour=utc_hour, tzinfo=timezone.utc)
+    now = utc_open + timedelta(minutes=1)
+    provider = _FakeProvider([_bar(local_open, 100), _bar(local_open + timedelta(minutes=1), 101)])
+    coordinator = BarCoordinator(provider=provider, clock=lambda: now)
+    consumer = DeploymentBarConsumer("d1", "WIN$", "M1")
+    batch = coordinator.poll([consumer], initial_window_bars=10)[BarStreamKey("WIN$", "M1")]
+    assert list(batch.frame.index) == [pd.Timestamp(utc_open)]
+    assert list(batch.completed_close_times) == [pd.Timestamp(now)]
+    evaluated = DeploymentBarConsumer("d1", "WIN$", "M1", last_evaluated_close=now)
+    assert coordinator.new_bars_for_consumer(batch, evaluated).empty

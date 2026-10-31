@@ -8,6 +8,7 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
+from q_backend.replay.admin import _status_payload
 from q_backend.replay.dataset import DatasetError
 from q_backend.replay.edge import create_edge_app
 
@@ -127,8 +128,10 @@ def test_status_reports_scheduler_lag_and_unsettled_intents(tmp_path):
     intent(sim, buy())
     sim.tick()
     assert sim.status().outstanding_intents == 1
+    assert _status_payload(sim.status())["outstanding_intents"] == 1
     clock.advance_ms(250)
     assert sim.status().lag_ms == 250
+    assert _status_payload(sim.status())["lag_ms"] == 250
     sim.tick()
     assert sim.status().lag_ms == 0
     assert sim.status().outstanding_intents == 0

@@ -404,6 +404,7 @@ class ExecutionService:
             quantity=quantity,
             metadata={
                 "flatten": flatten,
+                "market_created_at": self._clock().isoformat(),
                 "bar_close_time": eval_result.bar_close_time.isoformat(),
                 "config_revision": deployment.config_revision,
             },
@@ -431,7 +432,7 @@ class ExecutionService:
                 quantity=quantity,
                 external_fill_id=f"{broker_mode.value}:{order.id}",
                 broker_mode=broker_mode,
-                intent_created_at=order.intent_committed_at or self._clock(),
+                intent_created_at=datetime.fromisoformat(order.details["market_created_at"]),
                 live_activation_enabled=bool(deployment.live_activation_enabled),
                 stop_loss=entry_stop_loss,
                 take_profit=entry_take_profit,
