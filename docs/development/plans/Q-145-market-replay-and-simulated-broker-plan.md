@@ -21,10 +21,15 @@ timeline, controller, admin API, runtime, `q-replay`); step 3 causal gateway; st
 step 5 clock domains and composition; step 6 backend demo capability; step 7 launcher lifecycle; step 8
 edge stack and reproducibility tests and the operations document.
 
-Open: TickStore preparation (manifests are built from NPZ files only); slow-gateway proof that a
-history call cannot stall the scheduler; ownership restriction for the same account and symbol; the
-opt-in Postgres/Redis stack scenario; `q_terminal` demo flow end-to-end verification (its link step and
-QML gates are not yet green here); and the human terminal inspection. Unticked bullets above are open.
+Completed since: TickStore import (read-only, UTC conversion, checksums); scheduler isolation proof
+(a stuck history query does not stall the market); single active mt5_live owner per account and symbol
+(opt-in setting, catalog and identity sources); PostgreSQL edge scenario (tests/replay/test_stack_integration.py,
+run against an isolated postgres:16).
+
+Open: a full live-stack run (API, Redis, outbox and execution worker deciding on bars served by the replay
+gateway and filling through the replay edge). The configuration hooks exist (Q_MT5_EDGE_URL, Q_MT5_GATEWAY_URL,
+runtime data_source=remote, Q_MARKET_CLOCK_*), but this path has not been executed. Also open: the saved-run
+ownership source, and the human terminal inspection, which needs a person at the UI.
 
 ## Global constraints
 
