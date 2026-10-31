@@ -81,6 +81,9 @@ class ExecutionWorker:
     recovery: ExecutionRecovery
     settings: Settings = field(default_factory=get_settings)
     clock: Callable[[], datetime] = field(default_factory=lambda: lambda: datetime.now(timezone.utc))
+    # Operational time (leases, heartbeats, start and stop markers). Defaults to ``clock`` so
+    # ordinary live operation is unchanged; a replay run injects the wall clock here instead.
+    operational_clock: Optional[Callable[[], datetime]] = None
     poll_interval_seconds: Optional[float] = None
     shutdown_event: threading.Event = field(default_factory=threading.Event)
     edge_health: Optional[Callable[[], object]] = None
@@ -99,6 +102,7 @@ class ExecutionWorker:
     _flatten_unpriceable: set[uuid.UUID] = field(default_factory=set, init=False)
 
     def __post_init__(self) -> None:
+        self._operational = self.operational_clock or self.clock
         self._health = WorkerHealth(
             worker_id=self.settings.execution_worker_id,
             running=False,
@@ -132,7 +136,7 @@ class ExecutionWorker:
     def run(self) -> None:
         """Block until shutdown is requested."""
         self._install_signal_handlers()
-        self._started_at = self.clock()
+        self._started_at = self._operational()
         self._running = True
         self._health.running = True
         try:
@@ -180,11 +184,12 @@ class ExecutionWorker:
 
     def poll_once(self) -> None:
         """Single poll cycle: refresh deployments, heartbeat leases, process bars."""
-        now = self.clock()
+        market_now = self.clock()
+        operational_now = self._operational()
         try:
-            self._poll_body(now)
+            self._poll_body(market_now)
         finally:
-            self._record_heartbeat(now)
+            self._record_heartbeat(operational_now)
 
     def _check_edge(self, now: datetime) -> EdgeHealthSnapshot:
         last = self._edge_snapshot
@@ -252,7 +257,7 @@ class ExecutionWorker:
             ]
             if not consumers:
                 session.commit()
-                self._health.last_poll_at = now
+                self._health.last_poll_at = self._operational()
                 return
 
             bar_started = time.perf_counter()
@@ -330,7 +335,7 @@ class ExecutionWorker:
                         )
 
             session.commit()
-            self._health.last_poll_at = now
+            self._health.last_poll_at = self._operational()
             self._health.last_error = None
 
     def _reconcile_working_orders(self, session: Session, *, now: datetime) -> None:
@@ -659,7 +664,7 @@ class ExecutionWorker:
             session.commit()
         try:
             with self.session_factory() as session:
-                record_worker_stopped(session, worker_id=self.settings.execution_worker_id, now=self.clock())
+                record_worker_stopped(session, worker_id=self.settings.execution_worker_id, now=self._operational())
                 session.commit()
         except Exception:  # noqa: BLE001 - shutdown must finish
             logger.exception("could not record clean worker shutdown")

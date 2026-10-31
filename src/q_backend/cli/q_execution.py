@@ -39,6 +39,7 @@ from q_backend.storage.db.execution_repositories import (
     release_worker_lease,
 )
 from q_backend.storage.settings import Settings, get_settings
+from q_backend.time import MarketClock, OperationalClock, market_clock_from_env
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +54,6 @@ _CRASH_CHECKPOINTS = frozenset(
 )
 
 
-class _LiveClock:
-    def now(self) -> datetime:
-        return datetime.now(timezone.utc)
-
-
 @dataclass(frozen=True)
 class _ExecutionComponents:
     market_data: MarketDataService
@@ -68,7 +64,8 @@ class _ExecutionComponents:
     coordinator: BarCoordinator
     recovery: ExecutionRecovery
     settings: Settings
-    clock: _LiveClock
+    market: MarketClock
+    operational: OperationalClock
     edge_client: EdgeClient
 
 
@@ -120,13 +117,16 @@ def _build_components(
     crash_injector: CrashInjector | None = None,
 ) -> _ExecutionComponents:
     settings = settings or get_settings()
-    clock = _LiveClock()
+    # Market time decides quotes, bars, sessions and order eligibility; operational time stamps
+    # leases, heartbeats and audit rows. Ordinary operation injects two wall clocks.
+    market = market_clock_from_env(os.environ)
+    operational = OperationalClock()
     edge_client = EdgeClient.from_settings(settings)
-    quote_source = EdgeQuoteSource(client=edge_client, clock=clock.now)
-    paper_broker = PaperBroker(quote_source=quote_source, clock=clock)
+    quote_source = EdgeQuoteSource(client=edge_client, clock=market.now)
+    paper_broker = PaperBroker(quote_source=quote_source, clock=market)
     live_broker = EdgeBroker(
         client=edge_client,
-        clock=clock,
+        clock=market,
         gates=_live_gates(settings),
         slippage_deviation=settings.live_execution_slippage_deviation,
         lookup_window_lead_s=settings.execution_lookup_window_lead_s,
@@ -139,9 +139,10 @@ def _build_components(
         ledger=ledger,
         crash_injector=crash_injector,
         max_bar_age_seconds=settings.execution_max_bar_age_seconds,
-        clock=clock.now,
+        clock=market.now,
+        operational_clock=operational.now,
     )
-    coordinator = BarCoordinator(provider=market_data, clock=clock.now)
+    coordinator = BarCoordinator(provider=market_data, clock=market.now)
     recovery = ExecutionRecovery(
         coordinator=coordinator,
         quote_source=quote_source,
@@ -158,7 +159,8 @@ def _build_components(
         coordinator=coordinator,
         recovery=recovery,
         settings=settings,
-        clock=clock,
+        market=market,
+        operational=operational,
         edge_client=edge_client,
     )
 
@@ -177,7 +179,8 @@ def _build_worker(
         service=components.service,
         recovery=components.recovery,
         settings=components.settings,
-        clock=components.clock.now,
+        clock=components.market.now,
+        operational_clock=components.operational.now,
         poll_interval_seconds=poll_interval_seconds,
         edge_health=components.edge_client.health,
         on_ready=_on_ready,

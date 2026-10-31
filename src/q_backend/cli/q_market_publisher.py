@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import signal
 import sys
 import threading
+from datetime import datetime
 
 import redis
 
@@ -18,6 +20,8 @@ from q_backend.streaming.market.trade_history import TradeService, cache_from_se
 from q_backend.streaming.market.trades import TradeSessionCoordinator, TradeStreamSink
 from q_backend.streaming.publisher import EphemeralPublisher
 from q_backend.streaming.redis_binary import get_binary_redis
+from q_backend.market_data.timezone import to_brasilia_naive
+from q_backend.time import SystemMarketClock, market_clock_from_env
 
 logger = logging.getLogger("q_backend.cli.q_market_publisher")
 
@@ -90,7 +94,11 @@ def main(argv: list[str] | None = None) -> int:
     if stop.is_set():
         return 0
 
-    remote = RemoteMt5Client()
+    remote = RemoteMt5Client(cache_namespace=os.environ.get("Q_MARKET_DATA_CACHE_NAMESPACE", "").strip() or None)
+    market = market_clock_from_env(os.environ)
+    # Ordinary live time keeps the local wall clock; a replay clock is converted to the naive
+    # Brasília convention the gateway queries use.
+    clock = datetime.now if isinstance(market, SystemMarketClock) else (lambda: to_brasilia_naive(market.now()))
     publisher = MarketDataPublisher(
         remote,
         {
@@ -105,6 +113,7 @@ def main(argv: list[str] | None = None) -> int:
             bar_poll_interval_s=settings.stream_bar_poll_interval_s,
         ),
         trades=build_trade_service(client, remote, symbols, settings),
+        clock=clock,
     )
     publisher.run_forever(stop)
     return 0

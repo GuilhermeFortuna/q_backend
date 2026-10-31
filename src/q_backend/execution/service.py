@@ -126,6 +126,7 @@ class ExecutionService:
         max_bar_age_seconds: float = 7200.0,
         commit: Optional[Callable[[Session], None]] = None,
         clock: Optional[Callable[[], datetime]] = None,
+        operational_clock: Optional[Callable[[], datetime]] = None,
     ) -> None:
         self._broker = broker
         self._quote_source = quote_source
@@ -135,6 +136,8 @@ class ExecutionService:
         self._max_bar_age_seconds = max_bar_age_seconds
         self._commit = commit or (lambda session: session.commit())
         self._clock = clock or (lambda: datetime.now(timezone.utc))
+        # Audit stamps (dispatch attempt, rejection time) are operational, never market time.
+        self._operational = operational_clock or self._clock
         self._protective = ProtectiveOrders(
             broker=broker,
             ledger=ledger,
@@ -413,7 +416,7 @@ class ExecutionService:
         self._commit(session)
         self._crash.maybe_raise("after_intent_commit")
 
-        mark_execution_dispatch_attempt(session, order.id, attempted_at=self._clock(), producer=worker_id)
+        mark_execution_dispatch_attempt(session, order.id, attempted_at=self._operational(), producer=worker_id)
         self._commit(session)
         self._crash.maybe_raise("after_dispatch_attempt_commit")
 
@@ -474,7 +477,7 @@ class ExecutionService:
                 order.id,
                 ExecutionOrderStatus.REJECTED,
                 rejection_reason=reason,
-                completed_at=self._clock(),
+                completed_at=self._operational(),
                 producer=worker_id,
             )
             update_execution_decision_outcome(
