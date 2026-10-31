@@ -184,10 +184,9 @@ class ExecutionWorker:
 
     def poll_once(self) -> None:
         """Single poll cycle: refresh deployments, heartbeat leases, process bars."""
-        market_now = self.clock()
         operational_now = self._operational()
         try:
-            self._poll_body(market_now)
+            self._poll_body(self.clock())
         finally:
             self._record_heartbeat(operational_now)
 
@@ -552,6 +551,7 @@ class ExecutionWorker:
                     self._release_deployment(session, deployment.id)
 
     def _refresh_deployments(self, session: Session, *, now: datetime) -> None:
+        operational_now = self._operational()
         active_ids: set[uuid.UUID] = set()
         for deployment in list_deployments(
             session,
@@ -564,7 +564,7 @@ class ExecutionWorker:
             lifecycle = DeploymentLifecycle(deployment.lifecycle)
             if lifecycle == DeploymentLifecycle.PAUSED:
                 if deployment.id in self._runtimes:
-                    self._heartbeat_lease(session, deployment.id, now=now)
+                    self._heartbeat_lease(session, deployment.id, now=operational_now)
                 continue
 
             if deployment.id not in self._runtimes:
@@ -576,7 +576,7 @@ class ExecutionWorker:
                         worker_id=self.settings.execution_worker_id,
                         lease_token=token,
                         ttl_seconds=self.settings.execution_lease_ttl_seconds,
-                        now=now,
+                        now=operational_now,
                     )
                 except LeaseConflictError:
                     logger.warning(
@@ -600,7 +600,7 @@ class ExecutionWorker:
                 self._runtimes[deployment.id] = runtime
                 self._lease_tokens[deployment.id] = token
             else:
-                self._heartbeat_lease(session, deployment.id, now=now)
+                self._heartbeat_lease(session, deployment.id, now=operational_now)
                 runtime = self._runtimes[deployment.id]
                 runtime.deployment = deployment
                 # A revision edit (while paused) or a fresh start/resume moves the

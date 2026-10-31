@@ -131,6 +131,7 @@ from q_backend.storage.db.execution_repositories import (
 )
 from q_backend.storage.settings import Settings, get_settings
 from q_backend.streaming import execution_events
+from q_backend.time import ClockUnavailableError, MarketClock, SystemMarketClock
 
 
 def _utcnow() -> datetime:
@@ -632,6 +633,8 @@ def apply_deployment_action(
     session: Session,
     deployment_id: uuid.UUID,
     body: DeploymentActionRequest,
+    *,
+    market_clock: Optional[MarketClock] = None,
 ) -> DeploymentActionResponse:
     deployment = session.execute(
         select(ExecutionDeployment).where(ExecutionDeployment.id == deployment_id).with_for_update()
@@ -649,7 +652,7 @@ def apply_deployment_action(
         raise HTTPException(status_code=400, detail="archive requires confirm=true")
     try:
         if body.action == "start":
-            deployment = start_deployment(session, deployment_id)
+            deployment = start_deployment(session, deployment_id, market_at=(market_clock or SystemMarketClock()).now())
             message = "start accepted"
             pending = None
         elif body.action == "pause":
@@ -711,6 +714,8 @@ def apply_deployment_action(
             pending_action=pending,
             message=message,
         )
+    except ClockUnavailableError as exc:
+        raise HTTPException(status_code=503, detail="market clock unavailable; command was not accepted") from exc
     except IllegalLifecycleTransition as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except SQLAlchemyError as exc:

@@ -169,3 +169,74 @@ def test_worker_heartbeat_uses_operational_time_while_decisions_use_market_time(
         row = get_worker_heartbeat(session, "w-clock")
         session.expunge_all()
     assert row.heartbeat_at.replace(tzinfo=UTC) == operational_now
+
+
+@pytest.mark.parametrize("lifecycle", ["running", "paused"])
+@pytest.mark.parametrize("existing_runtime", [False, True])
+def test_refresh_deployment_leases_use_operational_time(db_engine, db_session, lifecycle, existing_runtime):
+    from datetime import timedelta
+    from decimal import Decimal
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from sqlalchemy.orm import sessionmaker
+
+    from q_backend.execution.brokers.fakes import FixedClock
+    from q_backend.execution.domain import DeploymentLifecycle
+    from q_backend.execution.worker import ExecutionWorker
+    from q_backend.storage.db.execution_repositories import (
+        acquire_worker_lease,
+        create_execution_deployment,
+        create_paper_account,
+        get_worker_lease,
+    )
+    from q_backend.storage.settings import Settings
+    from tests.execution.conftest import strategy_identity
+
+    market_now = datetime(2024, 1, 2, 12, tzinfo=UTC)
+    operational_now = datetime(2026, 10, 31, 12, tzinfo=UTC)
+    account = create_paper_account(db_session, name="clock-lease", initial_balance=Decimal("100000"))
+    deployment = create_execution_deployment(
+        db_session,
+        paper_account_id=account.id,
+        name="clock-deployment",
+        identity=strategy_identity(),
+        lifecycle=DeploymentLifecycle(lifecycle),
+    )
+    worker = ExecutionWorker(
+        session_factory=sessionmaker(bind=db_engine),
+        coordinator=MagicMock(),
+        quote_source=MagicMock(),
+        broker=MagicMock(),
+        ledger=MagicMock(),
+        service=MagicMock(),
+        recovery=MagicMock(),
+        settings=Settings(execution_worker_id="clock-worker", execution_lease_ttl_seconds=60),
+        clock=FixedClock(market_now).now,
+        operational_clock=FixedClock(operational_now).now,
+    )
+    if existing_runtime:
+        acquire_worker_lease(
+            db_session,
+            deployment_id=deployment.id,
+            worker_id="clock-worker",
+            lease_token="token",
+            ttl_seconds=60,
+            now=operational_now - timedelta(seconds=30),
+        )
+        worker._runtimes[deployment.id] = SimpleNamespace(
+            deployment=deployment,
+            config_revision=deployment.config_revision,
+            activation_cutoff_at=deployment.activation_cutoff_at,
+        )
+        worker._lease_tokens[deployment.id] = "token"
+    worker.recovery.build_runtime.return_value = SimpleNamespace(needs_session_flatten=False)
+    worker._refresh_deployments(db_session, now=market_now)
+    lease = get_worker_lease(db_session, deployment.id)
+    if lifecycle == "paused" and not existing_runtime:
+        assert lease is None  # paused deployments without a runtime are not acquired
+        return
+    assert lease.heartbeat_at.replace(tzinfo=UTC) == operational_now
+    assert lease.expires_at.replace(tzinfo=UTC) == operational_now + timedelta(seconds=60)
+    if not existing_runtime:
+        assert worker.recovery.build_runtime.call_args.kwargs["now"] == market_now
