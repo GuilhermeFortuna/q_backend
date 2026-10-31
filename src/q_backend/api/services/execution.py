@@ -298,22 +298,6 @@ def create_deployment(
     account = get_paper_account(session, body.paper_account_id)
     if account is None:
         raise HTTPException(status_code=404, detail="paper account not found")
-    if body.broker_mode == BrokerMode.MT5_LIVE.value and settings.execution_single_owner_per_symbol:
-        # Saved-run sources take their symbol from the backtest, so this check covers the
-        # catalog and identity sources; the replay profile uses those.
-        symbol = (
-            body.catalog.symbol
-            if body.catalog is not None
-            else (body.identity.symbol if body.identity is not None else None)
-        )
-        owner = (
-            symbol_owner_conflict(session, paper_account_id=body.paper_account_id, symbol=symbol) if symbol else None
-        )
-        if owner is not None:
-            raise HTTPException(
-                status_code=409,
-                detail=f"deployment {owner.id} already owns {symbol} on this account",
-            )
     try:
         broker_mode = validate_broker_mode(
             body.broker_mode,
@@ -373,6 +357,13 @@ def create_deployment(
             )
         else:
             raise ExecutionValidationError("one of source_backtest_run_id, identity, or catalog is required")
+        if broker_mode == BrokerMode.MT5_LIVE and settings.execution_single_owner_per_symbol:
+            owner = symbol_owner_conflict(session, paper_account_id=body.paper_account_id, symbol=identity.symbol)
+            if owner is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"deployment {owner.id} already owns {identity.symbol} on this account",
+                )
         deployment = create_execution_deployment(
             session,
             paper_account_id=body.paper_account_id,

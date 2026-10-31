@@ -1,6 +1,7 @@
 # Q-145 — Market replay and simulated broker for the live stack
 
-**Status:** proposed; awaiting human plan approval. The Q project board is the status of record.
+**Status:** implementation in progress; full-stack and human terminal verification pending.
+The Q project board is the status of record.
 **Batch:** 42 — Market replay.
 **Owner:** q_backend. **Repositories:** q_backend, q_contracts, q (launcher), q_terminal (demo deployment path).
 **Depends on:** Q-144 (released incremental execution primitives), Q-136 and Q-137 (both Done).

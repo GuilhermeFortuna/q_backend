@@ -12,7 +12,7 @@ the external CLI owns replay controls. Numerical execution primitives come from 
 **Tech stack:** Python, existing FastAPI/httpx/NumPy/Arrow/Parquet, stdlib SQLite, q_core; current Qt terminal,
 systemd and Compose launcher infrastructure.
 **Spec:** [Q-145 specification](../specs/Q-145-market-replay-and-simulated-broker-spec.md).
-**Status:** proposed; awaiting human plan approval.
+**Status:** implementation in progress; full-stack and human terminal verification pending.
 
 ## Status (implementation session)
 
@@ -23,13 +23,23 @@ edge stack and reproducibility tests and the operations document.
 
 Completed since: TickStore import (read-only, UTC conversion, checksums); scheduler isolation proof
 (a stuck history query does not stall the market); single active mt5_live owner per account and symbol
-(opt-in setting, catalog and identity sources); PostgreSQL edge scenario (tests/replay/test_stack_integration.py,
+(opt-in setting, catalog, identity and saved-run sources); PostgreSQL edge scenario (tests/replay/test_stack_integration.py,
 run against an isolated postgres:16).
 
 Open: a full live-stack run (API, Redis, outbox and execution worker deciding on bars served by the replay
 gateway and filling through the replay edge). The configuration hooks exist (Q_MT5_EDGE_URL, Q_MT5_GATEWAY_URL,
-runtime data_source=remote, Q_MARKET_CLOCK_*), but this path has not been executed. Also open: the saved-run
-ownership source, and the human terminal inspection, which needs a person at the UI.
+runtime data_source=remote, Q_MARKET_CLOCK_*), but this path has not been executed. Also open: the human
+terminal inspection, which needs a person at the UI.
+
+Saved-run ownership follow-up: enforce ownership after resolving the strategy source, using the resolved
+symbol for every source type. Regression coverage exercises draft/running/paused/error owners, stopped and
+paper owners, separate accounts/symbols and the disabled setting. Full-stack and UI checks remain open.
+
+Follow-up verification: `pytest tests/api/test_execution_deploy_strategy_version.py
+tests/execution/test_symbol_ownership.py tests/api/test_execution_demo_account.py -q` passed (42 tests),
+as did the eight creation/catalog cases selected from `tests/api/test_execution_api.py` with
+`-k 'create_deployment or create_mt5_live_deployment or catalog_create'`. Changed-file Black/Ruff and
+`git diff --check` passed. The test runs reported two existing Pydantic configuration deprecations.
 
 ## Global constraints
 
@@ -220,7 +230,7 @@ receive the same validated run generation. State is provisioned before normal st
   orders and positions and delayed fill, pause/step externally, then stop replay and confirm the other stacks
   are unchanged. Record actual results or a concrete unavailable-tool blocker; never claim UI verification
   based only on API tests.
-- [x] Commit focused changes per repository and run `./work board set Q-145 in-review -m "<per-repository
+- [ ] Commit focused changes per repository and run `./work board set Q-145 in-review -m "<per-repository
   changes; exact checks/results; terminal inspection evidence; model limits/follow-ups>"`. No push or merge.
 
 ## Self-review coverage
