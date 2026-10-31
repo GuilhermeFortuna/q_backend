@@ -102,7 +102,7 @@ def test_required_hooks_need_ticks(setup_run, monkeypatch, mode):
     kwargs, _, _, sync = setup_run
     monkeypatch.setattr(runs, "load_bundle", Mock(return_value=RequiredTicks))
     if mode == "bars":
-        with pytest.raises(ValueError, match="requires tick data.*Ticks"):
+        with pytest.raises(ValueError, match="requires tick data"):
             runs.run_strategy(**kwargs, research_data_mode=mode)
         sync.assert_not_called()
         runs._bars_frame.assert_not_called()
@@ -113,7 +113,7 @@ def test_required_hooks_need_ticks(setup_run, monkeypatch, mode):
 def test_optional_hooks_allow_bars(setup_run, monkeypatch):
     kwargs, _, _, sync = setup_run
     monkeypatch.setattr(runs, "load_bundle", Mock(return_value=OptionalTicks))
-    assert not runs.run_strategy(**kwargs).ticks_used
+    assert not runs.run_strategy(**kwargs, research_data_mode="bars").ticks_used
     sync.assert_not_called()
 
 
@@ -152,8 +152,8 @@ def test_cancel_after_sync_prevents_simulation(setup_run, monkeypatch):
 
 
 def test_mode_only_applies_to_strategy_files():
-    assert BacktestRequest(symbol=SYMBOL).research_data_mode == "bars"
-    for mode in ["bars", "ticks"]:
+    assert BacktestRequest(symbol=SYMBOL).research_data_mode == "auto"
+    for mode in ["auto", "bars", "ticks"]:
         with pytest.raises(ValidationError, match="strategy file"):
             BacktestRequest(symbol=SYMBOL, research_data_mode=mode)
         assert (
@@ -185,3 +185,106 @@ def test_empty_tick_range_fails_without_provider_fallback(setup_run, monkeypatch
     with pytest.raises(NoMarketDataError):
         runs.run_strategy(**kwargs, research_data_mode="ticks")
     runs._bars_frame.assert_not_called()
+
+
+def test_auto_restarts_with_fresh_strategy_and_tick_bars(setup_run, monkeypatch):
+    kwargs, _, _, sync = setup_run
+    instances = []
+
+    class Stateful(Orders):
+        def __init__(self):
+            self.calls = 0
+            instances.append(self)
+
+        def entry_strategy(self, frame):
+            self.calls += 1
+            return super().entry_strategy(frame)
+
+    monkeypatch.setattr(runs, "load_bundle", Mock(return_value=Stateful))
+    outcome = runs.run_strategy(**kwargs, research_data_mode="auto")
+    assert outcome.ticks_used
+    assert outcome.request.result.trades[0]["exit_price"] == 94.0
+    assert len(instances) == 2
+    assert instances[0] is not instances[1]
+    assert instances[0].calls == 1
+    sync.assert_called_once()
+    runs._bars_frame.assert_called_once()
+
+
+@pytest.mark.parametrize("strategy", [RequiredTicks, OptionalTicks])
+def test_auto_uses_ticks_upfront_for_any_tick_hook(setup_run, monkeypatch, strategy):
+    kwargs, _, _, sync = setup_run
+    monkeypatch.setattr(runs, "load_bundle", Mock(return_value=strategy))
+    assert runs.run_strategy(**kwargs, research_data_mode="auto").ticks_used
+    runs._bars_frame.assert_not_called()
+    sync.assert_called_once()
+
+
+def test_auto_stays_on_bars_for_candle_only_strategies(setup_run, monkeypatch):
+    kwargs, _, _, sync = setup_run
+    monkeypatch.setattr(runs, "load_bundle", Mock(return_value=NoOrders))
+    assert not runs.run_strategy(**kwargs, research_data_mode="auto").ticks_used
+    sync.assert_not_called()
+
+
+def test_auto_does_not_retry_unrelated_strategy_errors(setup_run, monkeypatch):
+    kwargs, _, _, sync = setup_run
+    simulate = Mock(side_effect=ValueError("pass ticks= to backtest() is just user text"))
+    monkeypatch.setattr(runs, "backtest", simulate)
+    with pytest.raises(ValueError, match="just user text"):
+        runs.run_strategy(**kwargs, research_data_mode="auto")
+    assert simulate.call_count == 1
+    sync.assert_not_called()
+
+
+def test_auto_retries_only_once(setup_run, monkeypatch):
+    from q_backend.research.errors import TickDataRequiredError
+
+    kwargs, _, _, sync = setup_run
+    simulate = Mock(side_effect=TickDataRequiredError("ticks needed"))
+    monkeypatch.setattr(runs, "backtest", simulate)
+    with pytest.raises(TickDataRequiredError):
+        runs.run_strategy(**kwargs, research_data_mode="auto")
+    assert simulate.call_count == 2
+    sync.assert_called_once()
+
+
+def test_auto_cancel_before_retry_does_not_download_ticks(setup_run, monkeypatch):
+    from q_backend.research.errors import TickDataRequiredError
+
+    kwargs, _, _, sync = setup_run
+    simulate = Mock(side_effect=TickDataRequiredError("ticks needed"))
+    monkeypatch.setattr(runs, "backtest", simulate)
+
+    def checkpoint():
+        if simulate.called:
+            raise RuntimeError("cancelled")
+
+    kwargs["checkpoint"] = checkpoint
+    with pytest.raises(RuntimeError, match="cancelled"):
+        runs.run_strategy(**kwargs, research_data_mode="auto")
+    sync.assert_not_called()
+
+
+@pytest.mark.parametrize("action", ["amend", "resting", "timed_exit"])
+def test_auto_handles_runtime_tick_orders(setup_run, monkeypatch, action):
+    kwargs, _, _, sync = setup_run
+
+    class RuntimeOrders(ResearchStrategy):
+        def entry_strategy(self, frame):
+            if len(frame) == 1:
+                return TradeOrder.buy_limit(99.0) if action == "resting" else TradeOrder.buy()
+
+        def exit_strategy(self, frame, positions=()):
+            if positions:
+                if action == "amend":
+                    return TradeOrder.amend(stop_loss=95.0)
+                if action == "timed_exit":
+                    from datetime import time
+
+                    return TradeOrder.close(at=time(10, 25))
+
+    monkeypatch.setattr(runs, "load_bundle", Mock(return_value=RuntimeOrders))
+    assert runs.run_strategy(**kwargs, research_data_mode="auto").ticks_used
+    sync.assert_called_once()
+    runs._bars_frame.assert_called_once()

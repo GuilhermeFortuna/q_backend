@@ -50,7 +50,9 @@ class BacktestRequest(BaseModel):
     exit_params: Dict[str, Any] = {}
     position_sizing: Optional[PositionSizingConfig] = None
     costs: Optional[TransactionCostConfig] = None
-    research_data_mode: Literal["bars", "ticks"] = Field(default="bars", exclude_if=lambda value: value == "bars")
+    research_data_mode: Literal["auto", "bars", "ticks"] = Field(
+        default="auto", exclude_if=lambda value: value == "auto"
+    )
     engine: Literal["candle", "tick"] = "candle"
     display_timeframe: str = "M1"
     tick_flags: Optional[str] = None

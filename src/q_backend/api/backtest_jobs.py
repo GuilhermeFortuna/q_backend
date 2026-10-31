@@ -633,6 +633,7 @@ def _run_strategy_version(
     summary = {
         **outcome.request.result.metrics,
         "ticks_used": outcome.ticks_used,
+        "research_data_mode": "ticks" if outcome.ticks_used else "bars",
         "order_kinds": outcome.order_kinds,
     }
     with session_scope() as session:

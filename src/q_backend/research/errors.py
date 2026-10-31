@@ -13,6 +13,10 @@ class AdjustedSeriesWarning(UserWarning):
     """
 
 
+class TickDataRequiredError(ValueError):
+    """A strategy needs a tick store to evaluate its hooks or execute an order."""
+
+
 class NoMarketDataError(ValueError):
     """
     Exception raised when a query returns no bars or ticks in the requested interval.

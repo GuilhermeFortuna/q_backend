@@ -117,7 +117,11 @@ def backtest_run_detail(
     session: Session | None = None,
     version: Optional[tuple[str, str]] = None,
 ) -> BacktestRunDetailResponse:
-    config = run.config or {}
+    config = dict(run.config or {})
+    resolved_mode = (run.result_summary or {}).get("research_data_mode")
+    if run.strategy_version_id is not None and run.status == "completed" and resolved_mode in ("bars", "ticks"):
+        # Preserve the submitted config for deduplication; history reruns pin the actual source.
+        config["research_data_mode"] = resolved_mode
     symbol, strategy, timeframe = backtest_run_fields(config)
     if version is None and session is not None and run.strategy_version_id is not None:
         stored = session.get(ResearchStrategyVersion, run.strategy_version_id)

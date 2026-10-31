@@ -111,25 +111,32 @@ day-trade settings as registry runs. They run through the research library's ``b
 column and the bar. Optimize, Validate (walk-forward) and Discover do not list strategy files; keep
 running optimizations from scripts through ``load_strategy()``.
 
-Choose **Bars** or **Ticks** under **Backtest data**, independently of the engine selector:
+Market data is selected automatically; there is no Bars/Ticks choice in the workspace:
 
-* **Bars** (default) uses completed provider candles and passes no tick store. Cached ticks do not
-  change execution. A hook with a required ``ticks`` parameter cannot run in this mode.
-* **Ticks** downloads missing completed sessions through the configured MT5 gateway, then builds
-  candles from the same ``TickStore`` passed to the research engine. Choose it for tick indicators,
-  resting stop/limit orders, protective levels, or other tick-confirmed orders. Required tick hooks
-  select this mode automatically; optional ``ticks=None`` hooks allow either mode.
+* Any hook declaring ``ticks`` (including optional ``ticks=None``) loads ticks upfront.
+* Other strategies start with completed provider candles. If an order requires ticks, the worker
+  discards that attempt, creates a fresh strategy instance and restarts with tick-derived candles
+  and the same tick store for execution. This can happen for protective levels, resting stop/limit
+  orders, amendments or timed exits. Nothing from the initial attempt is published.
+* A strategy that never needs ticks stays on provider candles. Local tick caches do not change it.
 
-Ticks mode requires the existing gateway configuration when sessions are missing. Failed downloads
-stop the run with the affected dates; successfully scanned empty days are allowed. Current sessions
-are excluded, and W1/MN1 aggregation is unsupported. Progress reports synchronization and candle
-construction. Bars and tick-derived candles can differ; the engine continues to reject inconsistent
-candles and ticks rather than approximating their prices.
+Only ``TickDataRequiredError`` triggers the restart, and it happens at most once. Other strategy,
+causality, data and synchronization errors remain failures. Hooks must be free of external side
+effects, because they can be evaluated more than once (also during the causality check).
 
-The API field is ``research_data_mode: "bars" | "ticks"`` for strategy-file/version requests only.
-The selected mode is saved with the run and retained when rerunning its frozen version. Older
-configurations without this field default to Bars and must select Ticks if their strategy needs it.
-This replaces the previous behavior that attached cached ticks to provider candles automatically.
+Missing completed sessions are downloaded through the configured MT5 gateway. Failed downloads stop
+the run with the affected dates; successfully scanned empty days are allowed. Current sessions are
+excluded, and W1/MN1 tick aggregation is unsupported. Progress reports the automatic restart,
+synchronization and candle construction. The engine continues to reject inconsistent candles and
+ticks rather than approximating their prices.
+
+The API field ``research_data_mode`` defaults to ``"auto"`` for strategy-file/version requests.
+Explicit ``"bars"`` and ``"ticks"`` remain supported for historical runs and scripted callers.
+Explicit Bars mode never restarts; an order that requires ticks fails with ``TickDataRequiredError``
+(a ``ValueError`` subclass). The resolved source is saved in the result summary. Run details expose
+that source in their configuration so rerunning a frozen version uses the same data mode. The
+submitted configuration remains unchanged for run deduplication. Configurations omitting the field
+now use automatic selection; explicit modes from earlier runs retain their meaning.
 
 Backtests history shows the strategy id and the first eight characters of the bundle hash for each
 strategy-file run.

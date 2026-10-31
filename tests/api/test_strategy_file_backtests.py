@@ -180,6 +180,8 @@ def test_a_strategy_file_run_matches_a_direct_backtest_and_records_its_version(r
     assert row.config["strategy_version_id"] == str(row.strategy_version_id)
     assert row.config["strategy_params"] == {"length": 5, "use_filter": False, "entry_after": "09:00"}
     assert row.result_summary["ticks_used"] is False
+    assert row.config["research_data_mode"] == "auto"
+    assert run_service.backtest_run_detail(row).config["research_data_mode"] == "bars"
     assert row.result_summary["order_kinds"] == ["market_close", "market_entry"]
 
     from q_backend.research.strategy_files import load_strategy
@@ -190,9 +192,9 @@ def test_a_strategy_file_run_matches_a_direct_backtest_and_records_its_version(r
         length=5,
     )
     assert direct.metrics["total_trades"] > 0
-    assert _clean({k: v for k, v in row.result_summary.items() if k not in ("ticks_used", "order_kinds")}) == _clean(
-        direct.metrics
-    )
+    assert _clean(
+        {k: v for k, v in row.result_summary.items() if k not in ("ticks_used", "order_kinds", "research_data_mode")}
+    ) == _clean(direct.metrics)
 
 
 def test_a_second_backtest_of_an_unchanged_file_reuses_its_version(run_jobs_sync, strategy_env):
@@ -315,13 +317,26 @@ def test_a_run_lists_its_version_and_bundle_hash(run_jobs_sync, strategy_env):
     assert item.strategy_bundle_hash == detail.strategy_bundle_hash
 
 
-def test_tick_mode_survives_dispatch_persistence_and_version_reruns(run_jobs_sync, strategy_env, monkeypatch):
+@pytest.mark.parametrize("mode", ["ticks", "auto"])
+def test_tick_mode_survives_dispatch_persistence_and_version_reruns(run_jobs_sync, strategy_env, monkeypatch, mode):
     from unittest.mock import Mock
 
     from q_backend.research.tick_store import TickStore, TickSyncReport
     from tests.research.test_stop_target_backtest import DAY, FLAT_0, _write_session
 
-    _write(strategy_env, "simple_ma.py", SIMPLE_MA)
+    _write(
+        strategy_env,
+        "simple_ma.py",
+        """from q_backend.research import ResearchStrategy, TradeOrder
+
+class Protective(ResearchStrategy):
+    parameters = {}
+
+    def entry_strategy(self, frame):
+        if len(frame) == 1:
+            return TradeOrder.buy(stop_loss=95.0)
+""",
+    )
     _write_session(
         strategy_env.parent / "ticks",
         FLAT_0 + [("10:10:00", 101.0), ("10:12:00", 102.0), ("10:20:00", 99.0)],
@@ -332,17 +347,20 @@ def test_tick_mode_survives_dispatch_persistence_and_version_reruns(run_jobs_syn
     first = _row(
         run_jobs_sync,
         _start(
-            research_data_mode="ticks",
+            research_data_mode=mode,
             timeframe="M10",
             start=dt.datetime(2026, 10, 5),
             end=dt.datetime(2026, 10, 5, 23, 59, 59),
-            strategy_params={"length": 2},
+            strategy_params={},
         ),
     )
     assert first.status == "completed", first.error_message
-    assert first.config["research_data_mode"] == "ticks"
+    assert first.config["research_data_mode"] == mode
     assert first.result_summary["ticks_used"] is True
     sync.assert_called_once()
-    rerun = _row(run_jobs_sync, _start(**{**first.config, "strategy_file": None}))
+    detail = run_service.backtest_run_detail(first)
+    assert detail.config["research_data_mode"] == "ticks"
+    assert first.config["research_data_mode"] == mode
+    rerun = _row(run_jobs_sync, _start(**{**detail.config, "strategy_file": None}))
     assert rerun.strategy_version_id == first.strategy_version_id
     assert rerun.result_summary == first.result_summary
