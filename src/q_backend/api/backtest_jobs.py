@@ -115,6 +115,7 @@ def _now() -> datetime:
 def _request_config(request: BacktestJobRequest, strategy_name: Optional[str] = None) -> Dict[str, Any]:
     config = request.model_dump(mode="json")
     if strategy_name is not None:
+        config["research_data_mode"] = request.research_data_mode
         # A strategy-file run is keyed by its frozen version, so an edited file never reuses an old run.
         # Its config names the version, not the strategy: re-running it posts this config back unchanged,
         # and a request may name a strategy version or a strategy, not both.
@@ -606,6 +607,7 @@ def _run_strategy_version(
     )
     outcome = run_strategy(
         frozen,
+        research_data_mode=request.research_data_mode,
         bundle_root=default_bundle_root(),
         symbol=request.symbol,
         timeframe=request.timeframe,

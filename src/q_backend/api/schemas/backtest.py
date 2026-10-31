@@ -50,6 +50,7 @@ class BacktestRequest(BaseModel):
     exit_params: Dict[str, Any] = {}
     position_sizing: Optional[PositionSizingConfig] = None
     costs: Optional[TransactionCostConfig] = None
+    research_data_mode: Literal["bars", "ticks"] = Field(default="bars", exclude_if=lambda value: value == "bars")
     engine: Literal["candle", "tick"] = "candle"
     display_timeframe: str = "M1"
     tick_flags: Optional[str] = None
@@ -62,6 +63,8 @@ class BacktestRequest(BaseModel):
     @model_validator(mode="after")
     def _strategy_source_is_exclusive(self) -> "BacktestRequest":
         sources = [name for name in ("strategy_file", "strategy_version_id") if getattr(self, name) is not None]
+        if not sources and "research_data_mode" in self.model_fields_set:
+            raise ValueError("research_data_mode applies only to strategy file backtests")
         if len(sources) > 1:
             raise ValueError("strategy_file and strategy_version_id are mutually exclusive")
         if sources:

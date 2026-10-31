@@ -81,6 +81,7 @@ class StrategyFileInfo:
     error: str | None
     parameters: tuple[DeclaredParam, ...]
     uses_tick_hooks: bool
+    requires_tick_data: bool = False
     decision_timeframe: str | None = None
 
 
@@ -220,6 +221,7 @@ def validate_bundle(
         error=None,
         parameters=outcome["parameters"],
         uses_tick_hooks=outcome["uses_tick_hooks"],
+        requires_tick_data=outcome["requires_tick_data"],
         decision_timeframe=outcome["decision_timeframe"],
     )
 
@@ -335,6 +337,7 @@ def _check(import_root: Path, strategy_id: str, bundle_hash: str) -> dict[str, A
         "class_name": cls.__name__,
         "parameters": parameters,
         "uses_tick_hooks": uses_tick_hooks,
+        "requires_tick_data": any(ticks_mode(getattr(instance, name)) == "required" for name in _HOOKS),
         "decision_timeframe": decision_timeframe_of(cls),
     }
 

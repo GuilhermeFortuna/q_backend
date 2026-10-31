@@ -18,6 +18,7 @@ class StrategyFile(BaseModel):
     error: Optional[str] = None
     parameters: List[StrategyParamSpec]
     uses_tick_hooks: bool = False
+    requires_tick_data: bool = False
 
 
 class StrategyFileListResponse(BaseModel):
