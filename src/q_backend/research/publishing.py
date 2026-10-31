@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 import pandas as pd
+from pydantic import TypeAdapter
 
 from q_backend.api.schemas.backtest import (
     BacktestImportBar,
@@ -22,7 +23,7 @@ from q_backend.api.schemas.backtest import (
     ChartIndicatorSeries,
 )
 from q_backend.backtesting.chart_data import serialize_chart_data
-from q_backend.backtesting.position_sizing import FixedQuantityPositionSizing
+from q_backend.backtesting.position_sizing import PositionSizingConfig
 from q_backend.backtesting.strategy import ChartIndicatorSpec
 from q_backend.research.charting import indicator_style
 
@@ -186,8 +187,7 @@ def build_import_request(
     )
     end_dt = last_ts.to_pydatetime() if hasattr(last_ts, "to_pydatetime") else pd.Timestamp(last_ts).to_pydatetime()
 
-    quantity = result.config.get("quantity", 1)
-    position_sizing = FixedQuantityPositionSizing(quantity=float(quantity))
+    position_sizing = TypeAdapter(PositionSizingConfig).validate_python(result.config["position_sizing"])
 
     config_model = BacktestRequest(
         symbol=str(result.config["symbol"]),

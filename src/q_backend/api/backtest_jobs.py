@@ -600,7 +600,7 @@ def _run_strategy_version(
             bundle=bundle_of(version),
             param_specs=list(version.param_specs),
         )
-    quantity = check_strategy_run_request(
+    position_sizing = check_strategy_run_request(
         engine=request.engine,
         ml_filter=request.ml_filter,
         position_sizing=request.position_sizing,
@@ -614,7 +614,7 @@ def _run_strategy_version(
         start=start,
         end=end,
         strategy_params=request.strategy_params,
-        quantity=quantity,
+        position_sizing=position_sizing,
         point_value=request.point_value,
         initial_capital=request.initial_capital,
         costs=request.costs,

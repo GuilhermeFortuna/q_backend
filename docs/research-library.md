@@ -727,7 +727,8 @@ print(result.equity)
 | `strategy` | `ResearchStrategy \| str` | Required | Custom strategy instance or registered candle strategy name (e.g. `"MACrossover"`). Tick or ML-dependent strategies fail explicitly. |
 | `symbol` | `str` | Required | Traded instrument symbol. |
 | `strategy_params` | `Mapping[str, Any]` | `None` | Parameters for built-in strategies. Rejected for custom strategy instances. |
-| `quantity` | `int` | `1` | Fixed contract/share quantity per trade (positive integer). |
+| `quantity` | `int` | `1` | Fixed contract/share quantity per trade (positive integer). Mutually exclusive with `position_sizing`. |
+| `position_sizing` | `PositionSizingConfig` | `None` | Sizing rule for each entry: `fixed_quantity`, `fixed_safety_margin` or `inverse_volatility`. Inverse volatility reads a `volatility` column from the indicator frame. |
 | `point_value` | `float` | `1.0` | Value per point/multiplier (finite positive float). Futures (e.g. `WIN$`, `WDO$`) must supply their multiplier. |
 | `initial_capital` | `float` | `100000.0` | Starting capital in account currency. |
 | `costs` | `TransactionCostConfig` | `None` | Per-contract and basis-point transaction costs. `None` models zero transaction costs. See [Transaction costs](#transaction-costs). |
@@ -773,7 +774,7 @@ The progress bar shows bars decided out of the total, the current bar, the open 
 - **`equity: DataFrame`**: Time series indexed by bar timestamp containing `realized_equity` (initial capital plus cumulative net PnL from closed trades). Open positions are not marked to market.
 - **`data: DataFrame`**: Prepared historical bars augmented with user and exit indicator columns (internal signal arrays omitted). Keeps every computed column, declared or not.
 - **`indicators: tuple[ChartIndicator, ...]`**: Chart series in declaration order, with their kind and styling. For a custom strategy, the columns from `chart_indicators()`; for a registered strategy run by name, its own chart indicators; empty when none are declared.
-- **`config: Mapping`**: Read-only mapping recording the run arguments (`symbol`, `strategy`, `strategy_params`, `quantity`, `point_value`, `initial_capital`, `costs`, `exit_params`, `day_trade`, session times, `force_close_at_end`, and `timeframe`).
+- **`config: Mapping`**: Read-only mapping recording the run arguments (`symbol`, `strategy`, `strategy_params`, `position_sizing`, `quantity` for fixed-quantity sizing, `point_value`, `initial_capital`, `costs`, `exit_params`, `day_trade`, session times, `force_close_at_end`, and `timeframe`).
 
 ### Strategy files (`load_strategy`)
 

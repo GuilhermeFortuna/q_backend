@@ -18,6 +18,7 @@ import pandas as pd
 
 from q_backend.api.schemas.backtest import BacktestImportRequest
 from q_backend.backtesting.costs import TransactionCostConfig
+from q_backend.backtesting.position_sizing import PositionSizingConfig
 from q_backend.market_data.timezone import BRASILIA_TZ
 from q_backend.research.data import MT5_SOURCE
 from q_backend.research.engine import backtest
@@ -66,7 +67,7 @@ def run_strategy(
     start: datetime,
     end: datetime,
     strategy_params: Mapping[str, Any],
-    quantity: int,
+    position_sizing: PositionSizingConfig,
     point_value: float,
     initial_capital: float,
     costs: TransactionCostConfig | None,
@@ -140,7 +141,7 @@ def run_strategy(
                 frame,
                 strategy=instance,
                 symbol=symbol,
-                quantity=quantity,
+                position_sizing=position_sizing,
                 point_value=point_value,
                 initial_capital=initial_capital,
                 costs=costs,
@@ -163,6 +164,12 @@ def run_strategy(
             instance = strategy_class(**params)
             use_ticks = True
             continue
+        if position_sizing.type == "inverse_volatility" and "volatility" not in result.data.columns:
+            # The sizer returns no order without this column, so the run would silently take no trades.
+            raise ValueError(
+                f"{strategy_class.__name__} sizes by inverse volatility but its compute_indicators returns no "
+                "'volatility' column; add one or choose another position sizing"
+            )
         break
     checkpoint()
     request = build_import_request(result, name=frozen.strategy_id, timeframe=timeframe)
