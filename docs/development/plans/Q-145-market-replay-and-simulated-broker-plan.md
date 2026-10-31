@@ -52,10 +52,11 @@ Run configuration/state fields, durations, state transitions and command revisio
 - [ ] Define read-only clock snapshots and administrative routes separately from the existing gateway/edge
   operation surfaces. Add a generic execution capability response identifying the available demo account and
   allowed creation/activation operations; real-account paths retain their existing restrictions.
-- [ ] Run `uv run python tools/validate.py`, `uv run pytest tests/test_replay_contracts.py` and format/lint
+- [x] Run `uv run python tools/validate.py`, `uv run pytest tests/test_replay_contracts.py` and format/lint
   for touched generator code. Regenerate using documented commands and commit the source/generated changes.
-- [ ] Pin/vendor the resulting local contract commit in q_backend and q_terminal and run their
+- [x] Pin/vendor the resulting local contract commit in q_backend and q_terminal and run their
   `make contracts-check CONTRACTS_REPO=<contracts-worktree>`. Pin Q-144's release in backend and update uv.lock.
+  (q_backend done; q_terminal pending step 6.)
 
 ### 2. Durable timeline, immutable input and external controller
 
@@ -71,9 +72,9 @@ recovers paused. Controller exposes `create`, `pause`, `resume`, `set_speed`, `s
 - [ ] Write failing tests for source checksum mutation, warmup omission, stable duplicate/multi-symbol order,
   exclusive expiry tie priority, zero-delay scheduling, speed anchors, paused step, stale command revision,
   command UUID replay, queue/resource limits and crash before/after event commit.
-- [ ] Run `uv run pytest tests/replay/test_dataset.py tests/replay/test_timeline.py tests/replay/test_journal.py
+- [x] Run `uv run pytest tests/replay/test_dataset.py tests/replay/test_timeline.py tests/replay/test_journal.py
   tests/replay/test_controller.py -q`; confirm missing implementations fail, then implement and pass them.
-- [ ] Keep one state owner, bounded input pages and transactional cursor advancement. Read-only HTTP snapshots
+- [x] Keep one state owner, bounded input pages and transactional cursor advancement. Read-only HTTP snapshots
   use immutable/copy snapshots; disk reads/encoding and response waits execute outside the scheduler owner.
 - [ ] Add manifest preparation from explicitly selected TickStore files without syncing; emit metadata and
   contract/core/config revisions. Implement CLI/admin endpoints and authenticated loopback binding. Commit.
