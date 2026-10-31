@@ -117,7 +117,10 @@ def create_edge_app(simulator: ReplaySimulator) -> FastAPI:
 async def _read(simulator: ReplaySimulator, fn):
     import asyncio
 
-    return await asyncio.to_thread(simulator.read, fn, timeout_s=READ_TIMEOUT_S)
+    try:
+        return await asyncio.to_thread(simulator.read, fn, timeout_s=READ_TIMEOUT_S)
+    except SubmitTimeoutError:
+        return _error(504, "read_timeout", "market time did not reach the read response instant")
 
 
 async def _submit(

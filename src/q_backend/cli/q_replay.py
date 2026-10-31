@@ -14,6 +14,7 @@ import sys
 import time
 import uuid
 from pathlib import Path
+from datetime import date, datetime
 
 import httpx
 
@@ -54,6 +55,23 @@ def _prepare(args: argparse.Namespace) -> int:
         warmup_start_utc=config.warmup_start_utc,
     )
     _print({"config_hash": config.config_hash(), "dataset_checksums": checksums, "status": "prepared"})
+    return 0
+
+
+def _freeze_tickstore(args: argparse.Namespace) -> int:
+    from q_backend.replay.import_tickstore import freeze_tickstore
+
+    manifest = freeze_tickstore(
+        symbol=args.symbol,
+        store_root=Path(args.store_root),
+        start_day=args.start_day,
+        end_day=args.end_day,
+        out_dir=Path(args.out_dir),
+        specs=json.loads(Path(args.spec).read_text(encoding="utf-8")),
+        coverage_start_utc=args.coverage_start_utc,
+        coverage_end_utc=args.coverage_end_utc,
+    )
+    _print({"manifest_path": str(manifest)})
     return 0
 
 
@@ -127,6 +145,17 @@ def build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--config", required=True)
     prepare.add_argument("--root", required=True, help="directory the manifest paths are relative to")
     prepare.set_defaults(handler=_prepare)
+
+    freeze = sub.add_parser("freeze-tickstore", help="freeze selected local TickStore sessions without syncing")
+    freeze.add_argument("--symbol", required=True)
+    freeze.add_argument("--store-root", required=True)
+    freeze.add_argument("--start-day", type=date.fromisoformat, required=True)
+    freeze.add_argument("--end-day", type=date.fromisoformat, required=True)
+    freeze.add_argument("--out-dir", required=True)
+    freeze.add_argument("--spec", required=True, help="JSON instrument spec file")
+    freeze.add_argument("--coverage-start-utc", type=datetime.fromisoformat, required=True)
+    freeze.add_argument("--coverage-end-utc", type=datetime.fromisoformat, required=True)
+    freeze.set_defaults(handler=_freeze_tickstore)
 
     serve = sub.add_parser("serve", help="run the simulator listeners (admin, market, broker)")
     serve.add_argument("--store", required=True, help="SQLite run store path")

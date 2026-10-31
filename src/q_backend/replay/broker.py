@@ -201,6 +201,9 @@ class SimulatedBroker:
         self, conn: sqlite3.Connection, *, intent_id: str, action: str, body: dict[str, Any], ingress_us: int
     ) -> None:
         """Record an intent at ingress and schedule its arrival at the broker."""
+        state = conn.execute("SELECT state FROM run WHERE id = 1").fetchone()[0]
+        if state in ("completed", "stopped", "failed"):
+            raise ValueError("replay run is not active")
         digest = payload_hash({"action": action, **body})
         row = conn.execute("SELECT payload_hash FROM broker_intents WHERE intent_id = ?", (intent_id,)).fetchone()
         if row is not None:
@@ -649,10 +652,11 @@ class SimulatedBroker:
                 side=side, kind="limit", level_ticks=level, bid_ticks=bid, ask_ticks=ask, slippage_ticks=slippage
             )
             if fill is None:
-                # A limit that is no longer executable keeps working; protection re-arms.
-                conn.execute("UPDATE broker_orders SET status = 'working' WHERE ticket = ?", (ticket,))
                 if role.startswith("protection"):
-                    conn.execute("UPDATE broker_positions SET protection = 'idle' WHERE symbol = ?", (symbol,))
+                    # Position-level protection creates a fresh order on the next touch.
+                    self._finish_unfilled(conn, ticket, intent_id, now, "cancelled", RETCODE_REJECT, "price retreated")
+                else:
+                    conn.execute("UPDATE broker_orders SET status = 'working' WHERE ticket = ?", (ticket,))
                 return
         else:
             fill = core.match_quote(
@@ -910,6 +914,14 @@ class SimulatedBroker:
                     close=True,
                 )
         conn.execute("UPDATE broker_positions SET protection = 'idle' WHERE protection = 'scheduled'")
+        for (intent_id,) in conn.execute("SELECT intent_id FROM broker_intents WHERE outcome IS NULL").fetchall():
+            self._decide(
+                conn,
+                intent_id,
+                end_us,
+                {"outcome": "rejected", "retcode": RETCODE_REJECT, "reason": "end_of_data"},
+                close=True,
+            )
 
     # ------------------------------------------------------------------
     # reads: every answer is the state visible at the ingress instant
@@ -1051,12 +1063,17 @@ class SimulatedBroker:
         ).fetchall():
             balance += Decimal(profit) + Decimal(commission)
         used = Decimal(0)
-        for sym, net in conn.execute(
-            "SELECT symbol, net_steps FROM broker_position_events e WHERE visible_us <= ? AND seq IN"
+        floating = Decimal(0)
+        for sym, net, basis in conn.execute(
+            "SELECT symbol, net_steps, basis FROM broker_position_events e WHERE visible_us <= ? AND seq IN"
             " (SELECT MAX(seq) FROM broker_position_events WHERE visible_us <= ? GROUP BY symbol)",
             (ingress_us, ingress_us),
         ).fetchall():
             used += abs(Decimal(net)) * self._volume_step[sym] * self._margin[sym]
+            quote = self._market.quote_at(sym, self._quote_cursor(ingress_us))
+            if net and quote is not None:
+                mark = _decimal(quote[0] if net > 0 else quote[1])
+                floating += (mark - Decimal(basis)) * Decimal(net) * self._volume_step[sym] * self._contract[sym]
         return {
             "login": self._config.account.login,
             "server": "q-replay-demo",
@@ -1064,12 +1081,13 @@ class SimulatedBroker:
             "trade_allowed": True,
             "terminal_trade_allowed": True,
             "balance": float(balance),
-            "equity": float(balance),
-            "margin_free": float(balance - used),
+            "equity": float(balance + floating),
+            "margin_free": float(balance + floating - used),
             "trade_mode": "demo",
         }
 
     def quote(self, symbol: str, now_us: int) -> dict[str, Any] | None:
+        now_us = self._quote_cursor(now_us)
         quote = self._market.quote_at(symbol, now_us)
         if quote is None:
             return None
@@ -1082,6 +1100,14 @@ class SimulatedBroker:
             "time_msc": tick_msc,
             "age_ms": max(0, now_us // 1000 - tick_msc),
         }
+
+    def _quote_cursor(self, visible_us: int) -> int:
+        """Delivery drain exposes final effects, never market ticks beyond the trading cutoff."""
+        run = self._store.load_run()
+        cutoff = self._config.end_us - 1
+        if run is not None and run.state == "stopped":
+            cutoff = min(cutoff, run.cursor_us - self._latency.broker_response_ms * 1000)
+        return min(visible_us, cutoff)
 
     def lookup(self, intent_id: str, kind: str, ingress_us: int) -> dict[str, Any]:
         """Lookup answer that never reports not_found for an intent still in flight."""

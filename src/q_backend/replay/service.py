@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import threading
 import time
+from dataclasses import replace
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,7 +19,7 @@ from typing import Any
 from q_backend.replay.broker import SimulatedBroker
 from q_backend.replay.config import ReplayRunConfig
 from q_backend.replay.controller import ReplayController, RunStatus
-from q_backend.replay.dataset import load_manifest, verify_manifest
+from q_backend.replay.dataset import DatasetError, DatasetManifest, load_manifest, verify_manifest
 from q_backend.replay.gateway import Ingress
 from q_backend.replay.journal import ReplayRunStore, RunRecord
 from q_backend.replay.market import ReplayMarket, load_market
@@ -49,6 +50,7 @@ class ReplaySimulator:
         self._broker: SimulatedBroker | None = None
         self._market: ReplayMarket | None = None
         self._config: ReplayRunConfig | None = None
+        self._manifest: DatasetManifest | None = None
         run = store.load_run()
         if run is not None:
             self._attach(ReplayRunConfig.model_validate_json(run.config_json), run)
@@ -58,6 +60,17 @@ class ReplaySimulator:
         from zoneinfo import ZoneInfo
 
         manifest = load_manifest(self._root / config.manifest_path)
+        self._manifest = manifest
+        checksums = verify_manifest(
+            manifest,
+            self._root,
+            symbols=list(config.symbols),
+            start_utc=config.start_utc,
+            end_utc=config.end_utc,
+            warmup_start_utc=config.warmup_start_utc,
+        )
+        if tuple(checksums) != run.dataset_checksums:
+            raise DatasetError("dataset checksums differ from the frozen run")
         self._market = load_market(
             manifest,
             self._root,
@@ -107,7 +120,7 @@ class ReplaySimulator:
                 mono_ns=self._mono,
                 on_finish=broker.finish,
             )
-            status = controller.create(
+            controller.create(
                 config,
                 run_id=run_id,
                 generation=generation,
@@ -120,7 +133,8 @@ class ReplaySimulator:
                 ),
             )
             self._market, self._broker, self._config, self._controller = market, broker, config, controller
-        return status
+            self._manifest = manifest
+        return self.status()
 
     # -- control ---------------------------------------------------------------
     def _require(self) -> ReplayController:
@@ -130,7 +144,22 @@ class ReplaySimulator:
 
     def status(self) -> RunStatus:
         with self._lock:
-            return self._require().status()
+            status = self._require().status()
+            outstanding = self._store._conn.execute(  # noqa: SLF001
+                "SELECT COUNT(*) FROM broker_intents WHERE outcome IS NULL OR outcome_visible_us > ?",
+                (self._cursor_us(),),
+            ).fetchone()[0]
+            manifest = self._manifest
+            assert manifest is not None
+            return replace(
+                status,
+                outstanding_intents=outstanding,
+                source_coverage={
+                    "coverage_start_utc": manifest.coverage_start_utc.isoformat(),
+                    "coverage_end_utc": manifest.coverage_end_utc.isoformat(),
+                    "symbols": list(self.config.symbols),
+                },
+            )
 
     def command(self, **kwargs):
         with self._lock:
@@ -181,17 +210,24 @@ class ReplaySimulator:
 
     # -- broker edge --------------------------------------------------------------
     def _cursor_us(self) -> int:
-        run = self._store.load_run()
-        if run is None:
-            raise LookupError("no replay run exists on this simulator")
-        return run.cursor_us
+        with self._lock:
+            run = self._store.load_run()
+            if run is None:
+                raise LookupError("no replay run exists on this simulator")
+            return run.cursor_us
 
     def _canonical_us(self) -> int:
         return self.status().canonical_cursor_us
 
     def _wait_cursor(self, target_us: int, timeout_s: float) -> None:
         deadline = time.monotonic() + timeout_s
-        while self._cursor_us() < target_us:
+        while True:
+            with self._lock:
+                run = self._store.load_run()
+                if run is None:
+                    raise LookupError("no replay run exists on this simulator")
+                if run.cursor_us >= target_us or run.state in ("completed", "stopped", "failed"):
+                    return
             if time.monotonic() >= deadline:
                 raise SubmitTimeoutError("market time did not reach the response instant in time")
             time.sleep(_WAIT_POLL_SECONDS)
@@ -216,11 +252,15 @@ class ReplaySimulator:
     def read(self, fn: Callable[[int], Any], *, response_us: int | None = None, timeout_s: float) -> Any:
         """Snapshot broker state at ingress, delivered once market time passes the response delay."""
         with self._lock:
-            ingress = self._canonical_us()
+            run = self._store.load_run()
+            terminal = run is not None and run.state in ("completed", "stopped", "failed")
+            ingress = self._cursor_us() if terminal else self._canonical_us()
             delay = self.config.latency.broker_response_ms * 1000 if response_us is None else response_us
+            snapshot = fn(ingress)
+        if terminal:
+            return snapshot
         self._wait_cursor(ingress + delay, timeout_s)
-        with self._lock:
-            return fn(ingress)
+        return snapshot
 
     def broker(self) -> SimulatedBroker:
         if self._broker is None:

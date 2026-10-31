@@ -87,3 +87,38 @@ def test_missing_session_is_refused(tmp_path) -> None:
             coverage_start_utc=datetime(2026, 10, 1, tzinfo=UTC),
             coverage_end_utc=datetime(2026, 10, 3, tzinfo=UTC),
         )
+
+
+def test_cli_freezes_selected_tickstore_sessions(tmp_path, capsys):
+    from q_backend.cli.q_replay import main
+
+    root = _store(tmp_path)
+    specs = tmp_path / "spec.json"
+    specs.write_text(json.dumps(SPEC))
+    out = tmp_path / "frozen"
+    result = main(
+        [
+            "freeze-tickstore",
+            "--symbol",
+            "WIN$N",
+            "--store-root",
+            str(root),
+            "--start-day",
+            "2026-10-01",
+            "--end-day",
+            "2026-10-01",
+            "--out-dir",
+            str(out),
+            "--spec",
+            str(specs),
+            "--coverage-start-utc",
+            "2026-10-01T11:00:00Z",
+            "--coverage-end-utc",
+            "2026-10-01T18:00:00Z",
+        ]
+    )
+    assert result == 0
+    assert json.loads(capsys.readouterr().out)["manifest_path"] == str(out / "manifest.json")
+    manifest = load_manifest(out / "manifest.json")
+    assert manifest.source["tickstore_symbol"] == "WIN$N"
+    assert manifest.files[0].sha256 == hashlib.sha256((out / "WINN.npz").read_bytes()).hexdigest()

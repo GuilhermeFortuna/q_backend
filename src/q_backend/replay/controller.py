@@ -64,6 +64,9 @@ class RunStatus:
     config_hash: str
     dataset_checksums: tuple[str, ...]
     last_error: str | None
+    lag_ms: int = 0
+    outstanding_intents: int = 0
+    source_coverage: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -195,9 +198,7 @@ class ReplayController:
                 )
                 cursor_after = self._timeline.cursor_us(conn)
             if action == STOP:
-                if self._on_finish is not None:
-                    self._on_finish(conn, cursor_after)
-                cancelled = self._store.cancel_pending(conn)
+                cancelled = self._finish(conn, cursor_after, run)
                 state_after = STOPPED
                 if cancelled:
                     self._store.append_journal(
@@ -210,8 +211,7 @@ class ReplayController:
                     )
             elif cursor_after >= run.end_us:
                 state_after = COMPLETED
-                if self._on_finish is not None:
-                    self._on_finish(conn, run.end_us)
+                self._finish(conn, run.end_us, run)
             else:
                 state_after = _state_after(action, run.state)
             revision_after = run.revision + 1
@@ -220,7 +220,7 @@ class ReplayController:
                 state=state_after,
                 revision=revision_after,
                 rate=str(new_rate),
-                cursor_us=cursor_after,
+                cursor_us=self._timeline.cursor_us(conn),
             )
             result = StoredCommand(
                 command_id=command_id,
@@ -275,9 +275,8 @@ class ReplayController:
                 cursor = self._timeline.cursor_us(conn)
                 state_after = COMPLETED if cursor >= run.end_us else RUNNING
                 if state_after == COMPLETED:
-                    if self._on_finish is not None:
-                        self._on_finish(conn, run.end_us)
-                    self._store.update_run(conn, state=COMPLETED, revision=run.revision + 1, cursor_us=cursor)
+                    self._finish(conn, run.end_us, run)
+                    self._store.update_run(conn, state=COMPLETED, revision=run.revision + 1)
                     self._store.append_journal(
                         conn,
                         kind="cursor",
@@ -304,8 +303,12 @@ class ReplayController:
         run = self._require_run()
         clock = self._require_clock()
         canonical = run.cursor_us
+        if run.state == STOPPED:
+            canonical -= json.loads(run.config_json)["latency"]["broker_response_ms"] * 1000
+        canonical = min(canonical, run.end_us)
+        expected = canonical
         if run.state == RUNNING:
-            canonical = min(clock.now_us(self._mono()), run.end_us)
+            expected = min(clock.now_us(self._mono()), run.end_us)
         market_data_ms = json.loads(run.config_json)["latency"]["market_data_ms"]
         visible = max(0, canonical - market_data_ms * 1000)
         return RunStatus(
@@ -320,12 +323,22 @@ class ReplayController:
             config_hash=run.config_hash,
             dataset_checksums=run.dataset_checksums,
             last_error=run.last_error,
+            lag_ms=max(0, (expected - canonical) // 1000),
         )
 
     def journal(self) -> list[tuple[int, str, int, str, str]]:
         return self._store.journal_entries()
 
     # internals --------------------------------------------------------------
+
+    def _finish(self, conn: sqlite3.Connection, market_us: int, run: RunRecord) -> int:
+        """Settle unexecuted work, then drain delivery visibility without executing more events."""
+        if self._on_finish is not None:
+            self._on_finish(conn, market_us)
+        cancelled = self._store.cancel_pending(conn)
+        response_us = json.loads(run.config_json)["latency"]["broker_response_ms"] * 1000
+        self._store.update_run(conn, cursor_us=market_us + response_us)
+        return cancelled
 
     def _require_run(self) -> RunRecord:
         run = self._store.load_run()
