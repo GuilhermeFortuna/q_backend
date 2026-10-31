@@ -1,0 +1,19 @@
+# q-replay simulator unit (Q-145). Rendered by ./dev replay into ~/.config/systemd/user.
+# Placeholders: __REPLAY_ENV_FILE__ (run-scoped environment) and __REPLAY_BIN__ (q-replay entry point).
+# The simulator binds loopback only, has no broker credentials and never imports MetaTrader5.
+
+[Unit]
+Description=Q replay market and broker simulator (isolated)
+After=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=__REPLAY_ENV_FILE__
+ExecStart=__REPLAY_BIN__ serve --store ${Q_REPLAY_STORE} --root ${Q_REPLAY_ROOT} --market-port ${Q_REPLAY_MARKET_PORT} --edge-port ${Q_REPLAY_EDGE_PORT} --admin-port ${Q_REPLAY_ADMIN_PORT}
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
