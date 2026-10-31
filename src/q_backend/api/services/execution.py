@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from q_backend.api.schemas.execution import (
     AuditEventListResponse,
+    DemoAccountCapability,
     AuditEventResponse,
     DecisionListResponse,
     DecisionResponse,
@@ -229,6 +230,38 @@ def get_account(session: Session, account_id: uuid.UUID) -> PaperAccountResponse
     return PaperAccountResponse.model_validate(account)
 
 
+def demo_account_capability(settings: Settings, *, mt5_connected: bool = True) -> DemoAccountCapability:
+    """Describe whether mt5_live can target the edge account as a demo account.
+
+    The answer is the same gate chain as ``mt5_orders``: the global enable flag, the account
+    allowlist and controlled-account validation. A demo account passes validation on its own
+    trade mode. A real or unknown account, an unreachable edge and a disconnected terminal are
+    never available, and the reason says why.
+    """
+    if not mt5_connected:
+        return DemoAccountCapability(available=False, reason="MT5 terminal disconnected")
+    status = _mt5_orders_status(settings)
+    account = status.account
+    if account is None:
+        return DemoAccountCapability(available=False, reason=status.reason or "edge account unavailable")
+    if account.trade_mode != "demo":
+        return DemoAccountCapability(available=False, reason="the edge account is not a demo account")
+    if status.capability != "available":
+        return DemoAccountCapability(available=False, reason=status.reason or status.capability)
+    return DemoAccountCapability(available=True, login=account.login)
+
+
+def effective_live_capability_locked(settings: Settings, *, broker_mode: str) -> bool:
+    """Global live lock, opened only for mt5_live deployments on a demo account.
+
+    The global setting still governs real accounts. A demo account is the only target that the
+    capability opens, and the activation flags and live gates still apply on top of it.
+    """
+    if not settings.execution_live_capability_locked or broker_mode != "mt5_live":
+        return settings.execution_live_capability_locked
+    return not demo_account_capability(settings).available
+
+
 def create_deployment(
     session: Session,
     body: DeploymentCreateRequest,
@@ -242,7 +275,7 @@ def create_deployment(
     try:
         broker_mode = validate_broker_mode(
             body.broker_mode,
-            live_capability_locked=settings.execution_live_capability_locked,
+            live_capability_locked=effective_live_capability_locked(settings, broker_mode=body.broker_mode),
             live_activation_enabled=body.live_activation_enabled,
         )
         source_kind = "explicit"
@@ -1050,6 +1083,7 @@ def get_execution_health(
             )
         market_data_status = "online" if mt5_connected else "offline"
         mt5_orders = _mt5_orders_response(_mt5_orders_status(settings))
+        demo_account = demo_account_capability(settings, mt5_connected=mt5_connected)
         api_status = "ok"
         if unknown_total > 0 or control.kill_switch_enabled:
             api_status = "degraded"
@@ -1062,6 +1096,7 @@ def get_execution_health(
             market_data_status=market_data_status,
             kill_switch_enabled=control.kill_switch_enabled,
             live_capability_locked=settings.execution_live_capability_locked,
+            demo_account=demo_account,
             mt5_orders=mt5_orders,
             unknown_order_count=unknown_total,
             deployments=deployment_health,
