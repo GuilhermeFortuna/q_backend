@@ -17,8 +17,10 @@ from q_backend.storage.db.execution_repositories import (
 )
 
 
-def start_deployment(session: Session, deployment_id: UUID) -> ExecutionDeployment:
-    return transition_deployment_lifecycle(session, deployment_id, DeploymentLifecycle.RUNNING)
+def start_deployment(
+    session: Session, deployment_id: UUID, *, market_at: Optional[datetime] = None
+) -> ExecutionDeployment:
+    return transition_deployment_lifecycle(session, deployment_id, DeploymentLifecycle.RUNNING, market_at=market_at)
 
 
 def pause_deployment(session: Session, deployment_id: UUID) -> ExecutionDeployment:

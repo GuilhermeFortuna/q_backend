@@ -81,6 +81,9 @@ class ExecutionWorker:
     recovery: ExecutionRecovery
     settings: Settings = field(default_factory=get_settings)
     clock: Callable[[], datetime] = field(default_factory=lambda: lambda: datetime.now(timezone.utc))
+    # Operational time (leases, heartbeats, start and stop markers). Defaults to ``clock`` so
+    # ordinary live operation is unchanged; a replay run injects the wall clock here instead.
+    operational_clock: Optional[Callable[[], datetime]] = None
     poll_interval_seconds: Optional[float] = None
     shutdown_event: threading.Event = field(default_factory=threading.Event)
     edge_health: Optional[Callable[[], object]] = None
@@ -99,6 +102,7 @@ class ExecutionWorker:
     _flatten_unpriceable: set[uuid.UUID] = field(default_factory=set, init=False)
 
     def __post_init__(self) -> None:
+        self._operational = self.operational_clock or self.clock
         self._health = WorkerHealth(
             worker_id=self.settings.execution_worker_id,
             running=False,
@@ -132,7 +136,7 @@ class ExecutionWorker:
     def run(self) -> None:
         """Block until shutdown is requested."""
         self._install_signal_handlers()
-        self._started_at = self.clock()
+        self._started_at = self._operational()
         self._running = True
         self._health.running = True
         try:
@@ -180,11 +184,11 @@ class ExecutionWorker:
 
     def poll_once(self) -> None:
         """Single poll cycle: refresh deployments, heartbeat leases, process bars."""
-        now = self.clock()
+        operational_now = self._operational()
         try:
-            self._poll_body(now)
+            self._poll_body(self.clock())
         finally:
-            self._record_heartbeat(now)
+            self._record_heartbeat(operational_now)
 
     def _check_edge(self, now: datetime) -> EdgeHealthSnapshot:
         last = self._edge_snapshot
@@ -252,7 +256,7 @@ class ExecutionWorker:
             ]
             if not consumers:
                 session.commit()
-                self._health.last_poll_at = now
+                self._health.last_poll_at = self._operational()
                 return
 
             bar_started = time.perf_counter()
@@ -330,7 +334,7 @@ class ExecutionWorker:
                         )
 
             session.commit()
-            self._health.last_poll_at = now
+            self._health.last_poll_at = self._operational()
             self._health.last_error = None
 
     def _reconcile_working_orders(self, session: Session, *, now: datetime) -> None:
@@ -547,6 +551,7 @@ class ExecutionWorker:
                     self._release_deployment(session, deployment.id)
 
     def _refresh_deployments(self, session: Session, *, now: datetime) -> None:
+        operational_now = self._operational()
         active_ids: set[uuid.UUID] = set()
         for deployment in list_deployments(
             session,
@@ -559,7 +564,7 @@ class ExecutionWorker:
             lifecycle = DeploymentLifecycle(deployment.lifecycle)
             if lifecycle == DeploymentLifecycle.PAUSED:
                 if deployment.id in self._runtimes:
-                    self._heartbeat_lease(session, deployment.id, now=now)
+                    self._heartbeat_lease(session, deployment.id, now=operational_now)
                 continue
 
             if deployment.id not in self._runtimes:
@@ -571,7 +576,7 @@ class ExecutionWorker:
                         worker_id=self.settings.execution_worker_id,
                         lease_token=token,
                         ttl_seconds=self.settings.execution_lease_ttl_seconds,
-                        now=now,
+                        now=operational_now,
                     )
                 except LeaseConflictError:
                     logger.warning(
@@ -595,7 +600,7 @@ class ExecutionWorker:
                 self._runtimes[deployment.id] = runtime
                 self._lease_tokens[deployment.id] = token
             else:
-                self._heartbeat_lease(session, deployment.id, now=now)
+                self._heartbeat_lease(session, deployment.id, now=operational_now)
                 runtime = self._runtimes[deployment.id]
                 runtime.deployment = deployment
                 # A revision edit (while paused) or a fresh start/resume moves the
@@ -659,7 +664,7 @@ class ExecutionWorker:
             session.commit()
         try:
             with self.session_factory() as session:
-                record_worker_stopped(session, worker_id=self.settings.execution_worker_id, now=self.clock())
+                record_worker_stopped(session, worker_id=self.settings.execution_worker_id, now=self._operational())
                 session.commit()
         except Exception:  # noqa: BLE001 - shutdown must finish
             logger.exception("could not record clean worker shutdown")

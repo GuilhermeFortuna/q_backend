@@ -50,6 +50,7 @@ q-market-publisher = "q_backend.cli.q_market_publisher:main"
 q-catalog = "q_backend.cli.q_catalog:main"
 q-api = "q_backend.cli.q_api:main"
 q-sync-ticks = "q_backend.cli.q_sync_ticks:main"
+q-replay = "q_backend.cli.q_replay:main"
 
 
 [dependency-groups]
@@ -109,7 +110,7 @@ select = ["BLE001", "S110"]
 "tests/**" = ["BLE001", "S110"]
 
 [tool.uv.sources]
-q-core = { git = "https://github.com/GuilhermeFortuna/q_core.git", tag = "v2026.10.30" }
+q-core = { git = "https://github.com/GuilhermeFortuna/q_core.git", tag = "v2026.10.31" }
 metatrader5 = [
     { path = "docker/metatrader5-stub", marker = "sys_platform != 'win32'" }
 ]

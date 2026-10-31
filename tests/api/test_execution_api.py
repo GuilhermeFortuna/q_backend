@@ -932,3 +932,126 @@ def test_patch_configuration_rejected_with_open_position(api_db_session: Session
             ),
         )
     assert exc.value.status_code == 409
+
+
+def test_start_and_resume_use_market_cutoff_with_operational_audit_dates(api_db_session):
+    from q_backend.execution.brokers.fakes import FixedClock
+    from q_backend.storage.db.execution_models import ExecutionDeployment
+
+    market = FixedClock(datetime(2024, 1, 2, 12, tzinfo=timezone.utc))
+    account = execution_service.create_account(
+        api_db_session, PaperAccountCreateRequest(name="clock-account", initial_balance=Decimal("10000"))
+    )
+    detail = execution_service.create_deployment(
+        api_db_session,
+        DeploymentCreateRequest(paper_account_id=account.id, name="clock-deployment", identity=_identity_payload()),
+    )
+    before = datetime.now(timezone.utc)
+    execution_service.apply_deployment_action(
+        api_db_session,
+        detail.id,
+        DeploymentActionRequest(action="start"),
+        market_clock=market,
+    )
+    deployment = api_db_session.get(ExecutionDeployment, detail.id)
+    assert deployment.activation_cutoff_at.replace(tzinfo=timezone.utc) == market.now()
+    assert deployment.started_at.replace(tzinfo=timezone.utc) >= before
+    execution_service.apply_deployment_action(api_db_session, detail.id, DeploymentActionRequest(action="pause"))
+    market.advance(600)
+    execution_service.apply_deployment_action(
+        api_db_session,
+        detail.id,
+        DeploymentActionRequest(action="start"),
+        market_clock=market,
+    )
+    assert deployment.activation_cutoff_at.replace(tzinfo=timezone.utc) == market.now()
+
+
+def test_start_fails_closed_when_market_clock_is_unavailable(api_db_session):
+    from unittest.mock import MagicMock
+    from q_backend.storage.db.execution_models import ExecutionDeployment
+    from q_backend.time import ClockUnavailableError
+
+    account = execution_service.create_account(
+        api_db_session, PaperAccountCreateRequest(name="offline-clock", initial_balance=Decimal("10000"))
+    )
+    detail = execution_service.create_deployment(
+        api_db_session,
+        DeploymentCreateRequest(paper_account_id=account.id, name="offline", identity=_identity_payload()),
+    )
+    clock = MagicMock()
+    clock.now.side_effect = ClockUnavailableError("offline")
+    with pytest.raises(HTTPException) as exc:
+        execution_service.apply_deployment_action(
+            api_db_session,
+            detail.id,
+            DeploymentActionRequest(action="start"),
+            market_clock=clock,
+        )
+    assert exc.value.status_code == 503
+    deployment = api_db_session.get(ExecutionDeployment, detail.id)
+    assert deployment.lifecycle == "draft"
+    assert deployment.activation_cutoff_at is None
+
+
+def test_action_route_uses_configured_remote_market_clock(api_db_session, monkeypatch):
+    import httpx
+    from fastapi import FastAPI
+
+    from q_backend.api.deps import get_market_clock, get_session
+    from q_backend.api.routers.execution import router
+    from q_backend.storage.db.execution_models import ExecutionDeployment
+
+    market_now = datetime(2024, 1, 2, 12, tzinfo=timezone.utc)
+    monkeypatch.setenv("Q_MARKET_CLOCK_URL", "http://clock.invalid")
+    monkeypatch.setenv("Q_MARKET_CLOCK_GENERATION", "api-generation")
+    monkeypatch.setenv("Q_MARKET_DATA_CACHE_NAMESPACE", "api-generation")
+
+    def clock_response(request):
+        assert str(request.url) == "http://clock.invalid/v1/clock"
+        return httpx.Response(
+            200,
+            json={
+                "sequence": 1,
+                "generation": "api-generation",
+                "state": "paused",
+                "rate": 1.0,
+                "market_time_us": int(market_now.timestamp() * 1_000_000),
+                "market_time_utc": market_now.isoformat(),
+            },
+        )
+
+    original_client = httpx.Client
+    monkeypatch.setattr(
+        httpx,
+        "Client",
+        lambda **kwargs: original_client(**{**kwargs, "transport": httpx.MockTransport(clock_response)}),
+    )
+    account = execution_service.create_account(
+        api_db_session, PaperAccountCreateRequest(name="remote-api", initial_balance=Decimal("10000"))
+    )
+    detail = execution_service.create_deployment(
+        api_db_session,
+        DeploymentCreateRequest(paper_account_id=account.id, name="remote-api", identity=_identity_payload()),
+    )
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[get_session] = lambda: api_db_session
+    import asyncio
+
+    async def request():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://api") as client:
+            return await client.post(
+                f"/api/v1/execution/deployments/{detail.id}/actions",
+                json={"action": "start"},
+                headers={"Idempotency-Key": "14500000-0000-4000-8000-000000000001"},
+            )
+
+    get_market_clock.cache_clear()
+    try:
+        response = asyncio.run(request())
+    finally:
+        get_market_clock.cache_clear()
+    assert response.status_code == 200, response.text
+    deployment = api_db_session.get(ExecutionDeployment, detail.id)
+    assert deployment.activation_cutoff_at.replace(tzinfo=timezone.utc) == market_now

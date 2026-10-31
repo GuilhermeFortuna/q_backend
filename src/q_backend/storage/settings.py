@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     execution_initial_window_bars: int = 260
     execution_research_warmup_bars: int = 2000
     execution_live_capability_locked: bool = True
+    # Replay profile (Q-145): one active mt5_live deployment per paper account and symbol. Off in
+    # ordinary live operation, where the product owns this decision.
+    execution_single_owner_per_symbol: bool = False
     # Q-050: the frontend execution workspace is gone; keyless commands are refused.
     execution_idempotency_enforced: bool = True
     mt5_edge_url: str = "http://127.0.0.1:18813"

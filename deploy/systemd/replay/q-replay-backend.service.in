@@ -1,0 +1,19 @@
+# Rendered by ./dev replay. No dependency on normal live or MT5 units.
+[Unit]
+Description=Q replay __DESCRIPTION__ (isolated)
+After=network-online.target q-replay.service
+
+[Service]
+Type=__TYPE__
+EnvironmentFile="__ENV_FILE__"
+WorkingDirectory="__RUN_DIR__"
+ExecStart=__COMMAND__
+Restart=on-failure
+RestartSec=2
+RestartPreventExitStatus=78 79
+TimeoutStartSec=180
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

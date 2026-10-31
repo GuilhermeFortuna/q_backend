@@ -429,6 +429,20 @@ class Mt5OrdersStatusResponse(BaseModel):
     account: Optional[Mt5OrdersAccountResponse]
 
 
+class DemoAccountCapability(BaseModel):
+    """Whether the edge's logged-in account is a demo account that mt5_live may target.
+
+    A demo account lets an mt5_live deployment be created and activated without globally enabling
+    real-account trading. Normal activation gates still apply. A real or unknown account is never
+    reported as available.
+    """
+
+    available: bool
+    login: Optional[int] = None
+    currency: Optional[str] = None
+    reason: Optional[str] = None
+
+
 class ExecutionHealthResponse(BaseModel):
     api_status: Literal["ok", "degraded", "unavailable"]
     worker_status: Literal["healthy", "stale", "offline"]
@@ -438,6 +452,7 @@ class ExecutionHealthResponse(BaseModel):
     market_data_status: Literal["online", "offline", "stale"]
     kill_switch_enabled: bool
     live_capability_locked: bool
+    demo_account: DemoAccountCapability = DemoAccountCapability(available=False, reason="not checked")
     mt5_orders: Mt5OrdersStatusResponse
     unknown_order_count: int
     deployments: list[DeploymentHealthResponse]

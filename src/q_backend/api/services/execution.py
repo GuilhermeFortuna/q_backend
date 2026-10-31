@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from q_backend.api.schemas.execution import (
     AuditEventListResponse,
+    DemoAccountCapability,
     AuditEventResponse,
     DecisionListResponse,
     DecisionResponse,
@@ -130,6 +131,7 @@ from q_backend.storage.db.execution_repositories import (
 )
 from q_backend.storage.settings import Settings, get_settings
 from q_backend.streaming import execution_events
+from q_backend.time import ClockUnavailableError, MarketClock, SystemMarketClock
 
 
 def _utcnow() -> datetime:
@@ -229,6 +231,64 @@ def get_account(session: Session, account_id: uuid.UUID) -> PaperAccountResponse
     return PaperAccountResponse.model_validate(account)
 
 
+def demo_account_capability(settings: Settings, *, mt5_connected: bool = True) -> DemoAccountCapability:
+    """Describe whether mt5_live can target the edge account as a demo account.
+
+    The answer is the same gate chain as ``mt5_orders``: the global enable flag, the account
+    allowlist and controlled-account validation. A demo account passes validation on its own
+    trade mode. A real or unknown account, an unreachable edge and a disconnected terminal are
+    never available, and the reason says why.
+    """
+    if not mt5_connected:
+        return DemoAccountCapability(available=False, reason="MT5 terminal disconnected")
+    status = _mt5_orders_status(settings)
+    account = status.account
+    if account is None:
+        return DemoAccountCapability(available=False, reason=status.reason or "edge account unavailable")
+    if account.trade_mode != "demo":
+        return DemoAccountCapability(available=False, reason="the edge account is not a demo account")
+    if status.capability != "available":
+        return DemoAccountCapability(available=False, reason=status.reason or status.capability)
+    return DemoAccountCapability(available=True, login=account.login)
+
+
+def effective_live_capability_locked(settings: Settings, *, broker_mode: str) -> bool:
+    """Global live lock, opened only for mt5_live deployments on a demo account.
+
+    The global setting still governs real accounts. A demo account is the only target that the
+    capability opens, and the activation flags and live gates still apply on top of it.
+    """
+    if not settings.execution_live_capability_locked or broker_mode != "mt5_live":
+        return settings.execution_live_capability_locked
+    return not demo_account_capability(settings).available
+
+
+def symbol_owner_conflict(
+    session: Session,
+    *,
+    paper_account_id: uuid.UUID,
+    symbol: str,
+) -> Optional[ExecutionDeployment]:
+    """An active mt5_live deployment already owning this account and symbol, if any."""
+    return session.execute(
+        select(ExecutionDeployment)
+        .where(
+            ExecutionDeployment.paper_account_id == paper_account_id,
+            ExecutionDeployment.symbol == symbol,
+            ExecutionDeployment.broker_mode == BrokerMode.MT5_LIVE.value,
+            ExecutionDeployment.lifecycle.in_(
+                [
+                    DeploymentLifecycle.DRAFT.value,
+                    DeploymentLifecycle.RUNNING.value,
+                    DeploymentLifecycle.PAUSED.value,
+                    DeploymentLifecycle.ERROR.value,
+                ]
+            ),
+        )
+        .limit(1)
+    ).scalar_one_or_none()
+
+
 def create_deployment(
     session: Session,
     body: DeploymentCreateRequest,
@@ -242,7 +302,7 @@ def create_deployment(
     try:
         broker_mode = validate_broker_mode(
             body.broker_mode,
-            live_capability_locked=settings.execution_live_capability_locked,
+            live_capability_locked=effective_live_capability_locked(settings, broker_mode=body.broker_mode),
             live_activation_enabled=body.live_activation_enabled,
         )
         source_kind = "explicit"
@@ -298,6 +358,13 @@ def create_deployment(
             )
         else:
             raise ExecutionValidationError("one of source_backtest_run_id, identity, or catalog is required")
+        if broker_mode == BrokerMode.MT5_LIVE and settings.execution_single_owner_per_symbol:
+            owner = symbol_owner_conflict(session, paper_account_id=body.paper_account_id, symbol=identity.symbol)
+            if owner is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"deployment {owner.id} already owns {identity.symbol} on this account",
+                )
         deployment = create_execution_deployment(
             session,
             paper_account_id=body.paper_account_id,
@@ -566,6 +633,8 @@ def apply_deployment_action(
     session: Session,
     deployment_id: uuid.UUID,
     body: DeploymentActionRequest,
+    *,
+    market_clock: Optional[MarketClock] = None,
 ) -> DeploymentActionResponse:
     deployment = session.execute(
         select(ExecutionDeployment).where(ExecutionDeployment.id == deployment_id).with_for_update()
@@ -583,7 +652,7 @@ def apply_deployment_action(
         raise HTTPException(status_code=400, detail="archive requires confirm=true")
     try:
         if body.action == "start":
-            deployment = start_deployment(session, deployment_id)
+            deployment = start_deployment(session, deployment_id, market_at=(market_clock or SystemMarketClock()).now())
             message = "start accepted"
             pending = None
         elif body.action == "pause":
@@ -645,6 +714,8 @@ def apply_deployment_action(
             pending_action=pending,
             message=message,
         )
+    except ClockUnavailableError as exc:
+        raise HTTPException(status_code=503, detail="market clock unavailable; command was not accepted") from exc
     except IllegalLifecycleTransition as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except SQLAlchemyError as exc:
@@ -1050,6 +1121,7 @@ def get_execution_health(
             )
         market_data_status = "online" if mt5_connected else "offline"
         mt5_orders = _mt5_orders_response(_mt5_orders_status(settings))
+        demo_account = demo_account_capability(settings, mt5_connected=mt5_connected)
         api_status = "ok"
         if unknown_total > 0 or control.kill_switch_enabled:
             api_status = "degraded"
@@ -1062,6 +1134,7 @@ def get_execution_health(
             market_data_status=market_data_status,
             kill_switch_enabled=control.kill_switch_enabled,
             live_capability_locked=settings.execution_live_capability_locked,
+            demo_account=demo_account,
             mt5_orders=mt5_orders,
             unknown_order_count=unknown_total,
             deployments=deployment_health,

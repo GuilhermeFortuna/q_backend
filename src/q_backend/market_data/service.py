@@ -80,7 +80,9 @@ class MarketDataService:
         logger.info(f"Initializing MarketDataService with MT5 User: {login}, Server: {server}")
 
         self.mt5_client = MetaTraderClient(path=path, login=login, password=password, server=server)
-        self._remote_client = RemoteMt5Client()
+        self._remote_client = RemoteMt5Client(
+            cache_namespace=os.environ.get("Q_MARKET_DATA_CACHE_NAMESPACE", "").strip() or None
+        )
         self._local_client = LocalParquetClient()
 
     def _resolve_provider(self):

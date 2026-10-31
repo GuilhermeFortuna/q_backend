@@ -279,6 +279,7 @@ def transition_deployment_lifecycle(
     target: DeploymentLifecycle,
     *,
     at: Optional[datetime] = None,
+    market_at: Optional[datetime] = None,
     producer: str = "api",
 ) -> ExecutionDeployment:
     deployment = session.execute(
@@ -297,7 +298,7 @@ def transition_deployment_lifecycle(
             deployment.started_at = now
         # Every start/resume moves the activation cutoff forward so the worker
         # never dispatches orders for bars that closed while stopped/paused.
-        deployment.activation_cutoff_at = now
+        deployment.activation_cutoff_at = market_at if market_at is not None else now
     if target in {DeploymentLifecycle.STOPPED, DeploymentLifecycle.ERROR}:
         deployment.stopped_at = now
     session.flush()

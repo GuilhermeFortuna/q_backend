@@ -12,7 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from q_backend.api.strategy_file_guard import reject_strategy_file_fields
-from q_backend.api.deps import get_session
+from q_backend.api.deps import get_market_clock, get_session
 from q_backend.api.dependencies import get_market_data_service
 from q_backend.api.idempotency import IdempotentCommand, IdempotentRoute
 from q_backend.api.schemas.execution import (
@@ -46,6 +46,7 @@ from q_backend.api.schemas.execution import (
 from q_backend.api.services import execution as execution_service
 from q_backend.execution.catalog import CatalogResponse
 from q_backend.market_data.service import MarketDataService
+from q_backend.time import MarketClock
 
 router = APIRouter(tags=["execution"], route_class=IdempotentRoute)
 
@@ -212,10 +213,11 @@ def deployment_action(
     body: DeploymentActionRequest,
     session: Session = Depends(_session_or_503),
     command: IdempotentCommand = Depends(_idempotency_dependency),
+    market_clock: MarketClock = Depends(get_market_clock),
 ):
     return command.execute(
         session,
-        lambda: execution_service.apply_deployment_action(session, deployment_id, body),
+        lambda: execution_service.apply_deployment_action(session, deployment_id, body, market_clock=market_clock),
     )
 
 

@@ -100,3 +100,14 @@ def test_failed_closed_recovery_raises_without_ready(db_engine):
     with pytest.raises(RecoveryFailedClosed):
         worker.run()
     assert events == []
+
+
+def test_market_clock_failure_still_records_operational_heartbeat(db_engine):
+    from q_backend.time import ClockUnavailableError
+
+    market_clock = MagicMock()
+    market_clock.now.side_effect = ClockUnavailableError("clock offline")
+    worker = _worker(db_engine, market_clock, operational_clock=FixedClock(T0).now)
+    with pytest.raises(ClockUnavailableError, match="clock offline"):
+        worker.poll_once()
+    assert _row(db_engine).heartbeat_at.replace(tzinfo=timezone.utc) == T0

@@ -93,7 +93,11 @@ class RemoteMt5Client:
         health_cache_seconds: float = 30.0,
         health_failure_cache_seconds: float = 2.0,
         history_timeout: float = 660.0,
+        cache_namespace: str | None = None,
     ):
+        # Tick-cache entries are keyed by provider; a run generation namespaces them so a new
+        # replay run never reads entries written for an earlier one (or for live data).
+        self._cache_provider = _PROVIDER if cache_namespace is None else f"{_PROVIDER}:{cache_namespace}"
         resolved_url = base_url if base_url is not None else get_remote_gateway_url()
         self._base_url = resolved_url.rstrip("/") if resolved_url else None
         self._token = token if token is not None else get_remote_gateway_token()
@@ -320,7 +324,7 @@ class RemoteMt5Client:
 
         cache_key: str | None = None
         if use_cache:
-            cache_key = make_cache_key(symbol, start_local, end_local, resolved_flags, provider=_PROVIDER)
+            cache_key = make_cache_key(symbol, start_local, end_local, resolved_flags, provider=self._cache_provider)
             cached = load_tick_cache(cache_key)
             if cached is not None:
                 return cached

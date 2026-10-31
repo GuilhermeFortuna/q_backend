@@ -1,0 +1,35 @@
+# Replay infrastructure only. Each run gets fresh named volumes; down preserves them.
+# The launcher supplies --env-file with the run's ports and unique volume prefix.
+services:
+  postgres:
+    image: docker.io/library/postgres:16-alpine
+    environment:
+      POSTGRES_USER: q
+      POSTGRES_PASSWORD: q
+      POSTGRES_DB: q
+    ports:
+      - "127.0.0.1:${Q_REPLAY_PG_PORT:-5436}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U q -d q"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+  redis:
+    image: docker.io/library/redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:${Q_REPLAY_REDIS_PORT:-6382}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+volumes:
+  postgres_data:
+    name: ${Q_REPLAY_VOLUME_PREFIX:?set a fresh run volume prefix}-postgres
+  redis_data:
+    name: ${Q_REPLAY_VOLUME_PREFIX:?set a fresh run volume prefix}-redis

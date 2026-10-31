@@ -195,6 +195,82 @@ def test_create_deployment_from_market_only_strategy_run_succeeds(
     assert detail.day_trade_session.close_time == "17:00"
 
 
+@pytest.mark.parametrize(
+    "owner_state,owner_mode,same_account,same_symbol,enforce,conflicts",
+    [
+        ("draft", "mt5_live", True, True, True, True),
+        ("running", "mt5_live", True, True, True, True),
+        ("paused", "mt5_live", True, True, True, True),
+        ("error", "mt5_live", True, True, True, True),
+        ("stopped", "mt5_live", True, True, True, False),
+        ("running", "paper", True, True, True, False),
+        ("running", "mt5_live", False, True, True, False),
+        ("running", "mt5_live", True, False, True, False),
+        ("running", "mt5_live", True, True, False, False),
+    ],
+)
+def test_saved_run_deployment_respects_symbol_ownership(
+    api_db_session,
+    frozen_version,
+    monkeypatch,
+    owner_state,
+    owner_mode,
+    same_account,
+    same_symbol,
+    enforce,
+    conflicts,
+):
+    settings = execution_service.Settings(
+        _env_file=None,
+        execution_live_capability_locked=False,
+        execution_single_owner_per_symbol=enforce,
+    )
+    monkeypatch.setattr(execution_service, "get_settings", lambda: settings)
+    account = execution_service.create_account(
+        api_db_session,
+        PaperAccountCreateRequest(name="owner", initial_balance=Decimal("100000")),
+    )
+    run = _create_saved_run(api_db_session, frozen_version, order_kinds=["market_entry", "market_close"])
+    owner = execution_service.create_deployment(
+        api_db_session,
+        DeploymentCreateRequest(
+            paper_account_id=account.id,
+            name="owner",
+            source_backtest_run_id=run.id,
+            broker_mode=owner_mode,
+            live_activation_enabled=owner_mode == "mt5_live",
+        ),
+    )
+    owner_row = execution_service.get_execution_deployment(api_db_session, owner.id)
+    owner_row.lifecycle = owner_state
+    api_db_session.flush()
+    if not same_account:
+        account = execution_service.create_account(
+            api_db_session,
+            PaperAccountCreateRequest(name="other", initial_balance=Decimal("100000")),
+        )
+    if not same_symbol:
+        run = _create_saved_run(
+            api_db_session, frozen_version, symbol="WDO$", order_kinds=["market_entry", "market_close"]
+        )
+    request = DeploymentCreateRequest(
+        paper_account_id=account.id,
+        name="candidate",
+        source_backtest_run_id=run.id,
+        broker_mode="mt5_live",
+        live_activation_enabled=True,
+    )
+    if conflicts:
+        with pytest.raises(HTTPException) as exc:
+            execution_service.create_deployment(api_db_session, request)
+        assert exc.value.status_code == 409
+        assert str(owner.id) in exc.value.detail
+        assert "WIN$" in exc.value.detail
+    else:
+        created = execution_service.create_deployment(api_db_session, request)
+        assert created.symbol == ("WIN$" if same_symbol else "WDO$")
+
+
 M1_DECISION_STRATEGY = MARKET_ONLY_STRATEGY.replace(
     "class MarketTrend(ResearchStrategy):\n",
     'class MarketTrend(ResearchStrategy):\n    decision_timeframe = "M1"\n\n',
@@ -448,13 +524,7 @@ def test_acceptance_7_deployment_submits_entry_and_day_trade_close_against_fake_
     monkeypatch.setattr(
         execution_service,
         "get_settings",
-        lambda: type(
-            "S",
-            (),
-            {
-                "execution_live_capability_locked": False,
-            },
-        )(),
+        lambda: execution_service.Settings(_env_file=None, execution_live_capability_locked=False),
     )
 
     account = execution_service.create_account(

@@ -55,6 +55,16 @@ class MT5OrdersStatus:
     account: Optional[MT5OrdersAccount]
 
 
+def _deal_fee(deal: dict) -> Decimal:
+    """Fee of one deal from MT5's signed cash-flow convention: charges negative, rebates positive.
+
+    ``fee = -(commission + fee)``. Missing fields count as zero; rebates are never clamped.
+    """
+    commission = Decimal(str(deal.get("commission") or 0))
+    charge = Decimal(str(deal.get("fee") or 0))
+    return -(commission + charge)
+
+
 def mt5_order_status(client: EdgeClient, gates: LiveExecutionGates) -> MT5OrdersStatus:
     """Answer whether an MT5 deployment could trade on the connected account.
 
@@ -148,6 +158,7 @@ def _fill_from_deals(
     deal_ids: list[str] = []
     total_qty = Decimal("0")
     notional = Decimal("0")
+    fee_total = Decimal("0")
     latest_time = now
     for deal in sorted(deals, key=lambda d: int(d.get("time_msc", 0) or 0)):
         ticket = str(int(deal.get("ticket", 0)))
@@ -159,6 +170,7 @@ def _fill_from_deals(
         price = Decimal(str(deal.get("price", 0)))
         total_qty += qty
         notional += qty * price
+        fee_total += _deal_fee(deal)
         time_msc = deal.get("time_msc")
         if time_msc is not None:
             latest_time = datetime.fromtimestamp(int(time_msc) / 1000.0, tz=timezone.utc)
@@ -173,7 +185,7 @@ def _fill_from_deals(
         side=request.side,
         quantity=total_qty,
         price=avg_price,
-        fee=Decimal("0"),
+        fee=fee_total,
         slippage=Decimal("0"),
         filled_at=latest_time,
         metadata={
@@ -643,6 +655,7 @@ def _exit_fill_from_deals(
     """One aggregated exit fill; the side of each deal is its direction (0 buy, 1 sell)."""
     total_qty = Decimal("0")
     notional = Decimal("0")
+    fee_total = Decimal("0")
     deal_ids: list[str] = []
     latest_time = now
     side = ExecutionSide.SELL
@@ -653,6 +666,7 @@ def _exit_fill_from_deals(
         deal_ids.append(str(int(deal.get("ticket", 0))))
         total_qty += qty
         notional += qty * Decimal(str(deal.get("price", 0)))
+        fee_total += _deal_fee(deal)
         side = ExecutionSide.BUY if int(deal.get("type", 1)) == 0 else ExecutionSide.SELL
         if deal.get("time_msc") is not None:
             latest_time = datetime.fromtimestamp(int(deal["time_msc"]) / 1000.0, tz=timezone.utc)
@@ -664,7 +678,7 @@ def _exit_fill_from_deals(
         side=side,
         quantity=total_qty,
         price=notional / total_qty,
-        fee=Decimal("0"),
+        fee=fee_total,
         slippage=Decimal("0"),
         filled_at=latest_time,
         metadata={

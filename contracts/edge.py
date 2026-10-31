@@ -1,4 +1,4 @@
-# GENERATED FILE - DO NOT EDIT. Source schemas: schema/edge/common/error.schema.json, schema/edge/common/health.schema.json, schema/edge/execution/account-request.schema.json, schema/edge/execution/account-response.schema.json, schema/edge/execution/check-request.schema.json, schema/edge/execution/check-response.schema.json, schema/edge/execution/deal.schema.json, schema/edge/execution/deals-request.schema.json, schema/edge/execution/deals-response.schema.json, schema/edge/execution/lookup-outcome.schema.json, schema/edge/execution/lookup-request.schema.json, schema/edge/execution/order.schema.json, schema/edge/execution/orders-request.schema.json, schema/edge/execution/orders-response.schema.json, schema/edge/execution/pending-lookup-outcome.schema.json, schema/edge/execution/position.schema.json, schema/edge/execution/positions-request.schema.json, schema/edge/execution/positions-response.schema.json, schema/edge/execution/quote-request.schema.json, schema/edge/execution/quote-response.schema.json, schema/edge/execution/submit-outcome.schema.json, schema/edge/execution/submit-request.schema.json, schema/edge/execution/working-order.schema.json
+# GENERATED FILE - DO NOT EDIT. Source schemas: schema/edge/clock/snapshot.schema.json, schema/edge/common/error.schema.json, schema/edge/common/health.schema.json, schema/edge/execution/account-request.schema.json, schema/edge/execution/account-response.schema.json, schema/edge/execution/check-request.schema.json, schema/edge/execution/check-response.schema.json, schema/edge/execution/deal.schema.json, schema/edge/execution/deals-request.schema.json, schema/edge/execution/deals-response.schema.json, schema/edge/execution/lookup-outcome.schema.json, schema/edge/execution/lookup-request.schema.json, schema/edge/execution/order.schema.json, schema/edge/execution/orders-request.schema.json, schema/edge/execution/orders-response.schema.json, schema/edge/execution/pending-lookup-outcome.schema.json, schema/edge/execution/position.schema.json, schema/edge/execution/positions-request.schema.json, schema/edge/execution/positions-response.schema.json, schema/edge/execution/quote-request.schema.json, schema/edge/execution/quote-response.schema.json, schema/edge/execution/submit-outcome.schema.json, schema/edge/execution/submit-request.schema.json, schema/edge/execution/working-order.schema.json
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -135,6 +135,16 @@ class LookupRequest:
     window_start: str | int
     kind: Literal["deal", "pending"] | None = "deal"
     magic: int | None = None
+
+
+@dataclass(frozen=True)
+class MarketClockSnapshot:
+    generation: str
+    market_time_us: int
+    market_time_utc: str
+    rate: float
+    sequence: int
+    state: Literal["running", "paused", "completed", "stopped"]
 
 
 @dataclass(frozen=True)

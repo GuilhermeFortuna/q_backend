@@ -1,6 +1,7 @@
 # Q-145 — Market replay and simulated broker for the live stack
 
-**Status:** proposed; awaiting human plan approval. The Q project board is the status of record.
+**Status:** implementation ready for human review; final testing and terminal runtime inspection remain with the human.
+The Q project board is the status of record.
 **Batch:** 42 — Market replay.
 **Owner:** q_backend. **Repositories:** q_backend, q_contracts, q (launcher), q_terminal (demo deployment path).
 **Depends on:** Q-144 (released incremental execution primitives), Q-136 and Q-137 (both Done).
@@ -225,7 +226,8 @@ state after a crash; replay a recorded ingress journal to verify deterministic b
 
 `q-replay` provides `prepare`, `create`, `status`, `pause`, `resume`, `speed`, `step`, `stop` and `journal`
 commands against the administrative listener. CLI is the initial external control surface; no web controller
-or new research UI is required. Create config includes manifest, interval/warmup, account/instrument settings,
+or new research UI is required for this task; Q-146 adds a Research UI page on top of it, and q_terminal and
+the live control API stay free of replay controls. Create config includes manifest, interval/warmup, account/instrument settings,
 latencies, rate and resource limits. After creation, latency/account/data changes require a new run. Commands
 carry a command UUID and expected state revision, giving idempotent results and conflict on stale revisions.
 States: prepared → paused ↔ running → completed/stopped, or failed. Only one active run per simulator instance.
