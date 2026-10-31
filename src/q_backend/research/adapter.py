@@ -18,6 +18,7 @@ from q_backend.backtesting.signal_columns import (
 )
 from q_backend.backtesting.strategy import ChartIndicatorSpec, TradingStrategy
 from q_backend.research.charting import ChartIndicator, indicator_style
+from q_backend.research.errors import TickDataRequiredError
 from q_backend.research.frame import FRAME_COLUMNS
 from q_backend.research.hooks import detect_hook_call, invoke_hook, ticks_mode
 from q_backend.research.orders import TradeOrder
@@ -166,6 +167,9 @@ class _RuntimeHooks:
             decision.update(exit_long=True, exit_short=True)
         # A timed exit with no position open does nothing, so it is not placed.
         if timed and positions:
+            adapter._require_ticks(
+                "timed exit", timestamp, "closes at a scheduled instant, which is confirmed from ticks"
+            )
             target = adapter._instant_us(timed[0].at, timestamp)
             decision["timed_exit"] = target
             self.timed_exits.append((bar, target, timed[0].reason))
@@ -331,7 +335,7 @@ class ResearchStrategyAdapter(TradingStrategy):
         if tick_source is None:
             for name, mode in self._ticks_modes.items():
                 if mode == "required":
-                    raise ValueError(
+                    raise TickDataRequiredError(
                         f"{type(research_strategy).__name__}.{name} has a required ticks parameter; "
                         "pass a TickStore as ticks= to backtest()"
                     )
@@ -462,13 +466,13 @@ class ResearchStrategyAdapter(TradingStrategy):
 
     def _require_ticks(self, action: str, timestamp: pd.Timestamp, reason: str) -> None:
         if self._tick_source is None:
-            raise ValueError(
+            raise TickDataRequiredError(
                 f"{type(self.research_strategy).__name__} {action} at bar {timestamp} {reason}; pass ticks= to backtest()"
             )
 
     def _require_hook_ticks(self, hook: str, timestamp: pd.Timestamp, reason: str) -> None:
         if self._tick_source is None:
-            raise ValueError(
+            raise TickDataRequiredError(
                 f"{type(self.research_strategy).__name__}.{hook} at bar {timestamp} {reason}; "
                 "pass ticks= to backtest()"
             )

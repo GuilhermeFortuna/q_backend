@@ -239,6 +239,8 @@ def test_strategy_file_with_tick_hooks_adds_tick_hooks_kind(run_jobs_sync, strat
         start=dt.datetime(2024, 1, 2),
         end=dt.datetime(2024, 4, 30),
         strategy_file="tick_strat",
+        # This optional-hook replay tests classification without fetching tick history.
+        research_data_mode="bars",
         strategy_params={"length": 5},
     )
     run_id = backtest_router.start_backtest(req)["run_id"]

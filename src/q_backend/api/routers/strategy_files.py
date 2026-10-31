@@ -48,6 +48,7 @@ def list_strategy_files_endpoint():
                 "error": info.error,
                 "parameters": _parameter_specs(info.parameters),
                 "uses_tick_hooks": info.uses_tick_hooks,
+                "requires_tick_data": info.requires_tick_data,
             }
             for info in infos
         ]

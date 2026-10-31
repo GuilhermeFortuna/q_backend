@@ -1,7 +1,7 @@
 """Run a frozen strategy version through the research library's ``backtest()``.
 
-The worker builds the version's class from its frozen source, loads the bars the same way
-``load_bars()`` shapes them, and passes a tick store when the configured one holds the symbol.
+The worker builds the version's class from its frozen source, selects provider candles or candles
+built from a synchronized tick store, and passes ticks only when explicitly requested.
 The result is returned as the import request that script runs are stored from, so a stack run
 and a script run of the same class, bars and parameters produce the same trades and metrics.
 """
@@ -12,7 +12,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 
@@ -21,6 +21,7 @@ from q_backend.backtesting.costs import TransactionCostConfig
 from q_backend.market_data.timezone import BRASILIA_TZ
 from q_backend.research.data import MT5_SOURCE
 from q_backend.research.engine import backtest
+from q_backend.research.errors import TickDataRequiredError
 from q_backend.research.frame import (
     attach_metadata,
     drop_forming_bar,
@@ -29,6 +30,7 @@ from q_backend.research.frame import (
     ohlcv_models_to_frame,
     validate_bars_frame,
 )
+from q_backend.research.hooks import ticks_mode
 from q_backend.research.params import coerce_params, declared_from_wire
 from q_backend.research.publishing import build_import_request
 from q_backend.research.strategy_files import StrategyBundle, load_bundle, validate_bundle
@@ -77,6 +79,7 @@ def run_strategy(
     market_data_service: Any,
     checkpoint: Callable[[], None],
     on_phase: PhaseReporter,
+    research_data_mode: Literal["auto", "bars", "ticks"] = "auto",
 ) -> StrategyRunResult:
     """Execute the frozen strategy on bars from ``start`` to ``end`` and return its stored form.
 
@@ -84,40 +87,83 @@ def run_strategy(
     cannot be loaded, and the research library's errors (including the causality check) otherwise.
     """
     checkpoint()
-    on_phase("loading_data", f"Loading {timeframe} candles for {symbol}")
-    frame = _bars_frame(market_data_service, symbol=symbol, timeframe=timeframe, start=start, end=end)
-    if frame.empty:
-        raise ValueError("No market data found for the given parameters.")
-    checkpoint()
-
     on_phase("preparing", "Preparing strategy and indicators")
     strategy_class = load_bundle(frozen.bundle, bundle_root)
     declared = tuple(declared_from_wire(spec) for spec in frozen.param_specs)
-    instance = strategy_class(**coerce_params(declared, strategy_params))
+    params = coerce_params(declared, strategy_params)
+    instance = strategy_class(**params)
     _require_decision_timeframe(strategy_class, timeframe)
-    tick_store = TickStore(symbol)
-    store = tick_store if tick_store.sessions() else None
+    if research_data_mode not in ("auto", "bars", "ticks"):
+        raise ValueError("research_data_mode must be auto, bars or ticks")
+    if research_data_mode == "bars" and any(
+        ticks_mode(getattr(instance, name)) == "required"
+        for name in ("compute_indicators", "entry_strategy", "exit_strategy")
+    ):
+        raise TickDataRequiredError(f"{strategy_class.__name__} requires tick data; use auto or ticks data mode.")
     checkpoint()
 
-    on_phase("simulating", f"Simulating {len(frame)} candles")
-    result = backtest(
-        frame,
-        strategy=instance,
-        symbol=symbol,
-        quantity=quantity,
-        point_value=point_value,
-        initial_capital=initial_capital,
-        costs=costs,
-        exit_params=dict(exit_params) if exit_params else None,
-        day_trade=day_trade,
-        day_trade_start_time=day_trade_start_time,
-        day_trade_end_time=day_trade_end_time,
-        day_trade_close_time=day_trade_close_time,
-        post_exit_bars=post_exit_bars,
-        ticks=store,
-        check_causality=True,
-        progress=False,
+    use_ticks = research_data_mode == "ticks" or (
+        research_data_mode == "auto"
+        and any(
+            ticks_mode(getattr(instance, name)) != "none"
+            for name in ("compute_indicators", "entry_strategy", "exit_strategy")
+        )
     )
+    while True:
+        store = None
+        if use_ticks:
+            tf = normalize_timeframe(timeframe)
+            if tf in ("W1", "MN1"):
+                raise ValueError(f"Unsupported timeframe '{timeframe}' for tick store bars")
+            on_phase("loading_data", f"Synchronizing ticks for {symbol}")
+            store = TickStore(symbol)
+            report = store.sync(start=start, end=end, progress=False)
+            checkpoint()
+            if report.failed:
+                failures = "; ".join(
+                    f"{day.isoformat()}: {report.errors.get(day, 'download failed')}" for day in report.failed
+                )
+                raise ValueError(f"Tick synchronization failed for {failures}. Check the MT5 gateway and retry.")
+            on_phase("loading_data", f"Building {timeframe} candles from ticks for {symbol}")
+            frame = store.bars(timeframe, start=start, end=end)
+            frame = drop_forming_bar(frame, timeframe, now=datetime.now(BRASILIA_TZ))
+        else:
+            on_phase("loading_data", f"Loading {timeframe} candles for {symbol}")
+            frame = _bars_frame(market_data_service, symbol=symbol, timeframe=timeframe, start=start, end=end)
+        if frame.empty:
+            raise ValueError("No market data found for the given parameters.")
+        checkpoint()
+
+        on_phase("simulating", f"Simulating {len(frame)} candles")
+        try:
+            result = backtest(
+                frame,
+                strategy=instance,
+                symbol=symbol,
+                quantity=quantity,
+                point_value=point_value,
+                initial_capital=initial_capital,
+                costs=costs,
+                exit_params=dict(exit_params) if exit_params else None,
+                day_trade=day_trade,
+                day_trade_start_time=day_trade_start_time,
+                day_trade_end_time=day_trade_end_time,
+                day_trade_close_time=day_trade_close_time,
+                post_exit_bars=post_exit_bars,
+                ticks=store,
+                check_causality=True,
+                progress=False,
+            )
+        except TickDataRequiredError:
+            if research_data_mode != "auto" or use_ticks:
+                raise
+            checkpoint()
+            on_phase("loading_data", "Strategy requires ticks; restarting with tick history")
+            # Discard every decision and all instance state from the bar attempt.
+            instance = strategy_class(**params)
+            use_ticks = True
+            continue
+        break
     checkpoint()
     request = build_import_request(result, name=frozen.strategy_id, timeframe=timeframe)
     order_kinds = set(result.order_kinds)

@@ -17,6 +17,7 @@ from q_backend.research.strategy_files import (
     materialize,
     package_name,
     strategy_ids,
+    validate_bundle,
 )
 
 LATE_SESSION = '''"""Follow the late-session move.
@@ -291,3 +292,20 @@ def test_two_different_bundles_load_side_by_side_in_one_process(strategy_root: P
 
     assert first_cls(ma_period=3).round_up(12.0) == 15.0
     assert second_cls(ma_period=3).round_up(12.0) == 12.0
+
+
+@pytest.mark.parametrize("default, required", [("", True), ("=None", False)])
+def test_tick_hook_requirement_is_discovered(strategy_root, tmp_path, default, required):
+    source = """from q_backend.research import ResearchStrategy
+
+class TickAware(ResearchStrategy):
+    parameters = {}
+
+    def entry_strategy(self, frame, *, ticks%s):
+        return None
+""" % default
+    _write(strategy_root, "tick_aware.py", source)
+    info = validate_bundle(build_bundle(strategy_root, "tick_aware"), tmp_path / "tick-bundles")
+    assert info.valid, info.error
+    assert info.uses_tick_hooks
+    assert info.requires_tick_data is required
