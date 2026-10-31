@@ -619,3 +619,20 @@ def test_load_bars_multi_page_gateway_range_returns_complete_frame() -> None:
     assert frame.index[-1] == pd.Timestamp("2026-06-02 10:03:00", tz=BRASILIA_TZ)
     assert frame.attrs["q_research"]["symbol"] == "WIN$"
     assert frame.attrs["q_research"]["timeframe"] == "M1"
+
+
+@pytest.mark.parametrize(
+    "time_msc",
+    [
+        [1_775_000_000_123, 1_775_000_050_000],  # one session, no offset change
+        [1_540_000_000_000, 1_541_000_000_000],  # spans the 2018 daylight-saving end
+        [],
+    ],
+)
+def test_tick_index_matches_wall_clock_localization(time_msc: list[int]) -> None:
+    from q_backend.research.data import _brasilia_index
+
+    stamps = np.array(time_msc, dtype=np.int64)
+    expected = pd.DatetimeIndex(stamps.astype("datetime64[ms]").astype("datetime64[us]")).tz_localize(BRASILIA_TZ)
+
+    pd.testing.assert_index_equal(_brasilia_index(stamps), expected, check_names=False)

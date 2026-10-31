@@ -9,7 +9,6 @@ from numbers import Real
 import pandas as pd
 import numpy as np
 
-from q_backend.market_data.clients.shared import _time_msc_to_naive_local
 from q_backend.market_data.clients.remote import RemoteMt5Client
 from q_backend.market_data.clients.shared import COPY_TICKS_ALL
 from q_backend.market_data.timezone import BRASILIA_TZ
@@ -79,12 +78,26 @@ def _record_tick_grid_check(
     return out
 
 
+def _brasilia_index(time_msc: np.ndarray) -> pd.DatetimeIndex:
+    """Tick times as a Brasília-aware index.
+
+    MT5 stores tick times so the UTC wall clock of the epoch reads as Brasília local time. Localizing millions of
+    wall-clock stamps directly is very slow, so when the first and last stamp share one calendar day and UTC offset
+    (every stretch without a daylight-saving change) shift to UTC in one step and convert.
+    """
+    naive = pd.DatetimeIndex(time_msc.astype("datetime64[ms]").astype("datetime64[us]"), name="time")
+    if len(naive) == 0:
+        return naive.tz_localize(BRASILIA_TZ)
+    ends = naive[[0, -1]].tz_localize(BRASILIA_TZ)
+    offset = ends[0].utcoffset()
+    if offset == ends[1].utcoffset() and naive[0].normalize() == naive[-1].normalize():
+        return (naive - offset).tz_localize("UTC").tz_convert(BRASILIA_TZ)
+    return naive.tz_localize(BRASILIA_TZ)
+
+
 def _ticks_frame_from_columnar(arrays: dict[str, np.ndarray]) -> pd.DataFrame:
     """Build the research tick frame from gateway columnar arrays."""
-    times = pd.DatetimeIndex(
-        [_time_msc_to_naive_local(int(value)) for value in arrays["time_msc"]],
-        name="time",
-    ).tz_localize(BRASILIA_TZ)
+    times = _brasilia_index(np.asarray(arrays["time_msc"], dtype=np.int64))
     frame = pd.DataFrame(
         {
             "bid": np.asarray(arrays["bid"], dtype=np.float64),
