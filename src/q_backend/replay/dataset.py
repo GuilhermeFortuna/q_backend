@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 from typing import Literal
 
+import numpy as np
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 _CHUNK = 1 << 20
@@ -31,6 +32,21 @@ class DatasetFile(BaseModel):
     size_bytes: int = Field(ge=0)
 
 
+class SymbolSpec(BaseModel):
+    """Instrument parameters the simulated broker and gateway metadata are built from."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    description: str = ""
+    point: float = Field(gt=0, allow_inf_nan=False)
+    digits: int = Field(ge=0, le=12)
+    volume_min: float = Field(gt=0, allow_inf_nan=False)
+    volume_step: float = Field(gt=0, allow_inf_nan=False)
+    volume_max: float = Field(gt=0, allow_inf_nan=False)
+    trade_contract_size: float = Field(gt=0, allow_inf_nan=False)
+    margin_per_contract: str = Field(pattern=r"^[0-9]+(\.[0-9]+)?$")
+
+
 class DatasetManifest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -40,6 +56,7 @@ class DatasetManifest(BaseModel):
     coverage_start_utc: AwareDatetime
     coverage_end_utc: AwareDatetime
     files: list[DatasetFile] = Field(min_length=1)
+    symbol_specs: dict[str, SymbolSpec] = Field(min_length=1)
 
     @model_validator(mode="after")
     def _consistent(self) -> DatasetManifest:
@@ -48,11 +65,20 @@ class DatasetManifest(BaseModel):
         paths = [item.path for item in self.files]
         if len(set(paths)) != len(paths):
             raise ValueError("manifest lists the same file more than once")
+        unspecified = self.symbols - set(self.symbol_specs)
+        if unspecified:
+            raise ValueError(f"symbols without a spec: {', '.join(sorted(unspecified))}")
         return self
 
     @property
     def symbols(self) -> frozenset[str]:
         return frozenset(item.symbol for item in self.files)
+
+    def file_for(self, symbol: str) -> DatasetFile:
+        matches = [item for item in self.files if item.symbol == symbol]
+        if len(matches) != 1:
+            raise DatasetError(f"symbol {symbol} must map to exactly one tick file")
+        return matches[0]
 
 
 def load_manifest(path: Path) -> DatasetManifest:
@@ -115,3 +141,34 @@ def verify_manifest(
             f"[{manifest.coverage_start_utc.isoformat()}, {manifest.coverage_end_utc.isoformat()})"
         )
     return checksums
+
+
+TICK_KEYS = ("time_msc", "bid", "ask", "last", "volume", "flags")
+
+
+def load_tick_file(path: Path, symbol: str) -> dict[str, np.ndarray]:
+    """Read one frozen tick NPZ (UTC milliseconds) and check its ordering and shape.
+
+    Records are kept in source order; equal timestamps are never merged or dropped. A file
+    whose timestamps decrease is refused: preparation must sort it explicitly and record the
+    new checksum.
+    """
+    try:
+        with np.load(path, allow_pickle=False) as npz:
+            columns = {name: np.asarray(npz[name]) for name in TICK_KEYS}
+    except (OSError, KeyError, ValueError) as exc:
+        raise DatasetError(f"cannot read tick file for {symbol}: {exc}") from exc
+    times = columns["time_msc"]
+    count = len(times)
+    if times.ndim != 1 or any(array.ndim != 1 or len(array) != count for array in columns.values()):
+        raise DatasetError(f"tick file for {symbol} has ragged columns")
+    if count and np.any(times[1:] < times[:-1]):
+        raise DatasetError(f"tick file for {symbol} is out of order; prepare a sorted copy")
+    return {
+        "time_msc": times.astype(np.int64, copy=False),
+        "bid": columns["bid"].astype(np.float64, copy=False),
+        "ask": columns["ask"].astype(np.float64, copy=False),
+        "last": columns["last"].astype(np.float64, copy=False),
+        "volume": columns["volume"].astype(np.float64, copy=False),
+        "flags": columns["flags"].astype(np.int32, copy=False),
+    }

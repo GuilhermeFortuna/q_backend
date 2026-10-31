@@ -11,6 +11,15 @@ import pytest
 
 from q_backend.replay.dataset import DatasetError, load_manifest, verify_manifest
 
+SPEC = {
+    "point": 1.0,
+    "digits": 0,
+    "volume_min": 1.0,
+    "volume_step": 1.0,
+    "volume_max": 100.0,
+    "trade_contract_size": 1.0,
+    "margin_per_contract": "1000.00",
+}
 COVER_START = datetime(2026, 10, 1, 11, 0, tzinfo=UTC)
 COVER_END = datetime(2026, 10, 1, 18, 0, tzinfo=UTC)
 
@@ -39,6 +48,7 @@ def dataset(tmp_path: Path) -> tuple[Path, Path]:
         "coverage_start_utc": COVER_START.isoformat(),
         "coverage_end_utc": COVER_END.isoformat(),
         "files": files,
+        "symbol_specs": {"WDO": SPEC, "WIN": SPEC},
     }
     path = tmp_path / "manifest.json"
     path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -88,6 +98,7 @@ def test_path_escaping_the_root_is_refused(tmp_path: Path) -> None:
         "exchange_timezone": "America/Sao_Paulo",
         "coverage_start_utc": COVER_START.isoformat(),
         "coverage_end_utc": COVER_END.isoformat(),
+        "symbol_specs": {"WDO": SPEC},
         "files": [
             {
                 "path": "../outside.ticks",
@@ -96,6 +107,7 @@ def test_path_escaping_the_root_is_refused(tmp_path: Path) -> None:
                 "size_bytes": 1,
             }
         ],
+        "symbol_specs": {"WDO": SPEC, "WIN": SPEC},
     }
     path = root / "manifest.json"
     path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -137,6 +149,7 @@ def test_manifest_rejects_duplicate_paths(tmp_path: Path) -> None:
         "coverage_start_utc": COVER_START.isoformat(),
         "coverage_end_utc": COVER_END.isoformat(),
         "files": [entry, dict(entry)],
+        "symbol_specs": {"WDO": SPEC, "WIN": SPEC},
     }
     path = tmp_path / "bad.json"
     path.write_text(json.dumps(manifest), encoding="utf-8")
